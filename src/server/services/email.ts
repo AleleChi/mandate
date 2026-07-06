@@ -77,7 +77,16 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
   try {
     const provider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
     const fromName = process.env.MAIL_FROM_NAME || 'Koinonia Children and Teens';
-    const fromAddress = process.env.MAIL_FROM_ADDRESS || 'hello@parent-access.koinoniachildren.org';
+    const fromAddress = process.env.MAIL_FROM_ADDRESS;
+    
+    if (!fromAddress) {
+      console.error('[EmailService] MAIL_FROM_ADDRESS is not configured in environment.');
+      return {
+        success: false,
+        error: 'We could not send the email right now. Please try again.'
+      };
+    }
+
     const fullFrom = `"${fromName}" <${fromAddress}>`;
 
     // Primary Provider: Resend
@@ -101,11 +110,17 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       });
 
       if (error) {
-        console.error('[EmailService] Safe Resend Error sending email to', options.to, '-', error.message || 'Unknown Resend API error');
+        console.error(`Resend send failed { error: "${error.message || 'Unknown Resend API error'}" }`);
         return {
           success: false,
           error: 'We could not send the email right now. Please try again.'
         };
+      }
+
+      if (options.subject.toLowerCase().includes('verify')) {
+        console.log(`Resend verification email sent { emailId: "${data?.id}", to: "${options.to}" }`);
+      } else {
+        console.log(`Resend email sent { emailId: "${data?.id}", to: "${options.to}" }`);
       }
 
       return {

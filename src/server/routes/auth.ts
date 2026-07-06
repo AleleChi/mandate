@@ -148,42 +148,64 @@ router.post('/resend-verification', async (req, res) => {
     }
 
     const user = await queryOne('SELECT id, email_verified FROM users WHERE email = ?', [cleanEmail]);
-    if (user && !user.email_verified) {
-      const baseUrl = process.env.APP_BASE_URL;
-      if (!baseUrl) {
-        if (process.env.NODE_ENV !== 'production') {
-          throw new Error('APP_BASE_URL environment variable is required in development.');
-        } else {
-          console.error('[ConfigError] APP_BASE_URL is missing in production environment');
-          return res.status(500).json({ error: 'A configuration error occurred. Please try again later.' });
-        }
-      }
-
-      const now = new Date().toISOString();
-
-      // Expire old unused verification tokens
-      await execute(`
-        UPDATE auth_tokens 
-        SET expires_at = ? 
-        WHERE user_id = ? AND token_type = 'email_verification' AND used_at IS NULL
-      `, [now, user.id]);
-
-      const rawVerifyToken = crypto.randomBytes(32).toString('hex');
-      const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
-      const tokenId = crypto.randomUUID();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      
-      await execute(`
-        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-        VALUES (?, ?, ?, 'email_verification', ?, ?)
-      `, [tokenId, user.id, verifyTokenHash, expiresAt, now]);
-
-      const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
-      const fullName = profile ? profile.full_name : undefined;
-
-      const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
-      await sendEmailVerificationEmail(cleanEmail, verificationLink, fullName);
+    
+    if (!user) {
+      console.log('No unverified user found for resend request');
+      return res.json({ 
+        success: true, 
+        message: 'If this email is connected to a parent account, a new link has been sent.' 
+      });
     }
+
+    if (user.email_verified) {
+      return res.json({
+        success: true,
+        message: 'This email is already verified. You can sign in.'
+      });
+    }
+
+    const baseUrl = process.env.APP_BASE_URL;
+    if (!baseUrl) {
+      if (process.env.NODE_ENV !== 'production') {
+        throw new Error('APP_BASE_URL environment variable is required in development.');
+      } else {
+        console.error('[ConfigError] APP_BASE_URL is missing in production environment');
+        return res.status(500).json({ error: 'A configuration error occurred. Please try again later.' });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Expire old unused verification tokens
+    await execute(`
+      UPDATE auth_tokens 
+      SET expires_at = ? 
+      WHERE user_id = ? AND token_type = 'email_verification' AND used_at IS NULL
+    `, [now, user.id]);
+
+    const rawVerifyToken = crypto.randomBytes(32).toString('hex');
+    const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
+    const tokenId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    
+    await execute(`
+      INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+      VALUES (?, ?, ?, 'email_verification', ?, ?)
+    `, [tokenId, user.id, verifyTokenHash, expiresAt, now]);
+
+    const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+    const fullName = profile ? profile.full_name : undefined;
+
+    const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
+    const emailResult = await sendEmailVerificationEmail(cleanEmail, verificationLink, fullName);
+
+    if (!emailResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'We could not send a new link right now. Please try again.'
+      });
+    }
+
     res.json({ 
       success: true, 
       message: 'If this email is connected to a parent account, a new link has been sent.' 

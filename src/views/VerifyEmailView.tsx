@@ -63,8 +63,12 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
     setResendError(null);
 
     try {
-      await api.auth.resendVerification(emailToUse);
-      setResendSuccess('New link sent');
+      const res = await api.auth.resendVerification(emailToUse);
+      if (res && res.message && res.message.toLowerCase().includes('already verified')) {
+        setResendSuccess('already_verified');
+      } else {
+        setResendSuccess('sent');
+      }
     } catch (err: any) {
       setResendError({
         title: 'We could not send a new link',
@@ -153,7 +157,15 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
                 </p>
               </div>
 
-               {resendSuccess ? (
+               {resendSuccess === 'already_verified' ? (
+                <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-left space-y-1">
+                  <div className="flex items-center gap-2 text-blue-800 text-sm font-semibold">
+                    <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
+                    <span>Email already verified</span>
+                  </div>
+                  <p className="text-xs text-blue-600 pl-7">You can sign in with this email.</p>
+                </div>
+              ) : resendSuccess === 'sent' ? (
                 <div className="p-4 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-left space-y-1">
                   <div className="flex items-center gap-2 text-[#065F46] text-sm font-semibold">
                     <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
