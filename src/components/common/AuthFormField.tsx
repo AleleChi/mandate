@@ -8,6 +8,8 @@ export interface AuthFormFieldProps extends React.InputHTMLAttributes<HTMLInputE
   error?: string;
   isValid?: boolean;
   isTouched?: boolean;
+  suggestion?: string;
+  onApplySuggestion?: () => void;
 }
 
 /**
@@ -22,6 +24,8 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
   error,
   isValid = false,
   isTouched = false,
+  suggestion,
+  onApplySuggestion,
   className = '',
   ...props
 }) => {
@@ -89,6 +93,20 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
           {helperText}
         </p>
       ) : null}
+
+      {/* Interactive Suggestion Banner */}
+      {suggestion && onApplySuggestion && (
+        <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+          <span>Did you mean <strong>{suggestion}</strong>?</span>
+          <button
+            type="button"
+            onClick={onApplySuggestion}
+            className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer focus:outline-none shrink-0"
+          >
+            Apply
+          </button>
+        </div>
+      )}
     </div>
   );
 };

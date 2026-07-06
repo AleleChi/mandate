@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AppRoute, AddChildDraft } from '../types';
 import { ArrowLeft, CheckCircle2, ChevronDown, Info } from 'lucide-react';
 import { PremiumSelect } from '../components/common/PremiumSelect';
+import { Button } from '../components/common/Button';
 
 interface AddChildStep2ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -335,12 +336,14 @@ export const AddChildStep2View: React.FC<AddChildStep2ViewProps> = ({
 
           {/* Actions */}
           <div className="pt-2 space-y-2.5">
-            <button
+            <Button
               type="submit"
-              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block"
+              disabled={!schoolClass || !attendedBefore}
+              fullWidth
+              size="lg"
             >
               Continue
-            </button>
+            </Button>
             <button
               type="button"
               onClick={handleSaveAndFinishLater}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppRoute, ChildItem, ParentProfile } from './types';
 import { initialChildren, initialParentProfile } from './data/mockData';
 import { api, extractApiError } from './services/api';
@@ -26,6 +26,7 @@ import { ReviewSentConfirmationView } from './views/ReviewSentConfirmationView';
 import { ChildStatusView } from './views/ChildStatusView';
 import { DevNavigator } from './components/common/DevNavigator';
 import { AddChildDraft } from './types';
+import { Button } from './components/common/Button';
 
 export default function App() {
   const { showSuccess, showError } = useNotification();
@@ -72,8 +73,67 @@ export default function App() {
     return true;
   };
 
+  const [user, setUser] = useState<any>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+
+  const checkAuth = async () => {
+    const token = api.getToken();
+    if (!token) {
+      setUser(null);
+      setParentProfile(initialParentProfile);
+      setChildrenList([]);
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    try {
+      const meData = await api.auth.getMe();
+      if (meData && meData.user) {
+        setUser(meData.user);
+        if (meData.profile) {
+          setParentProfile(meData.profile);
+          setParentEmail(meData.profile.email || '');
+        }
+        
+        try {
+          const homeData = await api.parent.getHome();
+          if (homeData) {
+            if (homeData.parentProfile) {
+              setParentProfile(homeData.parentProfile);
+            }
+            if (Array.isArray(homeData.childrenList)) {
+              setChildrenList(homeData.childrenList);
+              const activeId = localStorage.getItem('koinonia_active_draft_id');
+              if (activeId) {
+                const matched = homeData.childrenList.find((c) => c.id === activeId);
+                if (matched && matched.draftData) {
+                  setAddChildDraft(matched.draftData);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load initial home data:', e);
+        }
+      } else {
+        api.clearToken();
+        setUser(null);
+        setParentProfile(initialParentProfile);
+        setChildrenList([]);
+      }
+    } catch (err) {
+      console.error('Initial checkAuth failed:', err);
+      api.clearToken();
+      setUser(null);
+      setParentProfile(initialParentProfile);
+      setChildrenList([]);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
   const fetchBackendData = async () => {
-    if (api.getToken()) {
+    if (api.getToken() && user) {
       try {
         const homeData = await api.parent.getHome();
         if (homeData && homeData.parentProfile) {
@@ -89,24 +149,6 @@ export default function App() {
               }
             }
           }
-
-          // Route Gate inside fetch
-          const cleanRoute = currentRoute.split('?')[0];
-          const allowedRoutes = [
-            '/',
-            '/parent/create-account',
-            '/parent/check-email',
-            '/parent/verify-email',
-            '/parent/sign-in',
-            '/parent/forgot-password',
-            '/parent/new-password',
-            '/parent/profile-setup'
-          ];
-          if (!allowedRoutes.includes(cleanRoute)) {
-            if (!isProfileComplete(homeData.parentProfile)) {
-              navigate('/parent/profile-setup');
-            }
-          }
         }
       } catch (err) {
         console.error('Failed to load home data:', err);
@@ -115,38 +157,18 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchBackendData();
-  }, [currentRoute]);
+    checkAuth();
+  }, []);
 
   useEffect(() => {
-    const checkGate = () => {
-      const token = api.getToken();
-      if (!token) return;
-
-      const cleanRoute = currentRoute.split('?')[0];
-      const allowedRoutes = [
-        '/',
-        '/parent/create-account',
-        '/parent/check-email',
-        '/parent/verify-email',
-        '/parent/sign-in',
-        '/parent/forgot-password',
-        '/parent/new-password',
-        '/parent/profile-setup'
-      ];
-      if (!allowedRoutes.includes(cleanRoute)) {
-        if (parentProfile && parentProfile.email && !isProfileComplete(parentProfile)) {
-          navigate('/parent/profile-setup');
-        }
-      }
-    };
-    checkGate();
-  }, [currentRoute, parentProfile]);
+    fetchBackendData();
+  }, [currentRoute, user]);
 
   const isValidRoute = (route: string): boolean => {
     const cleanRoute = route.split('?')[0];
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) return true;
     const validRoutes: string[] = [
       '/',
       '/parent/create-account',
@@ -189,6 +211,7 @@ export default function App() {
     } catch (e) {
       console.error('Sign out error:', e);
     }
+    setUser(null);
     setParentProfile(initialParentProfile);
     setChildrenList([]);
     setAddChildDraft(null);
@@ -411,32 +434,194 @@ export default function App() {
     }
   };
 
+  const RedirectToSignIn = ({ next }: { next: string }) => {
+    useEffect(() => {
+      const nextParam = next && next !== '/' ? `?next=${encodeURIComponent(next)}` : '';
+      navigate(`/parent/sign-in${nextParam}`);
+    }, [next]);
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
+          <p className="text-sm text-gray-500 font-medium">Redirecting to Sign In...</p>
+        </div>
+      </div>
+    );
+  };
+
+  const RedirectToRoute = ({ route }: { route: string }) => {
+    useEffect(() => {
+      navigate(route);
+    }, [route]);
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
+          <p className="text-sm text-gray-500 font-medium">Redirecting...</p>
+        </div>
+      </div>
+    );
+  };
+
+  const ProtectedRoute = ({
+    requiredRole = 'parent',
+    requiresCompletedProfile = true,
+    children
+  }: {
+    requiredRole?: string;
+    requiresCompletedProfile?: boolean;
+    children: React.ReactNode;
+  }) => {
+    if (isCheckingAuth) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
+            <p className="text-sm text-[#52525B] font-medium tracking-wide">Checking access...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return <RedirectToSignIn next={currentRoute} />;
+    }
+
+    if (requiredRole && user.role !== requiredRole) {
+      if (user.role === 'volunteer') {
+        return <RedirectToRoute route="/volunteer/home" />;
+      } else if (user.role === 'staff') {
+        return <RedirectToRoute route="/staff/home" />;
+      } else if (user.role === 'admin' || user.role === 'super_admin') {
+        return <RedirectToRoute route="/admin/home" />;
+      } else {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4">
+            <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
+              <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Access Denied</h3>
+              <p className="text-sm text-[#6B7280]">
+                You do not have access to this portal. Your account role is <span className="font-semibold">{user.role}</span>.
+              </p>
+              <Button onClick={handleSignOut} variant="primary" fullWidth>
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        );
+      }
+    }
+
+    const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
+    if (!emailVerified) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#B89047]/10 text-[#B89047]">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-5.333a2 2 0 012.22 0l8 5.333A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5" />
+              </svg>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Verify your email</h3>
+              <p className="text-sm text-[#6B7280]">
+                Please verify your email address to continue. We've sent a verification link to <span className="font-medium text-[#18181B]">{user.email}</span>.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={async () => {
+                  try {
+                    await api.auth.resendVerification(user.email);
+                    showSuccess('Verification email sent', 'Please check your inbox.');
+                  } catch (e: any) {
+                    showError('Failed to resend', e.message || 'Please try again.');
+                  }
+                }}
+              >
+                Resend verification email
+              </Button>
+              <button
+                onClick={handleSignOut}
+                className="text-xs text-gray-500 hover:text-gray-700 font-medium cursor-pointer"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (requiresCompletedProfile && !isProfileComplete(parentProfile)) {
+      return <RedirectToRoute route="/parent/profile-setup" />;
+    }
+
+    return <>{children}</>;
+  };
+
+  const handleSignInSuccess = (userData: any, profileData: any) => {
+    setUser(userData);
+    if (profileData) {
+      setParentProfile(profileData);
+      setParentEmail(profileData.email || '');
+    }
+  };
+
   const renderCurrentRoute = () => {
     const cleanRoute = currentRoute.split('?')[0];
     if (cleanRoute === '/parent/status' || (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))) {
       const parts = cleanRoute.split('/');
       const childIdParam = parts.length >= 4 && parts[3] !== 'review-sent' && parts[3] !== 'new' ? parts[3] : undefined;
       return (
-        <ChildStatusView
-          childId={childIdParam}
-          childrenList={childrenList}
-          parentProfile={parentProfile}
-          onNavigate={navigate}
-          onEditChild={handleEditChild}
-          onDeleteChild={handleDeleteChild}
-        />
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <ChildStatusView
+            childId={childIdParam}
+            childrenList={childrenList}
+            parentProfile={parentProfile}
+            onNavigate={navigate}
+            onEditChild={handleEditChild}
+            onDeleteChild={handleDeleteChild}
+          />
+        </ProtectedRoute>
       );
     }
 
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) {
       return (
-        <AddChildStep5View
-          onNavigate={navigate}
-          draft={addChildDraft}
-          parentProfile={parentProfile}
-          onSubmitReview={handleSubmitReview}
-          onSaveDraft={handleSaveDraft}
-        />
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <AddChildStep5View
+            onNavigate={navigate}
+            draft={addChildDraft}
+            parentProfile={parentProfile}
+            onSubmitReview={handleSubmitReview}
+            onSaveDraft={handleSaveDraft}
+          />
+        </ProtectedRoute>
+      );
+    }
+
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) {
+      const parts = cleanRoute.split('/');
+      const childIdParam = parts[3];
+      return (
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <ParentHomeView
+            onNavigate={navigate}
+            parentProfile={parentProfile}
+            childrenList={childrenList}
+            onAddChild={handleAddChild}
+            onStartNewChild={handleStartNewChild}
+            onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
+            onDeleteChild={handleDeleteChild}
+            initialTab="Passes"
+            selectedChildId={childIdParam}
+          />
+        </ProtectedRoute>
       );
     }
 
@@ -455,6 +640,7 @@ export default function App() {
             onNavigate={navigate}
             onSetParentEmail={(email) => setParentEmail(email)}
             onUpdateProfile={(updated) => setParentProfile(updated)}
+            onSignInSuccess={handleSignInSuccess}
           />
         );
       case '/parent/check-email':
@@ -475,6 +661,7 @@ export default function App() {
           <SignInView
             onNavigate={navigate}
             onSetParentEmail={(email) => setParentEmail(email)}
+            onSignInSuccess={handleSignInSuccess}
           />
         );
       case '/parent/forgot-password':
@@ -483,131 +670,155 @@ export default function App() {
         return <NewPasswordView onNavigate={navigate} />;
       case '/parent/profile-setup':
         return (
-          <ProfileSetupView
-            key="onboarding"
-            mode="onboarding"
-            onNavigate={navigate}
-            initialProfile={parentProfile}
-            onUpdateProfile={(updated) => setParentProfile(updated)}
-          />
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ProfileSetupView
+              key="onboarding"
+              mode="onboarding"
+              onNavigate={navigate}
+              initialProfile={parentProfile}
+              onUpdateProfile={(updated) => setParentProfile(updated)}
+            />
+          </ProtectedRoute>
         );
       case '/parent/profile/edit':
         return (
-          <ProfileSetupView
-            key="edit"
-            mode="edit"
-            onNavigate={navigate}
-            initialProfile={parentProfile}
-            onUpdateProfile={(updated) => setParentProfile(updated)}
-          />
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ProfileSetupView
+              key="edit"
+              mode="edit"
+              onNavigate={navigate}
+              initialProfile={parentProfile}
+              onUpdateProfile={(updated) => setParentProfile(updated)}
+            />
+          </ProtectedRoute>
         );
       case '/parent/home':
         return (
-          <ParentHomeView
-            onNavigate={navigate}
-            parentProfile={parentProfile}
-            childrenList={childrenList}
-            onAddChild={handleAddChild}
-            onStartNewChild={handleStartNewChild}
-            onResumeChildDraft={handleResumeChildDraft}
-            onSignOut={handleSignOut}
-            onDeleteChild={handleDeleteChild}
-            initialTab="Home"
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Home"
+            />
+          </ProtectedRoute>
         );
       case '/parent/profile':
         return (
-          <ParentHomeView
-            onNavigate={navigate}
-            parentProfile={parentProfile}
-            childrenList={childrenList}
-            onAddChild={handleAddChild}
-            onStartNewChild={handleStartNewChild}
-            onResumeChildDraft={handleResumeChildDraft}
-            onSignOut={handleSignOut}
-            onDeleteChild={handleDeleteChild}
-            initialTab="Profile"
-          />
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Profile"
+            />
+          </ProtectedRoute>
         );
       case '/parent/children':
         return (
-          <ParentHomeView
-            onNavigate={navigate}
-            parentProfile={parentProfile}
-            childrenList={childrenList}
-            onAddChild={handleAddChild}
-            onStartNewChild={handleStartNewChild}
-            onResumeChildDraft={handleResumeChildDraft}
-            onSignOut={handleSignOut}
-            onDeleteChild={handleDeleteChild}
-            initialTab="Children"
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Children"
+            />
+          </ProtectedRoute>
         );
       case '/parent/children/new':
         return (
-          <AddChildStep1View
-            onNavigate={navigate}
-            initialDraft={addChildDraft}
-            onSaveDraft={handleSaveDraft}
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep1View
+              onNavigate={navigate}
+              initialDraft={addChildDraft}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
         );
       case '/parent/children/new/care-details':
         return (
-          <AddChildStep2View
-            onNavigate={navigate}
-            draft={addChildDraft}
-            onSaveDraft={handleSaveDraft}
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep2View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
         );
       case '/parent/children/new/health-and-support':
       case '/parent/children/new/health-and-care':
         return (
-          <AddChildStep3View
-            onNavigate={navigate}
-            draft={addChildDraft}
-            onSaveDraft={handleSaveDraft}
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep3View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
         );
       case '/parent/children/new/pickup-person':
         return (
-          <AddChildStep4View
-            onNavigate={navigate}
-            draft={addChildDraft}
-            parentProfile={parentProfile}
-            onSaveDraft={handleSaveDraft}
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep4View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              parentProfile={parentProfile}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
         );
       case '/parent/children/new/review':
         return (
-          <AddChildStep5View
-            onNavigate={navigate}
-            draft={addChildDraft}
-            parentProfile={parentProfile}
-            onSubmitReview={handleSubmitReview}
-            onSaveDraft={handleSaveDraft}
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep5View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              parentProfile={parentProfile}
+              onSubmitReview={handleSubmitReview}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
         );
       case '/parent/children/review-sent':
         return (
-          <ReviewSentConfirmationView
-            onNavigate={navigate}
-            submittedChild={lastSubmittedChild || childrenList.find(c => c.status === 'Under review') || null}
-            onStartNewChild={handleStartNewChild}
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ReviewSentConfirmationView
+              onNavigate={navigate}
+              submittedChild={lastSubmittedChild || childrenList.find(c => c.status === 'Under review') || null}
+              onStartNewChild={handleStartNewChild}
+            />
+          </ProtectedRoute>
         );
       case '/parent/passes':
         return (
-          <ParentHomeView
-            onNavigate={navigate}
-            parentProfile={parentProfile}
-            childrenList={childrenList}
-            onAddChild={handleAddChild}
-            onStartNewChild={handleStartNewChild}
-            onResumeChildDraft={handleResumeChildDraft}
-            onSignOut={handleSignOut}
-            onDeleteChild={handleDeleteChild}
-            initialTab="Passes"
-          />
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Passes"
+            />
+          </ProtectedRoute>
         );
       default:
         return (

@@ -5,6 +5,7 @@ import { PremiumSelect } from '../components/common/PremiumSelect';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { KoinoniaDatePicker } from '../components/common/KoinoniaDatePicker';
+import { Button } from '../components/common/Button';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -328,13 +329,21 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
           {/* Actions */}
           <div className="pt-2 space-y-2.5">
-            <button
+            <Button
               type="submit"
-              disabled={isUploadingPhoto || !photoUrl}
-              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block disabled:opacity-60"
+              disabled={isUploadingPhoto || !(
+                photoUrl.trim() !== '' &&
+                fullName.trim() !== '' &&
+                fullName.trim().split(/\s+/).length >= 2 &&
+                gender !== '' &&
+                (dob && new Date(dob) <= (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })()) &&
+                relationship !== ''
+              )}
+              fullWidth
+              size="lg"
             >
               {isUploadingPhoto ? 'Uploading photo...' : 'Continue'}
-            </button>
+            </Button>
             <button
               type="button"
               disabled={isUploadingPhoto}

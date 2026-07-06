@@ -3,23 +3,91 @@ import crypto from 'crypto';
 import { queryOne, execute, transaction } from '../db';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../services/email';
+import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 
 const router = Router();
 
 router.post('/create-account', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { email, password, fullName, phone, whatsapp } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'Valid email address is required' });
-    }
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    // Validate Full Name
+    const nameVal = validateName(fullName, 'fullName');
+    if (!nameVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: nameVal.code,
+        field: 'fullName',
+        message: nameVal.message,
+        error: nameVal.message
+      });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    // Validate Email with DNS/MX check
+    const emailVal = await validateEmailAddress(email, false);
+    if (!emailVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: emailVal.code,
+        field: 'email',
+        message: emailVal.message,
+        error: emailVal.message,
+        suggestion: emailVal.suggestion
+      });
+    }
+
+    // Validate Phone
+    const phoneVal = validatePhoneNumber(phone || '', 'NG');
+    if (!phoneVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: phoneVal.code,
+        field: 'phone',
+        message: phoneVal.message,
+        error: phoneVal.message
+      });
+    }
+
+    // Validate WhatsApp if present
+    if (whatsapp) {
+      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+      if (!whatsappVal.valid) {
+        return res.status(400).json({
+          success: false,
+          code: whatsappVal.code,
+          field: 'whatsapp',
+          message: whatsappVal.message,
+          error: whatsappVal.message
+        });
+      }
+    }
+
+    // Validate Password
+    const hasLetter = /[a-zA-Z]/.test(password || '');
+    const hasNumber = /[0-9]/.test(password || '');
+    if (!password || password.length < 8 || !hasLetter || !hasNumber) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PASSWORD',
+        field: 'password',
+        message: 'Use at least 8 characters with a letter and a number.',
+        error: 'Use at least 8 characters with a letter and a number.'
+      });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
+    const cleanPhone = phoneVal.normalizedPhone!;
+    const cleanWhatsapp = whatsapp ? validatePhoneNumber(whatsapp, 'NG').normalizedPhone! : cleanPhone;
+
     const existing = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
     if (existing) {
-      return res.status(400).json({ error: 'Account with this email already exists' });
+      return res.status(400).json({
+        success: false,
+        code: 'EMAIL_ALREADY_EXISTS',
+        field: 'email',
+        message: 'Account with this email already exists',
+        error: 'Account with this email already exists'
+      });
     }
 
     const userId = crypto.randomUUID();
@@ -42,8 +110,8 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
         profileId,
         userId,
         fullName?.trim() || '',
-        phone?.trim() || '',
-        whatsapp?.trim() || phone?.trim() || '',
+        cleanPhone,
+        cleanWhatsapp,
         cleanEmail,
         now,
         now
@@ -56,15 +124,7 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
 
     // Generate secure email verification reference and send notification email
     try {
-      const baseUrl = process.env.APP_BASE_URL;
-      if (!baseUrl) {
-        if (process.env.NODE_ENV !== 'production') {
-          throw new Error('APP_BASE_URL environment variable is required in development.');
-        } else {
-          console.error('[ConfigError] APP_BASE_URL is missing in production environment');
-          return res.status(500).json({ error: 'A configuration error occurred. Please try again later.' });
-        }
-      }
+      const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
 
       const rawVerifyToken = crypto.randomBytes(32).toString('hex');
       const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
@@ -82,10 +142,7 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
         verificationLink
       }).catch(() => {});
     } catch (e: any) {
-      if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
-        throw e;
-      }
-      // Non-blocking email trigger failure
+      console.error('Email sending failed during registration:', e);
     }
 
     res.status(201).json({ user, profile, token });
@@ -145,11 +202,13 @@ router.post('/resend-verification', async (req, res) => {
     if (!email) {
       return res.status(400).json({ error: 'Email address is required.' });
     }
-    const cleanEmail = email.toLowerCase().trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail)) {
-      return res.status(400).json({ error: 'Please enter a valid email address.' });
+
+    const emailVal = await validateEmailAddress(email, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({ error: emailVal.message });
     }
+
+    const cleanEmail = emailVal.normalizedEmail!;
 
     const user = await queryOne('SELECT id, email_verified FROM users WHERE email = ?', [cleanEmail]);
     
@@ -168,15 +227,7 @@ router.post('/resend-verification', async (req, res) => {
       });
     }
 
-    const baseUrl = process.env.APP_BASE_URL;
-    if (!baseUrl) {
-      if (process.env.NODE_ENV !== 'production') {
-        throw new Error('APP_BASE_URL environment variable is required in development.');
-      } else {
-        console.error('[ConfigError] APP_BASE_URL is missing in production environment');
-        return res.status(500).json({ error: 'A configuration error occurred. Please try again later.' });
-      }
-    }
+    const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
 
     const now = new Date().toISOString();
 
@@ -231,18 +282,16 @@ router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email address is required' });
-    const cleanEmail = email.toLowerCase().trim();
+
+    const emailVal = await validateEmailAddress(email, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({ error: emailVal.message });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
     const user = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
     if (user) {
-      const baseUrl = process.env.APP_BASE_URL;
-      if (!baseUrl) {
-        if (process.env.NODE_ENV !== 'production') {
-          throw new Error('APP_BASE_URL environment variable is required in development.');
-        } else {
-          console.error('[ConfigError] APP_BASE_URL is missing in production environment');
-          return res.status(500).json({ error: 'A configuration error occurred. Please try again later.' });
-        }
-      }
+      const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
 
       const rawResetToken = crypto.randomBytes(32).toString('hex');
       const resetTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex');
@@ -296,20 +345,62 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({
+        success: false,
+        code: 'REQUIRED_FIELDS_MISSING',
+        message: 'Email and password are required.'
+      });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
-    const user = await queryOne('SELECT id, email, password_hash, role FROM users WHERE email = ?', [cleanEmail]);
-    if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+    // Skip MX lookup but validate syntax/typos
+    const emailVal = await validateEmailAddress(email, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: emailVal.code || 'INVALID_EMAIL_FORMAT',
+        field: 'email',
+        message: emailVal.message,
+        error: emailVal.message,
+        suggestion: emailVal.suggestion
+      });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
+
+    const user = await queryOne('SELECT id, email, password_hash, role, email_verified FROM users WHERE email = ?', [cleanEmail]);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: 'ACCOUNT_NOT_FOUND',
+        message: 'No parent account was found for this email.'
+      });
+    }
+
+    if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Email or password is incorrect.'
+      });
     }
 
     const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [user.id]);
     const token = generateToken(user.id);
 
+    const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
+    if (!emailVerified) {
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Email is not verified.',
+        user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
+        profile,
+        token
+      });
+    }
+
     res.json({
-      user: { id: user.id, email: user.email, role: user.role },
+      user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
       profile,
       token
     });

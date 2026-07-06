@@ -4,6 +4,8 @@ import { ArrowLeft, Info } from 'lucide-react';
 import { api, extractApiError } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
+import { validateName, validateEmailSyntax, validatePhone } from '../utils/validation';
+import { Button } from '../components/common/Button';
 
 interface ProfileSetupViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -24,6 +26,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   const [photoUrl, setPhotoUrl] = useState<string>(initialProfile.photoUrl || '');
   const [fullName, setFullName] = useState<string>(initialProfile.fullName || '');
   const [email, setEmail] = useState<string>(initialProfile.email || '');
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
   const [phone, setPhone] = useState<string>(initialProfile.phone || '');
   const [whatsapp, setWhatsapp] = useState<string>(initialProfile.whatsapp || '');
   const [homeAddress, setHomeAddress] = useState<string>(initialProfile.homeAddress || '');
@@ -98,20 +101,27 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           return 'Add your photo.';
         }
         break;
-      case 'fullName':
-        if (!fullName || !fullName.trim()) return 'Enter your full name.';
+      case 'fullName': {
+        const err = validateName(fullName);
+        if (err) return err;
         break;
-      case 'email':
-        if (!email || !email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-          return 'Enter a valid email address.';
+      }
+      case 'email': {
+        const res = validateEmailSyntax(email);
+        if (!res.valid) {
+          return res.message || 'Enter a valid email address.';
         }
         break;
-      case 'phone':
-        if (!phone || !phone.trim()) return 'Enter your phone number.';
+      }
+      case 'phone': {
+        const err = validatePhone(phone, 'NG');
+        if (err) return err;
         break;
+      }
       case 'whatsapp': {
         const effectiveWa = whatsapp.trim() || phone.trim();
-        if (!effectiveWa) return 'Enter your WhatsApp number.';
+        const err = validatePhone(effectiveWa, 'NG');
+        if (err) return 'Enter a valid WhatsApp number.';
         break;
       }
       case 'homeAddress':
@@ -271,6 +281,20 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     onNavigate('/parent/profile');
   };
 
+  const isProfileFormValid = 
+    photoUrl.trim() !== '' &&
+    validateField('fullName') === '' &&
+    validateField('email') === '' &&
+    validateField('phone') === '' &&
+    validateField('whatsapp') === '' &&
+    validateField('homeAddress') === '' &&
+    validateField('country') === '' &&
+    validateField('stateRegion') === '' &&
+    validateField('city') === '' &&
+    preferredContact !== undefined &&
+    isWorker !== null &&
+    (!isWorker || validateField('department') === '');
+
   return (
     <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-4.5 pb-10">
       <div className="space-y-5">
@@ -359,10 +383,27 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
                 placeholder="jane@example.com"
                 value={email}
                 onChange={(e) => {
-                  setEmail(e.target.value);
+                  const val = e.target.value;
+                  setEmail(val);
                   if (touched.email) setTouched((prev) => ({ ...prev, email: true }));
+                  const res = validateEmailSyntax(val);
+                  if (!res.valid && res.suggestion) {
+                    const [local] = val.trim().split('@');
+                    setEmailSuggestion(`${local}@${res.suggestion}`);
+                  } else {
+                    setEmailSuggestion(null);
+                  }
                 }}
-                onBlur={() => handleBlur('email')}
+                onBlur={() => {
+                  handleBlur('email');
+                  const res = validateEmailSyntax(email);
+                  if (!res.valid && res.suggestion) {
+                    const [local] = email.trim().split('@');
+                    setEmailSuggestion(`${local}@${res.suggestion}`);
+                  } else {
+                    setEmailSuggestion(null);
+                  }
+                }}
                 className={`w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-sm text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none transition-colors ${
                   getError('email')
                     ? 'border-[#C53030] border-b-[#C53030]'
@@ -371,6 +412,21 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
               />
               {getError('email') && (
                 <p className="text-xs text-[#C53030] mt-1.5 font-medium">{getError('email')}</p>
+              )}
+              {emailSuggestion && (
+                <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+                  <span>Did you mean <strong>{emailSuggestion}</strong>?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail(emailSuggestion);
+                      setEmailSuggestion(null);
+                    }}
+                    className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer focus:outline-none shrink-0"
+                  >
+                    Apply
+                  </button>
+                </div>
               )}
             </div>
 
@@ -707,13 +763,14 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
 
           {/* 9. Primary button */}
           <div className="pt-2 space-y-2">
-            <button
+            <Button
               type="submit"
-              disabled={saving || isUploadingPhoto || !photoUrl}
-              className="w-full py-3.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all shadow-2xs cursor-pointer focus:outline-none disabled:opacity-60"
+              disabled={saving || isUploadingPhoto || !isProfileFormValid}
+              fullWidth
+              size="lg"
             >
               {saving ? 'Saving...' : (isUploadingPhoto ? 'Uploading photo...' : (mode === 'edit' ? 'Save changes' : 'Continue'))}
-            </button>
+            </Button>
 
             {/* 10. Secondary action */}
             <button

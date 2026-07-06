@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button';
 import { KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { api } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import { validateEmailSyntax } from '../utils/validation';
 
 interface ForgotPasswordViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -16,9 +17,47 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+
+  const validateEmail = (val: string) => {
+    const res = validateEmailSyntax(val);
+    if (!res.valid) {
+      if (res.suggestion) {
+        const [local] = val.trim().split('@');
+        setSuggestion(`${local}@${res.suggestion}`);
+      } else {
+        setSuggestion(null);
+      }
+      return res.message || 'Enter a valid email address.';
+    }
+    setSuggestion(null);
+    return null;
+  };
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setEmail(val);
+    if (touched) {
+      setEmailError(validateEmail(val));
+    }
+  };
+
+  const handleEmailBlur = () => {
+    setTouched(true);
+    setEmailError(validateEmail(email));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched(true);
+    const err = validateEmail(email);
+    setEmailError(err);
+    if (err) {
+      return;
+    }
+
     if (email.trim() && !loading) {
       setLoading(true);
       try {
@@ -61,13 +100,38 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
               type="email"
               placeholder="sarah@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={handleEmailChange}
+              onBlur={handleEmailBlur}
+              error={emailError || undefined}
               icon={<Mail className="w-4 h-4" />}
             />
 
+            {suggestion && (
+              <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+                <span>Did you mean <strong>{suggestion}</strong>?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail(suggestion);
+                    setEmailError(null);
+                    setSuggestion(null);
+                  }}
+                  className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+
             <div className="pt-2">
-              <Button type="submit" variant="primary" fullWidth size="lg">
-                Send recovery steps
+              <Button
+                type="submit"
+                variant="primary"
+                fullWidth
+                size="lg"
+                disabled={loading || !email.trim() || !validateEmailSyntax(email).valid}
+              >
+                {loading ? 'Sending...' : 'Send recovery steps'}
               </Button>
             </div>
           </form>

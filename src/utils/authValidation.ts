@@ -9,76 +9,65 @@
  * - Parent Profile Setup
  */
 
+import {
+  validateName,
+  validateEmailSyntax,
+  validatePhone,
+  validatePassword
+} from './validation';
+
 export const authValidation = {
   /**
-   * Full name validation: required, must be at least 2 words
+   * Full name validation: required, must be at least 2 words, no numbers, etc.
    */
   fullName: (value: string): string | undefined => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return 'Enter your full name.';
-    }
-    const words = trimmed.split(/\s+/).filter(Boolean);
-    if (words.length < 2) {
-      return 'Enter your full name.';
-    }
-    return undefined;
+    return validateName(value);
   },
 
   /**
-   * Email address validation: required, valid email format
+   * Email address validation: required, valid email format and typo detection
    */
   email: (value: string): string | undefined => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return 'Enter a valid email address.';
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmed)) {
-      return 'Enter a valid email address.';
+    const res = validateEmailSyntax(value);
+    if (!res.valid) {
+      return res.message;
     }
     return undefined;
   },
 
   /**
-   * Phone number validation: required, must contain at least 10 digits
+   * Phone number validation: required, must be valid via libphonenumber-js
    */
-  phone: (value: string): string | undefined => {
-    const trimmed = value.trim();
-    const digitsOnly = trimmed.replace(/\D/g, '');
-    if (!trimmed || digitsOnly.length < 10) {
-      return 'Enter a valid phone number.';
-    }
-    return undefined;
+  phone: (value: string, countryCode = 'NG'): string | undefined => {
+    return validatePhone(value, countryCode);
   },
 
   /**
-   * WhatsApp number validation: required, must contain at least 10 digits
+   * WhatsApp number validation: required, must be valid via libphonenumber-js
    */
-  whatsapp: (value: string): string | undefined => {
-    const trimmed = value.trim();
-    const digitsOnly = trimmed.replace(/\D/g, '');
-    if (!trimmed || digitsOnly.length < 10) {
+  whatsapp: (value: string, countryCode = 'NG'): string | undefined => {
+    const res = validatePhone(value, countryCode);
+    if (res) {
       return 'Enter a valid WhatsApp number.';
     }
     return undefined;
   },
 
   /**
-   * Password validation: required, minimum 8 characters
+   * Password validation: required, minimum 8 characters with letter + number
    */
   password: (value: string): string | undefined => {
-    if (!value || value.length < 8) {
-      return 'Use at least 8 characters.';
-    }
-    return undefined;
+    return validatePassword(value);
   },
 
   /**
    * Confirm password validation: required, must match password
    */
   confirmPassword: (confirmValue: string, passwordValue: string): string | undefined => {
-    if (!confirmValue || confirmValue !== passwordValue) {
+    if (!confirmValue) {
+      return 'Passwords do not match.';
+    }
+    if (confirmValue !== passwordValue) {
       return 'Passwords do not match.';
     }
     return undefined;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppRoute, AddChildDraft } from '../types';
 import { ArrowLeft } from 'lucide-react';
+import { Button } from '../components/common/Button';
 
 interface AddChildStep3ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -353,13 +354,21 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
 
           {/* Actions */}
           <div className="pt-2 space-y-2.5">
-            <button
+            <Button
               type="submit"
-              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+              disabled={!(
+                (hasAllergies === 'No' || (hasAllergies === 'Yes' && medicalNote.trim() !== '')) &&
+                (needsExtraSupport === 'No' || (needsExtraSupport === 'Yes' && supportNote.trim() !== '')) &&
+                infoConfirmed
+              )}
+              fullWidth
+              size="lg"
             >
-              <span>Continue</span>
-              <span className="text-base leading-none">→</span>
-            </button>
+              <span className="flex items-center justify-center gap-1.5">
+                <span>Continue</span>
+                <span className="text-base leading-none">→</span>
+              </span>
+            </Button>
             <button
               type="button"
               onClick={handleSaveAndFinishLater}

@@ -9,6 +9,7 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     role: string;
+    email_verified?: number;
   };
   parentProfile?: {
     id: string;
@@ -79,7 +80,7 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  const user = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [userId]);
+  const user = await queryOne('SELECT id, email, role, email_verified FROM users WHERE id = ?', [userId]);
   if (!user) {
     return res.status(401).json({ error: 'User not found' });
   }

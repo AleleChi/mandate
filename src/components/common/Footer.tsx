@@ -15,7 +15,7 @@ export const Footer: React.FC = () => {
             </span>
           </div>
           <p className="text-sm leading-relaxed text-[#D4AF37]/90 font-medium">
-            Official parent, staff, and admin portal for managing children and teens access for major Koinonia events.
+            Official Parent Access, staff, and admin platform for managing children and teens access for major Koinonia events.
           </p>
           <p className="text-xs text-[#71717A]">
             Photos, pickup details, passes, entry, and pickup are checked with care.

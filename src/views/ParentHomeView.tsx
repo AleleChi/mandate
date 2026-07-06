@@ -17,6 +17,7 @@ interface ParentHomeViewProps {
   initialTab?: BottomNavTab;
   onSignOut?: () => void;
   onDeleteChild?: (childId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  selectedChildId?: string;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -72,7 +73,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   onResumeChildDraft,
   initialTab,
   onSignOut,
-  onDeleteChild
+  onDeleteChild,
+  selectedChildId
 }) => {
   const { showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
@@ -102,6 +104,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   const [showAddChildModal, setShowAddChildModal] = useState(false);
   const [selectedPassChild, setSelectedPassChild] = useState<ChildItem | null>(null);
+
+  useEffect(() => {
+    if (selectedChildId && childrenList.length > 0) {
+      const match = childrenList.find(c => c.id === selectedChildId);
+      if (match) {
+        setSelectedPassChild(match);
+      }
+    }
+  }, [selectedChildId, childrenList]);
 
   // New child form state
   const [newChild, setNewChild] = useState({

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, ArrowRight, Mail } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
+import { validateEmailSyntax } from '../utils/validation';
 
 interface VerifyEmailViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -15,6 +16,25 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendError, setResendError] = useState<{ title: string; description: string } | null>(null);
+
+  const [emailInputError, setEmailInputError] = useState<string | null>(null);
+  const [emailInputSuggestion, setEmailInputSuggestion] = useState<string | null>(null);
+  const [emailInputTouched, setEmailInputTouched] = useState(false);
+
+  const validateEmailInput = (val: string) => {
+    const res = validateEmailSyntax(val);
+    if (!res.valid) {
+      if (res.suggestion) {
+        const [local] = val.trim().split('@');
+        setEmailInputSuggestion(`${local}@${res.suggestion}`);
+      } else {
+        setEmailInputSuggestion(null);
+      }
+      return res.message || 'Enter a valid email address.';
+    }
+    setEmailInputSuggestion(null);
+    return null;
+  };
 
   // Extract query parameters from hash route
   const getQueryParams = () => {
@@ -55,6 +75,15 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
     if (!emailToUse) {
       setShowEmailInput(true);
       return;
+    }
+
+    if (!emailParam) {
+      setEmailInputTouched(true);
+      const err = validateEmailInput(emailInput);
+      setEmailInputError(err);
+      if (err) {
+        return;
+      }
     }
 
     setResendLoading(true);
@@ -199,10 +228,41 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
                         type="email"
                         required
                         value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEmailInput(val);
+                          if (emailInputTouched) {
+                            setEmailInputError(validateEmailInput(val));
+                          }
+                        }}
+                        onBlur={() => {
+                          setEmailInputTouched(true);
+                          setEmailInputError(validateEmailInput(emailInput));
+                        }}
                         placeholder="e.g. sarah@example.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#D9D6CE] bg-white text-[#18181B] text-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27]/30 focus:border-[#C59B27] transition-all"
+                        className={`w-full px-3.5 py-2.5 rounded-xl border bg-white text-[#18181B] text-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27]/30 focus:border-[#C59B27] transition-all ${
+                          emailInputError ? 'border-red-500 bg-red-50/10' : 'border-[#D9D6CE]'
+                        }`}
                       />
+                      {emailInputError && (
+                        <p className="text-xs text-red-600 mt-1.5 font-medium">{emailInputError}</p>
+                      )}
+                      {emailInputSuggestion && (
+                        <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+                          <span>Did you mean <strong>{emailInputSuggestion}</strong>?</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEmailInput(emailInputSuggestion);
+                              setEmailInputError(null);
+                              setEmailInputSuggestion(null);
+                            }}
+                            className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer focus:outline-none shrink-0"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 

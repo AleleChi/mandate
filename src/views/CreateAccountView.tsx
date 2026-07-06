@@ -5,29 +5,79 @@ import { AuthFormField } from '../components/common/AuthFormField';
 import { authValidation } from '../utils/authValidation';
 import { api, extractApiError } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import { validateEmailSyntax } from '../utils/validation';
+import { Button } from '../components/common/Button';
+
+const generateStrongPassword = (): string => {
+  const lowercase = 'abcdefghijkmnopqrstuvwxyz'; // avoided confusing 'l'
+  const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // avoided confusing 'I', 'O'
+  const numbers = '23456789'; // avoided confusing '0', '1'
+  const symbols = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+  const allChars = lowercase + uppercase + numbers + symbols;
+
+  let password = '';
+  const getRandomChar = (charSet: string): string => {
+    const arr = new Uint32Array(1);
+    window.crypto.getRandomValues(arr);
+    return charSet[arr[0] % charSet.length];
+  };
+
+  password += getRandomChar(lowercase);
+  password += getRandomChar(uppercase);
+  password += getRandomChar(numbers);
+  password += getRandomChar(symbols);
+
+  for (let i = 4; i < 14; i++) {
+    password += getRandomChar(allChars);
+  }
+
+  const passwordArr = password.split('');
+  for (let i = passwordArr.length - 1; i > 0; i--) {
+    const arr = new Uint32Array(1);
+    window.crypto.getRandomValues(arr);
+    const j = arr[0] % (i + 1);
+    const temp = passwordArr[i];
+    passwordArr[i] = passwordArr[j];
+    passwordArr[j] = temp;
+  }
+
+  return passwordArr.join('');
+};
 
 interface CreateAccountViewProps {
   onNavigate: (route: AppRoute) => void;
   onSetParentEmail: (email: string) => void;
   onUpdateProfile?: (profile: any) => void;
+  onSignInSuccess?: (user: any, profile: any) => void;
 }
 
 export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   onNavigate,
   onSetParentEmail,
-  onUpdateProfile
+  onUpdateProfile,
+  onSignInSuccess
 }) => {
   const { showSuccess, showError } = useNotification();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    whatsapp: '',
-    password: '',
-    confirmPassword: ''
+
+  const [formData, setFormData] = useState(() => {
+    const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const emailParam = searchParams.get('email') || '';
+    return {
+      fullName: '',
+      email: emailParam,
+      phone: '',
+      whatsapp: '',
+      password: '',
+      confirmPassword: ''
+    };
   });
+
+  const showNotice = React.useMemo(() => {
+    const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    return !!searchParams.get('email');
+  }, []);
 
   const [agreedToUpdates, setAgreedToUpdates] = useState(false);
 
@@ -52,12 +102,60 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
     agreement: authValidation.agreement(agreedToUpdates)
   };
 
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
+  const [showPasswordNotice, setShowPasswordNotice] = useState(false);
+  const [passwordType, setPasswordType] = useState<'password' | 'text'>('password');
+
+  const handleSuggestPassword = () => {
+    const strongPassword = generateStrongPassword();
+    setFormData((prev) => ({
+      ...prev,
+      password: strongPassword,
+      confirmPassword: strongPassword
+    }));
+    setTouched((prev) => ({
+      ...prev,
+      password: true,
+      confirmPassword: true
+    }));
+    setPasswordType('text');
+    setShowPasswordNotice(true);
+    
+    // Auto-mask after 5 seconds
+    setTimeout(() => {
+      setPasswordType('password');
+    }, 5000);
+  };
+
+  const handleCopyPassword = () => {
+    navigator.clipboard.writeText(formData.password);
+    showSuccess('Copied', 'Password copied to clipboard.');
+  };
+
   const handleBlur = (field: keyof typeof touched) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
+    if (field === 'email') {
+      const res = validateEmailSyntax(formData.email);
+      if (!res.valid && res.suggestion) {
+        const [local] = formData.email.trim().split('@');
+        setEmailSuggestion(`${local}@${res.suggestion}`);
+      } else {
+        setEmailSuggestion(null);
+      }
+    }
   };
 
   const handleChange = (field: keyof typeof formData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    if (field === 'email') {
+      const res = validateEmailSyntax(value);
+      if (!res.valid && res.suggestion) {
+        const [local] = value.trim().split('@');
+        setEmailSuggestion(`${local}@${res.suggestion}`);
+      } else {
+        setEmailSuggestion(null);
+      }
+    }
   };
 
   const handleContinue = async (e: React.FormEvent) => {
@@ -80,7 +178,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
       setLoading(true);
       setErrorMsg(null);
       try {
-        await api.auth.createAccount({
+        const res = await api.auth.createAccount({
           email: formData.email.trim(),
           password: formData.password,
           fullName: formData.fullName.trim(),
@@ -89,7 +187,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
         });
         onSetParentEmail(formData.email.trim());
         if (onUpdateProfile) {
-          onUpdateProfile({
+          onUpdateProfile(res.profile || {
             fullName: formData.fullName.trim(),
             email: formData.email.trim(),
             phone: formData.phone.trim(),
@@ -100,6 +198,9 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
             department: '',
             photoUrl: ''
           });
+        }
+        if (onSignInSuccess) {
+          onSignInSuccess(res.user, res.profile);
         }
         showSuccess('Account created', 'Continue setting up your parent profile.');
         onNavigate('/parent/check-email');
@@ -149,6 +250,12 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
           </p>
         </div>
 
+        {showNotice && (
+          <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-4 rounded-2xl text-sm font-medium mb-6 text-center shadow-sm">
+            Create a parent account to continue.
+          </div>
+        )}
+
         {/* Clean, Aligned, Single-Column Form */}
         <form onSubmit={handleContinue} noValidate className="space-y-5">
           {/* Full name */}
@@ -176,6 +283,11 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
             error={errors.email}
             isValid={!errors.email}
             isTouched={touched.email}
+            suggestion={emailSuggestion || undefined}
+            onApplySuggestion={() => {
+              setFormData(prev => ({ ...prev, email: emailSuggestion! }));
+              setEmailSuggestion(null);
+            }}
           />
 
           {/* Phone number */}
@@ -208,24 +320,54 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
           />
 
           {/* Password */}
-          <AuthFormField
-            id="password"
-            label="Password"
-            type="password"
-            placeholder="Create password"
-            value={formData.password}
-            onChange={(e) => handleChange('password', e.target.value)}
-            onBlur={() => handleBlur('password')}
-            error={errors.password}
-            isValid={!errors.password}
-            isTouched={touched.password}
-          />
+          <div className="space-y-1 relative">
+            <div className="flex justify-between items-center -mb-7 relative z-10">
+              <span className="text-sm font-medium text-[#18181B]"></span>
+              <button
+                type="button"
+                onClick={handleSuggestPassword}
+                className="text-xs font-semibold text-[#B89047] hover:underline focus:outline-none cursor-pointer"
+              >
+                Suggest strong password
+              </button>
+            </div>
+            <AuthFormField
+              id="password"
+              label="Password"
+              type={passwordType}
+              autoComplete="new-password"
+              placeholder="Create password"
+              value={formData.password}
+              onChange={(e) => {
+                handleChange('password', e.target.value);
+                setShowPasswordNotice(false);
+              }}
+              onBlur={() => handleBlur('password')}
+              error={errors.password}
+              isValid={!errors.password}
+              isTouched={touched.password}
+              helperText="Use at least 8 characters with a letter and a number."
+            />
+          </div>
+
+          {showPasswordNotice && (
+            <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-3 rounded-xl text-xs font-medium flex items-center justify-between shadow-sm">
+              <span>Strong password added. Please keep it somewhere safe.</span>
+              <button
+                type="button"
+                onClick={handleCopyPassword}
+                className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer shrink-0"
+              >
+                Copy
+              </button>
+            </div>
+          )}
 
           {/* Confirm password */}
           <AuthFormField
             id="confirmPassword"
             label="Confirm password"
-            type="password"
+            type={passwordType}
             placeholder="Confirm password"
             value={formData.confirmPassword}
             onChange={(e) => handleChange('confirmPassword', e.target.value)}
@@ -283,13 +425,21 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
 
           {/* Primary button */}
           <div className="pt-3">
-            <button
+            <Button
               type="submit"
-              disabled={loading}
-              className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-medium text-base shadow-sm transition-all text-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 disabled:opacity-60"
+              disabled={loading || !(
+                formData.fullName.trim() !== '' && !errors.fullName &&
+                formData.email.trim() !== '' && !errors.email &&
+                formData.phone.trim() !== '' && !errors.phone &&
+                formData.password.trim() !== '' && !errors.password &&
+                formData.confirmPassword.trim() !== '' && !errors.confirmPassword &&
+                agreedToUpdates
+              )}
+              fullWidth
+              size="lg"
             >
               {loading ? 'Creating account...' : 'Continue'}
-            </button>
+            </Button>
           </div>
 
           {/* Secondary text */}

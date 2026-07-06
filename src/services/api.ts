@@ -22,16 +22,20 @@ const FORBIDDEN_WORDS = [
 
 export class ParentApiError extends Error {
   description: string;
-  constructor(message: string, description: string = 'Please try again.') {
+  code?: string;
+  data?: any;
+  constructor(message: string, description: string = 'Please try again.', code?: string, data?: any) {
     super(message);
     this.name = 'ParentApiError';
     this.description = description;
+    this.code = code;
+    this.data = data;
   }
 }
 
-export function extractApiError(err: any): { message: string; description: string } {
+export function extractApiError(err: any): { message: string; description: string; code?: string } {
   if (err instanceof ParentApiError) {
-    return { message: err.message, description: err.description };
+    return { message: err.message, description: err.description, code: err.code };
   }
   const raw = (typeof err === 'string' ? err : err?.message || '').trim();
   if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
@@ -40,9 +44,9 @@ export function extractApiError(err: any): { message: string; description: strin
   const lower = raw.toLowerCase();
   const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
   if (containsForbidden || raw.includes('Request failed (5') || raw.includes('Request failed (4')) {
-    return { message: 'Something went wrong', description: 'Please try again.' };
+    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code };
   }
-  return { message: raw, description: 'Please try again.' };
+  return { message: raw, description: 'Please try again.', code: err?.code };
 }
 
 export const api = {
@@ -99,13 +103,14 @@ export const api = {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const rawError = data.error || `Request failed (${res.status})`;
+      const rawError = data.error || data.message || `Request failed (${res.status})`;
+      const errorCode = data.code;
       const lower = rawError.toLowerCase();
       const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
       if (containsForbidden || res.status >= 500) {
-        throw new ParentApiError('Something went wrong', 'Please try again.');
+        throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data);
       }
-      throw new ParentApiError(rawError, 'Please try again.');
+      throw new ParentApiError(rawError, 'Please try again.', errorCode, data);
     }
     return data as T;
   },

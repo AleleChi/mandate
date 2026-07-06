@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
+import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } from '../utils/validation';
 
 const router = Router();
 router.use(authMiddleware);
@@ -110,6 +111,18 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
   } else if (status === 'withdrawn') {
     frontendStatus = 'Withdrawn';
     statusNote = 'Details withdrawn';
+  } else if (status === 'checked_in') {
+    frontendStatus = 'Checked in';
+    statusNote = 'Successfully checked in';
+  } else if (status === 'inside') {
+    frontendStatus = 'Inside';
+    statusNote = 'Inside the venue';
+  } else if (status === 'picked_up') {
+    frontendStatus = 'Picked up';
+    statusNote = 'Picked up and checked out';
+  } else if (status === 'checked_out') {
+    frontendStatus = 'Checked out';
+    statusNote = 'Checked out';
   }
 
   const resolvedChildPhoto = await resolvePhotoUrlAsync(childRow.photo_file_id);
@@ -222,20 +235,35 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
 
   const emailToUse = (email || req.parentProfile.email || '').trim();
 
-  if (!fullName || !fullName.trim()) return res.status(400).json({ error: 'Full name is required' });
-  if (!emailToUse) return res.status(400).json({ error: 'Email address is required' });
-  if (!phone || !phone.trim()) return res.status(400).json({ error: 'Phone number is required' });
-  if (!whatsapp || !whatsapp.trim()) return res.status(400).json({ error: 'WhatsApp number is required' });
-  if (!homeAddress || !homeAddress.trim()) return res.status(400).json({ error: 'Home address is required' });
-  if (!country || !country.trim()) return res.status(400).json({ error: 'Country is required' });
-  if (!stateRegion || !stateRegion.trim()) return res.status(400).json({ error: 'State / Region is required' });
-  if (!city || !city.trim()) return res.status(400).json({ error: 'City is required' });
-  if (!preferredContact || !preferredContact.trim()) return res.status(400).json({ error: 'Preferred contact is required' });
-  if (!photoUrl || !photoUrl.trim()) return res.status(400).json({ error: 'Profile photo is required' });
+  // Validate the parent profile data
+  const validation = validateParentProfile({
+    fullName,
+    email: emailToUse,
+    phone,
+    whatsapp,
+    homeAddress,
+    country,
+    stateRegion,
+    city,
+    preferredContact,
+    isWorker,
+    department,
+    photoUrl
+  });
 
-  if (isWorker && (!department || !department.trim())) {
-    return res.status(400).json({ error: 'Department is required for Koinonia workers' });
+  if (!validation.valid) {
+    const firstErrKey = Object.keys(validation.errors)[0];
+    const firstErrMsg = validation.errors[firstErrKey].message;
+    return res.status(400).json({
+      success: false,
+      code: 'VALIDATION_FAILED',
+      error: firstErrMsg,
+      errors: validation.errors
+    });
   }
+
+  const cleanPhone = validatePhoneNumber(phone, 'NG').normalizedPhone || phone.trim();
+  const cleanWhatsapp = whatsapp ? (validatePhoneNumber(whatsapp, 'NG').normalizedPhone || whatsapp.trim()) : cleanPhone;
 
   const mediaFileId = await resolveToMediaFileId(photoUrl);
 
@@ -277,8 +305,8 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
   `, [
     fullName.trim(),
     emailToUse,
-    phone.trim(),
-    whatsapp.trim(),
+    cleanPhone,
+    cleanWhatsapp,
     homeAddress.trim(),
     country.trim(),
     stateRegion.trim(),
@@ -489,29 +517,52 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     });
   }
 
-  // Server-side validation rules
-  if (!c.photo_file_id || !c.photo_file_id.trim() || 
-      !c.full_name || !c.full_name.trim() || 
-      !c.gender || 
-      !c.date_of_birth || 
-      !entry.school_class || 
-      !entry.information_confirmed) {
+  // Assemble complete draft object to validate server-side
+  const draftObject = {
+    childDetails: {
+      fullName: c.full_name,
+      gender: c.gender,
+      dateOfBirth: c.date_of_birth,
+      relationshipToChild: c.relationship_to_child,
+      photo: c.photo_file_id
+    },
+    schoolAndAgeGroup: {
+      schoolClass: entry.school_class,
+      schoolName: entry.school_name,
+      previousChildrenProgramme: entry.previous_children_programme,
+      noteToTeam: entry.note_to_team
+    },
+    healthAndSupport: {
+      hasMedicalNotes: entry.has_medical_notes ? 'Yes' : 'No',
+      medicalNotes: entry.medical_notes,
+      needsExtraSupport: entry.needs_extra_support ? 'Yes' : 'No',
+      supportNotes: entry.support_notes,
+      informationConfirmed: Boolean(entry.information_confirmed)
+    },
+    pickup: {
+      pickupType: pickup.pickup_type,
+      pickupPersonPhoto: pickup.photo_file_id,
+      pickupPersonFullName: pickup.full_name,
+      pickupPersonRelationship: pickup.relationship_to_child,
+      pickupPersonPhone: pickup.phone_number,
+      pickupPersonWhatsApp: pickup.whatsapp_number,
+      approvedByParent: Boolean(pickup.approved_by_parent)
+    },
+    review: {
+      detailsConfirmed: true
+    }
+  };
+
+  const childVal = validateChildDraftStep(draftObject, req.parentProfile);
+  if (!childVal.valid) {
+    const firstErrKey = Object.keys(childVal.errors)[0];
+    const firstErrMsg = childVal.errors[firstErrKey].message;
     return res.status(400).json({
       success: false,
-      message: "Please complete the missing details before sending."
+      code: 'VALIDATION_FAILED',
+      message: firstErrMsg || "Please complete the missing details before sending.",
+      errors: childVal.errors
     });
-  }
-
-  if (pickup.pickup_type === 'other_person') {
-    if (!pickup.full_name || !pickup.full_name.trim() || 
-        !pickup.photo_file_id || !pickup.photo_file_id.trim() || 
-        !pickup.phone_number || !pickup.phone_number.trim() || 
-        !pickup.approved_by_parent) {
-      return res.status(400).json({
-        success: false,
-        message: "Please complete the missing details before sending."
-      });
-    }
   }
 
   const now = new Date().toISOString();

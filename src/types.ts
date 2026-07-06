@@ -21,7 +21,8 @@ export type AppRoute =
   | '/parent/status'
   | '/parent/passes'
   | `/parent/children/${string}/status`
-  | `/parent/children/${string}/edit`;
+  | `/parent/children/${string}/edit`
+  | `/parent/children/${string}/pass`;
 
 export type BottomNavTab = 'Home' | 'Children' | 'Status' | 'Passes' | 'Profile';
 
@@ -30,7 +31,7 @@ export interface ChildItem {
   name: string;
   age: number;
   ageGroup: string; // e.g., 'Ages 7 to 9', 'Ages 4 to 6'
-  status: 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected' | 'Withdrawn';
+  status: 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected' | 'Withdrawn' | 'Checked in' | 'Inside' | 'Picked up' | 'Checked out';
   statusNote: string; // e.g., 'Details sent for review', 'Event pass is available'
   photoUrl: string;
   specialNeeds?: string;
