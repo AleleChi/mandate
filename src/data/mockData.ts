@@ -15,10 +15,14 @@ export const initialParentProfile: ParentProfile = {
   phone: '',
   whatsapp: '',
   homeAddress: '',
+  country: '',
+  stateRegion: '',
+  city: '',
   preferredContact: 'WhatsApp',
   isWorker: false,
   department: '',
-  photoUrl: ''
+  photoUrl: '',
+  profileCompletedAt: null
 };
 
 export const initialChildren: ChildItem[] = [];

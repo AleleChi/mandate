@@ -132,6 +132,9 @@ function initSqliteSchema(db: Database.Database) {
       department TEXT,
       photo_file_id TEXT,
       profile_completed_at TEXT,
+      country TEXT,
+      state_region TEXT,
+      city TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -275,6 +278,24 @@ function initSqliteSchema(db: Database.Database) {
   }
 
   try {
+    db.exec(`ALTER TABLE parent_profiles ADD COLUMN country TEXT;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
+  try {
+    db.exec(`ALTER TABLE parent_profiles ADD COLUMN state_region TEXT;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
+  try {
+    db.exec(`ALTER TABLE parent_profiles ADD COLUMN city TEXT;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
+  try {
     db.exec(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0;`);
   } catch (e) {
     // Column likely already exists
@@ -336,6 +357,9 @@ async function initPostgresSchema(pool: any) {
         department VARCHAR(255),
         photo_file_id VARCHAR(64),
         profile_completed_at TIMESTAMP,
+        country VARCHAR(255),
+        state_region VARCHAR(255),
+        city VARCHAR(255),
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -479,6 +503,18 @@ async function initPostgresSchema(pool: any) {
         // Ignore column addition error if any
       }
     }
+
+    try {
+      await pool.query(`ALTER TABLE parent_profiles ADD COLUMN IF NOT EXISTS country VARCHAR(255);`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE parent_profiles ADD COLUMN IF NOT EXISTS state_region VARCHAR(255);`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE parent_profiles ADD COLUMN IF NOT EXISTS city VARCHAR(255);`);
+    } catch (e) {}
 
     try {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER DEFAULT 0;`);

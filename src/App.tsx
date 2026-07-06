@@ -56,6 +56,22 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  const isProfileComplete = (p: ParentProfile | null | undefined): boolean => {
+    if (!p) return false;
+    if (!p.fullName || !p.fullName.trim()) return false;
+    if (!p.email || !p.email.trim()) return false;
+    if (!p.phone || !p.phone.trim()) return false;
+    if (!p.whatsapp || !p.whatsapp.trim()) return false;
+    if (!p.homeAddress || !p.homeAddress.trim()) return false;
+    if (!p.country || !p.country.trim()) return false;
+    if (!p.stateRegion || !p.stateRegion.trim()) return false;
+    if (!p.city || !p.city.trim()) return false;
+    if (!p.preferredContact || !p.preferredContact.trim()) return false;
+    if (!p.photoUrl || !p.photoUrl.trim()) return false;
+    if (p.isWorker && (!p.department || !p.department.trim())) return false;
+    return true;
+  };
+
   const fetchBackendData = async () => {
     if (api.getToken()) {
       try {
@@ -73,6 +89,24 @@ export default function App() {
               }
             }
           }
+
+          // Route Gate inside fetch
+          const cleanRoute = currentRoute.split('?')[0];
+          const allowedRoutes = [
+            '/',
+            '/parent/create-account',
+            '/parent/check-email',
+            '/parent/verify-email',
+            '/parent/sign-in',
+            '/parent/forgot-password',
+            '/parent/new-password',
+            '/parent/profile-setup'
+          ];
+          if (!allowedRoutes.includes(cleanRoute)) {
+            if (!isProfileComplete(homeData.parentProfile)) {
+              navigate('/parent/profile-setup');
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to load home data:', err);
@@ -83,6 +117,31 @@ export default function App() {
   useEffect(() => {
     fetchBackendData();
   }, [currentRoute]);
+
+  useEffect(() => {
+    const checkGate = () => {
+      const token = api.getToken();
+      if (!token) return;
+
+      const cleanRoute = currentRoute.split('?')[0];
+      const allowedRoutes = [
+        '/',
+        '/parent/create-account',
+        '/parent/check-email',
+        '/parent/verify-email',
+        '/parent/sign-in',
+        '/parent/forgot-password',
+        '/parent/new-password',
+        '/parent/profile-setup'
+      ];
+      if (!allowedRoutes.includes(cleanRoute)) {
+        if (parentProfile && parentProfile.email && !isProfileComplete(parentProfile)) {
+          navigate('/parent/profile-setup');
+        }
+      }
+    };
+    checkGate();
+  }, [currentRoute, parentProfile]);
 
   const isValidRoute = (route: string): boolean => {
     const cleanRoute = route.split('?')[0];

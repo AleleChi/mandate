@@ -31,10 +31,44 @@ export const SignInView: React.FC<SignInViewProps> = ({
     setError(null);
     setLoading(true);
     try {
-      await api.auth.signIn({ email: email.trim(), password });
+      const res = await api.auth.signIn({ email: email.trim(), password });
       if (onSetParentEmail) onSetParentEmail(email.trim());
       showSuccess('Welcome back', 'Your parent account is ready.');
-      onNavigate('/parent/home');
+
+      const isProfileComplete = (p: any) => {
+        if (!p) return false;
+        const fullName = p.fullName || p.full_name;
+        const emailVal = p.email;
+        const phone = p.phone || p.phone_number;
+        const whatsapp = p.whatsapp || p.whatsapp_number;
+        const homeAddress = p.homeAddress || p.home_address;
+        const country = p.country;
+        const stateRegion = p.stateRegion || p.state_region;
+        const city = p.city;
+        const preferredContact = p.preferredContact || p.preferred_contact;
+        const hasPhoto = p.photoUrl || p.photo_file_id;
+        const isWorker = p.isWorker === true || p.is_koinonia_worker === 1 || p.is_koinonia_worker === '1';
+        const department = p.department;
+
+        if (!fullName || !fullName.trim()) return false;
+        if (!emailVal || !emailVal.trim()) return false;
+        if (!phone || !phone.trim()) return false;
+        if (!whatsapp || !whatsapp.trim()) return false;
+        if (!homeAddress || !homeAddress.trim()) return false;
+        if (!country || !country.trim()) return false;
+        if (!stateRegion || !stateRegion.trim()) return false;
+        if (!city || !city.trim()) return false;
+        if (!preferredContact || !preferredContact.trim()) return false;
+        if (!hasPhoto || !hasPhoto.trim()) return false;
+        if (isWorker && (!department || !department.trim())) return false;
+        return true;
+      };
+
+      if (isProfileComplete(res.profile)) {
+        onNavigate('/parent/home');
+      } else {
+        onNavigate('/parent/profile-setup');
+      }
     } catch (err: any) {
       const { message } = extractApiError(err);
       const displayError = message.includes('Invalid') || message.includes('User not found') || message.includes('Incorrect')

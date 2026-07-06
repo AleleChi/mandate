@@ -335,6 +335,9 @@ Photos and media are critical for gate safety verification and event operations.
 > **Note on Email Provider (Resend Integration):**
 > Resend is configured as the active transactional email provider over a verified sending subdomain (`EMAIL_PROVIDER=resend`), replacing legacy Gmail SMTP. Frontend bundles must never call Resend directly; all notifications are dispatched server-side via Express routes.
 
+> **Note on Time-Based Greeting:**
+> The parent dashboard greeting ("Good morning/afternoon/evening, [First Name]") is calculated dynamically based on the parent's local browser time (using the user's local system clock via JavaScript's `Date` object in the frontend), ensuring accuracy across different geographical time zones rather than relying on server-side time.
+
 ---
 
 ## 9. Admin Reporting Suite Requirements

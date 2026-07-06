@@ -75,6 +75,21 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const { showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
 
+  const getGreeting = () => {
+    if (!parentProfile || !parentProfile.fullName || !parentProfile.fullName.trim()) {
+      return 'Good morning';
+    }
+    const hour = new Date().getHours();
+    const firstName = parentProfile.fullName.trim().split(/\s+/)[0];
+    let greetingPrefix = 'Good morning';
+    if (hour >= 12 && hour < 17) {
+      greetingPrefix = 'Good afternoon';
+    } else if (hour >= 17 || hour < 4) {
+      greetingPrefix = 'Good evening';
+    }
+    return `${greetingPrefix}, ${firstName}`;
+  };
+
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
@@ -136,7 +151,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-lg sm:text-xl font-medium text-[#18181B] leading-snug">
-              Good evening, {parentProfile.fullName ? parentProfile.fullName.split(' ')[0] : 'Parent'}
+              {getGreeting()}
             </h1>
             <p className="text-sm text-[#3F3F46] mt-1">
               Here is where things stand for your children.
@@ -670,7 +685,28 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         <div>
           <div className="text-xs text-[#6B7280]">Home address</div>
           <div className="text-sm font-semibold text-[#18181B] mt-0.5 leading-relaxed whitespace-pre-line">
-            {parentProfile.homeAddress || '14, Peace Avenue, Gwarinpa Estate,\nAbuja, FCT.'}
+            {parentProfile.homeAddress || 'Not provided'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs text-[#6B7280]">Country</div>
+          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+            {parentProfile.country || 'Not provided'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs text-[#6B7280]">State / Region</div>
+          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+            {parentProfile.stateRegion || 'Not provided'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs text-[#6B7280]">City</div>
+          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+            {parentProfile.city || 'Not provided'}
           </div>
         </div>
 
@@ -679,12 +715,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <div className="bg-[#FAF8F4] border border-[#EAE8E1] rounded-xl p-3.5 space-y-2.5">
             <div className="flex items-center justify-between text-xs sm:text-sm">
               <span className="text-[#3F3F46]">Koinonia worker</span>
-              <span className="font-semibold text-[#18181B]">{parentProfile.isWorker ? 'Yes' : 'Yes'}</span>
+              <span className="font-semibold text-[#18181B]">{parentProfile.isWorker ? 'Yes' : 'No'}</span>
             </div>
-            <div className="flex items-center justify-between text-xs sm:text-sm">
-              <span className="text-[#3F3F46]">Department</span>
-              <span className="font-semibold text-[#18181B]">{parentProfile.department || 'Children Ministry'}</span>
-            </div>
+            {parentProfile.isWorker && (
+              <div className="flex items-center justify-between text-xs sm:text-sm">
+                <span className="text-[#3F3F46]">Department</span>
+                <span className="font-semibold text-[#18181B]">{parentProfile.department || 'Children Ministry'}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

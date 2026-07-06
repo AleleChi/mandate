@@ -110,10 +110,14 @@ export interface ParentProfile {
   phone: string;
   whatsapp: string;
   homeAddress?: string;
+  country?: string;
+  stateRegion?: string;
+  city?: string;
   preferredContact?: 'WhatsApp' | 'Email' | 'Phone call';
   isWorker: boolean;
   department?: string;
   photoUrl?: string;
+  profileCompletedAt?: string | null;
 }
 
 export interface EventDetails {

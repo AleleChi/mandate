@@ -72,10 +72,14 @@ async function mapProfileToFrontend(row: any) {
     phone: row.phone_number || '',
     whatsapp: row.whatsapp_number || row.phone_number || '',
     homeAddress: row.home_address || '',
+    country: row.country || '',
+    stateRegion: row.state_region || '',
+    city: row.city || '',
     preferredContact: (row.preferred_contact as any) || 'WhatsApp',
     isWorker: Boolean(row.is_koinonia_worker),
     department: row.department || '',
-    photoUrl: await resolvePhotoUrlAsync(row.photo_file_id)
+    photoUrl: await resolvePhotoUrlAsync(row.photo_file_id),
+    profileCompletedAt: row.profile_completed_at || null
   };
 }
 
@@ -188,11 +192,34 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     return res.status(404).json({ error: 'Parent profile not found' });
   }
 
-  const { fullName, phone, whatsapp, homeAddress, preferredContact, isWorker, department, photoUrl } = req.body;
+  const {
+    fullName,
+    email,
+    phone,
+    whatsapp,
+    homeAddress,
+    country,
+    stateRegion,
+    city,
+    preferredContact,
+    isWorker,
+    department,
+    photoUrl
+  } = req.body;
+
+  const emailToUse = (email || req.parentProfile.email || '').trim();
 
   if (!fullName || !fullName.trim()) return res.status(400).json({ error: 'Full name is required' });
+  if (!emailToUse) return res.status(400).json({ error: 'Email address is required' });
   if (!phone || !phone.trim()) return res.status(400).json({ error: 'Phone number is required' });
+  if (!whatsapp || !whatsapp.trim()) return res.status(400).json({ error: 'WhatsApp number is required' });
+  if (!homeAddress || !homeAddress.trim()) return res.status(400).json({ error: 'Home address is required' });
+  if (!country || !country.trim()) return res.status(400).json({ error: 'Country is required' });
+  if (!stateRegion || !stateRegion.trim()) return res.status(400).json({ error: 'State / Region is required' });
+  if (!city || !city.trim()) return res.status(400).json({ error: 'City is required' });
+  if (!preferredContact || !preferredContact.trim()) return res.status(400).json({ error: 'Preferred contact is required' });
   if (!photoUrl || !photoUrl.trim()) return res.status(400).json({ error: 'Profile photo is required' });
+
   if (isWorker && (!department || !department.trim())) {
     return res.status(400).json({ error: 'Department is required for Koinonia workers' });
   }
@@ -200,29 +227,54 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
   const mediaFileId = await resolveToMediaFileId(photoUrl);
 
   const now = new Date().toISOString();
+
+  // All required fields check
+  const isProfileComplete =
+    fullName && fullName.trim() &&
+    emailToUse &&
+    phone && phone.trim() &&
+    whatsapp && whatsapp.trim() &&
+    homeAddress && homeAddress.trim() &&
+    country && country.trim() &&
+    stateRegion && stateRegion.trim() &&
+    city && city.trim() &&
+    preferredContact && preferredContact.trim() &&
+    mediaFileId &&
+    (!isWorker || (department && department.trim()));
+
+  const completedAtValue = isProfileComplete ? (req.parentProfile.profile_completed_at || now) : null;
+
   await execute(`
     UPDATE parent_profiles SET
       full_name = ?,
+      email = ?,
       phone_number = ?,
       whatsapp_number = ?,
       home_address = ?,
+      country = ?,
+      state_region = ?,
+      city = ?,
       preferred_contact = ?,
       is_koinonia_worker = ?,
       department = ?,
       photo_file_id = ?,
-      profile_completed_at = COALESCE(profile_completed_at, ?),
+      profile_completed_at = ?,
       updated_at = ?
     WHERE id = ?
   `, [
     fullName.trim(),
+    emailToUse,
     phone.trim(),
-    whatsapp?.trim() || phone.trim(),
-    homeAddress?.trim() || '',
-    preferredContact || 'WhatsApp',
+    whatsapp.trim(),
+    homeAddress.trim(),
+    country.trim(),
+    stateRegion.trim(),
+    city.trim(),
+    preferredContact,
     isWorker ? 1 : 0,
     isWorker ? department.trim() : '',
     mediaFileId,
-    now,
+    completedAtValue,
     now,
     req.parentProfile.id
   ]);
