@@ -5,12 +5,14 @@ import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { api } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface ForgotPasswordViewProps {
   onNavigate: (route: AppRoute) => void;
 }
 
 export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNavigate }) => {
+  const { showSuccess } = useNotification();
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -26,6 +28,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
       } finally {
         setLoading(false);
         setSubmitted(true);
+        showSuccess('Check your email', 'We sent instructions to reset your password.');
       }
     }
   };

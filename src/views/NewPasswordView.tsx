@@ -4,12 +4,14 @@ import { MobileShell } from '../components/common/MobileShell';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { Lock, ShieldCheck } from 'lucide-react';
+import { useNotification } from '../context/NotificationContext';
 
 interface NewPasswordViewProps {
   onNavigate: (route: AppRoute) => void;
 }
 
 export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) => {
+  const { showSuccess } = useNotification();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +29,7 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
     }
     setError(null);
     setSuccess(true);
+    showSuccess('Password changed', 'Your new password is ready.');
     setTimeout(() => {
       onNavigate('/parent/sign-in');
     }, 1500);

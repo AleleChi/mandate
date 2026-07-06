@@ -3,7 +3,8 @@ import { ArrowLeft, Check, AlertCircle } from 'lucide-react';
 import { AppRoute } from '../types';
 import { AuthFormField } from '../components/common/AuthFormField';
 import { authValidation } from '../utils/authValidation';
-import { api } from '../services/api';
+import { api, extractApiError } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface CreateAccountViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -16,6 +17,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   onSetParentEmail,
   onUpdateProfile
 }) => {
+  const { showSuccess, showError } = useNotification();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -99,9 +101,12 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
             photoUrl: ''
           });
         }
+        showSuccess('Account created', 'Continue setting up your parent profile.');
         onNavigate('/parent/check-email');
       } catch (err: any) {
-        setErrorMsg(err.message || 'Failed to create account');
+        const { message, description } = extractApiError(err);
+        setErrorMsg(message);
+        showError(message, description);
       } finally {
         setLoading(false);
       }

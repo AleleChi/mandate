@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppRoute, AddChildDraft, ParentProfile } from '../types';
 import { ArrowLeft, Check, Camera, ShieldCheck } from 'lucide-react';
 import { api } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface AddChildStep4ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -16,6 +17,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
   parentProfile,
   onSaveDraft
 }) => {
+  const { showSuccess, showError } = useNotification();
   const [pickupType, setPickupType] = useState<'parent' | 'other_person'>(
     draft?.pickup?.pickupType || draft?.pickupType || 'parent'
   );
@@ -99,8 +101,10 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           };
           reader.readAsDataURL(file);
         }
+        showSuccess('Photo added', 'The photo has been saved.');
       } catch (err: any) {
-        setErrors((prev) => ({ ...prev, pickupPersonPhotoUrl: err.message || 'Failed to upload photo' }));
+        showError('Photo could not be uploaded', 'Please choose another photo and try again.');
+        setErrors((prev) => ({ ...prev, pickupPersonPhotoUrl: 'Failed to upload photo' }));
       }
     }
   };

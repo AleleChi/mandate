@@ -33,7 +33,7 @@ export function getDb() {
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    const dbPath = path.join(dataDir, 'koinonia.db');
+    const dbPath = path.join(dataDir, 'koinonia-dev.sqlite');
     sqliteDb = new Database(dbPath);
     sqliteDb.pragma('journal_mode = WAL');
     sqliteDb.pragma('foreign_keys = ON');
@@ -45,7 +45,7 @@ export function getDb() {
 
 function convertPlaceholders(sql: string): string {
   let idx = 1;
-  return sql.replace(/\?/g, () => `${idx++}`);
+  return sql.replace(/\?/g, () => `$${idx++}`);
 }
 
 export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
@@ -114,6 +114,7 @@ function initSqliteSchema(db: Database.Database) {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'parent',
+      email_verified INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -240,6 +241,7 @@ function initSqliteSchema(db: Database.Database) {
       token_hash TEXT NOT NULL UNIQUE,
       token_type TEXT NOT NULL,
       expires_at TEXT NOT NULL,
+      used_at TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -270,6 +272,18 @@ function initSqliteSchema(db: Database.Database) {
     } catch (e) {
       // Column likely already exists
     }
+  }
+
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
+  try {
+    db.exec(`ALTER TABLE auth_tokens ADD COLUMN used_at TEXT;`);
+  } catch (e) {
+    // Column likely already exists
   }
 
   // Seed real approved event
@@ -304,6 +318,7 @@ async function initPostgresSchema(pool: any) {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255),
         role VARCHAR(64) NOT NULL DEFAULT 'parent',
+        email_verified INTEGER DEFAULT 0,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -430,6 +445,7 @@ async function initPostgresSchema(pool: any) {
         token_hash VARCHAR(255) NOT NULL UNIQUE,
         token_type VARCHAR(64) NOT NULL,
         expires_at TIMESTAMP NOT NULL,
+        used_at TIMESTAMP,
         created_at TIMESTAMP NOT NULL
       );
 
@@ -463,6 +479,14 @@ async function initPostgresSchema(pool: any) {
         // Ignore column addition error if any
       }
     }
+
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER DEFAULT 0;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMP;`);
+    } catch (e) {}
 
     const now = new Date().toISOString();
     await pool.query(`

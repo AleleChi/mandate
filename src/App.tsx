@@ -6,10 +6,12 @@
 import { useState, useEffect } from 'react';
 import { AppRoute, ChildItem, ParentProfile } from './types';
 import { initialChildren, initialParentProfile } from './data/mockData';
-import { api } from './services/api';
+import { api, extractApiError } from './services/api';
+import { useNotification } from './context/NotificationContext';
 import { LandingPage } from './views/LandingPage';
 import { CreateAccountView } from './views/CreateAccountView';
 import { CheckEmailView } from './views/CheckEmailView';
+import { VerifyEmailView } from './views/VerifyEmailView';
 import { SignInView } from './views/SignInView';
 import { ForgotPasswordView } from './views/ForgotPasswordView';
 import { NewPasswordView } from './views/NewPasswordView';
@@ -26,6 +28,7 @@ import { DevNavigator } from './components/common/DevNavigator';
 import { AddChildDraft } from './types';
 
 export default function App() {
+  const { showSuccess, showError } = useNotification();
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('/');
   const [parentEmail, setParentEmail] = useState<string>('');
   const [parentProfile, setParentProfile] = useState<ParentProfile>(initialParentProfile);
@@ -37,7 +40,12 @@ export default function App() {
   // Sync route with URL hash for easy browser bookmarking/testing
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
+      let hash = window.location.hash;
+      // Strip all leading '#' and ensure there is exactly one leading '/'
+      hash = hash.replace(/^#+/, '');
+      if (!hash.startsWith('/')) {
+        hash = '/' + hash;
+      }
       if (hash && isValidRoute(hash)) {
         setCurrentRoute(hash as AppRoute);
       }
@@ -57,6 +65,13 @@ export default function App() {
           setParentEmail(homeData.parentProfile.email || '');
           if (Array.isArray(homeData.childrenList)) {
             setChildrenList(homeData.childrenList);
+            const activeId = localStorage.getItem('koinonia_active_draft_id');
+            if (activeId) {
+              const matched = homeData.childrenList.find((c) => c.id === activeId);
+              if (matched && matched.draftData) {
+                setAddChildDraft(matched.draftData);
+              }
+            }
           }
         }
       } catch (err) {
@@ -70,12 +85,14 @@ export default function App() {
   }, [currentRoute]);
 
   const isValidRoute = (route: string): boolean => {
-    if (route.startsWith('/parent/children/') && route.endsWith('/status')) return true;
-    if (route.startsWith('/parent/children/') && route.endsWith('/edit')) return true;
+    const cleanRoute = route.split('?')[0];
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) return true;
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
     const validRoutes: string[] = [
       '/',
       '/parent/create-account',
       '/parent/check-email',
+      '/parent/verify-email',
       '/parent/sign-in',
       '/parent/forgot-password',
       '/parent/new-password',
@@ -94,7 +111,7 @@ export default function App() {
       '/parent/status',
       '/parent/passes'
     ];
-    return validRoutes.includes(route);
+    return validRoutes.includes(cleanRoute);
   };
 
   const navigate = (route: AppRoute | string) => {
@@ -107,13 +124,31 @@ export default function App() {
     setChildrenList((prev) => [newChild, ...prev]);
   };
 
+  const handleSignOut = async () => {
+    try {
+      await api.auth.signOut();
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
+    setParentProfile(initialParentProfile);
+    setChildrenList([]);
+    setAddChildDraft(null);
+    localStorage.removeItem('koinonia_active_draft_id');
+    navigate('/');
+    showSuccess('Signed out', 'You have been successfully signed out.');
+  };
+
   const handleSaveDraft = async (draft: AddChildDraft, isFinishLater?: boolean) => {
     setAddChildDraft(draft);
+    if (draft.id) {
+      localStorage.setItem('koinonia_active_draft_id', draft.id);
+    }
     if (api.getToken()) {
       try {
         const savedChild = await api.parent.saveChildDraft(draft, draft.id);
         if (savedChild && savedChild.id) {
           draft.id = savedChild.id;
+          localStorage.setItem('koinonia_active_draft_id', savedChild.id);
           if (savedChild.draftData) setAddChildDraft(savedChild.draftData);
           setChildrenList((prev) => {
             const existingIdx = prev.findIndex((c) => c.id === savedChild.id);
@@ -124,9 +159,17 @@ export default function App() {
             }
             return [savedChild, ...prev];
           });
+          if (isFinishLater) {
+            showSuccess('Progress saved', 'You can continue later from Home.');
+          } else {
+            showSuccess('Progress saved');
+          }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error('Failed to save draft to backend:', e);
+        if (isFinishLater) {
+          showError('Something went wrong', 'We could not save your progress.');
+        }
       }
     } else if (isFinishLater) {
       const name = (draft.childDetails?.fullName || draft.fullName || '').trim();
@@ -161,6 +204,7 @@ export default function App() {
           return [draftChild, ...prev];
         });
       }
+      showSuccess('Progress saved', 'You can continue later from Home.');
     }
   };
 
@@ -169,6 +213,8 @@ export default function App() {
     const ageVal = draft.childDetails?.calculatedAge !== undefined ? draft.childDetails.calculatedAge : draft.age;
     const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
     const photoVal = draft.childDetails?.photo || draft.photoUrl || '';
+
+    localStorage.removeItem('koinonia_active_draft_id');
 
     if (api.getToken() && draft.id) {
       try {
@@ -184,9 +230,12 @@ export default function App() {
           return [reviewedChild, ...prev];
         });
         setAddChildDraft(null);
+        showSuccess('Details sent for review', 'You will receive an update when there is a decision.');
         return;
       } catch (e: any) {
         console.error('Submit review error:', e);
+        const { message, description } = extractApiError(e);
+        showError(message, description);
       }
     }
 
@@ -219,9 +268,13 @@ export default function App() {
       return [reviewedChild, ...prev];
     });
     setAddChildDraft(null);
+    showSuccess('Details sent for review', 'You will receive an update when there is a decision.');
   };
 
   const handleEditChild = (child: ChildItem) => {
+    if (child.id) {
+      localStorage.setItem('koinonia_active_draft_id', child.id);
+    }
     if (child.draftData) {
       setAddChildDraft(child.draftData);
     } else {
@@ -240,11 +293,15 @@ export default function App() {
   };
 
   const handleStartNewChild = () => {
+    localStorage.removeItem('koinonia_active_draft_id');
     setAddChildDraft(null);
     navigate('/parent/children/new');
   };
 
   const handleResumeChildDraft = (child: ChildItem) => {
+    if (child.id) {
+      localStorage.setItem('koinonia_active_draft_id', child.id);
+    }
     if (child.draftData) {
       setAddChildDraft(child.draftData);
     } else {
@@ -272,8 +329,9 @@ export default function App() {
   };
 
   const renderCurrentRoute = () => {
-    if (currentRoute === '/parent/status' || (currentRoute.startsWith('/parent/children/') && currentRoute.endsWith('/status'))) {
-      const parts = currentRoute.split('/');
+    const cleanRoute = currentRoute.split('?')[0];
+    if (cleanRoute === '/parent/status' || (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))) {
+      const parts = cleanRoute.split('/');
       const childIdParam = parts.length >= 4 && parts[3] !== 'review-sent' && parts[3] !== 'new' ? parts[3] : undefined;
       return (
         <ChildStatusView
@@ -286,7 +344,7 @@ export default function App() {
       );
     }
 
-    if (currentRoute.startsWith('/parent/children/') && currentRoute.endsWith('/edit')) {
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) {
       return (
         <AddChildStep5View
           onNavigate={navigate}
@@ -298,7 +356,7 @@ export default function App() {
       );
     }
 
-    switch (currentRoute) {
+    switch (cleanRoute) {
       case '/':
         return (
           <LandingPage
@@ -320,6 +378,12 @@ export default function App() {
           <CheckEmailView
             onNavigate={navigate}
             parentEmail={parentEmail}
+          />
+        );
+      case '/parent/verify-email':
+        return (
+          <VerifyEmailView
+            onNavigate={navigate}
           />
         );
       case '/parent/sign-in':
@@ -362,6 +426,7 @@ export default function App() {
             onAddChild={handleAddChild}
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
             initialTab="Home"
           />
         );
@@ -374,6 +439,7 @@ export default function App() {
             onAddChild={handleAddChild}
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
             initialTab="Profile"
           />
         );
@@ -386,6 +452,7 @@ export default function App() {
             onAddChild={handleAddChild}
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
             initialTab="Children"
           />
         );
@@ -450,6 +517,7 @@ export default function App() {
             onAddChild={handleAddChild}
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
             initialTab="Passes"
           />
         );

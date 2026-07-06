@@ -2,6 +2,7 @@ export type AppRoute =
   | '/'
   | '/parent/create-account'
   | '/parent/check-email'
+  | '/parent/verify-email'
   | '/parent/sign-in'
   | '/parent/forgot-password'
   | '/parent/new-password'

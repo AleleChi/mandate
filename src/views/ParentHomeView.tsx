@@ -5,6 +5,7 @@ import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
+import { useNotification } from '../context/NotificationContext';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -14,6 +15,7 @@ interface ParentHomeViewProps {
   onStartNewChild?: () => void;
   onResumeChildDraft?: (child: ChildItem) => void;
   initialTab?: BottomNavTab;
+  onSignOut?: () => void;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -67,8 +69,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   onAddChild,
   onStartNewChild,
   onResumeChildDraft,
-  initialTab
+  initialTab,
+  onSignOut
 }) => {
+  const { showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
 
   useEffect(() => {
@@ -466,6 +470,26 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               photoUrl={isRealUploadedPhoto(displayChild.photoUrl) ? displayChild.photoUrl : undefined}
             />
 
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => showInfo('Pass saving is not ready yet', 'You can still show this pass from the app.')}
+                className="flex-1 py-2.5 px-4 rounded-2xl bg-[#18181B] text-white text-xs font-semibold hover:bg-[#27272A] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+              >
+                <span>Save pass</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  showInfo('Opening WhatsApp', 'You can share the pass from there.');
+                }}
+                className="flex-1 py-2.5 px-4 rounded-2xl bg-white border border-[#EAE8E1] text-[#18181B] text-xs font-semibold hover:bg-[#FAF9F6] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-2xs"
+              >
+                <MessageCircle className="w-4 h-4 text-[#B89047]" />
+                <span>Share to WhatsApp</span>
+              </button>
+            </div>
+
             {childrenList.length > 1 && (
               <div className="space-y-2">
                 <span className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Switch child pass</span>
@@ -740,7 +764,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         <button
           type="button"
-          onClick={() => onNavigate('/')}
+          onClick={() => {
+            if (onSignOut) {
+              onSignOut();
+            } else {
+              onNavigate('/');
+            }
+          }}
           className="w-full p-4 flex items-center space-x-3.5 hover:bg-[#FEF2F2]/50 transition-colors cursor-pointer focus:outline-none text-left"
         >
           <LogOut className="w-4 h-4 text-[#C53030] stroke-[1.75]" />

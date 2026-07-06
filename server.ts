@@ -17,6 +17,32 @@ async function startServer() {
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+  // CORS middleware supporting CORS_ORIGIN and APP_BASE_URL
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const allowedOrigin = process.env.CORS_ORIGIN || process.env.APP_BASE_URL;
+    if (allowedOrigin) {
+      if (allowedOrigin === '*' || origin === allowedOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      } else {
+        // Fallback: if not matched but in development, allow it
+        if (process.env.NODE_ENV !== 'production') {
+          res.setHeader('Access-Control-Allow-Origin', origin || '*');
+        } else {
+          res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+        }
+      }
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   // API Routes FIRST
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

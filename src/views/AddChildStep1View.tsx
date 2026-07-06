@@ -3,6 +3,7 @@ import { AppRoute, AddChildDraft } from '../types';
 import { ArrowLeft, Camera, ChevronDown, Calendar, Info } from 'lucide-react';
 import { PremiumSelect } from '../components/common/PremiumSelect';
 import { api } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -15,6 +16,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
   initialDraft,
   onSaveDraft
 }) => {
+  const { showSuccess, showError } = useNotification();
   const [photoUrl, setPhotoUrl] = useState<string>(
     initialDraft?.childDetails?.photo || initialDraft?.photoUrl || ''
   );
@@ -53,8 +55,10 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           };
           reader.readAsDataURL(file);
         }
+        showSuccess('Photo added', 'The photo has been saved.');
       } catch (err: any) {
-        setErrors((prev) => ({ ...prev, photo: err.message || 'Failed to upload photo' }));
+        showError('Photo could not be uploaded', 'Please choose another photo and try again.');
+        setErrors((prev) => ({ ...prev, photo: 'Failed to upload photo' }));
       } finally {
         setIsUploadingPhoto(false);
       }

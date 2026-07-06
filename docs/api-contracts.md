@@ -36,6 +36,31 @@ Authenticates an existing parent user.
 ### GET `/api/auth/me`
 Retrieves current authenticated user and profile session. Requires `Authorization: Bearer <token>`.
 
+### POST `/api/auth/verify-email`
+Verifies a secure token hash, marks the user's email as verified, and sets the token as used.
+- **Request Body**:
+  ```json
+  { "token": "raw-hex-token-string" }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  { "success": true, "message": "Email verified successfully." }
+  ```
+- **Error Responses**:
+  - `400 Bad Request`: Token is missing, expired, already used, or invalid.
+  - `500 Internal Server Error`: Safe generic response for server-side exceptions.
+
+### POST `/api/auth/resend-verification`
+Generates a new verification token and dispatches a link to the parent's email.
+- **Request Body**:
+  ```json
+  { "email": "parent@example.com" }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  { "success": true, "message": "Verification link has been sent." }
+  ```
+
 ### POST `/api/auth/forgot-password`
 Dispatches a password reset notification email if the email exists.
 - **Request Body**:

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppRoute, ParentProfile } from '../types';
 import { ArrowLeft, Camera, Info } from 'lucide-react';
-import { api } from '../services/api';
+import { api, extractApiError } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface ProfileSetupViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -16,6 +17,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   onUpdateProfile,
   mode = 'onboarding'
 }) => {
+  const { showSuccess, showError } = useNotification();
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string>(initialProfile.photoUrl || '');
@@ -136,8 +138,10 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           reader.readAsDataURL(file);
         }
         setTouched((prev) => ({ ...prev, photoUrl: true }));
+        showSuccess('Photo added', 'The photo has been saved.');
       } catch (err: any) {
-        setErrorMsg(err.message || 'Failed to upload photo');
+        showError('Photo could not be uploaded', 'Please choose another photo and try again.');
+        setErrorMsg('Failed to upload photo');
       } finally {
         setIsUploadingPhoto(false);
       }
@@ -194,21 +198,26 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
       department: isWorker ? department.trim() : ''
     };
 
-    onUpdateProfile(updatedProfile);
-
     setSaving(true);
     setErrorMsg(null);
     try {
       if (api.getToken()) {
-        await api.parent.updateProfile(updatedProfile);
+        const res = await api.parent.updateProfile(updatedProfile);
+        onUpdateProfile(res);
+      } else {
+        onUpdateProfile(updatedProfile);
       }
       if (mode === 'edit') {
+        showSuccess('Profile updated', 'Your details have been saved.');
         onNavigate('/parent/profile');
       } else {
+        showSuccess('Profile saved', 'Your details have been updated.');
         onNavigate('/parent/home');
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save profile');
+      const { message } = extractApiError(err);
+      setErrorMsg(message);
+      showError('We could not save your profile', 'Please check your connection and try again.');
     } finally {
       setSaving(false);
     }

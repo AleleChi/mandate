@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppRoute, AddChildDraft, ParentProfile } from '../types';
 import { ArrowLeft, Check, Send, Info, AlertCircle } from 'lucide-react';
+import { useNotification } from '../context/NotificationContext';
 
 interface AddChildStep5ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -17,6 +18,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   onSubmitReview,
   onSaveDraft
 }) => {
+  const { showError } = useNotification();
   const [isConfirmed, setIsConfirmed] = useState<boolean>(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -96,6 +98,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      showError('Details could not be sent', 'Please review the required fields and try again.');
       return;
     }
 

@@ -35,15 +35,36 @@ function calculateAgeAndGroup(dobStr: string) {
   return { calculatedAge: age, ageGroup, needsAgeReview };
 }
 
-function resolvePhotoUrl(photoRef?: string | null): string {
+async function resolvePhotoUrlAsync(photoRef?: string | null): Promise<string> {
   if (!photoRef) return '';
   if (photoRef.startsWith('http://') || photoRef.startsWith('https://') || photoRef.startsWith('/') || photoRef.startsWith('data:')) {
     return photoRef;
   }
+  const media = await queryOne('SELECT secure_url, file_url FROM media_files WHERE id = ?', [photoRef]);
+  if (media) {
+    return media.secure_url || media.file_url || `/api/media/files/${photoRef}`;
+  }
   return `/api/media/files/${photoRef}`;
 }
 
-function mapProfileToFrontend(row: any) {
+async function resolveToMediaFileId(photoRef?: string | null): Promise<string> {
+  if (!photoRef) return '';
+  const ref = photoRef.trim();
+  if (!ref.startsWith('http://') && !ref.startsWith('https://') && !ref.startsWith('/') && !ref.startsWith('data:')) {
+    return ref;
+  }
+  const fileIdMatch = ref.match(/\/api\/media\/files\/([a-zA-Z0-9-]+)/);
+  if (fileIdMatch && fileIdMatch[1]) {
+    return fileIdMatch[1];
+  }
+  const matchingMedia = await queryOne('SELECT id FROM media_files WHERE secure_url = ? OR file_url = ?', [ref, ref]);
+  if (matchingMedia) {
+    return matchingMedia.id;
+  }
+  return ref;
+}
+
+async function mapProfileToFrontend(row: any) {
   if (!row) return null;
   return {
     fullName: row.full_name || '',
@@ -54,11 +75,11 @@ function mapProfileToFrontend(row: any) {
     preferredContact: (row.preferred_contact as any) || 'WhatsApp',
     isWorker: Boolean(row.is_koinonia_worker),
     department: row.department || '',
-    photoUrl: resolvePhotoUrl(row.photo_file_id)
+    photoUrl: await resolvePhotoUrlAsync(row.photo_file_id)
   };
 }
 
-function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) {
+async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) {
   const status = entryRow ? entryRow.status : 'incomplete';
   let frontendStatus: any = 'Incomplete';
   let statusNote = 'Continue entering child details';
@@ -80,8 +101,8 @@ function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) {
     statusNote = 'Not selected for this session';
   }
 
-  const resolvedChildPhoto = resolvePhotoUrl(childRow.photo_file_id);
-  const resolvedPickupPhoto = resolvePhotoUrl(pickupRow?.photo_file_id);
+  const resolvedChildPhoto = await resolvePhotoUrlAsync(childRow.photo_file_id);
+  const resolvedPickupPhoto = await resolvePhotoUrlAsync(pickupRow?.photo_file_id);
 
   const draftData = {
     id: childRow.id,
@@ -150,7 +171,7 @@ async function getFullChildrenList(parentProfileId: string) {
   for (const c of children) {
     const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, REAL_EVENT_ID]);
     const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
-    list.push(mapChildToFrontend(c, entry, pickup));
+    list.push(await mapChildToFrontend(c, entry, pickup));
   }
   return list;
 }
@@ -159,7 +180,7 @@ router.get('/profile', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) {
     return res.status(404).json({ error: 'Parent profile not found' });
   }
-  res.json(mapProfileToFrontend(req.parentProfile));
+  res.json(await mapProfileToFrontend(req.parentProfile));
 });
 
 router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
@@ -175,6 +196,8 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
   if (isWorker && (!department || !department.trim())) {
     return res.status(400).json({ error: 'Department is required for Koinonia workers' });
   }
+
+  const mediaFileId = await resolveToMediaFileId(photoUrl);
 
   const now = new Date().toISOString();
   await execute(`
@@ -198,7 +221,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     preferredContact || 'WhatsApp',
     isWorker ? 1 : 0,
     isWorker ? department.trim() : '',
-    photoUrl.trim(),
+    mediaFileId,
     now,
     now,
     req.parentProfile.id
@@ -206,7 +229,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
 
   const updated = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [req.parentProfile.id]);
   req.parentProfile = updated;
-  res.json(mapProfileToFrontend(updated));
+  res.json(await mapProfileToFrontend(updated));
 });
 
 router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
@@ -220,7 +243,7 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
   const passReadyCount = list.filter(c => c.status === 'Pass ready').length;
 
   res.json({
-    parentProfile: mapProfileToFrontend(req.parentProfile),
+    parentProfile: await mapProfileToFrontend(req.parentProfile),
     childrenCount,
     underReviewCount,
     passReadyCount,
@@ -251,6 +274,8 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
   const photo = draft.childDetails?.photo || draft.photoUrl || '';
   const relationship = draft.childDetails?.relationshipToChild || draft.relationship || 'Parent';
 
+  const childPhotoId = await resolveToMediaFileId(photo);
+
   const { calculatedAge, ageGroup, needsAgeReview } = calculateAgeAndGroup(dob);
 
   await transaction(async () => {
@@ -261,12 +286,12 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
           full_name = ?, gender = ?, date_of_birth = ?, calculated_age = ?,
           age_group = ?, relationship_to_child = ?, photo_file_id = ?, needs_age_review = ?, updated_at = ?
         WHERE id = ?
-      `, [fullName, gender, dob, calculatedAge, ageGroup, relationship, photo, needsAgeReview ? 1 : 0, now, childId]);
+      `, [fullName, gender, dob, calculatedAge, ageGroup, relationship, childPhotoId, needsAgeReview ? 1 : 0, now, childId]);
     } else {
       await execute(`
         INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, relationship_to_child, photo_file_id, needs_age_review, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [childId, req.parentProfile!.id, fullName, gender, dob, calculatedAge, ageGroup, relationship, photo, needsAgeReview ? 1 : 0, now, now]);
+      `, [childId, req.parentProfile!.id, fullName, gender, dob, calculatedAge, ageGroup, relationship, childPhotoId, needsAgeReview ? 1 : 0, now, now]);
     }
 
     const entryId = crypto.randomUUID();
@@ -307,18 +332,20 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     const pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickupPersonWhatsapp || '';
     const pickupAppr = draft.pickup?.approvedByParent || draft.pickupPersonApproved ? 1 : 0;
 
+    const pickupPhotoId = await resolveToMediaFileId(pickupPhoto);
+
     const existingPickup = await queryOne('SELECT id FROM pickup_people WHERE child_event_entry_id = ?', [actualEntryId]);
     if (existingPickup) {
       await execute(`
         UPDATE pickup_people SET
           pickup_type = ?, full_name = ?, relationship_to_child = ?, phone_number = ?, whatsapp_number = ?, photo_file_id = ?, approved_by_parent = ?, updated_at = ?
         WHERE id = ?
-      `, [pickupType, pickupName, pickupRel, pickupPhone, pickupWa, pickupPhoto, pickupAppr, now, existingPickup.id]);
+      `, [pickupType, pickupName, pickupRel, pickupPhone, pickupWa, pickupPhotoId, pickupAppr, now, existingPickup.id]);
     } else {
       await execute(`
         INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, photo_file_id, approved_by_parent, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [crypto.randomUUID(), actualEntryId, pickupType, pickupName, pickupRel, pickupPhone, pickupWa, pickupPhoto, pickupAppr, now, now]);
+      `, [crypto.randomUUID(), actualEntryId, pickupType, pickupName, pickupRel, pickupPhone, pickupWa, pickupPhotoId, pickupAppr, now, now]);
     }
   });
 
@@ -326,7 +353,7 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
   const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
   const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
 
-  return mapChildToFrontend(c, entry, pickup);
+  return await mapChildToFrontend(c, entry, pickup);
 }
 
 async function saveDraftHelper(req: AuthenticatedRequest, res: Response) {
@@ -405,7 +432,7 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   if (req.user && req.user.email) {
     sendChildReviewReceivedEmail(req.user.email, c.full_name).catch(() => {});
   }
-  res.json(mapChildToFrontend(c, updatedEntry, pickup));
+  res.json(await mapChildToFrontend(c, updatedEntry, pickup));
 });
 
 router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: Response) => {
@@ -423,7 +450,7 @@ router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: R
   const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
   const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
 
-  res.json(mapChildToFrontend(c, entry, pickup));
+  res.json(await mapChildToFrontend(c, entry, pickup));
 });
 
 router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Response) => {
@@ -459,7 +486,7 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   }
 
   const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
-  const mappedChild = mapChildToFrontend(c, entry, pickup);
+  const mappedChild = await mapChildToFrontend(c, entry, pickup);
 
   res.json({
     passReference: pass.pass_reference,

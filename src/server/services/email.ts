@@ -161,16 +161,20 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 /**
  * 1. Email verification
  */
-export async function sendEmailVerificationEmail(parentEmail: string, verificationLink: string): Promise<SendEmailResult> {
+export async function sendEmailVerificationEmail(parentEmail: string, verificationLink: string, fullName?: string): Promise<SendEmailResult> {
   const subject = 'Verify your email for Koinonia Children and Teens';
   
+  const cleanName = fullName?.trim() || '';
+  const firstName = cleanName.split(/\s+/)[0];
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  
   const bodyHtml = `
-    <p style="margin-top: 0;">Hello,</p>
-    <p>Welcome to Koinonia Children and Teens. Please verify your email address to complete setting up your Parent Access.</p>
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>Welcome to Koinonia Children and Teens. Please verify your email address to continue setting up your Parent Access.</p>
     <p>Click the button below to verify your email:</p>
   `;
   
-  const text = `Hello,\n\nWelcome to Koinonia Children and Teens. Please verify your email address to complete setting up your Parent Access.\n\nVerify your email here: ${verificationLink}\n\nThank you,\nKoinonia Children and Teens`;
+  const text = `${greeting}\n\nWelcome to Koinonia Children and Teens. Please verify your email address to continue setting up your Parent Access.\n\nVerify your email here: ${verificationLink}\n\nThank you,\nKoinonia Children and Teens`;
 
   const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Verify Email Address', url: verificationLink });
 

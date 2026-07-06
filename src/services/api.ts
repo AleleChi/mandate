@@ -1,5 +1,48 @@
 const TOKEN_KEY = 'koinonia_token';
 
+const FORBIDDEN_WORDS = [
+  'validation',
+  'database',
+  'server',
+  'api',
+  'token',
+  'workflow',
+  'portal',
+  'system',
+  'authentication',
+  'registration',
+  'sql',
+  'postgres',
+  'sqlite',
+  'stack',
+  'exception'
+];
+
+export class ParentApiError extends Error {
+  description: string;
+  constructor(message: string, description: string = 'Please try again.') {
+    super(message);
+    this.name = 'ParentApiError';
+    this.description = description;
+  }
+}
+
+export function extractApiError(err: any): { message: string; description: string } {
+  if (err instanceof ParentApiError) {
+    return { message: err.message, description: err.description };
+  }
+  const raw = (typeof err === 'string' ? err : err?.message || '').trim();
+  if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
+    return { message: 'Connection problem', description: 'Please check your internet and try again.' };
+  }
+  const lower = raw.toLowerCase();
+  const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
+  if (containsForbidden || raw.includes('Request failed (5') || raw.includes('Request failed (4')) {
+    return { message: 'Something went wrong', description: 'Please try again.' };
+  }
+  return { message: raw, description: 'Please try again.' };
+}
+
 export const api = {
   getToken: () => localStorage.getItem(TOKEN_KEY),
   setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
@@ -18,14 +61,25 @@ export const api = {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const res = await fetch(endpoint, {
-      ...options,
-      headers
-    });
+    let res: Response;
+    try {
+      res = await fetch(endpoint, {
+        ...options,
+        headers
+      });
+    } catch {
+      throw new ParentApiError('Connection problem', 'Please check your internet and try again.');
+    }
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.error || `Request failed (${res.status})`);
+      const rawError = data.error || `Request failed (${res.status})`;
+      const lower = rawError.toLowerCase();
+      const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
+      if (containsForbidden || res.status >= 500) {
+        throw new ParentApiError('Something went wrong', 'Please try again.');
+      }
+      throw new ParentApiError(rawError, 'Please try again.');
     }
     return data as T;
   },
@@ -56,6 +110,18 @@ export const api = {
     },
     async forgotPassword(email: string) {
       return api.request<any>('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async verifyEmail(token: string) {
+      return api.request<any>('/api/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token })
+      });
+    },
+    async resendVerification(email: string) {
+      return api.request<any>('/api/auth/resend-verification', {
         method: 'POST',
         body: JSON.stringify({ email })
       });

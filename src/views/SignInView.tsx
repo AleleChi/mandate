@@ -4,7 +4,8 @@ import { MobileShell } from '../components/common/MobileShell';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { Mail, Lock } from 'lucide-react';
-import { api } from '../services/api';
+import { api, extractApiError } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface SignInViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -15,6 +16,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
   onNavigate,
   onSetParentEmail
 }) => {
+  const { showSuccess, showError } = useNotification();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +33,15 @@ export const SignInView: React.FC<SignInViewProps> = ({
     try {
       await api.auth.signIn({ email: email.trim(), password });
       if (onSetParentEmail) onSetParentEmail(email.trim());
+      showSuccess('Welcome back', 'Your parent account is ready.');
       onNavigate('/parent/home');
     } catch (err: any) {
-      setError(err.message || 'Invalid email or password');
+      const { message } = extractApiError(err);
+      const displayError = message.includes('Invalid') || message.includes('User not found') || message.includes('Incorrect')
+        ? 'Sign in failed. Check your email and password.'
+        : message;
+      setError(displayError);
+      showError('Sign in failed', 'Check your email and password.');
     } finally {
       setLoading(false);
     }
