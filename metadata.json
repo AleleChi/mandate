@@ -1,0 +1,6 @@
+{
+  "name": "Koinonia Children and Teens Access",
+  "description": "Official parent access and verification system for managing children and teens access for Koinonia events.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

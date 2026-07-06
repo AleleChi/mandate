@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: #FAF9F6;
+    color: #262626;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+.font-serif-koinonia {
+  font-family: 'Cormorant Garamond', serif;
+}
+
+/* Hide scrollbar for clean horizontal reel */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

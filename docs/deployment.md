@@ -1,0 +1,32 @@
+# Deployment & Infrastructure Guide
+
+## 1. Transactional Email Setup (Resend)
+
+Koinonia Children and Teens uses **Resend** as the active production and development email notification provider over a verified sending subdomain. Gmail SMTP is no longer the active provider.
+
+### 1.1 Resend Setup & Domain Verification Workflow
+To configure parent-facing email notifications on a new deployment environment:
+1. Create a Resend account at [resend.com](https://resend.com).
+2. Add the sending subdomain in Resend Domains (e.g., `parent-access.yourdomain.com`).
+3. Copy the exact DNS verification records provided by Resend (MX, SPF, DKIM CNAME records). *Note: Do not hardcode or share static DNS records in templates because Resend generates unique, domain-specific records per domain.*
+4. Add those DNS records where the domain's DNS routing is managed (Cloudflare, Route 53, etc.).
+5. Wait until Resend confirms domain verification status as Active/Verified.
+6. Create a secure Resend API key with sending access permissions.
+7. Add the API key strictly to the server-side environment variables (`RESEND_API_KEY`).
+8. Set `MAIL_FROM_ADDRESS` to a valid email address on the verified sending subdomain (e.g., `hello@parent-access.yourdomain.com` or `noreply@parent-access.yourdomain.com`).
+
+### 1.2 Required Environment Variables
+Configure the following variables in the backend server environment (`.env` or Cloud Run secrets):
+```env
+EMAIL_PROVIDER="resend"
+RESEND_API_KEY="re_123456789..."
+MAIL_FROM_NAME="Koinonia Children and Teens"
+MAIL_FROM_ADDRESS="hello@parent-access.yourdomain.com"
+APP_BASE_URL="https://your-app-domain.com"
+```
+
+### 1.3 Security Rules & Frontend Isolation
+- **Server-Only Execution**: `RESEND_API_KEY` must strictly live on the backend Express server.
+- **No Frontend Exposure**: Never prefix `RESEND_API_KEY` with `VITE_`. The client SPA bundle must never contain API keys or email server credentials.
+- **No Direct Calls**: The frontend React application must never call the Resend API directly. All notification emails (email verification, password reset, child details sent for review) are dispatched securely via backend API route handlers (`/api/auth/*`, `/api/parent/*`).
+- **Safe Logging**: If an email transmission encounters an error or network drop, the backend logs sanitized error diagnostics without exposing API keys or tokens, returning a calm, parent-facing message: *"We could not send the email right now. Please try again."*
