@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 const TOKEN_KEY = 'koinonia_token';
 
 const FORBIDDEN_WORDS = [
@@ -61,9 +63,33 @@ export const api = {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    let apiBaseUrl = '';
+    try {
+      apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+    } catch {
+      apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
+    }
+
+    // Fallback to relative URLs in development/preview to connect to the local container backend
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (
+        hostname === 'localhost' || 
+        hostname === '127.0.0.1' || 
+        hostname.endsWith('.run.app') || 
+        hostname.endsWith('.google.com')
+      ) {
+        apiBaseUrl = ''; // Use relative paths for local development and AI Studio preview
+      }
+    }
+
+    const url = apiBaseUrl
+      ? `${apiBaseUrl.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`
+      : endpoint;
+
     let res: Response;
     try {
-      res = await fetch(endpoint, {
+      res = await fetch(url, {
         ...options,
         headers
       });

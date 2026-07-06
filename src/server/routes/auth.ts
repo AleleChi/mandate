@@ -142,8 +142,13 @@ router.post('/resend-verification', async (req, res) => {
       return res.status(400).json({ error: 'Email address is required.' });
     }
     const cleanEmail = email.toLowerCase().trim();
-    const user = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
-    if (user) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+
+    const user = await queryOne('SELECT id, email_verified FROM users WHERE email = ?', [cleanEmail]);
+    if (user && !user.email_verified) {
       const baseUrl = process.env.APP_BASE_URL;
       if (!baseUrl) {
         if (process.env.NODE_ENV !== 'production') {
@@ -154,10 +159,18 @@ router.post('/resend-verification', async (req, res) => {
         }
       }
 
+      const now = new Date().toISOString();
+
+      // Expire old unused verification tokens
+      await execute(`
+        UPDATE auth_tokens 
+        SET expires_at = ? 
+        WHERE user_id = ? AND token_type = 'email_verification' AND used_at IS NULL
+      `, [now, user.id]);
+
       const rawVerifyToken = crypto.randomBytes(32).toString('hex');
       const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
       const tokenId = crypto.randomUUID();
-      const now = new Date().toISOString();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       
       await execute(`
@@ -171,7 +184,10 @@ router.post('/resend-verification', async (req, res) => {
       const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
       await sendEmailVerificationEmail(cleanEmail, verificationLink, fullName);
     }
-    res.json({ success: true, message: 'Verification link has been sent.' });
+    res.json({ 
+      success: true, 
+      message: 'If this email is connected to a parent account, a new link has been sent.' 
+    });
   } catch (err: any) {
     if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
       throw err;

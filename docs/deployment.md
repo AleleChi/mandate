@@ -24,10 +24,23 @@ MAIL_FROM_NAME="Koinonia Children and Teens"
 MAIL_FROM_ADDRESS="hello@parent-access.yourdomain.com"
 
 # APP_BASE_URL: Base frontend URL. Do not include trailing slash.
-# - For local development: APP_BASE_URL="http://localhost:5173" (or port 3000)
-# - For production: APP_BASE_URL="https://your-netlify-or-vercel-url" (or deployed custom domain)
-# If missing, the backend throws an error in development and rejects requests in production instead of falling back to localhost.
-APP_BASE_URL="https://your-app-domain.com"
+# Local:
+# APP_BASE_URL="http://localhost:5173"
+# Production:
+# APP_BASE_URL="https://koinonia12.netlify.app"
+APP_BASE_URL="https://koinonia12.netlify.app"
+
+# CORS_ORIGIN: Allowed CORS Origin for secure backend access.
+# Local:
+# CORS_ORIGIN="http://localhost:5173"
+# Production:
+# CORS_ORIGIN="https://koinonia12.netlify.app"
+CORS_ORIGIN="https://koinonia12.netlify.app"
+
+# VITE_API_BASE_URL: Backend URL for frontend client (configured on Netlify).
+# Local: (leave empty or omit to fallback to local development proxies)
+# Production:
+# VITE_API_BASE_URL="https://mandate-2i7u.onrender.com"
 ```
 
 ### 1.3 Hash Router Links

@@ -14,6 +14,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
   const [resendLoading, setResendLoading] = useState(false);
+  const [resendError, setResendError] = useState<{ title: string; description: string } | null>(null);
 
   // Extract query parameters from hash route
   const getQueryParams = () => {
@@ -59,13 +60,16 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
     setResendLoading(true);
     setErrorMessage(null);
     setResendSuccess(null);
+    setResendError(null);
 
     try {
       await api.auth.resendVerification(emailToUse);
-      setResendSuccess(`We've sent a new link to ${emailToUse}. Please check your inbox.`);
+      setResendSuccess('New link sent');
     } catch (err: any) {
-      const { message } = extractApiError(err);
-      setErrorMessage(message || 'Failed to resend link.');
+      setResendError({
+        title: 'We could not send a new link',
+        description: 'Please try again in a moment.'
+      });
     } finally {
       setResendLoading(false);
     }
@@ -149,18 +153,29 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
                 </p>
               </div>
 
-              {resendSuccess ? (
-                <div className="p-3 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] text-xs font-medium flex items-center gap-2 text-left">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>{resendSuccess}</span>
+               {resendSuccess ? (
+                <div className="p-4 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-left space-y-1">
+                  <div className="flex items-center gap-2 text-[#065F46] text-sm font-semibold">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                    <span>New link sent</span>
+                  </div>
+                  <p className="text-xs text-[#047857] pl-7">Please check your email.</p>
                 </div>
               ) : (
                 <form onSubmit={handleSendNewLink} className="space-y-4">
-                  {errorMessage && (
+                  {resendError ? (
+                    <div className="text-left bg-red-50 p-4 rounded-xl border border-red-100 space-y-1">
+                      <div className="flex items-center gap-2 text-red-800 text-sm font-semibold">
+                        <XCircle className="w-5 h-5 text-red-500 shrink-0" />
+                        <span>{resendError.title}</span>
+                      </div>
+                      <p className="text-xs text-red-600 pl-7">{resendError.description}</p>
+                    </div>
+                  ) : errorMessage ? (
                     <p className="text-xs text-red-600 font-medium leading-normal bg-red-50 p-2.5 rounded-lg border border-red-100">
                       {errorMessage}
                     </p>
-                  )}
+                  ) : null}
 
                   {showEmailInput && (
                     <div className="space-y-1.5 text-left">
