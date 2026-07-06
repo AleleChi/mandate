@@ -21,6 +21,7 @@ interface ChildStatusViewProps {
   parentProfile?: ParentProfile;
   onNavigate: (route: AppRoute | string) => void;
   onEditChild?: (child: ChildItem) => void;
+  onDeleteChild?: (childId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 const isRealUploadedPhoto = (url?: string) => {
@@ -70,8 +71,12 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   childrenList,
   parentProfile,
   onNavigate,
-  onEditChild
+  onEditChild,
+  onDeleteChild
 }) => {
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+
   const foundChild = childId
     ? childrenList.find((c) => c.id === childId)
     : childrenList.find((c) => c.status === 'Under review' || c.status !== 'Draft') || childrenList[0];
@@ -132,6 +137,22 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
       window.history.back();
     } else {
       onNavigate('/parent/home');
+    }
+  };
+
+  const handleWithdrawConfirm = async () => {
+    if (!foundChild || !onDeleteChild) return;
+    setIsWithdrawing(true);
+    try {
+      const res = await onDeleteChild(foundChild.id);
+      if (res.success) {
+        setShowWithdrawModal(false);
+        onNavigate('/parent/home');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -350,7 +371,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
         {/* Pickup person card */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs mt-6">
           <div className="flex items-center justify-between">
-            <h3 className="font-serif-koinonia text-lg sm:text-xl font-bold text-[#18181B]">
+            <h3 className="text-[22px] font-serif-koinonia text-[#18181B] font-medium leading-tight">
               Pickup person
             </h3>
             {isRealUploadedPhoto(pickupPhoto) || pickupPhoto ? (
@@ -361,31 +382,30 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mt-4">
-            <div>
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#8C6D23] uppercase tracking-wider">
+          <div className="grid grid-cols-1 min-[560px]:grid-cols-2 gap-y-4 gap-x-8 min-w-0 mt-5">
+            <div className="min-w-0">
+              <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
                 NAME
-              </div>
-              <div className="font-bold text-sm sm:text-base text-[#18181B] mt-0.5 truncate">
-                {pickupName}
-              </div>
+              </span>
+              <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
+                {pickupName || 'Not specified'}
+              </span>
             </div>
-            <div>
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#8C6D23] uppercase tracking-wider">
+            <div className="min-w-0">
+              <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
                 RELATION
-              </div>
-              <div className="font-bold text-sm sm:text-base text-[#18181B] mt-0.5 truncate">
-                {pickupRelation}
-              </div>
+              </span>
+              <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
+                {pickupRelation || 'Not specified'}
+              </span>
             </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-[10px] sm:text-[11px] font-bold text-[#8C6D23] uppercase tracking-wider">
-              PHONE
-            </div>
-            <div className="font-bold text-sm sm:text-base text-[#18181B] mt-0.5">
-              {pickupPhone}
+            <div className="min-w-0 min-[560px]:col-span-2">
+              <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
+                PHONE
+              </span>
+              <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
+                {pickupPhone || 'Not specified'}
+              </span>
             </div>
           </div>
 
@@ -413,6 +433,15 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
           >
             Edit details
           </button>
+          {foundChild?.status === 'Under review' && (
+            <button
+              type="button"
+              onClick={() => setShowWithdrawModal(true)}
+              className="w-full py-2 px-5 rounded-xl text-[#6B7280] hover:text-[#4B5563] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent mt-1"
+            >
+              Withdraw details
+            </button>
+          )}
         </div>
       </div>
 
@@ -451,6 +480,38 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
           })}
         </div>
       </nav>
+
+      {/* Withdraw details modal */}
+      {showWithdrawModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 border border-[#EAE8E1] shadow-2xl max-w-sm w-full animate-in fade-in zoom-in-95">
+            <h3 className="text-lg font-serif-koinonia font-bold text-[#18181B] mb-2">
+              Withdraw details?
+            </h3>
+            <p className="text-sm text-[#3F3F46] leading-relaxed mb-6">
+              The Children and Teens team will no longer review this child’s details for this event.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                type="button"
+                disabled={isWithdrawing}
+                onClick={() => setShowWithdrawModal(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-[#EAE8E1] text-[#3F3F46] hover:bg-[#FAF9F6] font-semibold text-sm transition-all focus:outline-none cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isWithdrawing}
+                onClick={handleWithdrawConfirm}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white font-semibold text-sm transition-all focus:outline-none cursor-pointer text-center"
+              >
+                {isWithdrawing ? 'Withdrawing...' : 'Withdraw details'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

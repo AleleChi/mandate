@@ -18,7 +18,7 @@ export interface SendEmailResult {
 function wrapHtmlTemplate(title: string, bodyHtml: string, actionButton?: { label: string; url: string }): string {
   const buttonHtml = actionButton ? `
     <div style="margin: 28px 0;">
-      <a href="${actionButton.url}" style="background-color: #B4975A; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+      <a href="${actionButton.url}" style="background-color: #C59B27; color: #18181B; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
         ${actionButton.label}
       </a>
     </div>
@@ -31,19 +31,19 @@ function wrapHtmlTemplate(title: string, bodyHtml: string, actionButton?: { labe
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #F4F4F5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #27272A; -webkit-font-smoothing: antialiased;">
-  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #F4F4F5; padding: 32px 16px;">
+<body style="margin: 0; padding: 0; background-color: #FAF8F4; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #18181B; -webkit-font-smoothing: antialiased;">
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #FAF8F4; padding: 32px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" max-width="540" border="0" cellpadding="0" cellspacing="0" style="max-width: 540px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 8px; overflow: hidden;">
-          <!-- Top Accent Bar -->
+        <table width="100%" max-width="540" border="0" cellpadding="0" cellspacing="0" style="max-width: 540px; background-color: #FFFFFF; border: 1px solid #EAE8E1; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <!-- Top Accent Bar (Thin Antique Gold) -->
           <tr>
-            <td style="background-color: #B4975A; height: 4px; font-size: 0; line-height: 0;">&nbsp;</td>
+            <td style="background-color: #C59B27; height: 3px; font-size: 0; line-height: 0;">&nbsp;</td>
           </tr>
           <!-- Header -->
           <tr>
-            <td style="padding: 24px 32px 16px 32px; border-bottom: 1px solid #F4F4F5;">
-              <h1 style="margin: 0; font-size: 18px; font-weight: 700; color: #18181B; letter-spacing: -0.01em;">
+            <td style="padding: 24px 32px 16px 32px; border-bottom: 1px solid #FAF8F4;">
+              <h1 style="margin: 0; font-size: 18px; font-weight: 600; color: #18181B; letter-spacing: -0.01em;">
                 Koinonia Children and Teens
               </h1>
             </td>
@@ -57,7 +57,7 @@ function wrapHtmlTemplate(title: string, bodyHtml: string, actionButton?: { labe
           </tr>
           <!-- Footer -->
           <tr>
-            <td style="padding: 20px 32px; background-color: #FAFAFA; border-top: 1px solid #E4E4E7; font-size: 12px; color: #71717A; text-align: center;">
+            <td style="padding: 20px 32px; background-color: #FAFAFA; border-top: 1px solid #EAE8E1; font-size: 12px; color: #71717A; text-align: center;">
               Koinonia Children and Teens &bull; Parent Access
             </td>
           </tr>
@@ -174,109 +174,221 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 }
 
 /**
+ * Helper to derive first name from full name safely.
+ */
+function getFirstName(fullName?: string): string {
+  if (!fullName) return '';
+  const trimmed = fullName.trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0];
+}
+
+/**
  * 1. Email verification
  */
-export async function sendEmailVerificationEmail(parentEmail: string, verificationLink: string, fullName?: string): Promise<SendEmailResult> {
-  const subject = 'Verify your email for Koinonia Children and Teens';
-  
-  const cleanName = fullName?.trim() || '';
-  const firstName = cleanName.split(/\s+/)[0];
+export async function sendEmailVerificationEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  verificationLink: string;
+}): Promise<SendEmailResult> {
+  const subject = 'Confirm your email for Parent Access';
+  const firstName = getFirstName(params.parentFirstName);
   const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   
   const bodyHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>Welcome to Koinonia Children and Teens. Please verify your email address to continue setting up your Parent Access.</p>
-    <p>Click the button below to verify your email:</p>
+    <p>Welcome to Koinonia Children and Teens.</p>
+    <p>Please confirm this email address so you can continue setting up your Parent Access.</p>
+    <p style="margin-top: 24px; color: #71717A; font-size: 13px;">If you did not create this account, you can ignore this email.</p>
   `;
   
-  const text = `${greeting}\n\nWelcome to Koinonia Children and Teens. Please verify your email address to continue setting up your Parent Access.\n\nVerify your email here: ${verificationLink}\n\nThank you,\nKoinonia Children and Teens`;
+  const text = `${greeting}\n\nWelcome to Koinonia Children and Teens.\n\nPlease confirm this email address so you can continue setting up your Parent Access:\n${params.verificationLink}\n\nIf you did not create this account, you can ignore this email.\n\nKoinonia Children and Teens • Parent Access`;
 
-  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Verify Email Address', url: verificationLink });
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Confirm email', url: params.verificationLink });
 
-  return sendEmail({ to: parentEmail, subject, html, text });
+  return sendEmail({ to: params.parentEmail, subject, html, text });
 }
 
 /**
  * 2. Password reset
  */
-export async function sendPasswordResetEmail(parentEmail: string, resetLink: string): Promise<SendEmailResult> {
-  const subject = 'Reset your password for Parent Access';
+export async function sendPasswordResetEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  resetLink: string;
+}): Promise<SendEmailResult> {
+  const subject = 'Reset your Parent Access password';
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   
   const bodyHtml = `
-    <p style="margin-top: 0;">Hello,</p>
-    <p>We received a request to reset your password for Parent Access.</p>
-    <p>Click the button below to choose a new password. If you did not request this, you can safely ignore this email.</p>
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>We received a request to reset your password.</p>
+    <p>Use the button below to choose a new password. This link will expire soon for your protection.</p>
+    <p style="margin-top: 24px; color: #71717A; font-size: 13px;">If you did not ask for this, you can ignore this email.</p>
   `;
   
-  const text = `Hello,\n\nWe received a request to reset your password for Parent Access.\n\nReset your password here: ${resetLink}\n\nIf you did not request this, you can safely ignore this email.\n\nThank you,\nKoinonia Children and Teens`;
+  const text = `${greeting}\n\nWe received a request to reset your password.\n\nUse the link below to choose a new password. This link will expire soon for your protection:\n${params.resetLink}\n\nIf you did not ask for this, you can ignore this email.\n\nKoinonia Children and Teens • Parent Access`;
 
-  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Reset Password', url: resetLink });
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Reset password', url: params.resetLink });
 
-  return sendEmail({ to: parentEmail, subject, html, text });
+  return sendEmail({ to: params.parentEmail, subject, html, text });
 }
 
 /**
  * 3. Details sent for review
  */
-export async function sendChildReviewReceivedEmail(parentEmail: string, childName: string): Promise<SendEmailResult> {
-  const cleanName = childName?.trim() || 'your child';
-  const subject = `Details sent for ${cleanName} – Koinonia Children and Teens`;
+export async function sendChildReviewReceivedEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  childStatusLink: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `${childName}${suffix} details have been sent for review`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   
   const bodyHtml = `
-    <p style="margin-top: 0;">Hello,</p>
-    <p>Thank you for taking the time to Add a child to Koinonia Children and Teens. We have safely received the details for <strong>${cleanName}</strong>.</p>
-    <p>The information is currently Under review by our team to ensure everything is prepared for a safe experience. We will send you another update as soon as the review is complete.</p>
-    <p style="margin-bottom: 0;">Warm regards,<br>Koinonia Children and Teens Team</p>
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>We have received ${childName}’s details.</p>
+    <p>Our Children and Teens team will review the information you shared and update you when a decision has been made.</p>
+    <p>You can also check the child’s status from Parent Access at any time.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
   `;
   
-  const text = `Hello,\n\nThank you for taking the time to Add a child to Koinonia Children and Teens. We have safely received the details for ${cleanName}.\n\nThe information is currently Under review by our team to ensure everything is prepared for a safe experience. We will send you another update as soon as the review is complete.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+  const text = `${greeting}\n\nWe have received ${childName}’s details.\n\nOur Children and Teens team will review the information you shared and update you when a decision has been made.\n\nYou can also check the child’s status from Parent Access at any time:\n${params.childStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
 
-  const html = wrapHtmlTemplate(subject, bodyHtml);
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'View status', url: params.childStatusLink });
 
-  return sendEmail({ to: parentEmail, subject, html, text });
+  return sendEmail({ to: params.parentEmail, subject, html, text });
 }
 
 /**
- * 4. Review decision later (Prepared function only, not triggered yet)
+ * 4. Review decision (Selected, Not Selected, Needs Info)
  */
-export async function sendChildReviewDecisionEmail(parentEmail: string, childName: string, status: string): Promise<SendEmailResult> {
-  const cleanName = childName?.trim() || 'your child';
-  const isApproved = status === 'approved' || status === 'active';
-  const statusLabel = isApproved ? 'Approved' : 'Needs attention';
-  const subject = `Update on child details for ${cleanName}`;
-  
-  const bodyHtml = `
-    <p style="margin-top: 0;">Hello,</p>
-    <p>We have reviewed the details submitted for <strong>${cleanName}</strong>.</p>
-    <p>Current status: <strong>${statusLabel}</strong></p>
-    <p>You can sign in to your Parent Access to view full details or check any notes from our team.</p>
-    <p style="margin-bottom: 0;">Warm regards,<br>Koinonia Children and Teens Team</p>
-  `;
-  
-  const text = `Hello,\n\nWe have reviewed the details submitted for ${cleanName}.\n\nCurrent status: ${statusLabel}\n\nYou can sign in to your Parent Access to view full details or check any notes from our team.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+export async function sendChildReviewDecisionEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  status: string;
+  statusLink?: string;
+  passLink?: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const statusLower = params.status.toLowerCase();
 
-  const html = wrapHtmlTemplate(subject, bodyHtml);
+  let subject = '';
+  let bodyHtml = '';
+  let text = '';
+  let actionButton: { label: string; url: string } | undefined;
 
-  return sendEmail({ to: parentEmail, subject, html, text });
+  const resolvedStatusLink = params.statusLink || `${process.env.APP_BASE_URL || 'https://koinonia12.netlify.app'}/#/parent/children`;
+  const resolvedPassLink = params.passLink || resolvedStatusLink;
+
+  if (statusLower === 'selected' || statusLower === 'pass_ready' || statusLower === 'approved' || statusLower === 'active') {
+    subject = `${childName}${suffix} event pass is ready`;
+    bodyHtml = `
+      <p style="margin-top: 0;">${greeting}</p>
+      <p>${childName} has been selected for Children and Teens at The General Assembly.</p>
+      <p>The event pass is now ready in Parent Access.</p>
+      <p>Please keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.</p>
+      <br>
+      <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+    `;
+    text = `${greeting}\n\n${childName} has been selected for Children and Teens at The General Assembly.\n\nThe event pass is now ready in Parent Access.\n\nPlease keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.\n\nView pass here:\n${resolvedPassLink}\n\nThank you,\nKoinonia Children and Teens`;
+    actionButton = { label: 'View pass', url: resolvedPassLink };
+  } else if (statusLower === 'not_selected' || statusLower === 'rejected') {
+    subject = `Update on ${childName}${suffix} Children and Teens details`;
+    bodyHtml = `
+      <p style="margin-top: 0;">${greeting}</p>
+      <p>Thank you for sending ${childName}’s details.</p>
+      <p>After review, ${childName} was not selected for Children and Teens for this event.</p>
+      <p>We understand this may be disappointing. Thank you for your understanding.</p>
+      <br>
+      <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+    `;
+    text = `${greeting}\n\nThank you for sending ${childName}’s details.\n\nAfter review, ${childName} was not selected for Children and Teens for this event.\n\nWe understand this may be disappointing. Thank you for your understanding.\n\nView status here:\n${resolvedStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
+    actionButton = { label: 'View status', url: resolvedStatusLink };
+  } else {
+    subject = `More details needed for ${childName}`;
+    bodyHtml = `
+      <p style="margin-top: 0;">${greeting}</p>
+      <p>Our team needs a little more information before we can complete ${childName}’s review.</p>
+      <p>Please open Parent Access and update the requested details.</p>
+      <br>
+      <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+    `;
+    text = `${greeting}\n\nOur team needs a little more information before we can complete ${childName}’s review.\n\nPlease open Parent Access and update the requested details:\n${resolvedStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
+    actionButton = { label: 'Update details', url: resolvedStatusLink };
+  }
+
+  const html = wrapHtmlTemplate(subject, bodyHtml, actionButton);
+  return sendEmail({ to: params.parentEmail, subject, html, text });
 }
 
 /**
- * 5. Pass ready later (Prepared function only, not triggered yet)
+ * 5. Pass ready later
  */
-export async function sendPassReadyEmail(parentEmail: string, childName: string): Promise<SendEmailResult> {
-  const cleanName = childName?.trim() || 'your child';
-  const subject = `Pass ready for ${cleanName} – Koinonia Children and Teens`;
+export async function sendPassReadyEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  passLink: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `${childName}${suffix} event pass is ready`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   
   const bodyHtml = `
-    <p style="margin-top: 0;">Hello,</p>
-    <p>Great news! The check-in pass is now ready for <strong>${cleanName}</strong>.</p>
-    <p>You can view and present the pass directly from your Parent Access when you arrive.</p>
-    <p style="margin-bottom: 0;">We look forward to welcoming your family.<br><br>Warm regards,<br>Koinonia Children and Teens Team</p>
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>${childName} has been selected for Children and Teens at The General Assembly.</p>
+    <p>The event pass is now ready in Parent Access.</p>
+    <p>Please keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
   `;
   
-  const text = `Hello,\n\nGreat news! The check-in pass is now ready for ${cleanName}.\n\nYou can view and present the pass directly from your Parent Access when you arrive.\n\nWe look forward to welcoming your family.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+  const text = `${greeting}\n\n${childName} has been selected for Children and Teens at The General Assembly.\n\nThe event pass is now ready in Parent Access.\n\nPlease keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.\n\nView pass here:\n${params.passLink}\n\nThank you,\nKoinonia Children and Teens`;
 
-  const html = wrapHtmlTemplate(subject, bodyHtml);
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'View pass', url: params.passLink });
 
-  return sendEmail({ to: parentEmail, subject, html, text });
+  return sendEmail({ to: params.parentEmail, subject, html, text });
+}
+
+/**
+ * 6. Pickup or event day reminder
+ */
+export async function sendPickupReminderEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  passLink: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `${childName}${suffix} pass and pickup details`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>This is a reminder to keep ${childName}’s event pass ready for event day.</p>
+    <p>The person picking up the child must match the pickup details saved in Parent Access.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+  
+  const text = `${greeting}\n\nThis is a reminder to keep ${childName}’s event pass ready for event day.\n\nThe person picking up the child must match the pickup details saved in Parent Access.\n\nView pass here:\n${params.passLink}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'View pass', url: params.passLink });
+
+  return sendEmail({ to: params.parentEmail, subject, html, text });
 }

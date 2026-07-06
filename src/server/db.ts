@@ -307,6 +307,12 @@ function initSqliteSchema(db: Database.Database) {
     // Column likely already exists
   }
 
+  try {
+    db.exec(`ALTER TABLE child_event_entries ADD COLUMN withdrawn_at TEXT;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
   // Seed real approved event
   const now = new Date().toISOString();
   db.prepare(`
@@ -522,6 +528,10 @@ async function initPostgresSchema(pool: any) {
 
     try {
       await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMP;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS withdrawn_at TIMESTAMP;`);
     } catch (e) {}
 
     const now = new Date().toISOString();

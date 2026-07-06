@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Clock, ShieldCheck, AlertCircle } from 'lucide-react';
 
-export type StatusType = 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected';
+export type StatusType = 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected' | 'Withdrawn';
 
 interface StatusBadgeProps {
   status: StatusType;
@@ -34,6 +34,15 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
           icon: <AlertCircle className="w-3.5 h-3.5 mr-1 text-[#EA580C]" />
         };
       case 'Not selected':
+        return {
+          bg: 'bg-[#F3F4F6] text-[#4B5563] border border-[#E5E7EB]',
+          icon: <ShieldCheck className="w-3.5 h-3.5 mr-1 text-[#6B7280]" />
+        };
+      case 'Withdrawn':
+        return {
+          bg: 'bg-gray-100 text-gray-500 border border-gray-200',
+          icon: <AlertCircle className="w-3.5 h-3.5 mr-1 text-gray-400" />
+        };
       default:
         return {
           bg: 'bg-[#F3F4F6] text-[#4B5563] border border-[#E5E7EB]',

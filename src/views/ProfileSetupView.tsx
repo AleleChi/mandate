@@ -709,7 +709,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           <div className="pt-2 space-y-2">
             <button
               type="submit"
-              disabled={saving || isUploadingPhoto}
+              disabled={saving || isUploadingPhoto || !photoUrl}
               className="w-full py-3.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all shadow-2xs cursor-pointer focus:outline-none disabled:opacity-60"
             >
               {saving ? 'Saving...' : (isUploadingPhoto ? 'Uploading photo...' : (mode === 'edit' ? 'Save changes' : 'Continue'))}

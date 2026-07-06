@@ -126,22 +126,26 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
     if (draft) {
       let updatedDraft: AddChildDraft;
       if (pickupType === 'parent') {
+        const resolvedRelationship = draft.relationship || draft.childDetails?.relationshipToChild || 'Parent';
+        const phoneVal = parentProfile?.phoneNumber || parentProfile?.phone || '';
+        const whatsappVal = parentProfile?.whatsappNumber || parentProfile?.whatsapp || parentProfile?.phone || parentProfile?.phoneNumber || '';
         updatedDraft = {
           ...draft,
           pickupType: 'parent',
           pickupPersonFullName: parentProfile?.fullName || 'Parent',
-          pickupPersonPhone: parentProfile?.phone || '',
-          pickupPersonWhatsapp: parentProfile?.whatsapp || '',
+          pickupPersonPhone: phoneVal,
+          pickupPersonWhatsapp: whatsappVal,
           pickupPersonPhotoUrl: parentProfile?.photoUrl || '',
-          pickupPersonRelationship: 'Parent',
+          pickupPersonRelationship: resolvedRelationship,
           pickupPersonApproved: true,
           pickup: {
             pickupType: 'parent',
+            mode: 'parent',
             pickupPersonPhoto: parentProfile?.photoUrl || '',
             pickupPersonFullName: parentProfile?.fullName || 'Parent',
-            pickupPersonRelationship: 'Parent',
-            pickupPersonPhone: parentProfile?.phone || '',
-            pickupPersonWhatsApp: parentProfile?.whatsapp || '',
+            pickupPersonRelationship: resolvedRelationship,
+            pickupPersonPhone: phoneVal,
+            pickupPersonWhatsApp: whatsappVal,
             approvedByParent: true
           }
         };
@@ -157,6 +161,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           pickupPersonApproved,
           pickup: {
             pickupType: 'other_person',
+            mode: 'other',
             pickupPersonPhoto: pickupPersonPhotoUrl,
             pickupPersonFullName: pickupPersonFullName.trim(),
             pickupPersonRelationship: pickupPersonRelationship.trim(),
@@ -176,22 +181,26 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
     if (draft) {
       let updatedDraft: AddChildDraft;
       if (pickupType === 'parent') {
+        const resolvedRelationship = draft.relationship || draft.childDetails?.relationshipToChild || 'Parent';
+        const phoneVal = parentProfile?.phoneNumber || parentProfile?.phone || '';
+        const whatsappVal = parentProfile?.whatsappNumber || parentProfile?.whatsapp || parentProfile?.phone || parentProfile?.phoneNumber || '';
         updatedDraft = {
           ...draft,
           pickupType: 'parent',
           pickupPersonFullName: parentProfile?.fullName || 'Parent',
-          pickupPersonPhone: parentProfile?.phone || '',
-          pickupPersonWhatsapp: parentProfile?.whatsapp || '',
+          pickupPersonPhone: phoneVal,
+          pickupPersonWhatsapp: whatsappVal,
           pickupPersonPhotoUrl: parentProfile?.photoUrl || '',
-          pickupPersonRelationship: 'Parent',
+          pickupPersonRelationship: resolvedRelationship,
           pickupPersonApproved: true,
           pickup: {
             pickupType: 'parent',
+            mode: 'parent',
             pickupPersonPhoto: parentProfile?.photoUrl || '',
             pickupPersonFullName: parentProfile?.fullName || 'Parent',
-            pickupPersonRelationship: 'Parent',
-            pickupPersonPhone: parentProfile?.phone || '',
-            pickupPersonWhatsApp: parentProfile?.whatsapp || '',
+            pickupPersonRelationship: resolvedRelationship,
+            pickupPersonPhone: phoneVal,
+            pickupPersonWhatsApp: whatsappVal,
             approvedByParent: true
           }
         };
@@ -207,6 +216,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           pickupPersonApproved,
           pickup: {
             pickupType: 'other_person',
+            mode: 'other',
             pickupPersonPhoto: pickupPersonPhotoUrl,
             pickupPersonFullName: pickupPersonFullName.trim(),
             pickupPersonRelationship: pickupPersonRelationship.trim(),
@@ -538,7 +548,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           <div className="pt-4 space-y-2.5">
             <button
               type="submit"
-              disabled={isUploadingPhoto}
+              disabled={isUploadingPhoto || (pickupType === 'other_person' && !pickupPersonPhotoUrl)}
               className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block disabled:opacity-60"
             >
               {isUploadingPhoto ? 'Uploading photo...' : 'Continue'}

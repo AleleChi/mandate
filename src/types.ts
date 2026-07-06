@@ -30,7 +30,7 @@ export interface ChildItem {
   name: string;
   age: number;
   ageGroup: string; // e.g., 'Ages 7 to 9', 'Ages 4 to 6'
-  status: 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected';
+  status: 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected' | 'Withdrawn';
   statusNote: string; // e.g., 'Details sent for review', 'Event pass is available'
   photoUrl: string;
   specialNeeds?: string;
@@ -108,7 +108,9 @@ export interface ParentProfile {
   fullName: string;
   email: string;
   phone: string;
+  phoneNumber?: string;
   whatsapp: string;
+  whatsappNumber?: string;
   homeAddress?: string;
   country?: string;
   stateRegion?: string;
@@ -116,6 +118,7 @@ export interface ParentProfile {
   preferredContact?: 'WhatsApp' | 'Email' | 'Phone call';
   isWorker: boolean;
   department?: string;
+  photoFileId?: string;
   photoUrl?: string;
   profileCompletedAt?: string | null;
 }

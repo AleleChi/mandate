@@ -267,7 +267,7 @@ export default function App() {
     }
   };
 
-  const handleSubmitReview = async (draft: AddChildDraft) => {
+  const handleSubmitReview = async (draft: AddChildDraft): Promise<boolean> => {
     const name = (draft.childDetails?.fullName || draft.fullName || 'Untitled Child').trim();
     const ageVal = draft.childDetails?.calculatedAge !== undefined ? draft.childDetails.calculatedAge : draft.age;
     const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
@@ -277,7 +277,12 @@ export default function App() {
 
     if (api.getToken() && draft.id) {
       try {
-        const reviewedChild = await api.parent.submitChildReview(draft.id, draft);
+        const response = await api.parent.submitChildReview(draft.id, draft);
+        const reviewedChild = {
+          ...response,
+          status: 'Under review',
+          id: response.id || response.childId || draft.id
+        };
         setLastSubmittedChild(reviewedChild);
         setChildrenList((prev) => {
           const existingIdx = prev.findIndex((c) => c.id === reviewedChild.id);
@@ -289,12 +294,11 @@ export default function App() {
           return [reviewedChild, ...prev];
         });
         setAddChildDraft(null);
-        showSuccess('Details sent for review', 'You will receive an update when there is a decision.');
-        return;
+        showSuccess('Details sent for review', 'You can follow the child’s status from Home.');
+        return true;
       } catch (e: any) {
         console.error('Submit review error:', e);
-        const { message, description } = extractApiError(e);
-        showError(message, description);
+        throw e;
       }
     }
 
@@ -327,7 +331,8 @@ export default function App() {
       return [reviewedChild, ...prev];
     });
     setAddChildDraft(null);
-    showSuccess('Details sent for review', 'You will receive an update when there is a decision.');
+    showSuccess('Details sent for review', 'You can follow the child’s status from Home.');
+    return true;
   };
 
   const handleEditChild = (child: ChildItem) => {
@@ -387,6 +392,25 @@ export default function App() {
     navigate('/parent/children/new');
   };
 
+  const handleDeleteChild = async (childId: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+    try {
+      const response = await api.parent.deleteChild(childId);
+      if (response && response.success) {
+        showSuccess(response.message || 'Action completed successfully');
+        await fetchBackendData();
+        return { success: true, message: response.message };
+      } else {
+        const errorMsg = response?.error || 'Failed to remove child details.';
+        showError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError(apiErr.message);
+      return { success: false, error: apiErr.message };
+    }
+  };
+
   const renderCurrentRoute = () => {
     const cleanRoute = currentRoute.split('?')[0];
     if (cleanRoute === '/parent/status' || (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))) {
@@ -399,6 +423,7 @@ export default function App() {
           parentProfile={parentProfile}
           onNavigate={navigate}
           onEditChild={handleEditChild}
+          onDeleteChild={handleDeleteChild}
         />
       );
     }
@@ -486,6 +511,7 @@ export default function App() {
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
             onSignOut={handleSignOut}
+            onDeleteChild={handleDeleteChild}
             initialTab="Home"
           />
         );
@@ -499,6 +525,7 @@ export default function App() {
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
             onSignOut={handleSignOut}
+            onDeleteChild={handleDeleteChild}
             initialTab="Profile"
           />
         );
@@ -512,6 +539,7 @@ export default function App() {
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
             onSignOut={handleSignOut}
+            onDeleteChild={handleDeleteChild}
             initialTab="Children"
           />
         );
@@ -577,6 +605,7 @@ export default function App() {
             onStartNewChild={handleStartNewChild}
             onResumeChildDraft={handleResumeChildDraft}
             onSignOut={handleSignOut}
+            onDeleteChild={handleDeleteChild}
             initialTab="Passes"
           />
         );

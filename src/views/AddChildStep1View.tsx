@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { AppRoute, AddChildDraft } from '../types';
-import { ArrowLeft, ChevronDown, Calendar, Info } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Info } from 'lucide-react';
 import { PremiumSelect } from '../components/common/PremiumSelect';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
+import { KoinoniaDatePicker } from '../components/common/KoinoniaDatePicker';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -274,26 +275,17 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
           {/* 3. Date of birth */}
           <div>
-            <label className="text-xs font-semibold text-[#18181B] block mb-1">
-              Date of birth
-            </label>
-            <div className="relative">
-              <div className={`w-full py-2 px-0 bg-transparent border-0 border-b border-[#D9D6CE] text-sm flex items-center justify-between ${!dob ? 'text-[#9CA3AF]' : 'text-[#18181B]'}`}>
-                <span>{dob ? formatDobDisplay(dob) : 'mm/dd/yyyy'}</span>
-                <Calendar className="w-4 h-4 text-[#18181B] shrink-0 pointer-events-none" />
-              </div>
-              <input
-                type="date"
-                value={dob}
-                max={new Date().toISOString().split('T')[0]}
-                onChange={(e) => {
-                  setDob(e.target.value);
-                  if (errors.dob) setErrors((prev) => ({ ...prev, dob: undefined }));
-                }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-            </div>
-            {errors.dob && <p className="text-xs text-red-600 mt-1 font-medium">{errors.dob}</p>}
+            <KoinoniaDatePicker
+              label="Date of birth"
+              value={dob}
+              onChange={(val) => {
+                setDob(val);
+                if (errors.dob) setErrors((prev) => ({ ...prev, dob: undefined }));
+              }}
+              maxDate={new Date().toISOString().split('T')[0]}
+              error={errors.dob}
+              required
+            />
 
             {/* 4. Age helper text */}
             {ageData.ageText && ageData.ageGroup ? (
@@ -327,16 +319,18 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           />
 
           {/* Information note */}
-          <div className="mt-4 bg-[#FAF8F4] border border-[#EAE8E1] p-3.5 rounded-xl flex items-start space-x-2.5 text-xs text-[#3F3F46]">
-            <Info className="w-4 h-4 text-[#9A7326] shrink-0 mt-0.5" />
-            <span>Some age groups may need team review before passes are prepared.</span>
-          </div>
+          {ageData.ageYears !== null && ageData.ageYears < 2 && (
+            <div className="mt-4 bg-[#FAF8F4] border border-[#EAE8E1] p-3.5 rounded-xl flex items-start space-x-2.5 text-xs text-[#3F3F46]">
+              <Info className="w-4 h-4 text-[#9A7326] shrink-0 mt-0.5" />
+              <span>Some age groups may need team review before passes are prepared.</span>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="pt-2 space-y-2.5">
             <button
               type="submit"
-              disabled={isUploadingPhoto}
+              disabled={isUploadingPhoto || !photoUrl}
               className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block disabled:opacity-60"
             >
               {isUploadingPhoto ? 'Uploading photo...' : 'Continue'}

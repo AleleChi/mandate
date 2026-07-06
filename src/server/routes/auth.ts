@@ -76,7 +76,11 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
       `, [tokenId, userId, verifyTokenHash, expiresAt, now]);
 
       const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
-      sendEmailVerificationEmail(cleanEmail, verificationLink, fullName).catch(() => {});
+      sendEmailVerificationEmail({
+        parentEmail: cleanEmail,
+        parentFirstName: fullName,
+        verificationLink
+      }).catch(() => {});
     } catch (e: any) {
       if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
         throw e;
@@ -197,7 +201,11 @@ router.post('/resend-verification', async (req, res) => {
     const fullName = profile ? profile.full_name : undefined;
 
     const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
-    const emailResult = await sendEmailVerificationEmail(cleanEmail, verificationLink, fullName);
+    const emailResult = await sendEmailVerificationEmail({
+      parentEmail: cleanEmail,
+      parentFirstName: fullName,
+      verificationLink
+    });
 
     if (!emailResult.success) {
       return res.status(500).json({
@@ -246,8 +254,15 @@ router.post('/forgot-password', async (req, res) => {
         VALUES (?, ?, ?, 'password_reset', ?, ?)
       `, [tokenId, user.id, resetTokenHash, expiresAt, now]);
 
+      const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+      const fullName = profile ? profile.full_name : undefined;
+
       const resetLink = `${baseUrl}/#/parent/new-password?token=${rawResetToken}&email=${encodeURIComponent(cleanEmail)}`;
-      sendPasswordResetEmail(cleanEmail, resetLink).catch(() => {});
+      sendPasswordResetEmail({
+        parentEmail: cleanEmail,
+        parentFirstName: fullName,
+        resetLink
+      }).catch(() => {});
     }
     res.json({ success: true, message: 'If an account exists with that email, recovery steps have been sent.' });
   } catch (err: any) {
@@ -263,7 +278,11 @@ router.post('/test-email', async (req, res) => {
   try {
     const { to } = req.body;
     if (!to) return res.status(400).json({ error: 'Recipient email address required' });
-    const result = await sendEmailVerificationEmail(to, `${process.env.APP_BASE_URL || 'https://koinonia12.netlify.app'}/#/parent/verify-email?token=test-token`, 'Test Parent');
+    const result = await sendEmailVerificationEmail({
+      parentEmail: to,
+      parentFirstName: 'Test Parent',
+      verificationLink: `${process.env.APP_BASE_URL || 'https://koinonia12.netlify.app'}/#/parent/verify-email?token=test-token`
+    });
     if (!result.success) {
       return res.status(500).json({ error: result.error || 'We could not send the email right now. Please try again.' });
     }

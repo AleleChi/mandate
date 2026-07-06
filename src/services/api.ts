@@ -188,6 +188,11 @@ export const api = {
     },
     async getChildPass(childId: string) {
       return api.request<any>(`/api/parent/children/${childId}/pass`);
+    },
+    async deleteChild(childId: string) {
+      return api.request<any>(`/api/parent/children/${childId}`, {
+        method: 'DELETE'
+      });
     }
   },
 

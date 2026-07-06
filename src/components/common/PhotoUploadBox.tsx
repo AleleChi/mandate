@@ -29,38 +29,76 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
   const { showSuccess, showError } = useNotification();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // States: 'empty' | 'preparing' | 'uploading' | 'uploaded' | 'failed' | 'replacing'
-  const [uploadState, setUploadState] = useState<'empty' | 'preparing' | 'uploading' | 'uploaded' | 'failed' | 'replacing'>(
+  // Core required variables to track on frontend
+  const [mediaFileId, setMediaFileId] = useState<string>('');
+  const [imageUrl, setImageUrl] = useState<string>(value || '');
+
+  // Local blob preview (held separately to avoid flashing or blank states)
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string>('');
+
+  // Operational states: 'empty' | 'preparing' | 'uploading' | 'uploaded' | 'upload_failed' | 'display_failed'
+  const [uploadState, setUploadState] = useState<'empty' | 'preparing' | 'uploading' | 'uploaded' | 'upload_failed' | 'display_failed'>(
     value ? 'uploaded' : 'empty'
   );
-  const [localPreviewUrl, setLocalPreviewUrl] = useState<string>(value || '');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Sync value changes from parent if any
+  // Status of the currently active image tag load: 'idle' | 'loading' | 'loaded' | 'failed'
+  const [imageStatus, setImageStatus] = useState<'idle' | 'loading' | 'loaded' | 'failed'>(
+    value ? 'loading' : 'idle'
+  );
+
+  // Track the actual image src we pass to the <img /> tag
+  const [displayedUrl, setDisplayedUrl] = useState<string>(value || '');
+
+  // Keep a set of blob URLs we created to revoke them safely when they are no longer needed
+  const blobUrlsRef = useRef<Set<string>>(new Set());
+
+  // Function to register a blob URL for cleanup
+  const registerBlobUrl = (url: string) => {
+    if (url.startsWith('blob:')) {
+      blobUrlsRef.current.add(url);
+    }
+  };
+
+  // Sync value changes from parent (essential for initialization and reset)
   useEffect(() => {
     if (value) {
-      setLocalPreviewUrl(value);
-      if (uploadState === 'empty' || uploadState === 'failed') {
-        setUploadState('uploaded');
+      setImageUrl(value);
+      setDisplayedUrl(value);
+      setImageStatus('loading');
+      setUploadState('uploaded');
+
+      // Attempt to extract existing media ID from URL
+      const fileIdMatch = value.match(/\/api\/media\/files\/([a-zA-Z0-9-]+)/);
+      if (fileIdMatch && fileIdMatch[1]) {
+        setMediaFileId(fileIdMatch[1]);
       }
     } else {
+      setImageUrl('');
+      setMediaFileId('');
       setLocalPreviewUrl('');
+      setDisplayedUrl('');
+      setImageStatus('idle');
       setUploadState('empty');
     }
   }, [value]);
 
-  // Clean up object URLs on unmount
+  // Clean up all allocated local object URLs on unmount
   useEffect(() => {
     return () => {
-      if (localPreviewUrl && localPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(localPreviewUrl);
-      }
+      blobUrlsRef.current.forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          console.warn('[DevLog] Failed to revoke object URL on unmount:', e);
+        }
+      });
+      blobUrlsRef.current.clear();
     };
-  }, [localPreviewUrl]);
+  }, []);
 
   const handleBoxClick = () => {
     if (uploadState === 'preparing' || uploadState === 'uploading') {
-      return; // prevent clicking while active
+      return; // prevent click actions while processing is active
     }
     fileInputRef.current?.click();
   };
@@ -76,72 +114,93 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isReplacing = uploadState === 'uploaded';
-    setErrorMessage(null);
+    onUploadingStateChange?.(true);
+    setUploadState('preparing');
+
+    // Create immediate local blob URL of raw file
+    const rawLocalUrl = URL.createObjectURL(file);
+    registerBlobUrl(rawLocalUrl);
+    setLocalPreviewUrl(rawLocalUrl);
+    setDisplayedUrl(rawLocalUrl);
+    setImageStatus('loading');
 
     try {
-      // 1. Preparing state: compression starting
-      setUploadState(isReplacing ? 'replacing' : 'preparing');
-      onUploadingStateChange?.(true);
-
-      // Clean up old local blob if any
-      if (localPreviewUrl && localPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(localPreviewUrl);
-      }
-
-      // Perform compression
+      // Compress file
       const compressionResult = await compressImageBeforeUpload(file);
       
-      // Set the compressed preview immediately
-      setLocalPreviewUrl(compressionResult.previewUrl);
+      // Update local preview to the optimized one
+      const compressedBlobUrl = compressionResult.previewUrl;
+      registerBlobUrl(compressedBlobUrl);
+      setLocalPreviewUrl(compressedBlobUrl);
+      setDisplayedUrl(compressedBlobUrl);
 
-      // 2. Uploading state: upload starts
       setUploadState('uploading');
 
       if (api.getToken()) {
         const uploadRes = await api.media.uploadFile(compressionResult.compressedFile, purpose);
-        const finalUrl = uploadRes.secureUrl || uploadRes.url;
+        const secureUrl = uploadRes.secureUrl || uploadRes.url;
         
-        // 3. Uploaded state: success
-        setLocalPreviewUrl(finalUrl);
+        console.log('[DevLog] Media upload response has secureUrl:', !!secureUrl);
+
+        if (!secureUrl) {
+          throw new Error('Photo uploaded but secureUrl is missing from response');
+        }
+
+        // Set state values
+        setMediaFileId(uploadRes.id);
+        setImageUrl(secureUrl);
+
+        // Transition display URL to the loaded remote secure URL,
+        // but do not clear localPreviewUrl yet so fallback is preserved!
+        setDisplayedUrl(secureUrl);
+        setImageStatus('loading');
         setUploadState('uploaded');
-        onUploaded(finalUrl);
-        showSuccess('Photo added', 'The photo has been saved.');
+
+        // Notify parent of the change
+        onUploaded(secureUrl);
       } else {
-        // Fallback for local draft if not logged in
+        // Fallback local-only preview if not logged in
         setUploadState('uploaded');
-        onUploaded(compressionResult.previewUrl);
-        showSuccess('Photo added', 'The photo has been saved (local preview).');
+        setImageStatus('loaded');
+        onUploaded(compressedBlobUrl);
+        showSuccess('Photo added', 'Saved local preview.');
       }
     } catch (err: any) {
-      console.error('Photo upload failed:', err);
-      setUploadState('failed');
-      setErrorMessage(err.message || 'Photo could not be uploaded');
-      showError('Photo could not be uploaded', 'Please choose another photo and try again.');
+      console.error('[DevLog] Photo upload failed:', err);
+      setUploadState('upload_failed');
+      showError('Photo could not be uploaded', err.message || 'Please choose another photo and try again.');
     } finally {
       onUploadingStateChange?.(false);
-      // Reset input value so same file can be chosen again if needed
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     }
   };
 
-  // Styles based on purpose and state
-  const isPickup = purpose === 'pickup_person_photo';
-  
-  // Outer frame size classes
-  let frameSizeClasses = 'w-28 h-28 mx-auto';
-  if (sizeVariant === 'w-24-28') {
-    frameSizeClasses = 'w-24 h-24 sm:w-28 sm:h-28 mx-auto';
-  } else if (isPickup) {
-    frameSizeClasses = 'w-24 h-24 mx-auto';
-  }
+  const handleImageLoad = () => {
+    console.log('[DevLog] Image loaded successfully:', displayedUrl);
+    setImageStatus('loaded');
+  };
+
+  const handleImageError = () => {
+    console.error('[DevLog] Image display failed:', displayedUrl);
+
+    // If secureUrl image fails, try local preview if still available
+    if (displayedUrl === imageUrl && localPreviewUrl && displayedUrl !== localPreviewUrl) {
+      console.log('[DevLog] Trying fallback to local preview URL:', localPreviewUrl);
+      setDisplayedUrl(localPreviewUrl);
+      setImageStatus('loading');
+    } else {
+      setImageStatus('failed');
+      setUploadState('display_failed');
+    }
+  };
 
   // Border style
+  const isPickup = purpose === 'pickup_person_photo';
   const borderClasses = isPickup
-    ? `border-2 border-dashed ${uploadState === 'failed' || error ? 'border-[#C53030]' : 'border-[#D9D6CE] hover:border-[#C59B27]'}`
-    : `border ${uploadState === 'failed' || error ? 'border-[#C53030]' : 'border-[#EAE8E1] hover:border-[#C59B27]'}`;
+    ? `border-2 border-dashed ${uploadState === 'upload_failed' || uploadState === 'display_failed' || error ? 'border-[#C53030]' : 'border-[#D9D6CE] hover:border-[#C59B27]'}`
+    : `border ${uploadState === 'upload_failed' || uploadState === 'display_failed' || error ? 'border-[#C53030]' : 'border-[#EAE8E1] hover:border-[#C59B27]'}`;
 
   // Aria labels
   const getAriaLabel = () => {
@@ -149,19 +208,30 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
       case 'empty':
         return `Upload ${label || 'photo'}. Click to choose a file.`;
       case 'preparing':
-        return 'Preparing and compressing your photo. Please wait.';
+        return 'Preparing photo...';
       case 'uploading':
-        return 'Uploading your photo. Please wait.';
+        return 'Uploading photo...';
       case 'uploaded':
-        return 'Photo uploaded successfully. Click to replace with a different photo.';
-      case 'failed':
-        return 'Photo upload failed. Click to try choosing another photo.';
-      case 'replacing':
-        return 'Replacing your photo. Please wait.';
+        return 'Photo added. Click to change.';
+      case 'upload_failed':
+        return 'Photo could not be uploaded.';
+      case 'display_failed':
+        return 'Photo could not be displayed.';
       default:
         return 'Photo upload box';
     }
   };
+
+  // Determine fixed sizing class and direct styles to prevent expanding/shrinking
+  let widthClass = 'w-28';
+  let heightClass = 'h-28';
+  if (sizeVariant === 'w-24-28') {
+    widthClass = 'w-24 sm:w-28';
+    heightClass = 'h-24 sm:h-28';
+  } else if (isPickup) {
+    widthClass = 'w-24';
+    heightClass = 'h-24';
+  }
 
   return (
     <div className="flex flex-col items-center">
@@ -173,6 +243,7 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
         className="hidden"
       />
 
+      {/* Frame Container - Fixed size, overflow-hidden, flex-none */}
       <div
         onClick={handleBoxClick}
         onKeyDown={handleKeyDown}
@@ -180,52 +251,50 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
         tabIndex={0}
         aria-label={getAriaLabel()}
         aria-live="polite"
-        className={`${frameSizeClasses} ${borderClasses} bg-[#FAF8F4] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-200 relative overflow-hidden group shadow-2xs`}
+        className={`${widthClass} ${heightClass} ${borderClasses} bg-[#FAF8F4] rounded-2xl flex-none flex flex-col items-center justify-center cursor-pointer transition-all duration-200 relative overflow-hidden group shadow-2xs`}
       >
-        {/* Render based on state */}
-        {(uploadState === 'empty' && !localPreviewUrl) && (
+        {/* Render base fallback if empty or completely failed */}
+        {((uploadState === 'empty' && !displayedUrl) || uploadState === 'display_failed') && (
           <div className="flex flex-col items-center justify-center p-4 text-center">
             <Camera className="w-6 h-6 text-[#715D3A] stroke-[1.75] mb-1.5" />
             <span className="text-xs font-bold text-[#715D3A]">{label || 'Add Photo'}</span>
           </div>
         )}
 
+        {/* Preparing overlay */}
         {uploadState === 'preparing' && (
           <div className="flex flex-col items-center justify-center p-4 text-center bg-white/90 absolute inset-0 z-10">
             <div className="text-xs font-medium text-[#715D3A] animate-pulse">Preparing photo...</div>
           </div>
         )}
 
-        {(uploadState === 'uploading' || uploadState === 'replacing') && (
+        {/* Uploading overlay */}
+        {uploadState === 'uploading' && (
           <div className="flex flex-col items-center justify-center p-4 text-center bg-white/90 absolute inset-0 z-10">
-            <div className="text-xs font-medium text-[#715D3A] animate-pulse">
-              {uploadState === 'replacing' ? 'Updating photo...' : 'Uploading photo...'}
-            </div>
+            <div className="text-xs font-medium text-[#715D3A] animate-pulse">Uploading photo...</div>
           </div>
         )}
 
-        {uploadState === 'failed' && (
+        {/* Upload Failed overlay */}
+        {uploadState === 'upload_failed' && (
           <div className="flex flex-col items-center justify-center p-4 text-center bg-white/95 absolute inset-0 z-10">
             <AlertCircle className="w-5 h-5 text-[#C53030] mb-1" />
             <div className="text-[11px] font-bold text-[#C53030] leading-snug">Photo could not be uploaded</div>
           </div>
         )}
 
-        {/* Display Image Preview for Uploaded, Replacing, or Uploading (background preview) */}
-        {localPreviewUrl && (
+        {/* Display Image (Always use cover / center / block / 100% dimensions) */}
+        {displayedUrl && uploadState !== 'display_failed' && (
           <>
             <img
-              src={localPreviewUrl}
+              src={displayedUrl}
               alt="Preview"
-              className="w-full h-full object-cover object-center"
-              onError={() => {
-                // If the preview fails to load, set state to empty
-                setUploadState('empty');
-                setLocalPreviewUrl('');
-              }}
+              onLoad={handleImageLoad}
+              onError={handleImageError}
+              className="w-full h-full object-cover object-center block"
             />
             {/* Hover overlay to change photo */}
-            {uploadState !== 'preparing' && uploadState !== 'uploading' && uploadState !== 'replacing' && (
+            {uploadState !== 'preparing' && uploadState !== 'uploading' && (
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[11px] font-semibold">
                 Change photo
               </div>
@@ -235,28 +304,40 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
       </div>
 
       {/* Underneath Helper Text / Labels / Messages */}
-      {uploadState === 'uploaded' && (
+      {/* "Photo added" only shows if image is visible/loaded successfully */}
+      {uploadState === 'uploaded' && imageStatus === 'loaded' && (
         <span className="text-[11px] font-semibold text-emerald-700 mt-2 flex items-center justify-center gap-1">
           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
           Photo added
         </span>
       )}
 
-      {uploadState === 'failed' && (
+      {/* Custom label/help text if display fails */}
+      {uploadState === 'display_failed' && (
         <div className="text-center mt-2 max-w-[240px]">
-          <p className="text-[11px] font-medium text-[#C53030]">Please choose another photo and try again.</p>
+          <p className="text-[11px] font-bold text-[#C53030]">Photo could not be displayed</p>
+          <p className="text-[10px] text-[#715D3A] mt-0.5">Please try another photo.</p>
         </div>
       )}
 
-      {uploadState !== 'failed' && uploadState !== 'uploaded' && helperText && (
+      {/* Upload failed label */}
+      {uploadState === 'upload_failed' && (
+        <div className="text-center mt-2 max-w-[240px]">
+          <p className="text-[11px] font-medium text-[#C53030]">Photo could not be uploaded</p>
+          <p className="text-[10px] text-[#715D3A] mt-0.5">Please try another photo.</p>
+        </div>
+      )}
+
+      {/* Standard non-failed helperText */}
+      {uploadState !== 'upload_failed' && uploadState !== 'display_failed' && (uploadState !== 'uploaded' || imageStatus !== 'loaded') && helperText && (
         <span className="text-xs text-[#3F3F46] mt-3 block font-medium text-center">
           {helperText}
         </span>
       )}
 
-      {(error || errorMessage) && uploadState !== 'failed' && (
+      {error && uploadState !== 'upload_failed' && uploadState !== 'display_failed' && (
         <p className="text-xs text-[#C53030] mt-2 font-medium text-center">
-          {error || errorMessage}
+          {error}
         </p>
       )}
     </div>

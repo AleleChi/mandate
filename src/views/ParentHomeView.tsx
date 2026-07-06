@@ -16,6 +16,7 @@ interface ParentHomeViewProps {
   onResumeChildDraft?: (child: ChildItem) => void;
   initialTab?: BottomNavTab;
   onSignOut?: () => void;
+  onDeleteChild?: (childId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -70,10 +71,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   onStartNewChild,
   onResumeChildDraft,
   initialTab,
-  onSignOut
+  onSignOut,
+  onDeleteChild
 }) => {
   const { showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
+  const [childToRemove, setChildToRemove] = useState<ChildItem | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const getGreeting = () => {
     if (!parentProfile || !parentProfile.fullName || !parentProfile.fullName.trim()) {
@@ -120,6 +124,21 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       window.history.pushState(null, '', `#${pathMap[tab]}`);
     } catch {
       // Ignore history push errors in sandboxes
+    }
+  };
+
+  const handleRemoveConfirm = async () => {
+    if (!childToRemove || !onDeleteChild) return;
+    setIsRemoving(true);
+    try {
+      const res = await onDeleteChild(childToRemove.id);
+      if (res.success) {
+        setChildToRemove(null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsRemoving(false);
     }
   };
 
@@ -296,16 +315,25 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                           View pass
                         </button>
                       ) : child.status === 'Incomplete' || child.status === 'Draft' ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onResumeChildDraft) onResumeChildDraft(child);
-                            else onNavigate('/parent/children/new');
-                          }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
-                        >
-                          Continue details
-                        </button>
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onResumeChildDraft) onResumeChildDraft(child);
+                              else onNavigate('/parent/children/new');
+                            }}
+                            className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          >
+                            Continue details
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setChildToRemove(child)}
+                            className="w-full py-2 px-4 rounded-xl text-[#6B7280] hover:text-[#4B5563] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       ) : (
                         <button
                           type="button"
@@ -409,16 +437,25 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   <span className="font-semibold text-[#18181B]">Care Review Status: </span> {child.statusNote}
                 </div>
                 {(child.status === 'Incomplete' || child.status === 'Draft') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onResumeChildDraft) onResumeChildDraft(child);
-                      else onNavigate('/parent/children/new');
-                    }}
-                    className="py-1.5 px-3 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs cursor-pointer"
-                  >
-                    Continue details
-                  </button>
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setChildToRemove(child)}
+                      className="py-1.5 px-3 rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 font-semibold text-xs cursor-pointer bg-white"
+                    >
+                      Remove
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onResumeChildDraft) onResumeChildDraft(child);
+                        else onNavigate('/parent/children/new');
+                      }}
+                      className="py-1.5 px-3 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs cursor-pointer"
+                    >
+                      Continue details
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -969,6 +1006,38 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Draft Child Modal */}
+      {childToRemove && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 border border-[#EAE8E1] shadow-2xl max-w-sm w-full animate-in fade-in zoom-in-95">
+            <h3 className="text-lg font-serif-koinonia font-bold text-[#18181B] mb-2">
+              Remove child?
+            </h3>
+            <p className="text-sm text-[#3F3F46] leading-relaxed mb-6">
+              This will remove the child’s saved details from your Parent Access.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                type="button"
+                disabled={isRemoving}
+                onClick={() => setChildToRemove(null)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-[#EAE8E1] text-[#3F3F46] hover:bg-[#FAF9F6] font-semibold text-sm transition-all focus:outline-none cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isRemoving}
+                onClick={handleRemoveConfirm}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white font-semibold text-sm transition-all focus:outline-none cursor-pointer text-center"
+              >
+                {isRemoving ? 'Removing...' : 'Remove child'}
+              </button>
+            </div>
           </div>
         </div>
       )}

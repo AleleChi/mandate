@@ -145,11 +145,15 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
 
     res.status(201).json({
       id: fileId,
-      provider: uploadResult.provider,
+      provider: uploadResult.provider || 'cloudinary',
       publicId: uploadResult.publicId,
       secureUrl: uploadResult.secureUrl,
       resourceType: uploadResult.resourceType || 'image',
       fileType: purpose,
+      width: uploadResult.width || 800,
+      height: uploadResult.height || 800,
+      fileSize: uploadResult.bytes || buffer.length,
+      mimeType: mimeType,
       url: uploadResult.secureUrl
     });
   } catch (err: any) {

@@ -66,11 +66,14 @@ async function resolveToMediaFileId(photoRef?: string | null): Promise<string> {
 
 async function mapProfileToFrontend(row: any) {
   if (!row) return null;
+  const resolvedPhoto = await resolvePhotoUrlAsync(row.photo_file_id);
   return {
     fullName: row.full_name || '',
     email: row.email || '',
     phone: row.phone_number || '',
+    phoneNumber: row.phone_number || '',
     whatsapp: row.whatsapp_number || row.phone_number || '',
+    whatsappNumber: row.whatsapp_number || row.phone_number || '',
     homeAddress: row.home_address || '',
     country: row.country || '',
     stateRegion: row.state_region || '',
@@ -78,7 +81,8 @@ async function mapProfileToFrontend(row: any) {
     preferredContact: (row.preferred_contact as any) || 'WhatsApp',
     isWorker: Boolean(row.is_koinonia_worker),
     department: row.department || '',
-    photoUrl: await resolvePhotoUrlAsync(row.photo_file_id),
+    photoFileId: row.photo_file_id || '',
+    photoUrl: resolvedPhoto,
     profileCompletedAt: row.profile_completed_at || null
   };
 }
@@ -103,6 +107,9 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
   } else if (status === 'not_selected') {
     frontendStatus = 'Not selected';
     statusNote = 'Not selected for this session';
+  } else if (status === 'withdrawn') {
+    frontendStatus = 'Withdrawn';
+    statusNote = 'Details withdrawn';
   }
 
   const resolvedChildPhoto = await resolvePhotoUrlAsync(childRow.photo_file_id);
@@ -112,6 +119,8 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     id: childRow.id,
     childDetails: {
       photo: resolvedChildPhoto,
+      photoFileId: childRow.photo_file_id || '',
+      photoUrl: resolvedChildPhoto,
       fullName: childRow.full_name || '',
       gender: childRow.gender || '',
       dateOfBirth: childRow.date_of_birth || '',
@@ -136,6 +145,8 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     pickup: {
       pickupType: pickupRow?.pickup_type || 'parent',
       pickupPersonPhoto: resolvedPickupPhoto,
+      pickupPersonPhotoFileId: pickupRow?.photo_file_id || '',
+      pickupPersonPhotoUrl: resolvedPickupPhoto,
       pickupPersonFullName: pickupRow?.full_name || '',
       pickupPersonRelationship: pickupRow?.relationship_to_child || '',
       pickupPersonPhone: pickupRow?.phone_number || '',
@@ -147,6 +158,7 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
       submittedAt: entryRow?.submitted_at || undefined,
       status: frontendStatus
     },
+    photoFileId: childRow.photo_file_id || '',
     photoUrl: resolvedChildPhoto,
     fullName: childRow.full_name || '',
     gender: childRow.gender || '',
@@ -163,6 +175,7 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     ageGroup: childRow.age_group || '',
     status: frontendStatus,
     statusNote,
+    photoFileId: childRow.photo_file_id || '',
     photoUrl: resolvedChildPhoto,
     submittedAt: entryRow?.submitted_at || undefined,
     draftData
@@ -450,24 +463,55 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   if (!c) return res.status(404).json({ error: 'Child not found' });
 
   const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
-  if (!entry) return res.status(400).json({ error: 'Child entry details incomplete' });
+  if (!entry) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please complete the missing details before sending.'
+    });
+  }
 
   const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
-  if (!pickup) return res.status(400).json({ error: 'Pickup person details incomplete' });
+  if (!pickup) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please complete the missing details before sending.'
+    });
+  }
+
+  // Idempotency: check if already submitted
+  if (entry.status === 'under_review' || entry.status === 'selected' || entry.status === 'pass_ready' || entry.status === 'waiting_list' || entry.status === 'not_selected') {
+    const mapped = await mapChildToFrontend(c, entry, pickup);
+    return res.json({
+      success: true,
+      childId: childId,
+      status: 'under_review',
+      ...mapped
+    });
+  }
 
   // Server-side validation rules
-  if (!c.photo_file_id || !c.photo_file_id.trim()) return res.status(400).json({ error: 'Child photo is required' });
-  if (!c.full_name || !c.full_name.trim()) return res.status(400).json({ error: 'Child full name is required' });
-  if (!c.gender) return res.status(400).json({ error: 'Gender is required' });
-  if (!c.date_of_birth) return res.status(400).json({ error: 'Date of birth is required' });
-  if (!entry.school_class) return res.status(400).json({ error: 'School class is required' });
-  if (!entry.information_confirmed) return res.status(400).json({ error: 'You must confirm the health and support information' });
+  if (!c.photo_file_id || !c.photo_file_id.trim() || 
+      !c.full_name || !c.full_name.trim() || 
+      !c.gender || 
+      !c.date_of_birth || 
+      !entry.school_class || 
+      !entry.information_confirmed) {
+    return res.status(400).json({
+      success: false,
+      message: "Please complete the missing details before sending."
+    });
+  }
 
   if (pickup.pickup_type === 'other_person') {
-    if (!pickup.full_name || !pickup.full_name.trim()) return res.status(400).json({ error: 'Pickup person full name is required' });
-    if (!pickup.photo_file_id || !pickup.photo_file_id.trim()) return res.status(400).json({ error: 'Pickup person photo is required' });
-    if (!pickup.phone_number || !pickup.phone_number.trim()) return res.status(400).json({ error: 'Pickup person phone number is required' });
-    if (!pickup.approved_by_parent) return res.status(400).json({ error: 'You must approve the pickup person authorization' });
+    if (!pickup.full_name || !pickup.full_name.trim() || 
+        !pickup.photo_file_id || !pickup.photo_file_id.trim() || 
+        !pickup.phone_number || !pickup.phone_number.trim() || 
+        !pickup.approved_by_parent) {
+      return res.status(400).json({
+        success: false,
+        message: "Please complete the missing details before sending."
+      });
+    }
   }
 
   const now = new Date().toISOString();
@@ -482,9 +526,23 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
 
   const updatedEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entry.id]);
   if (req.user && req.user.email) {
-    sendChildReviewReceivedEmail(req.user.email, c.full_name).catch(() => {});
+    const baseUrl = process.env.APP_BASE_URL || 'https://koinonia12.netlify.app';
+    const childStatusLink = `${baseUrl}/#/parent/children/${childId}/status`;
+    sendChildReviewReceivedEmail({
+      parentEmail: req.user.email,
+      parentFirstName: req.parentProfile?.full_name,
+      childName: c.full_name,
+      childStatusLink
+    }).catch(() => {});
   }
-  res.json(await mapChildToFrontend(c, updatedEntry, pickup));
+
+  const mapped = await mapChildToFrontend(c, updatedEntry, pickup);
+  res.json({
+    success: true,
+    childId: childId,
+    status: 'under_review',
+    ...mapped
+  });
 });
 
 router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: Response) => {
@@ -546,6 +604,73 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
     issuedAt: pass.issued_at,
     child: mappedChild
   });
+});
+
+router.delete('/children/:childId', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  const { childId } = req.params;
+
+  try {
+    const c = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!c) {
+      return res.status(404).json({ error: 'Child not found' });
+    }
+
+    if (c.parent_profile_id !== req.parentProfile.id) {
+      return res.status(403).json({ error: 'You do not have authorization to access this child profile' });
+    }
+
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+    const status = entry ? entry.status : 'incomplete';
+
+    if (status === 'incomplete' || status === 'draft') {
+      // Hard delete draft child and related entry/pickup details
+      await transaction(async () => {
+        if (entry) {
+          await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
+          await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [entry.id]);
+          await execute('DELETE FROM child_event_entries WHERE id = ?', [entry.id]);
+        }
+        await execute('DELETE FROM children WHERE id = ?', [childId]);
+      });
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DB Log] Successfully hard-deleted draft child ${childId}`);
+      }
+
+      return res.json({ success: true, message: 'Child removed.' });
+    } else if (status === 'under_review') {
+      // Soft-withdraw details
+      await execute(`
+        UPDATE child_event_entries
+        SET status = 'withdrawn', withdrawn_at = ?, updated_at = ?
+        WHERE child_id = ? AND event_id = ?
+      `, [new Date().toISOString(), new Date().toISOString(), childId, REAL_EVENT_ID]);
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DB Log] Successfully withdrew child ${childId} from event entry`);
+      }
+
+      return res.json({ success: true, message: 'Details withdrawn.' });
+    } else if (status === 'pass_ready') {
+      return res.status(409).json({
+        error: 'This child already has an event pass. Please contact the Children and Teens team if you need help.'
+      });
+    } else if (status === 'checked_in' || status === 'inside' || status === 'picked_up') {
+      return res.status(409).json({
+        error: 'This child has already been checked in for the event.'
+      });
+    } else {
+      return res.status(409).json({
+        error: 'Cannot remove child details at this stage. Please contact our team if you need assistance.'
+      });
+    }
+  } catch (err: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error removing/withdrawing child:', err);
+    }
+    return res.status(500).json({ error: 'An unexpected error occurred while processing your request.' });
+  }
 });
 
 export default router;
