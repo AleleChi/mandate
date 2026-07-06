@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppRoute, AddChildDraft, ParentProfile } from '../types';
-import { ArrowLeft, Check, Camera, ShieldCheck } from 'lucide-react';
-import { api } from '../services/api';
+import { ArrowLeft, Check, ShieldCheck } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
+import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 
 interface AddChildStep4ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -42,8 +42,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
       : (draft?.pickupPersonApproved || false)
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   useEffect(() => {
     if (!draft || !draft.fullName) {
@@ -83,31 +82,6 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
   };
 
   const { ageText, groupFormatted } = calculateAgeDetails();
-
-  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      try {
-        if (errors.pickupPersonPhotoUrl) {
-          setErrors((prev) => ({ ...prev, pickupPersonPhotoUrl: undefined }));
-        }
-        if (api.getToken()) {
-          const res = await api.media.uploadFile(file, 'pickup_person_photo');
-          setPickupPersonPhotoUrl(res.secureUrl || res.url);
-        } else {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            setPickupPersonPhotoUrl(reader.result as string);
-          };
-          reader.readAsDataURL(file);
-        }
-        showSuccess('Photo added', 'The photo has been saved.');
-      } catch (err: any) {
-        showError('Photo could not be uploaded', 'Please choose another photo and try again.');
-        setErrors((prev) => ({ ...prev, pickupPersonPhotoUrl: 'Failed to upload photo' }));
-      }
-    }
-  };
 
   const handleContinue = (e: React.FormEvent) => {
     e.preventDefault();
@@ -400,46 +374,22 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
 
               {/* Photo upload */}
               <div className="flex flex-col items-center">
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  onChange={handlePhotoSelect}
-                  className="hidden"
+                <PhotoUploadBox
+                  value={pickupPersonPhotoUrl}
+                  onUploaded={(url) => {
+                    setPickupPersonPhotoUrl(url);
+                    if (errors.pickupPersonPhotoUrl) {
+                      setErrors((prev) => ({ ...prev, pickupPersonPhotoUrl: undefined }));
+                    }
+                  }}
+                  label="Add pickup person photo"
+                  helperText="Use a clear photo of the person’s face"
+                  purpose="pickup_person_photo"
+                  error={errors.pickupPersonPhotoUrl}
+                  onUploadingStateChange={(uploading) => {
+                    setIsUploadingPhoto(uploading);
+                  }}
                 />
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`w-24 h-24 rounded-2xl border-2 border-dashed ${
-                    errors.pickupPersonPhotoUrl ? 'border-red-500' : 'border-[#D9D6CE]'
-                  } bg-[#FAF8F4] flex flex-col items-center justify-center cursor-pointer hover:border-[#C59B27] hover:bg-[#F3EFE6] active:scale-[0.99] transition-all duration-200 relative overflow-hidden shadow-2xs`}
-                >
-                  {pickupPersonPhotoUrl ? (
-                    <img
-                      src={pickupPersonPhotoUrl}
-                      alt="Pickup person"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <Camera className="w-6 h-6 text-[#9A7326]" />
-                  )}
-                </div>
-                <div className="text-center mt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="font-semibold text-sm text-[#18181B] hover:text-[#9A7326] transition-colors focus:outline-none cursor-pointer block mx-auto"
-                  >
-                    Add pickup person photo
-                  </button>
-                  <p className="text-xs text-[#6B7280] mt-0.5">
-                    Use a clear photo of the person’s face
-                  </p>
-                </div>
-                {errors.pickupPersonPhotoUrl && (
-                  <p className="text-xs text-red-600 font-medium mt-1">
-                    {errors.pickupPersonPhotoUrl}
-                  </p>
-                )}
               </div>
 
               {/* Fields */}
@@ -588,14 +538,16 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           <div className="pt-4 space-y-2.5">
             <button
               type="submit"
-              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block"
+              disabled={isUploadingPhoto}
+              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block disabled:opacity-60"
             >
-              Continue
+              {isUploadingPhoto ? 'Uploading photo...' : 'Continue'}
             </button>
             <button
               type="button"
+              disabled={isUploadingPhoto}
               onClick={handleSaveAndFinishLater}
-              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block"
+              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block disabled:opacity-55"
             >
               Save and finish later
             </button>

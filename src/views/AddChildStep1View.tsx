@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { AppRoute, AddChildDraft } from '../types';
-import { ArrowLeft, Camera, ChevronDown, Calendar, Info } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Calendar, Info } from 'lucide-react';
 import { PremiumSelect } from '../components/common/PremiumSelect';
-import { api } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -34,36 +34,6 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      try {
-        setIsUploadingPhoto(true);
-        if (errors.photo) {
-          setErrors((prev) => ({ ...prev, photo: undefined }));
-        }
-        if (api.getToken()) {
-          const res = await api.media.uploadFile(file, 'child_photo');
-          setPhotoUrl(res.secureUrl || res.url);
-        } else {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            if (event.target?.result) setPhotoUrl(event.target.result as string);
-          };
-          reader.readAsDataURL(file);
-        }
-        showSuccess('Photo added', 'The photo has been saved.');
-      } catch (err: any) {
-        showError('Photo could not be uploaded', 'Please choose another photo and try again.');
-        setErrors((prev) => ({ ...prev, photo: 'Failed to upload photo' }));
-      } finally {
-        setIsUploadingPhoto(false);
-      }
-    }
-  };
 
   const calculateAgeAndGroup = (dobString: string) => {
     if (!dobString) {
@@ -253,28 +223,21 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
         <form onSubmit={handleContinue} className="space-y-5" noValidate>
           {/* Photo upload */}
           <div className="flex flex-col items-center pt-1">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl border border-[#D9D6CE] bg-[#FAF9F6] flex flex-col items-center justify-center cursor-pointer hover:border-[#C59B27] hover:bg-[#FAF8F4] active:scale-[0.99] transition-all duration-200 relative overflow-hidden shadow-2xs"
-            >
-              {photoUrl ? (
-                <img src={photoUrl} alt="Child preview" className="w-full h-full object-cover" />
-              ) : (
-                <Camera className="w-7 h-7 text-[#C59B27] stroke-[1.75]" />
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="hidden"
+            <PhotoUploadBox
+              value={photoUrl}
+              onUploaded={(url) => {
+                setPhotoUrl(url);
+                if (errors.photo) setErrors((prev) => ({ ...prev, photo: undefined }));
+              }}
+              label="Add child photo"
+              helperText="Use a clear photo of the child’s face."
+              purpose="child_photo"
+              error={errors.photo}
+              sizeVariant="w-24-28"
+              onUploadingStateChange={(uploading) => {
+                setIsUploadingPhoto(uploading);
+              }}
             />
-            <span className="text-xs font-semibold text-[#18181B] mt-2.5">Add child photo</span>
-            <span className="text-[11px] sm:text-xs text-[#6B7280] mt-0.5">
-              Use a clear photo of the child’s face.
-            </span>
-            {errors.photo && <p className="text-xs text-red-600 mt-1.5 font-medium text-center">{errors.photo}</p>}
           </div>
 
           {/* 1. Child's full name */}
@@ -373,14 +336,16 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           <div className="pt-2 space-y-2.5">
             <button
               type="submit"
-              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block"
+              disabled={isUploadingPhoto}
+              className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] active:translate-y-0 text-[#18181B] font-semibold text-sm rounded-xl transition-all duration-200 hover:-translate-y-[1px] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2 cursor-pointer shadow-2xs text-center block disabled:opacity-60"
             >
-              Continue
+              {isUploadingPhoto ? 'Uploading photo...' : 'Continue'}
             </button>
             <button
               type="button"
+              disabled={isUploadingPhoto}
               onClick={handleSaveAndFinishLater}
-              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block"
+              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block disabled:opacity-55"
             >
               Save and finish later
             </button>

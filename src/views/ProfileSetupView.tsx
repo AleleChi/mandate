@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppRoute, ParentProfile } from '../types';
-import { ArrowLeft, Camera, Info } from 'lucide-react';
+import { ArrowLeft, Info } from 'lucide-react';
 import { api, extractApiError } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 
 interface ProfileSetupViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -59,7 +60,6 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
 
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setPhotoUrl(initialProfile.photoUrl || '');
@@ -167,44 +167,6 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     if (phone) {
       setWhatsapp(phone);
       setTouched((prev) => ({ ...prev, whatsapp: true }));
-    }
-  };
-
-  const handlePhotoClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        setIsUploadingPhoto(true);
-        setErrorMsg(null);
-        if (api.getToken()) {
-          const res = await api.media.uploadFile(file, 'parent_profile_photo');
-          setPhotoUrl(res.secureUrl || res.url);
-        } else {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            if (event.target?.result) {
-              setPhotoUrl(event.target.result as string);
-            }
-          };
-          reader.readAsDataURL(file);
-        }
-        setTouched((prev) => ({ ...prev, photoUrl: true }));
-        showSuccess('Photo added', 'The photo has been saved.');
-      } catch (err: any) {
-        showError('Photo could not be uploaded', 'Please choose another photo and try again.');
-        setErrorMsg('Failed to upload photo');
-      } finally {
-        setIsUploadingPhoto(false);
-      }
-    } else {
-      if (!photoUrl) {
-        setPhotoUrl('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80');
-        setTouched((prev) => ({ ...prev, photoUrl: true }));
-      }
     }
   };
 
@@ -342,41 +304,20 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
         <form onSubmit={handleContinue} className="space-y-5" noValidate>
           {/* 3. Photo upload card */}
           <div className="bg-white rounded-2xl p-5 border border-[#EAE8E1] shadow-2xs text-center">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="hidden"
+            <PhotoUploadBox
+              value={photoUrl}
+              onUploaded={(url) => {
+                setPhotoUrl(url);
+                setTouched((prev) => ({ ...prev, photoUrl: true }));
+              }}
+              label="Add Photo"
+              helperText="Use a clear photo of your face."
+              purpose="parent_profile_photo"
+              error={getError('photoUrl')}
+              onUploadingStateChange={(uploading) => {
+                setIsUploadingPhoto(uploading);
+              }}
             />
-            <div
-              onClick={handlePhotoClick}
-              className="w-28 h-28 mx-auto bg-[#FAF8F4] hover:bg-[#F4F1EA] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-colors border border-[#EAE8E1] relative overflow-hidden group"
-            >
-              {photoUrl ? (
-                <>
-                  <img src={photoUrl} alt="" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[11px] font-semibold">
-                    Change photo
-                  </div>
-                </>
-              ) : (
-                <>
-                  <Camera className="w-6 h-6 text-[#715D3A] stroke-[1.75] mb-1.5" />
-                  <span className="text-xs font-bold text-[#715D3A]">Add Photo</span>
-                </>
-              )}
-            </div>
-
-            <span className="text-xs text-[#3F3F46] mt-3 block font-medium">
-              Use a clear photo of your face.
-            </span>
-
-            {getError('photoUrl') && (
-              <p className="text-xs text-[#C53030] mt-2 font-medium">
-                {getError('photoUrl')}
-              </p>
-            )}
           </div>
 
           {/* 4. Form fields */}
@@ -768,17 +709,18 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           <div className="pt-2 space-y-2">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || isUploadingPhoto}
               className="w-full py-3.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all shadow-2xs cursor-pointer focus:outline-none disabled:opacity-60"
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Save changes' : 'Continue')}
+              {saving ? 'Saving...' : (isUploadingPhoto ? 'Uploading photo...' : (mode === 'edit' ? 'Save changes' : 'Continue'))}
             </button>
 
             {/* 10. Secondary action */}
             <button
               type="button"
+              disabled={saving || isUploadingPhoto}
               onClick={mode === 'edit' ? handleCancel : handleSaveAndFinishLater}
-              className="w-full py-2 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#18181B] transition-colors cursor-pointer focus:outline-none block text-center"
+              className="w-full py-2 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#18181B] transition-colors cursor-pointer focus:outline-none block text-center disabled:opacity-55"
             >
               {mode === 'edit' ? 'Cancel' : 'Save and finish later'}
             </button>

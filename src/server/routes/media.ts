@@ -90,11 +90,19 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       if (!allowedImageTypes.includes(mimeType)) {
         return res.status(400).json({ error: 'Please upload a JPG, PNG, or WebP image.' });
       }
-      const maxSize = (purpose === 'landing_image' || purpose === 'gallery_media')
-        ? 10 * 1024 * 1024
-        : 5 * 1024 * 1024;
+
+      let maxSize = 5 * 1024 * 1024;
+      const isParentFacing = ['parent_profile_photo', 'child_photo', 'pickup_person_photo'].includes(purpose);
+      if (isParentFacing) {
+        maxSize = 2 * 1024 * 1024; // 2MB limit
+      } else if (purpose === 'landing_image' || purpose === 'gallery_media') {
+        maxSize = 10 * 1024 * 1024;
+      }
 
       if (buffer.length > maxSize) {
+        if (isParentFacing) {
+          return res.status(400).json({ error: 'This photo is too large. Please choose a smaller photo.' });
+        }
         return res.status(400).json({ error: 'This file is too large. Please choose a smaller file.' });
       }
     }
