@@ -63,6 +63,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
 
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setPhotoUrl(initialProfile.photoUrl || '');
@@ -165,6 +166,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   };
 
   const getError = (field: string): string => {
+    if (serverErrors[field]) return serverErrors[field];
     if (!touched[field]) return '';
     return validateField(field);
   };
@@ -209,6 +211,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     });
 
     setTouched((prev) => ({ ...prev, ...newTouched }));
+    setServerErrors({});
 
     if (hasError) {
       return;
@@ -249,9 +252,20 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
         onNavigate('/parent/home');
       }
     } catch (err: any) {
-      const { message } = extractApiError(err);
-      setErrorMsg(message);
-      showError('We could not save your profile', 'Please check your connection and try again.');
+      if (err.data && err.data.errorsMap) {
+        const newServerErrs: Record<string, string> = {};
+        Object.keys(err.data.errorsMap).forEach((field) => {
+          newServerErrs[field] = err.data.errorsMap[field].message;
+        });
+        setServerErrors(newServerErrs);
+        const firstErrMsg = err.data.error || 'Please check the highlighted fields.';
+        setErrorMsg(firstErrMsg);
+        showError('Validation failed', firstErrMsg);
+      } else {
+        const { message } = extractApiError(err);
+        setErrorMsg(message);
+        showError('We could not save your profile', 'Please check your connection and try again.');
+      }
     } finally {
       setSaving(false);
     }

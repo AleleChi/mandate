@@ -187,12 +187,21 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
               </div>
 
                {resendSuccess === 'already_verified' ? (
-                <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-left space-y-1">
-                  <div className="flex items-center gap-2 text-blue-800 text-sm font-semibold">
-                    <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                    <span>Email already verified</span>
+                <div className="p-5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-left space-y-3.5 animate-fade-in">
+                  <div className="flex items-center gap-2 text-[#065F46] text-sm font-bold">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 stroke-[2.5]" />
+                    <span>Email already confirmed</span>
                   </div>
-                  <p className="text-xs text-blue-600 pl-7">You can sign in with this email.</p>
+                  <p className="text-xs text-[#047857] leading-relaxed font-medium">
+                    This email is already confirmed. You can sign in directly to continue.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/parent/sign-in')}
+                    className="w-full py-2.5 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer focus:outline-none"
+                  >
+                    Proceed to Sign In
+                  </button>
                 </div>
               ) : resendSuccess === 'sent' ? (
                 <div className="p-4 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-left space-y-1">

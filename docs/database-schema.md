@@ -20,7 +20,7 @@ Stores authenticated identity and RBAC role.
 - `id` (VARCHAR/TEXT PK): UUID
 - `email` (VARCHAR/TEXT UNIQUE NOT NULL): User email
 - `password_hash` (VARCHAR/TEXT NOT NULL): Argon2id / scrypt hashed password
-- `role` (VARCHAR/TEXT NOT NULL): `parent`, `staff`, `admin`
+- `role` (VARCHAR/TEXT NOT NULL): `parent`, `volunteer`, `staff`, `admin`
 - `created_at`, `updated_at`: TIMESTAMP
 
 ### 2. `parent_profiles`
@@ -32,6 +32,20 @@ Stores contact preferences and worker identity.
 - `is_worker` (SMALLINT/INTEGER): 0 or 1
 - `department`: TEXT
 - `photo_file_id` (VARCHAR/TEXT FK -> media_files.id NULLABLE)
+
+### 2b. `volunteer_profiles`
+Stores volunteer profile data, Koinonia status, and assigned teams.
+- `id` (VARCHAR/TEXT PK): UUID
+- `user_id` (VARCHAR/TEXT FK -> users.id UNIQUE)
+- `photo_file_id` (VARCHAR/TEXT FK -> media_files.id NULLABLE): Profile image (resolves to standard media file)
+- `full_name`, `phone`, `whatsapp`: TEXT
+- `is_koinonia_worker` (SMALLINT/INTEGER): 0 or 1
+- `department`: TEXT NULLABLE
+- `preferred_team` (TEXT): Assigned team (e.g., `event-day`, `media`)
+- `serving_experience` (SMALLINT/INTEGER): 0 or 1
+- `note` (TEXT NULLABLE): Notes or request notes
+- `status` (TEXT): `pending_review`, `approved` / `active`, `rejected`, `suspended`
+- `created_at`, `updated_at`: TIMESTAMP
 
 ### 3. `events`
 Represents children's church events or camp iterations.
@@ -81,7 +95,7 @@ Metadata catalog for uploaded assets stored via Cloudinary media provider.
 - `id` (VARCHAR/TEXT PK): UUID
 - `owner_user_id` (VARCHAR/TEXT FK -> users.id)
 - `provider` (TEXT DEFAULT 'cloudinary'): Media storage provider
-- `file_type` (TEXT): Purpose indicator (`parent_profile_photo`, `child_photo`, `pickup_person_photo`, `landing_image`, `event_video`, `gallery_media`)
+- `file_type` (TEXT): Purpose indicator (`parent_profile_photo`, `child_photo`, `pickup_person_photo`, `volunteer_profile_photo`, `landing_image`, `event_video`, `gallery_media`)
 - `public_id` (TEXT): Cloudinary public asset ID (e.g., `koinonia-children-teens/parents/uuid`)
 - `secure_url` (TEXT): Cloudinary HTTPS asset delivery URL
 - `resource_type` (TEXT): Cloudinary resource type (`image`, `video`)

@@ -5,6 +5,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   helperText?: string;
   icon?: React.ReactNode;
+  loading?: boolean;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -14,6 +15,7 @@ export const Input: React.FC<InputProps> = ({
   icon,
   className = '',
   id,
+  loading,
   ...props
 }) => {
   const inputId = id || label.toLowerCase().replace(/\s+/g, '-');

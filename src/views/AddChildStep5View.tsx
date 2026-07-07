@@ -3,6 +3,7 @@ import { AppRoute, AddChildDraft, ParentProfile } from '../types';
 import { ArrowLeft, Check, Send, Info, AlertCircle } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
+import { extractApiError } from '../services/api';
 
 interface AddChildStep5ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -141,6 +142,11 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (!navigator.onLine) {
+      showError('You are offline', 'Please reconnect before sending these details.');
+      return;
+    }
+
     const newErrors: Record<string, string> = {};
 
     // 1. Child validations
@@ -224,7 +230,8 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
     } catch (err: any) {
       console.error('Submit review error:', err);
       setIsSubmitting(false);
-      showError('Submission failed', 'We could not send the details right now. Please try again.');
+      const apiErr = extractApiError(err);
+      showError('Submission failed', apiErr.message || 'We could not send the details right now. Please try again.');
     }
   };
 

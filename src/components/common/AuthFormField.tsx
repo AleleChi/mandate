@@ -10,6 +10,7 @@ export interface AuthFormFieldProps extends React.InputHTMLAttributes<HTMLInputE
   isTouched?: boolean;
   suggestion?: string;
   onApplySuggestion?: () => void;
+  loading?: boolean;
 }
 
 /**
@@ -27,6 +28,7 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
   suggestion,
   onApplySuggestion,
   className = '',
+  loading,
   ...props
 }) => {
   const [showPassword, setShowPassword] = useState(false);

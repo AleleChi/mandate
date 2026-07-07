@@ -139,6 +139,9 @@ export const api = {
     async getMe() {
       return api.request<{ user: any; profile: any }>('/api/auth/me');
     },
+    async getAccess() {
+      return api.request<any>('/api/me/access');
+    },
     async forgotPassword(email: string) {
       return api.request<any>('/api/auth/forgot-password', {
         method: 'POST',
@@ -198,6 +201,91 @@ export const api = {
       return api.request<any>(`/api/parent/children/${childId}`, {
         method: 'DELETE'
       });
+    },
+    async getNotifications(unreadOnly = false, role?: string) {
+      let url = `/api/notifications?unread=${unreadOnly}`;
+      if (role) {
+        url += `&role=${role}`;
+      }
+      const res = await api.request<{ notifications: any[] }>(url);
+      return res.notifications || [];
+    },
+    async markAllNotificationsAsRead() {
+      return { success: true };
+    },
+    async markNotificationAsRead(id: string) {
+      return api.request<any>(`/api/notifications/${id}/read`, {
+        method: 'POST'
+      });
+    },
+    async savePushSubscription(subscription: any) {
+      return api.request<any>('/api/notifications/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription)
+      });
+    }
+  },
+
+  volunteer: {
+    async createAccount(payload: any) {
+      const res = await api.request<any>('/api/volunteer/create-account', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async createAccountWithPhoto(formData: FormData) {
+      const res = await api.request<any>('/api/volunteer/create-account', {
+        method: 'POST',
+        body: formData
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async signIn(payload: any) {
+      const res = await api.request<any>('/api/volunteer/sign-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async getMe() {
+      return api.request<{ user: any; profile: any }>('/api/volunteer/me');
+    },
+    async requestAccess(payload: any) {
+      return api.request<any>('/api/volunteer/request', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getEventHome() {
+      return api.request<{ event: any; stats: { expected: number; checkedIn: number; pickedUp: number; attention: number }; attentionItems: any[] }>('/api/volunteer/event-home');
+    },
+    async updateProfile(profile: any) {
+      return api.request<any>('/api/volunteer/profile', {
+        method: 'PUT',
+        body: JSON.stringify(profile)
+      });
+    },
+    async resendVerification(email: string) {
+      return api.request<any>('/api/volunteer/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async requestPasswordReset(email: string) {
+      return api.request<any>('/api/volunteer/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async resetPassword(token: string, password: string) {
+      return api.request<any>('/api/volunteer/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password })
+      });
     }
   },
 
@@ -213,6 +301,15 @@ export const api = {
       formData.append('file', file);
       formData.append('purpose', purpose);
       return api.request<{ id: string; provider: string; publicId: string; secureUrl: string; resourceType: string; fileType: string; url: string }>('/api/media/upload', {
+        method: 'POST',
+        body: formData
+      });
+    },
+    async publicUploadFile(file: File | Blob, purpose: string = 'volunteer_profile_photo') {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', purpose);
+      return api.request<{ id: string; provider: string; publicId: string; secureUrl: string; resourceType: string; fileType: string; url: string }>('/api/media/public-upload', {
         method: 'POST',
         body: formData
       });

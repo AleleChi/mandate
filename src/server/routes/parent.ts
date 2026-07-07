@@ -8,6 +8,14 @@ import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } fr
 const router = Router();
 router.use(authMiddleware);
 
+// Enforce parent role for all endpoints in this router
+router.use((req: AuthenticatedRequest, res: Response, next) => {
+  if (!req.user || req.user.role !== 'parent') {
+    return res.status(403).json({ error: 'Access denied: Parent role required' });
+  }
+  next();
+});
+
 const REAL_EVENT_ID = 'event-ga-2026';
 
 function calculateAgeAndGroup(dobStr: string) {
@@ -254,11 +262,17 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
   if (!validation.valid) {
     const firstErrKey = Object.keys(validation.errors)[0];
     const firstErrMsg = validation.errors[firstErrKey].message;
+    const errorsList = Object.values(validation.errors).map(err => ({
+      field: err.field,
+      code: err.code,
+      message: err.message
+    }));
     return res.status(400).json({
       success: false,
       code: 'VALIDATION_FAILED',
       error: firstErrMsg,
-      errors: validation.errors
+      errors: errorsList,
+      errorsMap: validation.errors
     });
   }
 
@@ -472,7 +486,10 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   const { childId } = req.params;
 
   const checkOwner = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [childId]);
-  if (checkOwner && checkOwner.parent_profile_id !== req.parentProfile.id) {
+  if (!checkOwner) {
+    return res.status(404).json({ error: 'Child not found' });
+  }
+  if (checkOwner.parent_profile_id !== req.parentProfile.id) {
     return res.status(403).json({ error: 'You do not have authorization to access this child profile' });
   }
 
@@ -557,11 +574,17 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   if (!childVal.valid) {
     const firstErrKey = Object.keys(childVal.errors)[0];
     const firstErrMsg = childVal.errors[firstErrKey].message;
+    const errorsList = Object.values(childVal.errors).map(err => ({
+      field: err.field,
+      code: err.code,
+      message: err.message
+    }));
     return res.status(400).json({
       success: false,
       code: 'VALIDATION_FAILED',
       message: firstErrMsg || "Please complete the missing details before sending.",
-      errors: childVal.errors
+      errors: errorsList,
+      errorsMap: childVal.errors
     });
   }
 
@@ -601,7 +624,10 @@ router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: R
   const { childId } = req.params;
 
   const checkOwner = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [childId]);
-  if (checkOwner && checkOwner.parent_profile_id !== req.parentProfile.id) {
+  if (!checkOwner) {
+    return res.status(404).json({ error: 'Child not found' });
+  }
+  if (checkOwner.parent_profile_id !== req.parentProfile.id) {
     return res.status(403).json({ error: 'You do not have authorization to access this child profile' });
   }
 
@@ -619,7 +645,10 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   const { childId } = req.params;
 
   const checkOwner = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [childId]);
-  if (checkOwner && checkOwner.parent_profile_id !== req.parentProfile.id) {
+  if (!checkOwner) {
+    return res.status(404).json({ error: 'Child not found' });
+  }
+  if (checkOwner.parent_profile_id !== req.parentProfile.id) {
     return res.status(403).json({ error: 'You do not have authorization to access this child profile' });
   }
 
@@ -721,6 +750,54 @@ router.delete('/children/:childId', async (req: AuthenticatedRequest, res: Respo
       console.error('Error removing/withdrawing child:', err);
     }
     return res.status(500).json({ error: 'An unexpected error occurred while processing your request.' });
+  }
+});
+
+// GET /api/parent/notifications
+router.get('/notifications', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  try {
+    const notifications = await query(
+      'SELECT id, event_id as eventId, child_id as childId, title, message, read_at as readAt, created_at as createdAt FROM parent_notifications WHERE parent_id = ? ORDER BY created_at DESC',
+      [req.parentProfile.id]
+    );
+    res.json(notifications);
+  } catch (err: any) {
+    console.error('Error fetching parent notifications:', err);
+    res.status(500).json({ error: 'Could not fetch notifications' });
+  }
+});
+
+// POST /api/parent/notifications/read-all
+router.post('/notifications/read-all', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  try {
+    const now = new Date().toISOString();
+    await execute(
+      'UPDATE parent_notifications SET read_at = ? WHERE parent_id = ? AND read_at IS NULL',
+      [now, req.parentProfile.id]
+    );
+    res.json({ success: true, message: 'All notifications marked as read' });
+  } catch (err: any) {
+    console.error('Error marking all notifications as read:', err);
+    res.status(500).json({ error: 'Could not mark notifications as read' });
+  }
+});
+
+// POST /api/parent/notifications/:id/read
+router.post('/notifications/:id/read', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  const { id } = req.params;
+  try {
+    const now = new Date().toISOString();
+    await execute(
+      'UPDATE parent_notifications SET read_at = ? WHERE id = ? AND parent_id = ?',
+      [now, id, req.parentProfile.id]
+    );
+    res.json({ success: true, message: 'Notification marked as read' });
+  } catch (err: any) {
+    console.error('Error marking notification as read:', err);
+    res.status(500).json({ error: 'Could not mark notification as read' });
   }
 });
 

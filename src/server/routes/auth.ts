@@ -223,7 +223,10 @@ router.post('/resend-verification', async (req, res) => {
     if (user.email_verified) {
       return res.json({
         success: true,
-        message: 'This email is already verified. You can sign in.'
+        alreadyVerified: true,
+        role: 'parent',
+        emailSent: false,
+        message: 'This email is already confirmed. You can sign in.'
       });
     }
 
@@ -335,7 +338,7 @@ router.post('/test-email', async (req, res) => {
     if (!result.success) {
       return res.status(500).json({ error: result.error || 'We could not send the email right now. Please try again.' });
     }
-    res.json({ success: true, messageId: result.messageId });
+    res.json({ success: true, messageId: result.id });
   } catch (err: any) {
     res.status(500).json({ error: 'We could not send the email right now. Please try again.' });
   }

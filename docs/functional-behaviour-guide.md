@@ -5,6 +5,7 @@ All implementation must strictly align with `/docs/backend-architecture.md`, `/d
 ## 1. Product Roles
 The application strictly enforces Role-Based Access Control (RBAC) across:
 - **Parent or guardian:** Can manage own household, children, pickup persons, and event submissions.
+- **Volunteers / Event Team:** Can sign up, request access to teams, manage event day operations, check in children, verify pickups, and view statistics. Also referred to as Volunteer Access.
 - **Review Team:** Can review submitted entries, update review statuses, and add review notes.
 - **Check-in Team / Event Staff:** Can scan entry passes, view child care notes, and execute gate check-ins.
 - **Pickup Team / Event Staff:** Can scan exit passes, verify pickup person photos against child records, and release children.
@@ -93,3 +94,31 @@ Every `child_event_entry` transitions through these deterministic review states:
 
 ## 11. Architectural Implementation Rule
 Every new screen built must consume data shapes conforming strictly to `/docs/backend-architecture.md`. Frontend modules must not invent isolated data structures that cannot cleanly map to relational database schemas and REST APIs.
+
+## 12. Dual-Audience Landing Page Setup
+The Koinonia Children and Teens landing page serves two distinct audiences:
+1. **Parents/guardians:** This remains the primary, highly-visible call-to-action (CTA) to encourage smooth and secure child check-in registration.
+2. **Volunteers/event team:** Secondary but clearly visible access, styled to avoid visually competing with the main parent CTA.
+- **Unified Account Logic**: Parent accounts and volunteer accounts are bridged seamlessly. Parents can apply to be volunteers and log in to Volunteer Access under the same account once approved.
+
+## 13. Volunteer Signup & Verification Requirements
+- **Public Profile Photo Upload**: Since standalone volunteer signup occurs when signed out, a public, unauthenticated pre-account upload endpoint (`/api/media/public-upload`) is used to handle profile photo storage securely.
+- **Verification of Assets**: The server enforces that only real uploaded media IDs mapped to `media_files` are recorded on new volunteer profiles, rejecting temporary browser blob/data URLs to avoid database failures.
+- **Pending Review State**: All new volunteer registrations enter a `pending_review` state, restricting them to onboarding updates until approved by an administrator.
+
+## 14. Volunteer Sign-In & Verification Resend Policies
+- **Strict Endpoint Verification**: The system verifies credentials, profiles, email confirmation status, and role configurations in sequence to prevent unverified logins or credential leakage.
+- **Redirection Logic**: Upon successful sign-in, the endpoint returns a deterministic `nextRoute` matching the volunteer profile status (e.g., `/volunteer/pending-review` for `pending_review`, `rejected`, and `suspended` statuses, and `/volunteer/event` for `active`).
+- **Strict Email Verification Resend**:
+  - Verification resend requests are rate-limited with a 60-second cooldown period.
+  - The email dispatch returns success only if the active email provider returns a valid unique ID.
+  - Generates diagnostic logs tracking the process end-to-end to ensure transparency and auditability.
+
+## 15. Volunteer Password Reset Journey
+- **Initiation**: A volunteer can request a password reset via the "Forgot password?" link on the Volunteer Sign In page.
+- **Privacy & Safety Constraints**: To prevent account enumeration, both success and unknown email lookups return a generic, friendly response: *"If this email is connected to Volunteer Access, a reset link has been sent. Please check your inbox and spam folder."*
+- **Rate Limiting**: Password reset requests are restricted to a 60-second cooldown period per email. If requested too quickly, the system returns a `RESEND_COOLDOWN` error containing the remaining cooldown time.
+- **Secure Tokens**: Tokens are generated cryptographically (SHA-256 hash), expire after 60 minutes, and are marked as one-time use (`used_at` set upon success).
+- **Complexity Enforcement**: The new password must contain at least 8 characters, with a minimum of one letter and one number.
+- **Security Posture**: No automatic sign-ins are permitted upon password reset. The user must proceed to the sign-in page to enter their new credentials explicitly.
+

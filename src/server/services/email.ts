@@ -10,7 +10,7 @@ export interface SendEmailOptions {
 
 export interface SendEmailResult {
   success: boolean;
-  messageId?: string;
+  id?: string;
   error?: string;
 }
 
@@ -96,7 +96,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         console.warn(`[EmailService] Notice: RESEND_API_KEY not configured on server. Email to "${options.to}" with subject "${options.subject}" was simulated.`);
         return {
           success: false,
-          error: 'We could not send the email right now. Please try again.'
+          error: 'Email provider not configured'
         };
       }
 
@@ -113,19 +113,27 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         console.error(`Resend send failed { error: "${error.message || 'Unknown Resend API error'}" }`);
         return {
           success: false,
-          error: 'We could not send the email right now. Please try again.'
+          error: error.message || 'Email provider rejected the request'
+        };
+      }
+
+      if (!data?.id) {
+        console.error(`Resend API call succeeded but did not return a send id { email: "${options.to}" }`);
+        return {
+          success: false,
+          error: 'Email provider did not return a send id'
         };
       }
 
       if (options.subject.toLowerCase().includes('verify')) {
-        console.log(`Resend verification email sent { emailId: "${data?.id}", to: "${options.to}" }`);
+        console.log(`Resend verification email sent { emailId: "${data.id}", to: "${options.to}" }`);
       } else {
-        console.log(`Resend email sent { emailId: "${data?.id}", to: "${options.to}" }`);
+        console.log(`Resend email sent { emailId: "${data.id}", to: "${options.to}" }`);
       }
 
       return {
         success: true,
-        messageId: data?.id
+        id: data.id
       };
     }
 
@@ -161,7 +169,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 
     return {
       success: true,
-      messageId: info.messageId
+      id: info.messageId
     };
   } catch (err: any) {
     // Log safe backend error without exposing sensitive credentials or RESEND_API_KEY
@@ -181,6 +189,87 @@ function getFirstName(fullName?: string): string {
   const trimmed = fullName.trim();
   if (!trimmed) return '';
   return trimmed.split(/\s+/)[0];
+}
+
+// Helper to generate clean, human volunteer-facing HTML emails
+function wrapVolunteerHtmlTemplate(title: string, bodyHtml: string, actionButton?: { label: string; url: string }): string {
+  const buttonHtml = actionButton ? `
+    <div style="margin: 28px 0;">
+      <a href="${actionButton.url}" style="background-color: #C59B27; color: #18181B; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+        ${actionButton.label}
+      </a>
+    </div>
+  ` : '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #FAF8F4; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #18181B; -webkit-font-smoothing: antialiased;">
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #FAF8F4; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="540" border="0" cellpadding="0" cellspacing="0" style="max-width: 540px; background-color: #FFFFFF; border: 1px solid #EAE8E1; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <!-- Top Accent Bar (Thin Antique Gold) -->
+          <tr>
+            <td style="background-color: #C59B27; height: 3px; font-size: 0; line-height: 0;">&nbsp;</td>
+          </tr>
+          <!-- Header -->
+          <tr>
+            <td style="padding: 24px 32px 16px 32px; border-bottom: 1px solid #FAF8F4;">
+              <h1 style="margin: 0; font-size: 18px; font-weight: 600; color: #18181B; letter-spacing: -0.01em;">
+                Koinonia Children and Teens
+              </h1>
+            </td>
+          </tr>
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 28px 32px; font-size: 15px; line-height: 1.6; color: #27272A;">
+              ${bodyHtml}
+              ${buttonHtml}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; background-color: #FAFAFA; border-top: 1px solid #EAE8E1; font-size: 12px; color: #71717A; text-align: center;">
+              Koinonia Children and Teens &bull; Volunteer Access
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
+ * sendVolunteerVerificationEmail
+ */
+export async function sendVolunteerVerificationEmail(params: {
+  volunteerEmail: string;
+  volunteerFirstName?: string;
+  verificationLink: string;
+}): Promise<SendEmailResult> {
+  const subject = 'Confirm your email for Volunteer Access';
+  const firstName = getFirstName(params.volunteerFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>Thank you for signing up to serve with Koinonia Children and Teens event team.</p>
+    <p>Please confirm your email address using the button below so our team can complete your review for Volunteer Access.</p>
+    <p style="margin-top: 24px; color: #71717A; font-size: 13px;">If you did not request this, you can ignore this email.</p>
+  `;
+  
+  const text = `${greeting}\n\nThank you for signing up to serve with Koinonia Children and Teens event team.\n\nPlease confirm your email address so our team can complete your review for Volunteer Access:\n${params.verificationLink}\n\nIf you did not request this, you can ignore this email.\n\nKoinonia Children and Teens • Volunteer Access`;
+
+  const html = wrapVolunteerHtmlTemplate(subject, bodyHtml, { label: 'Confirm email', url: params.verificationLink });
+
+  return sendEmail({ to: params.volunteerEmail, subject, html, text });
 }
 
 /**
@@ -391,4 +480,30 @@ export async function sendPickupReminderEmail(params: {
   const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'View pass', url: params.passLink });
 
   return sendEmail({ to: params.parentEmail, subject, html, text });
+}
+
+/**
+ * 7. Volunteer Password Reset
+ */
+export async function sendVolunteerPasswordResetEmail(params: {
+  volunteerEmail: string;
+  volunteerFirstName?: string;
+  resetLink: string;
+}): Promise<SendEmailResult> {
+  const subject = 'Reset your Volunteer Access password';
+  const firstName = getFirstName(params.volunteerFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>We received a request to reset the password for your Volunteer Access.</p>
+    <p>Use the button below to create a new password. This link will expire soon for your protection.</p>
+    <p style="margin-top: 24px; color: #71717A; font-size: 13px;">If you did not request this, you can ignore this email.</p>
+  `;
+
+  const text = `${greeting}\n\nWe received a request to reset the password for your Volunteer Access.\n\nUse the link below to create a new password. This link will expire soon for your protection:\n${params.resetLink}\n\nIf you did not request this, you can ignore this email.\n\nKoinonia Children and Teens • Volunteer Access`;
+
+  const html = wrapVolunteerHtmlTemplate(subject, bodyHtml, { label: 'Create new password', url: params.resetLink });
+
+  return sendEmail({ to: params.volunteerEmail, subject, html, text });
 }

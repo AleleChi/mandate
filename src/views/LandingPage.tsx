@@ -12,6 +12,8 @@ interface LandingPageProps {
   onNavigate: (route: AppRoute) => void;
   isMobileLandingView: boolean;
   onToggleMobileView: (mobile: boolean) => void;
+  parentCtaRoute?: string;
+  volunteerCtaRoute?: string;
 }
 
 interface HeroPassPreviewProps {
@@ -179,7 +181,9 @@ const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({ className = "", isMob
 export const LandingPage: React.FC<LandingPageProps> = ({
   onNavigate,
   isMobileLandingView,
-  onToggleMobileView
+  onToggleMobileView,
+  parentCtaRoute = '/parent/create-account',
+  volunteerCtaRoute = '/volunteer/sign-in'
 }) => {
   const [loaded, setLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -277,31 +281,48 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
 
             <div className="relative z-10 space-y-6">
-              <div className="inline-block px-3.5 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-semibold tracking-wide">
-              Koinonia Children and Teens
-            </div>
+              <div className="inline-block px-3.5 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-semibold tracking-wide uppercase">
+                KOINONIA CHILDREN AND TEENS
+              </div>
 
             <h1 className="text-3xl sm:text-4xl font-serif-koinonia font-bold tracking-tight text-[#18181B] leading-[1.15]">
-              The Children and Teens section starts here.
+              The Children and Teens section starts here
             </h1>
 
             <p className="text-sm text-[#6B7280] leading-relaxed">
-              Add each child&apos;s details, follow updates, and keep their pass ready when selected.
+              Parents and guardians can create an account, add each child’s details, follow review updates, and keep event passes ready for the day.
             </p>
 
             {/* Stacked Action Buttons */}
             <div className="space-y-3 pt-1">
               <button
-                onClick={() => onNavigate('/parent/create-account')}
-                className="w-full bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3.5 px-6 rounded-xl text-sm shadow-sm transition-all text-center block uppercase tracking-wider"
+                onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+                className="w-full bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3.5 px-6 rounded-xl text-sm shadow-sm transition-all text-center block uppercase tracking-wider cursor-pointer"
               >
-                BEGIN PARENT ACCESS
+                Begin Parent Access
               </button>
               <button
-                onClick={() => onNavigate('/parent/sign-in')}
-                className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3.5 px-6 rounded-xl text-sm transition-all text-center block uppercase tracking-wider"
+                onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
+                className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3.5 px-6 rounded-xl text-sm transition-all text-center block uppercase tracking-wider cursor-pointer"
               >
-                SIGN IN
+                Volunteer Access
+              </button>
+            </div>
+
+            {/* Small sign-in links */}
+            <div className="flex items-center justify-center space-x-4 text-xs text-[#6B7280] pt-1">
+              <button
+                onClick={() => onNavigate('/parent/sign-in')}
+                className="hover:text-[#18181B] underline font-medium cursor-pointer"
+              >
+                Parent sign in
+              </button>
+              <span className="text-[#D9D6CE]">•</span>
+              <button
+                onClick={() => onNavigate('/volunteer/sign-in')}
+                className="hover:text-[#18181B] underline font-medium cursor-pointer"
+              >
+                Volunteer sign in
               </button>
             </div>
 
@@ -428,6 +449,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* Safety Section (Mobile View) */}
           <SafetySection />
 
+          {/* Volunteer Section (Mobile) */}
+          <section className="bg-[#FAF8F3] rounded-3xl border border-[#E5D5AE]/60 p-5 shadow-2xs space-y-4 text-center">
+            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">
+              Event Team
+            </span>
+            <h2 className="text-lg font-serif-koinonia font-bold text-[#18181B]">
+              Serving with Children and Teens?
+            </h2>
+            <p className="text-xs text-[#6B7280] leading-relaxed">
+              Approved volunteers and event team members can sign in to support check-in, pickup, and care during the event.
+            </p>
+            <button
+              onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
+              className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3 px-6 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Open Volunteer Access
+            </button>
+            <p className="text-[11px] text-[#9A7326]/80 italic">
+              Volunteer access is reviewed before event tools are opened.
+            </p>
+          </section>
+
           {/* Final CTA Block */}
           <section className="pt-8 pb-4 text-center space-y-4 border-t border-[#EAE8E1]">
             <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">
@@ -437,14 +480,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Create your account first. You can add children and save progress before sending details for review.
             </p>
             <button
-              onClick={() => onNavigate('/parent/create-account')}
-              className="w-full bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3.5 px-6 rounded-xl text-sm shadow-sm transition-all uppercase tracking-wider"
+              onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+              className="w-full bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3.5 px-6 rounded-xl text-sm shadow-sm transition-all uppercase tracking-wider cursor-pointer"
             >
               BEGIN PARENT ACCESS
             </button>
             <button
               onClick={() => onNavigate('/parent/sign-in')}
-              className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase hover:underline pt-2 block w-full"
+              className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase hover:underline pt-2 block w-full cursor-pointer"
             >
               I ALREADY HAVE AN ACCOUNT
             </button>
@@ -454,8 +497,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* Sticky Bottom Action Bar */}
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-[#EAE8E1] p-3 flex items-center space-x-3 shadow-2xl">
           <button
-            onClick={() => onNavigate('/parent/create-account')}
-            className="flex-1 bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-sm"
+            onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+            className="flex-1 bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
           >
             <Key className="w-3.5 h-3.5" />
             <span>BEGIN PARENT ACCESS</span>
@@ -530,13 +573,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <div className="flex items-center space-x-3">
             <button
               onClick={() => onNavigate('/parent/sign-in')}
-              className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-2xs"
+              className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer"
             >
               Sign In
             </button>
             <button
-              onClick={() => onNavigate('/parent/create-account')}
-              className="bg-[#C59B27] hover:bg-[#B89047] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all"
+              onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+              className="bg-[#C59B27] hover:bg-[#B89047] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all cursor-pointer"
             >
               Parent Access
             </button>
@@ -577,7 +620,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* Left-aligned hero text */}
           <div className={`lg:col-span-6 space-y-6 text-left transition-all duration-1000 ease-out ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             <span className="text-xs font-bold tracking-widest text-[#B89047] uppercase block">
-              Koinonia Children and Teens
+              KOINONIA CHILDREN AND TEENS
             </span>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-[1.12]">
@@ -585,23 +628,40 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </h1>
 
             <p className="text-base sm:text-lg text-[#6B7280] leading-relaxed max-w-xl">
-              Parents and guardians can create an account, add each child&apos;s details, and follow updates from review to event-day access.
+              Parents and guardians can create an account, add each child’s details, follow review updates, and keep event passes ready for the day.
             </p>
 
             {/* Buttons */}
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <button
-                onClick={() => onNavigate('/parent/create-account')}
-                className="bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold px-7 py-3.5 rounded-xl text-sm shadow-sm transition-all inline-flex items-center space-x-2"
+                onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+                className="bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold px-7 py-3.5 rounded-xl text-sm shadow-sm transition-all inline-flex items-center space-x-2 cursor-pointer"
               >
                 <span>Begin Parent Access</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
-                onClick={() => onNavigate('/parent/sign-in')}
-                className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold px-7 py-3.5 rounded-xl text-sm transition-all"
+                onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
+                className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold px-7 py-3.5 rounded-xl text-sm transition-all cursor-pointer"
               >
-                Sign In
+                Volunteer Access
+              </button>
+            </div>
+
+            {/* Small sign-in links */}
+            <div className="flex items-center space-x-4 text-xs text-[#6B7280] pt-1">
+              <button
+                onClick={() => onNavigate('/parent/sign-in')}
+                className="hover:text-[#18181B] underline font-medium cursor-pointer"
+              >
+                Parent sign in
+              </button>
+              <span className="text-[#D9D6CE]">•</span>
+              <button
+                onClick={() => onNavigate('/volunteer/sign-in')}
+                className="hover:text-[#18181B] underline font-medium cursor-pointer"
+              >
+                Volunteer sign in
               </button>
             </div>
 
@@ -710,6 +770,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* 6. Safety Section */}
       <SafetySection />
 
+      {/* Volunteer Section */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center border-t border-[#EAE8E1]">
+        <div className="bg-[#FAF8F3] border border-[#E5D5AE]/60 rounded-3xl p-8 sm:p-10 shadow-2xs space-y-5">
+          <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase block">
+            Event Team
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
+            Serving with Children and Teens?
+          </h2>
+          <p className="text-sm text-[#6B7280] max-w-xl mx-auto leading-relaxed">
+            Approved volunteers and event team members can sign in to support check-in, pickup, and care during the event.
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
+              className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3 px-8 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Open Volunteer Access
+            </button>
+          </div>
+          <p className="text-xs text-[#9A7326]/80 italic mt-2">
+            Volunteer access is reviewed before event tools are opened.
+          </p>
+        </div>
+      </section>
+
       {/* 7. Final CTA */}
       <section className="py-24 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center space-y-6">
         <div className="w-14 h-14 rounded-2xl bg-[#FAF6EB] border border-[#E5D5AE] flex items-center justify-center mx-auto text-[#C59B27] shadow-2xs">
@@ -717,7 +803,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
 
         <h2 className="text-3xl sm:text-5xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
-          Begin with parent access.
+          Begin with parent access
         </h2>
 
         <p className="text-base text-[#6B7280] max-w-xl mx-auto leading-relaxed">
@@ -726,8 +812,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         <div className="pt-4">
           <button
-            onClick={() => onNavigate('/parent/create-account')}
-            className="bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-4 px-10 rounded-xl text-sm shadow-md transition-all uppercase tracking-wider inline-flex items-center space-x-2"
+            onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+            className="bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-4 px-10 rounded-xl text-sm shadow-md transition-all uppercase tracking-wider inline-flex items-center space-x-2 cursor-pointer"
           >
             <span>Begin Parent Access</span>
             <ArrowRight className="w-4 h-4" />

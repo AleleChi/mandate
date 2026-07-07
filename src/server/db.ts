@@ -9,7 +9,7 @@ let isPostgres = false;
 let pgPool: any = null;
 let pgInitPromise: Promise<void> | null = null;
 
-const REAL_EVENT_ID = 'event-ga-2026';
+export const REAL_EVENT_ID = 'event-ga-2026';
 
 export function getDb() {
   if (sqliteDb || pgPool) return { query, queryOne, execute, transaction, REAL_EVENT_ID };
@@ -256,6 +256,119 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_entries_event_id ON child_event_entries(event_id);
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash);
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
+
+    CREATE TABLE IF NOT EXISTS event_notification_rules (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      trigger_offset_minutes INTEGER NOT NULL DEFAULT 0,
+      channel TEXT NOT NULL,
+      audience TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message_template TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_jobs (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      rule_id TEXT REFERENCES event_notification_rules(id) ON DELETE CASCADE,
+      parent_id TEXT NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+      child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      channel TEXT NOT NULL,
+      scheduled_for TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      sent_at TEXT,
+      failure_reason TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(rule_id, parent_id, child_id, scheduled_for)
+    );
+
+    CREATE TABLE IF NOT EXISTS parent_notifications (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+      event_id TEXT REFERENCES events(id) ON DELETE CASCADE,
+      child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      read_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      type TEXT,
+      audience_role TEXT,
+      audience_scope TEXT,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      parent_id TEXT REFERENCES parent_profiles(id) ON DELETE SET NULL,
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      visible_to_event_team INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      expires_at TEXT,
+      priority TEXT,
+      channel TEXT,
+      metadata_json TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_reads (
+      id TEXT PRIMARY KEY,
+      notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      read_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      revoked_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_sched ON notification_jobs(status, scheduled_for);
+    CREATE INDEX IF NOT EXISTS idx_jobs_parent ON notification_jobs(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_event ON notification_jobs(event_id);
+    CREATE INDEX IF NOT EXISTS idx_parent_notif_unread ON parent_notifications(parent_id, read_at);
+    CREATE INDEX IF NOT EXISTS idx_rules_event_active ON event_notification_rules(event_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(audience_role);
+    CREATE INDEX IF NOT EXISTS idx_notifications_parent ON notifications(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_event ON notifications(event_id);
+    CREATE INDEX IF NOT EXISTS idx_notification_reads_unread ON notification_reads(user_id, notification_id);
+
+    CREATE TABLE IF NOT EXISTS volunteer_profiles (
+      id TEXT PRIMARY KEY,
+      user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      photo_file_id TEXT,
+      full_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      whatsapp TEXT NOT NULL,
+      is_koinonia_worker INTEGER DEFAULT 0,
+      department TEXT,
+      preferred_team TEXT NOT NULL,
+      serving_experience INTEGER DEFAULT 0,
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'pending_review',
+      approved_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      approved_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_volunteer_user_id ON volunteer_profiles(user_id);
+    CREATE INDEX IF NOT EXISTS idx_volunteer_status ON volunteer_profiles(status);
+    CREATE INDEX IF NOT EXISTS idx_volunteer_pref_team ON volunteer_profiles(preferred_team);
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -272,6 +385,23 @@ function initSqliteSchema(db: Database.Database) {
   for (const col of sqliteCols) {
     try {
       db.exec(`ALTER TABLE media_files ADD COLUMN ${col};`);
+    } catch (e) {
+      // Column likely already exists
+    }
+  }
+
+  const sqliteEventCols = [
+    "event_start_at TEXT",
+    "event_end_at TEXT",
+    "check_in_opens_at TEXT",
+    "check_in_closes_at TEXT",
+    "pickup_starts_at TEXT",
+    "pickup_reminder_at TEXT",
+    "timezone TEXT DEFAULT 'Africa/Lagos'"
+  ];
+  for (const col of sqliteEventCols) {
+    try {
+      db.exec(`ALTER TABLE events ADD COLUMN ${col};`);
     } catch (e) {
       // Column likely already exists
     }
@@ -487,6 +617,119 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_entries_event_id ON child_event_entries(event_id);
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash);
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
+
+      CREATE TABLE IF NOT EXISTS event_notification_rules (
+        id VARCHAR(64) PRIMARY KEY,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        trigger_type VARCHAR(64) NOT NULL,
+        trigger_offset_minutes INTEGER NOT NULL DEFAULT 0,
+        channel VARCHAR(64) NOT NULL,
+        audience VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message_template TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS notification_jobs (
+        id VARCHAR(64) PRIMARY KEY,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        rule_id VARCHAR(64) REFERENCES event_notification_rules(id) ON DELETE CASCADE,
+        parent_id VARCHAR(64) NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+        child_id VARCHAR(64) REFERENCES children(id) ON DELETE SET NULL,
+        channel VARCHAR(64) NOT NULL,
+        scheduled_for VARCHAR(64) NOT NULL,
+        status VARCHAR(64) NOT NULL DEFAULT 'pending',
+        sent_at TIMESTAMP,
+        failure_reason TEXT,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        UNIQUE(rule_id, parent_id, child_id, scheduled_for)
+      );
+
+      CREATE TABLE IF NOT EXISTS parent_notifications (
+        id VARCHAR(64) PRIMARY KEY,
+        parent_id VARCHAR(64) NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+        event_id VARCHAR(64) REFERENCES events(id) ON DELETE CASCADE,
+        child_id VARCHAR(64) REFERENCES children(id) ON DELETE SET NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        read_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS notifications (
+        id VARCHAR(64) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        type VARCHAR(64),
+        audience_role VARCHAR(64),
+        audience_scope VARCHAR(128),
+        event_id VARCHAR(64) REFERENCES events(id) ON DELETE SET NULL,
+        child_id VARCHAR(64) REFERENCES children(id) ON DELETE SET NULL,
+        parent_id VARCHAR(64) REFERENCES parent_profiles(id) ON DELETE SET NULL,
+        created_by_user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+        visible_to_event_team INTEGER DEFAULT 0,
+        created_at TIMESTAMP NOT NULL,
+        expires_at TIMESTAMP,
+        priority VARCHAR(64),
+        channel VARCHAR(64),
+        metadata_json TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS notification_reads (
+        id VARCHAR(64) PRIMARY KEY,
+        notification_id VARCHAR(64) NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+        user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        read_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        user_agent TEXT,
+        created_at TIMESTAMP NOT NULL,
+        revoked_at TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_jobs_status_sched ON notification_jobs(status, scheduled_for);
+      CREATE INDEX IF NOT EXISTS idx_jobs_parent ON notification_jobs(parent_id);
+      CREATE INDEX IF NOT EXISTS idx_jobs_event ON notification_jobs(event_id);
+      CREATE INDEX IF NOT EXISTS idx_parent_notif_unread ON parent_notifications(parent_id, read_at);
+      CREATE INDEX IF NOT EXISTS idx_rules_event_active ON event_notification_rules(event_id, is_active);
+      CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(audience_role);
+      CREATE INDEX IF NOT EXISTS idx_notifications_parent ON notifications(parent_id);
+      CREATE INDEX IF NOT EXISTS idx_notifications_event ON notifications(event_id);
+      CREATE INDEX IF NOT EXISTS idx_notification_reads_unread ON notification_reads(user_id, notification_id);
+
+      CREATE TABLE IF NOT EXISTS volunteer_profiles (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        photo_file_id VARCHAR(64),
+        full_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(128) NOT NULL,
+        whatsapp VARCHAR(128) NOT NULL,
+        is_koinonia_worker INTEGER DEFAULT 0,
+        department VARCHAR(255),
+        preferred_team VARCHAR(255) NOT NULL,
+        serving_experience INTEGER DEFAULT 0,
+        note TEXT,
+        status VARCHAR(64) NOT NULL DEFAULT 'pending_review',
+        approved_by_user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+        approved_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_volunteer_user_id ON volunteer_profiles(user_id);
+      CREATE INDEX IF NOT EXISTS idx_volunteer_status ON volunteer_profiles(status);
+      CREATE INDEX IF NOT EXISTS idx_volunteer_pref_team ON volunteer_profiles(preferred_team);
     `);
 
     const pgCols = [
@@ -505,6 +748,26 @@ async function initPostgresSchema(pool: any) {
         const colName = parts[0];
         const colDef = parts.slice(1).join(' ');
         await pool.query(`ALTER TABLE media_files ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {
+        // Ignore column addition error if any
+      }
+    }
+
+    const pgEventCols = [
+      "event_start_at VARCHAR(64)",
+      "event_end_at VARCHAR(64)",
+      "check_in_opens_at VARCHAR(64)",
+      "check_in_closes_at VARCHAR(64)",
+      "pickup_starts_at VARCHAR(64)",
+      "pickup_reminder_at VARCHAR(64)",
+      "timezone VARCHAR(64) DEFAULT 'Africa/Lagos'"
+    ];
+    for (const col of pgEventCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
       } catch (e) {
         // Ignore column addition error if any
       }

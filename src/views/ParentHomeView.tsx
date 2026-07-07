@@ -3,9 +3,11 @@ import { AppRoute, BottomNavTab, ChildItem, ParentProfile } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
+import { api } from '../services/api';
+import { soundUtility } from '../utils/sound';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -18,6 +20,7 @@ interface ParentHomeViewProps {
   onSignOut?: () => void;
   onDeleteChild?: (childId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   selectedChildId?: string;
+  volunteerProfile?: any;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -74,12 +77,47 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   initialTab,
   onSignOut,
   onDeleteChild,
-  selectedChildId
+  selectedChildId,
+  volunteerProfile
 }) => {
   const { showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
   const [childToRemove, setChildToRemove] = useState<ChildItem | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
+  const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsSoundOn(soundUtility.isEnabled());
+    setIsPushEnabled(typeof Notification !== 'undefined' ? Notification.permission === 'granted' : false);
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.readAt && !n.isRead).length;
+  const prevUnreadCountRef = React.useRef(unreadCount);
+
+  const fetchNotifications = async () => {
+    try {
+      const data = await api.parent.getNotifications(false, 'parent');
+      const currentNotifications = data || [];
+      const newUnreadCount = currentNotifications.filter((n: any) => !n.readAt && !n.isRead).length;
+      if (newUnreadCount > prevUnreadCountRef.current) {
+        soundUtility.playChime();
+      }
+      prevUnreadCountRef.current = newUnreadCount;
+      setNotifications(currentNotifications);
+    } catch (err) {
+      console.error('Error fetching parent notifications:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const getGreeting = () => {
     if (!parentProfile || !parentProfile.fullName || !parentProfile.fullName.trim()) {
@@ -187,11 +225,25 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               Here is where things stand for your children.
             </p>
           </div>
-          <FallbackAvatar
-            src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
-            name={parentProfile.fullName || 'Parent'}
-            className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border border-[#D9D6CE] text-sm font-bold shadow-2xs"
-          />
+          <div className="flex items-center space-x-2.5 shrink-0">
+            <button
+              onClick={() => setShowNotificationsDrawer(true)}
+              className="relative p-2.5 rounded-xl border border-[#D9D6CE] bg-white hover:bg-[#FAF8F4] active:bg-[#FAF6EB] text-[#3F3F46] transition-all cursor-pointer shadow-2xs focus:outline-none"
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5 text-[#3F3F46]" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E07A5F] text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+            <FallbackAvatar
+              src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
+              name={parentProfile.fullName || 'Parent'}
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border border-[#D9D6CE] text-sm font-bold shadow-2xs"
+            />
+          </div>
         </div>
 
         {/* 3, 4, 5. Event hero card with image, Date/Time row, Continue button */}
@@ -664,6 +716,82 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         </p>
       </div>
 
+      {/* Volunteer Status / Switcher Banner */}
+      {volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved') && (
+        <div className="bg-[#FAF6EB] border border-[#E5D5AE] rounded-2xl p-4.5 space-y-3 shadow-2xs text-left">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-[#FAF6EB] border border-[#E5D5AE] rounded-xl text-[#9A7326] shrink-0">
+              <Users className="w-5 h-5 stroke-[1.75]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-bold text-[#18181B] font-serif-koinonia leading-tight">Volunteer Access Active</h3>
+              <p className="text-[11px] text-[#6B7280] mt-0.5 leading-tight truncate">Approved for the <span className="font-semibold text-gray-700">{volunteerProfile.preferred_team || 'event-day'}</span> team.</p>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            fullWidth
+            onClick={() => onNavigate('/volunteer/event')}
+          >
+            Switch to Volunteer Access
+          </Button>
+        </div>
+      )}
+
+      {volunteerProfile && volunteerProfile.status === 'pending_review' && (
+        <div className="bg-amber-50/40 border border-amber-200/60 rounded-2xl p-4 text-left">
+          <div className="flex items-start space-x-3">
+            <div className="p-2 bg-amber-50 rounded-xl text-amber-600 shrink-0 mt-0.5 border border-amber-100">
+              <Clock className="w-4 h-4 stroke-[2]" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wide">Volunteer Status: Pending</h3>
+              <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                Your application to serve on the <span className="font-semibold">{volunteerProfile.preferred_team || 'event-day'}</span> team is currently under admin review.
+              </p>
+              <button
+                onClick={() => onNavigate('/volunteer/pending-review')}
+                className="text-xs font-semibold text-[#C59B27] hover:underline mt-2 flex items-center cursor-pointer"
+              >
+                View onboarding status <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {volunteerProfile && volunteerProfile.status === 'rejected' && (
+        <div className="bg-red-50/40 border border-red-200/60 rounded-2xl p-4 text-left">
+          <div className="flex items-start space-x-3">
+            <div className="p-2 bg-red-50 rounded-xl text-red-600 shrink-0 mt-0.5 border border-red-100">
+              <Shield className="w-4 h-4 stroke-[2]" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-red-900 uppercase tracking-wide">Volunteer Status: Rejected</h3>
+              <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                Your request for volunteer access has been rejected by an administrator. Please contact support if you believe this is an error.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {volunteerProfile && volunteerProfile.status === 'suspended' && (
+        <div className="bg-gray-100/60 border border-gray-200 rounded-2xl p-4 text-left">
+          <div className="flex items-start space-x-3">
+            <div className="p-2 bg-gray-50 rounded-xl text-gray-500 shrink-0 mt-0.5 border border-gray-150">
+              <Shield className="w-4 h-4 stroke-[2]" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide">Volunteer Status: Suspended</h3>
+              <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                Your volunteer profile has been suspended by an administrator.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3. Contact preference card */}
       <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center justify-between pb-1">
@@ -801,6 +929,32 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
         </button>
 
+        {!volunteerProfile ? (
+          <button
+            type="button"
+            onClick={() => onNavigate('/parent/volunteer-request')}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in"
+          >
+            <div className="flex items-center space-x-3.5">
+              <Users className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
+              <span className="text-sm font-medium text-[#18181B]">Volunteer with Children & Teens</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onNavigate('/volunteer/event')}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in"
+          >
+            <div className="flex items-center space-x-3.5">
+              <ShieldCheck className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
+              <span className="text-sm font-medium text-[#18181B]">Switch to Volunteer Access</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
@@ -889,8 +1043,22 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               </div>
             </div>
 
-            <div className="inline-flex items-center px-3 py-1 rounded-full bg-[#FAF6EB] text-[#9A7326] text-xs font-semibold border border-[#E5D5AE]">
-              Official
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowNotificationsDrawer(true)}
+                className="relative p-2 rounded-xl border border-[#D9D6CE] bg-white hover:bg-[#FAF8F4] active:bg-[#FAF6EB] text-[#3F3F46] transition-all cursor-pointer shadow-2xs focus:outline-none"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4 text-[#3F3F46]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#E07A5F] text-[9px] font-bold text-white shadow-sm ring-1 ring-white">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+              <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-[#FAF6EB] text-[#9A7326] text-[10px] font-semibold border border-[#E5D5AE]">
+                Official
+              </div>
             </div>
           </div>
         </header>
@@ -1048,6 +1216,186 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               >
                 {isRemoving ? 'Removing...' : 'Remove child'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Drawer Bottom Sheet */}
+      {showNotificationsDrawer && (
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end">
+          <div className="bg-white rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#EAE8E1] shadow-2xl animate-in slide-in-from-bottom duration-300">
+            {/* Header */}
+            <div className="px-5 py-4.5 border-b border-[#FAF9F6] flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-2">
+                <Bell className="w-5 h-5 text-[#C59B27]" />
+                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
+                  Notifications
+                </h3>
+                {unreadCount > 0 && (
+                  <span className="bg-[#E07A5F] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {unreadCount} new
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-4">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        for (const notif of notifications) {
+                          const isUnread = !notif.readAt && !notif.isRead;
+                          if (isUnread) {
+                            await api.parent.markNotificationAsRead(notif.id);
+                          }
+                        }
+                        fetchNotifications();
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                    className="text-xs font-semibold text-[#9A7326] hover:underline cursor-pointer focus:outline-none"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowNotificationsDrawer(false)}
+                  className="p-1 rounded-lg hover:bg-black/5 cursor-pointer focus:outline-none"
+                >
+                  <X className="w-5 h-5 text-[#6B7280]" />
+                </button>
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3.5 min-h-[280px]">
+              {notifications.length === 0 ? (
+                <div className="text-center py-16 space-y-3">
+                  <Bell className="w-10 h-10 text-[#D9D6CE] mx-auto stroke-[1.5]" />
+                  <p className="text-sm font-medium text-[#3F3F46]">No reminders yet</p>
+                  <p className="text-xs text-[#6B7280] max-w-[240px] mx-auto leading-relaxed">
+                    Personalized event schedules, check-in details, and pickup reminders will appear here.
+                  </p>
+                </div>
+              ) : (
+                notifications.map((notif) => {
+                  const isUnread = !notif.readAt && !notif.isRead;
+                  return (
+                    <div
+                      key={notif.id}
+                      onClick={async () => {
+                        if (isUnread) {
+                          try {
+                            await api.parent.markNotificationAsRead(notif.id);
+                            fetchNotifications();
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }
+                      }}
+                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                        isUnread
+                          ? 'bg-[#FAF8F4] border-[#C59B27]/40 shadow-2xs'
+                          : 'bg-white border-[#EAE8E1] hover:border-[#D9D6CE]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                          {notif.title}
+                        </h4>
+                        {isUnread && (
+                          <span className="w-2 h-2 rounded-full bg-[#E07A5F] shrink-0 mt-1.5" />
+                        )}
+                      </div>
+                      <p className="text-xs text-[#3F3F46] mt-2 leading-relaxed whitespace-pre-wrap">
+                        {notif.message}
+                      </p>
+                      <div className="text-[10px] text-[#A1A1AA] mt-3 font-mono">
+                        {new Date(notif.createdAt).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })} • {new Date(notif.createdAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Sound & Push Settings footer panel */}
+            <div className="px-5 py-4 bg-[#FAF8F4] border-t border-[#EAE8E1] flex flex-col gap-3 shrink-0">
+              {/* Sound toggle */}
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex flex-col text-left">
+                  <span className="font-semibold text-[#18181B]">Sound Notifications</span>
+                  <span className="text-[10px] text-[#6B7280]">Play gentle chime for new alerts</span>
+                </div>
+                <button
+                  onClick={() => {
+                    const nextVal = !isSoundOn;
+                    setIsSoundOn(nextVal);
+                    soundUtility.setEnabled(nextVal);
+                    if (nextVal) {
+                      soundUtility.playChime(true);
+                    }
+                  }}
+                  className={`px-3.5 py-1.5 rounded-full text-[10px] font-bold tracking-wider uppercase transition-all ${
+                    isSoundOn 
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                      : 'bg-white border border-[#D9D6CE] text-[#3F3F46]'
+                  }`}
+                >
+                  {isSoundOn ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* Push notifications button */}
+              <div className="flex items-center justify-between text-xs pt-1 border-t border-[#EAE8E1]/60">
+                <div className="flex flex-col text-left">
+                  <span className="font-semibold text-[#18181B]">Push Notifications</span>
+                  <span className="text-[10px] text-[#6B7280]">Receive instant device updates</span>
+                </div>
+                {isPushEnabled ? (
+                  <span className="px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-[#FAF6EB] text-[#C59B27] border border-[#EAE8E1] tracking-wider uppercase">
+                    Active
+                  </span>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (typeof Notification === 'undefined') {
+                        showInfo('Browser Limit', 'Push notifications are not supported on this browser.');
+                        return;
+                      }
+                      const permission = await Notification.requestPermission();
+                      if (permission === 'granted') {
+                        setIsPushEnabled(true);
+                        showInfo('Push notifications enabled!', 'You will now receive alerts.');
+                        try {
+                          await api.parent.savePushSubscription({
+                            endpoint: 'https://fcm.googleapis.com/fcm/send/mock-token',
+                            keys: {
+                              p256dh: 'mock-p256dh-key',
+                              auth: 'mock-auth-key'
+                            }
+                          });
+                        } catch (err) {
+                          console.warn('Subscription save failed:', err);
+                        }
+                      } else {
+                        showInfo('Permission denied', 'Device blocked. Please update your browser settings.');
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-white border border-[#D9D6CE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all"
+                  >
+                    Enable
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -17,6 +17,14 @@ import { ForgotPasswordView } from './views/ForgotPasswordView';
 import { NewPasswordView } from './views/NewPasswordView';
 import { ProfileSetupView } from './views/ProfileSetupView';
 import { ParentHomeView } from './views/ParentHomeView';
+import { VolunteerSignInView } from './views/VolunteerSignInView';
+import { VolunteerCreateAccountView } from './views/VolunteerCreateAccountView';
+import { VolunteerVerifyEmailView } from './views/VolunteerVerifyEmailView';
+import { VolunteerForgotPasswordView } from './views/VolunteerForgotPasswordView';
+import { VolunteerResetPasswordView } from './views/VolunteerResetPasswordView';
+import { VolunteerPendingReviewView } from './views/VolunteerPendingReviewView';
+import { VolunteerEventDashboardView } from './views/VolunteerEventDashboardView';
+import { VolunteerRequestView } from './views/VolunteerRequestView';
 import { AddChildStep1View } from './views/AddChildStep1View';
 import { AddChildStep2View } from './views/AddChildStep2View';
 import { AddChildStep3View } from './views/AddChildStep3View';
@@ -29,14 +37,16 @@ import { AddChildDraft } from './types';
 import { Button } from './components/common/Button';
 
 export default function App() {
-  const { showSuccess, showError } = useNotification();
+  const { showSuccess, showError, showWarning } = useNotification();
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('/');
   const [parentEmail, setParentEmail] = useState<string>('');
   const [parentProfile, setParentProfile] = useState<ParentProfile>(initialParentProfile);
+  const [volunteerProfile, setVolunteerProfile] = useState<any>(null);
   const [childrenList, setChildrenList] = useState<ChildItem[]>(initialChildren);
   const [isMobileLandingView, setIsMobileLandingView] = useState<boolean>(false);
   const [addChildDraft, setAddChildDraft] = useState<AddChildDraft | null>(null);
   const [lastSubmittedChild, setLastSubmittedChild] = useState<ChildItem | null>(null);
+  const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
 
   // Sync route with URL hash for easy browser bookmarking/testing
   useEffect(() => {
@@ -47,8 +57,9 @@ export default function App() {
       if (!hash.startsWith('/')) {
         hash = '/' + hash;
       }
-      if (hash && isValidRoute(hash)) {
-        setCurrentRoute(hash as AppRoute);
+      const [routePath] = hash.split('?');
+      if (routePath && isValidRoute(routePath)) {
+        setCurrentRoute(routePath as AppRoute);
       }
     };
 
@@ -81,44 +92,58 @@ export default function App() {
     if (!token) {
       setUser(null);
       setParentProfile(initialParentProfile);
+      setVolunteerProfile(null);
       setChildrenList([]);
       setIsCheckingAuth(false);
       return;
     }
 
     try {
-      const meData = await api.auth.getMe();
-      if (meData && meData.user) {
-        setUser(meData.user);
-        if (meData.profile) {
-          setParentProfile(meData.profile);
-          setParentEmail(meData.profile.email || '');
-        }
-        
-        try {
-          const homeData = await api.parent.getHome();
-          if (homeData) {
-            if (homeData.parentProfile) {
-              setParentProfile(homeData.parentProfile);
-            }
-            if (Array.isArray(homeData.childrenList)) {
-              setChildrenList(homeData.childrenList);
-              const activeId = localStorage.getItem('koinonia_active_draft_id');
-              if (activeId) {
-                const matched = homeData.childrenList.find((c) => c.id === activeId);
-                if (matched && matched.draftData) {
-                  setAddChildDraft(matched.draftData);
+      const accessData = await api.auth.getAccess();
+      if (accessData && accessData.user) {
+        setUser(accessData.user);
+
+        if (accessData.access.parent && accessData.access.parent.exists) {
+          try {
+            const homeData = await api.parent.getHome();
+            if (homeData) {
+              if (homeData.parentProfile) {
+                setParentProfile(homeData.parentProfile);
+                setParentEmail(homeData.parentProfile.email || '');
+              }
+              if (Array.isArray(homeData.childrenList)) {
+                setChildrenList(homeData.childrenList);
+                const activeId = localStorage.getItem('koinonia_active_draft_id');
+                if (activeId) {
+                  const matched = homeData.childrenList.find((c) => c.id === activeId);
+                  if (matched && matched.draftData) {
+                    setAddChildDraft(matched.draftData);
+                  }
                 }
               }
             }
+          } catch (e) {
+            console.error('Failed to load initial home data:', e);
           }
-        } catch (e) {
-          console.error('Failed to load initial home data:', e);
+        }
+
+        if (accessData.access.volunteer && accessData.access.volunteer.exists) {
+          try {
+            const volMe = await api.volunteer.getMe();
+            if (volMe && volMe.profile) {
+              setVolunteerProfile(volMe.profile);
+            }
+          } catch (e) {
+            console.error('Failed to load initial volunteer profile:', e);
+          }
+        } else {
+          setVolunteerProfile(null);
         }
       } else {
         api.clearToken();
         setUser(null);
         setParentProfile(initialParentProfile);
+        setVolunteerProfile(null);
         setChildrenList([]);
       }
     } catch (err) {
@@ -126,6 +151,7 @@ export default function App() {
       api.clearToken();
       setUser(null);
       setParentProfile(initialParentProfile);
+      setVolunteerProfile(null);
       setChildrenList([]);
     } finally {
       setIsCheckingAuth(false);
@@ -164,11 +190,40 @@ export default function App() {
     fetchBackendData();
   }, [currentRoute, user]);
 
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      showSuccess('Back online.', 'Updating your information...');
+      fetchBackendData();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      const role = user?.role || 'parent';
+      if (role === 'admin') {
+        showWarning('You are offline.', 'Please reconnect before making changes.');
+      } else if (role === 'staff' || role === 'volunteer') {
+        showWarning('You are offline.', 'Scanning may be limited until connection returns.');
+      } else {
+        showWarning('You are offline.', 'Some updates will appear when your connection returns.');
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [user]);
+
   const isValidRoute = (route: string): boolean => {
     const cleanRoute = route.split('?')[0];
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) return true;
+    if (cleanRoute.startsWith('/volunteer/')) return true;
+    if (cleanRoute === '/parent/volunteer-request') return true;
     const validRoutes: string[] = [
       '/',
       '/parent/create-account',
@@ -196,7 +251,8 @@ export default function App() {
   };
 
   const navigate = (route: AppRoute | string) => {
-    setCurrentRoute(route as AppRoute);
+    const [routePath] = route.split('?');
+    setCurrentRoute(routePath as AppRoute);
     window.location.hash = route;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -213,6 +269,7 @@ export default function App() {
     }
     setUser(null);
     setParentProfile(initialParentProfile);
+    setVolunteerProfile(null);
     setChildrenList([]);
     setAddChildDraft(null);
     localStorage.removeItem('koinonia_active_draft_id');
@@ -490,10 +547,8 @@ export default function App() {
     }
 
     if (requiredRole && user.role !== requiredRole) {
-      if (user.role === 'volunteer') {
-        return <RedirectToRoute route="/volunteer/home" />;
-      } else if (user.role === 'staff') {
-        return <RedirectToRoute route="/staff/home" />;
+      if (user.role === 'volunteer' || user.role === 'staff') {
+        return <RedirectToRoute route="/volunteer/event" />;
       } else if (user.role === 'admin' || user.role === 'super_admin') {
         return <RedirectToRoute route="/admin/home" />;
       } else {
@@ -563,6 +618,57 @@ export default function App() {
     return <>{children}</>;
   };
 
+  const VolunteerProtectedRoute = ({
+    children
+  }: {
+    children: React.ReactNode;
+  }) => {
+    if (isCheckingAuth) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
+            <p className="text-sm text-[#52525B] font-medium tracking-wide">Checking access...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return <RedirectToRoute route="/volunteer/sign-in" />;
+    }
+
+    const allowedRoles = ['volunteer', 'staff', 'admin', 'super_admin'];
+    if (!allowedRoles.includes(user.role) && !volunteerProfile) {
+      return <RedirectToRoute route="/parent/home" />;
+    }
+
+    const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
+    if (!emailVerified) {
+      return <RedirectToRoute route="/volunteer/verify-email" />;
+    }
+
+    // Direct pending volunteers to pending-review screen (except admin/super_admin)
+    const isPending = !volunteerProfile || volunteerProfile.status === 'pending_review';
+    const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(user.role);
+    if (!isStaffOrAdmin && isPending) {
+      const cleanRoute = currentRoute.split('?')[0];
+      if (cleanRoute !== '/volunteer/pending-review' && cleanRoute !== '/volunteer/verify-email') {
+        return <RedirectToRoute route="/volunteer/pending-review" />;
+      }
+    }
+
+    // Direct active/approved volunteers away from pending-review screen to event dashboard
+    if (volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved')) {
+      const cleanRoute = currentRoute.split('?')[0];
+      if (cleanRoute === '/volunteer/pending-review') {
+        return <RedirectToRoute route="/volunteer/event" />;
+      }
+    }
+
+    return <>{children}</>;
+  };
+
   const handleSignInSuccess = (userData: any, profileData: any) => {
     setUser(userData);
     if (profileData) {
@@ -573,6 +679,22 @@ export default function App() {
 
   const renderCurrentRoute = () => {
     const cleanRoute = currentRoute.split('?')[0];
+    const pRoute = user ? (isProfileComplete(parentProfile) ? '/parent/home' : '/parent/profile-setup') : '/parent/create-account';
+    
+    let vRoute = '/volunteer/sign-in';
+    if (user) {
+      const hasVolunteerRole = ['volunteer', 'staff', 'admin', 'super_admin'].includes(user.role);
+      if (hasVolunteerRole || volunteerProfile) {
+        if (volunteerProfile && volunteerProfile.status === 'pending_review') {
+          vRoute = '/volunteer/pending-review';
+        } else {
+          vRoute = '/volunteer/event';
+        }
+      } else {
+        vRoute = '/parent/volunteer-request';
+      }
+    }
+
     if (cleanRoute === '/parent/status' || (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))) {
       const parts = cleanRoute.split('/');
       const childIdParam = parts.length >= 4 && parts[3] !== 'review-sent' && parts[3] !== 'new' ? parts[3] : undefined;
@@ -620,6 +742,7 @@ export default function App() {
             onDeleteChild={handleDeleteChild}
             initialTab="Passes"
             selectedChildId={childIdParam}
+            volunteerProfile={volunteerProfile}
           />
         </ProtectedRoute>
       );
@@ -632,6 +755,8 @@ export default function App() {
             onNavigate={navigate}
             isMobileLandingView={isMobileLandingView}
             onToggleMobileView={(mobile) => setIsMobileLandingView(mobile)}
+            parentCtaRoute={pRoute}
+            volunteerCtaRoute={vRoute}
           />
         );
       case '/parent/create-account':
@@ -705,6 +830,7 @@ export default function App() {
               onSignOut={handleSignOut}
               onDeleteChild={handleDeleteChild}
               initialTab="Home"
+              volunteerProfile={volunteerProfile}
             />
           </ProtectedRoute>
         );
@@ -721,6 +847,7 @@ export default function App() {
               onSignOut={handleSignOut}
               onDeleteChild={handleDeleteChild}
               initialTab="Profile"
+              volunteerProfile={volunteerProfile}
             />
           </ProtectedRoute>
         );
@@ -737,6 +864,7 @@ export default function App() {
               onSignOut={handleSignOut}
               onDeleteChild={handleDeleteChild}
               initialTab="Children"
+              volunteerProfile={volunteerProfile}
             />
           </ProtectedRoute>
         );
@@ -817,8 +945,82 @@ export default function App() {
               onSignOut={handleSignOut}
               onDeleteChild={handleDeleteChild}
               initialTab="Passes"
+              volunteerProfile={volunteerProfile}
             />
           </ProtectedRoute>
+        );
+      case '/parent/volunteer-request':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <VolunteerRequestView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              onRefreshAccess={checkAuth}
+            />
+          </ProtectedRoute>
+        );
+      case '/volunteer/forgot-password':
+        return <VolunteerForgotPasswordView onNavigate={navigate} />;
+      case '/volunteer/reset-password':
+        return <VolunteerResetPasswordView onNavigate={navigate} />;
+      case '/volunteer/sign-in':
+        return (
+          <VolunteerSignInView
+            onNavigate={navigate}
+            onSignInSuccess={async (u, p) => {
+              setUser(u);
+              if (p) {
+                setVolunteerProfile(p);
+              }
+              await checkAuth();
+            }}
+          />
+        );
+      case '/volunteer/create-account':
+        return (
+          <VolunteerCreateAccountView
+            onNavigate={navigate}
+            onSignInSuccess={async (u, p) => {
+              setUser(u);
+              if (p) {
+                setVolunteerProfile(p);
+              }
+              await checkAuth();
+            }}
+          />
+        );
+      case '/volunteer/verify-email':
+        return (
+          <VolunteerVerifyEmailView
+            onNavigate={navigate}
+          />
+        );
+      case '/volunteer/pending-review':
+        return (
+          <VolunteerProtectedRoute>
+            <VolunteerPendingReviewView
+              onNavigate={navigate}
+              volunteerProfile={volunteerProfile}
+              onSignOut={handleSignOut}
+              hasParentProfile={!!parentProfile && !!parentProfile.email}
+            />
+          </VolunteerProtectedRoute>
+        );
+      case '/volunteer/event':
+      case '/volunteer/scan':
+      case '/volunteer/children':
+      case '/volunteer/reports':
+      case '/volunteer/profile':
+        return (
+          <VolunteerProtectedRoute>
+            <VolunteerEventDashboardView
+              onNavigate={navigate}
+              volunteerProfile={volunteerProfile}
+              onSignOut={handleSignOut}
+              isOffline={isOffline}
+              hasParentProfile={!!parentProfile && !!parentProfile.email}
+            />
+          </VolunteerProtectedRoute>
         );
       default:
         return (
@@ -826,6 +1028,8 @@ export default function App() {
             onNavigate={navigate}
             isMobileLandingView={isMobileLandingView}
             onToggleMobileView={(mobile) => setIsMobileLandingView(mobile)}
+            parentCtaRoute={pRoute}
+            volunteerCtaRoute={vRoute}
           />
         );
     }
@@ -833,6 +1037,20 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] selection:bg-[#C59B27]/30 selection:text-[#18181B]">
+      {isOffline && (
+        <div className="bg-amber-600 text-white text-xs font-semibold py-2.5 px-4 text-center sticky top-0 z-[100] flex items-center justify-center gap-2 shadow-md">
+          <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-3.536 4.978 4.978 0 011.414-3.536m0 0l2.828 2.829M12 12a1 1 0 112 0 1 1 0 01-2 0z" />
+          </svg>
+          <span>
+            {user?.role === 'admin' 
+              ? 'You are offline. Please reconnect before making changes.'
+              : user?.role === 'staff' || user?.role === 'volunteer'
+                ? 'You are offline. Scanning may be limited until connection returns.'
+                : 'You are offline. Some updates will appear when your connection returns.'}
+          </span>
+        </div>
+      )}
       {renderCurrentRoute()}
 
       {/* Only show DevNavigator on internal parent routes, remove from public landing page */}

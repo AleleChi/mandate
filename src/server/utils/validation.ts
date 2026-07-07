@@ -37,20 +37,262 @@ const COMMON_TYPOS: { [key: string]: string } = {
   'hotmail.co': 'hotmail.com'
 };
 
+export const sanitizeTextInput = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '') // Strip script tags completely
+    .replace(/<\/?[^>]+(>|$)/g, '')                    // Strip all other HTML tags
+    .trim();
+};
+
+export const normalizeEmail = (email: string): string => {
+  return (email || '').trim().toLowerCase();
+};
+
+export const normalizePhone = (phone: string, country = 'NG'): string => {
+  const cleaned = (phone || '').replace(/[^\d+]/g, '');
+  try {
+    const parsed = parsePhoneNumberFromString(cleaned, country as CountryCode);
+    if (parsed && parsed.isValid()) {
+      return parsed.format('E.164');
+    }
+  } catch (e) {}
+  return cleaned.startsWith('+') ? cleaned : cleaned ? `+234${cleaned.replace(/^0+/, '')}` : '';
+};
+
 /**
- * Backend Email Validator (including DNS/MX check)
+ * Strict Full Name Validator (Parent & Pickup)
  */
-export async function validateEmailAddress(email: string, skipMxCheck = false): Promise<ValidationResult> {
-  if (!email) {
+export function validateFullName(name: string, isParentOrPickup = true, fieldName = 'fullName'): ValidationResult {
+  const trimmed = (name || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      code: 'NAME_REQUIRED',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  if (trimmed.length < 3 || trimmed.length > 100) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_LENGTH',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Reject digits
+  if (/\d/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_DIGITS',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Allowed characters: letters, spaces, apostrophe, hyphen, period
+  if (!/^[a-zA-ZÀ-ÿ\s.\-']+$/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_CHARACTERS',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Reject quotes, backticks
+  if (trimmed.includes('"') || trimmed.includes('`')) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_QUOTES',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Reject consecutive punctuation
+  if (/[\.\-']{2,}/.test(trimmed) || /[\.\-']\s*[\.\-']/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_RUNS',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Must contain letters
+  if (!/[a-zA-Z]/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_NO_LETTERS',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Reject SQL injection / script tags
+  if (/\b(drop|select|insert|delete|update|union|script|table)\b/i.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_SQL',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Reject mostly punctuation (letters < 50% of non-whitespace)
+  const lettersCount = trimmed.replace(/[^a-zA-ZÀ-ÿ]/g, '').length;
+  const totalNonSpace = trimmed.replace(/\s/g, '').length;
+  if (totalNonSpace > 0 && (lettersCount / totalNonSpace) < 0.5) {
+    return {
+      valid: false,
+      code: 'INVALID_NAME_MOSTLY_PUNCTUATION',
+      field: fieldName,
+      message: 'Enter a valid full name.'
+    };
+  }
+
+  // Check multiple words for parent/pickup
+  if (isParentOrPickup) {
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) {
+      return {
+        valid: false,
+        code: 'INVALID_NAME_WORDS',
+        field: fieldName,
+        message: 'Enter a valid full name.'
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+// Preserve validateName signature for backend routing
+export function validateName(name: string, fieldName = 'fullName'): ValidationResult {
+  const res = validateFullName(name, true, fieldName);
+  if (!res.valid) {
+    // Return original standard error message to preserve compatibility but keep strict rules
+    return { ...res, message: 'Enter your full name.' };
+  }
+  return res;
+}
+
+/**
+ * Strict Child Name Validator
+ */
+export function validateChildName(name: string, fieldName = 'childFullName'): ValidationResult {
+  const trimmed = (name || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      code: 'CHILD_NAME_REQUIRED',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  if (trimmed.length < 2 || trimmed.length > 100) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_LENGTH',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  // Reject digits
+  if (/\d/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_DIGITS',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  // Allowed: letters, spaces, apostrophe, hyphen
+  if (!/^[a-zA-ZÀ-ÿ\s\-']+$/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_CHARACTERS',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  // Reject long symbol runs
+  if (/[\-']{2,}/.test(trimmed) || /[\-']\s*[\-']/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_RUNS',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  // Must contain letters
+  if (!/[a-zA-Z]/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_NO_LETTERS',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  // Reject SQL injection / script tags
+  if (/\b(drop|select|insert|delete|update|union|script|table)\b/i.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_SQL',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  // Mostly punctuation
+  const lettersCount = trimmed.replace(/[^a-zA-ZÀ-ÿ]/g, '').length;
+  const totalNonSpace = trimmed.replace(/\s/g, '').length;
+  if (totalNonSpace > 0 && (lettersCount / totalNonSpace) < 0.5) {
+    return {
+      valid: false,
+      code: 'INVALID_CHILD_NAME_PUNCTUATION',
+      field: fieldName,
+      message: 'Enter the child’s full name.'
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Strict Email Validator Syntax Check
+ */
+export function validateEmailSyntax(email: string, fieldName = 'email'): ValidationResult {
+  const normalized = (email || '').trim().toLowerCase();
+  
+  if (!normalized) {
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
 
-  const normalized = email.trim().toLowerCase();
+  // Reject quotes, apostrophes, backticks
+  if (normalized.includes("'") || normalized.includes('"') || normalized.includes('`')) {
+    return {
+      valid: false,
+      code: 'INVALID_EMAIL_FORMAT',
+      field: fieldName,
+      message: 'Enter a valid email address.'
+    };
+  }
 
   // Email must match a proper email pattern:
   // - no spaces
@@ -58,7 +300,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
@@ -69,19 +311,19 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
 
   // - local part before @
   // - domain after @
-  const [localPart, domain] = parts;
-  if (!domain || !localPart) {
+  const [local, domain] = parts;
+  if (!local || !domain) {
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
@@ -91,7 +333,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
@@ -101,7 +343,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
@@ -114,7 +356,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
@@ -127,7 +369,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
       return {
         valid: false,
         code: 'INVALID_EMAIL_FORMAT',
-        field: 'email',
+        field: fieldName,
         message: 'Enter a valid email address.'
       };
     }
@@ -137,7 +379,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
       return {
         valid: false,
         code: 'INVALID_EMAIL_FORMAT',
-        field: 'email',
+        field: fieldName,
         message: 'Enter a valid email address.'
       };
     }
@@ -147,7 +389,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
       return {
         valid: false,
         code: 'INVALID_EMAIL_FORMAT',
-        field: 'email',
+        field: fieldName,
         message: 'Enter a valid email address.'
       };
     }
@@ -163,22 +405,36 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: 'Enter a valid email address.'
     };
   }
 
-  // Suspicious common domain typos check
   if (COMMON_TYPOS[domain]) {
     const suggestion = COMMON_TYPOS[domain];
     return {
       valid: false,
       code: 'INVALID_EMAIL_FORMAT',
-      field: 'email',
+      field: fieldName,
       message: `Please check the email address. Did you mean ${suggestion}?`,
       suggestion
     };
   }
+
+  return { valid: true };
+}
+
+/**
+ * Backend Email Validator (including DNS/MX check)
+ */
+export async function validateEmailAddress(email: string, skipMxCheck = false, fieldName = 'email'): Promise<ValidationResult> {
+  const syntaxRes = validateEmailSyntax(email, fieldName);
+  if (!syntaxRes.valid) {
+    return syntaxRes;
+  }
+
+  const normalized = email.trim().toLowerCase();
+  const domain = normalized.split('@')[1];
 
   // Perform DNS MX lookup unless skipped
   if (!skipMxCheck) {
@@ -188,7 +444,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
         return {
           valid: false,
           code: 'EMAIL_DOMAIN_CANNOT_RECEIVE_MAIL',
-          field: 'email',
+          field: fieldName,
           message: 'This email address does not appear to receive email.'
         };
       }
@@ -197,7 +453,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
       return {
         valid: false,
         code: 'EMAIL_DOMAIN_CANNOT_RECEIVE_MAIL',
-        field: 'email',
+        field: fieldName,
         message: 'This email address does not appear to receive email.'
       };
     }
@@ -209,16 +465,21 @@ export async function validateEmailAddress(email: string, skipMxCheck = false): 
   };
 }
 
+export async function validateEmailDeliverability(email: string): Promise<boolean> {
+  const res = await validateEmailAddress(email, false);
+  return res.valid;
+}
+
 /**
  * Backend Phone Number Validator using libphonenumber-js
  */
-export function validatePhoneNumber(phone: string, defaultCountry: string = 'NG'): ValidationResult {
+export function validatePhoneNumber(phone: string, defaultCountry = 'NG', fieldName = 'phone'): ValidationResult {
   if (!phone) {
     return {
       valid: false,
       code: 'INVALID_PHONE_FORMAT',
-      field: 'phone',
-      message: 'Enter a valid phone number.'
+      field: fieldName,
+      message: 'Enter your phone number.'
     };
   }
 
@@ -230,7 +491,7 @@ export function validatePhoneNumber(phone: string, defaultCountry: string = 'NG'
     return {
       valid: false,
       code: 'INVALID_PHONE_FORMAT',
-      field: 'phone',
+      field: fieldName,
       message: 'Phone number can only contain digits, spaces, and +.'
     };
   }
@@ -241,7 +502,7 @@ export function validatePhoneNumber(phone: string, defaultCountry: string = 'NG'
       return {
         valid: false,
         code: 'INVALID_PHONE_FORMAT',
-        field: 'phone',
+        field: fieldName,
         message: 'Enter a valid phone number.'
       };
     }
@@ -254,56 +515,307 @@ export function validatePhoneNumber(phone: string, defaultCountry: string = 'NG'
     return {
       valid: false,
       code: 'INVALID_PHONE_FORMAT',
-      field: 'phone',
+      field: fieldName,
       message: 'Enter a valid phone number.'
     };
   }
 }
 
 /**
- * Validate full name
+ * Country Validator
  */
-export function validateName(name: string, fieldName: string = 'fullName'): ValidationResult {
-  const trimmed = name ? name.trim() : '';
+export function validateCountry(country: string, fieldName = 'country'): ValidationResult {
+  if (!country || !country.trim()) {
+    return {
+      valid: false,
+      code: 'COUNTRY_REQUIRED',
+      field: fieldName,
+      message: 'Select your country.'
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * City Validator
+ */
+export function validateCity(city: string, fieldName = 'city'): ValidationResult {
+  const trimmed = (city || '').trim();
   if (!trimmed) {
     return {
       valid: false,
-      code: 'NAME_REQUIRED',
+      code: 'CITY_REQUIRED',
       field: fieldName,
-      message: 'Enter your full name.'
+      message: 'City is required.'
     };
   }
-
-  if (trimmed.length < 3 || trimmed.length > 100) {
+  if (/^\d+$/.test(trimmed)) {
     return {
       valid: false,
-      code: 'INVALID_NAME_LENGTH',
+      code: 'INVALID_CITY',
       field: fieldName,
-      message: 'Enter your full name.'
+      message: 'Enter a valid city name.'
     };
   }
-
-  // Letters, spaces, apostrophes, hyphens only
-  const nameRegex = /^[a-zA-Z'\-\s]+$/;
-  if (!nameRegex.test(trimmed)) {
+  if (trimmed.length < 2 || trimmed.length > 80) {
     return {
       valid: false,
-      code: 'INVALID_NAME_CHARACTERS',
+      code: 'CITY_LENGTH_INVALID',
       field: fieldName,
-      message: 'Enter your full name.'
+      message: 'City name must be between 2 and 80 characters.'
     };
   }
-
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  if (words.length < 2) {
+  if (!/[a-zA-Z]/.test(trimmed)) {
     return {
       valid: false,
-      code: 'INVALID_NAME_WORDS',
+      code: 'INVALID_CITY',
       field: fieldName,
-      message: 'Enter your full name.'
+      message: 'Enter a valid city name.'
     };
   }
+  return { valid: true };
+}
 
+/**
+ * State / Region Validator
+ */
+export function validateStateRegion(state: string, country = 'Nigeria', fieldName = 'stateRegion'): ValidationResult {
+  const trimmed = (state || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      code: 'STATE_REQUIRED',
+      field: fieldName,
+      message: 'State / Region is required.'
+    };
+  }
+  if (country === 'Nigeria') {
+    const validNigerianStates = [
+      'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River',
+      'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT', 'Federal Capital Territory', 'Gombe', 'Imo', 'Jigawa',
+      'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+      'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara'
+    ];
+    const isMatched = validNigerianStates.some(s => s.toLowerCase() === trimmed.toLowerCase());
+    if (!isMatched) {
+      if (!/^[a-zA-Z\s.\-']+$/.test(trimmed) || !/[a-zA-Z]/.test(trimmed)) {
+        return {
+          valid: false,
+          code: 'INVALID_STATE',
+          field: fieldName,
+          message: 'Enter a valid Nigerian state.'
+        };
+      }
+    }
+  } else {
+    if (!/^[a-zA-Z0-9\s.\-']+$/.test(trimmed) || !/[a-zA-Z]/.test(trimmed)) {
+      return {
+        valid: false,
+        code: 'INVALID_STATE',
+        field: fieldName,
+        message: 'Enter a valid state / region.'
+      };
+    }
+  }
+  return { valid: true };
+}
+
+/**
+ * Address Validator
+ */
+export function validateAddress(address: string, fieldName = 'homeAddress'): ValidationResult {
+  const trimmed = (address || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      code: 'ADDRESS_REQUIRED',
+      field: fieldName,
+      message: 'Home address is required.'
+    };
+  }
+  if (trimmed.length < 5) {
+    return {
+      valid: false,
+      code: 'ADDRESS_TOO_SHORT',
+      field: fieldName,
+      message: 'Enter a valid home address.'
+    };
+  }
+  if (trimmed.length > 250) {
+    return {
+      valid: false,
+      code: 'ADDRESS_TOO_LONG',
+      field: fieldName,
+      message: 'Address cannot exceed 250 characters.'
+    };
+  }
+  if (/\b(drop|select|insert|delete|update|union|script|table)\b/i.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_ADDRESS_SQL',
+      field: fieldName,
+      message: 'Invalid characters in home address.'
+    };
+  }
+  if (!/[a-zA-Z]/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_ADDRESS',
+      field: fieldName,
+      message: 'Enter a valid home address.'
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Relationship Validator
+ */
+export function validateRelationship(relationship: string, fieldName = 'relationship'): ValidationResult {
+  const trimmed = (relationship || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      code: 'RELATIONSHIP_REQUIRED',
+      field: fieldName,
+      message: 'Relationship is required.'
+    };
+  }
+  if (trimmed.length < 2 || trimmed.length > 50) {
+    return {
+      valid: false,
+      code: 'INVALID_RELATIONSHIP_LENGTH',
+      field: fieldName,
+      message: 'Enter a valid relationship.'
+    };
+  }
+  if (!/^[a-zA-Z\s\-']+$/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_RELATIONSHIP_CHARS',
+      field: fieldName,
+      message: 'Relationship can only contain letters.'
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * School Name Validator
+ */
+export function validateSchoolName(schoolName: string, fieldName = 'schoolName'): ValidationResult {
+  const trimmed = (schoolName || '').trim();
+  if (!trimmed) return { valid: true }; // Optional
+  if (trimmed.length < 2 || trimmed.length > 100) {
+    return {
+      valid: false,
+      code: 'INVALID_SCHOOL_NAME_LENGTH',
+      field: fieldName,
+      message: 'School name must be between 2 and 100 characters.'
+    };
+  }
+  if (!/[a-zA-Z]/.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_SCHOOL_NAME_NO_LETTERS',
+      field: fieldName,
+      message: 'School name must contain letters.'
+    };
+  }
+  if (/\b(drop|select|insert|delete|update|union|script|table)\b/i.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_SCHOOL_NAME_SQL',
+      field: fieldName,
+      message: 'Invalid characters in school name.'
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Notes Validator
+ */
+export function validateNotes(notes: string, fieldName = 'notes'): ValidationResult {
+  const trimmed = (notes || '').trim();
+  if (!trimmed) return { valid: true }; // Optional
+  if (trimmed.length > 1000) {
+    return {
+      valid: false,
+      code: 'NOTES_TOO_LONG',
+      field: fieldName,
+      message: 'Notes cannot exceed 1000 characters.'
+    };
+  }
+  if (/<script[^>]*>/i.test(trimmed) || /\b(drop|select|insert|delete|update|union|table)\b/i.test(trimmed)) {
+    return {
+      valid: false,
+      code: 'INVALID_NOTES_SQL',
+      field: fieldName,
+      message: 'Invalid content detected in notes.'
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Date Of Birth Validator
+ */
+export function validateDateOfBirth(dob: string, fieldName = 'dateOfBirth'): ValidationResult {
+  if (!dob) {
+    return {
+      valid: false,
+      code: 'DOB_REQUIRED',
+      field: fieldName,
+      message: 'Date of birth is required.'
+    };
+  }
+  const dobDate = new Date(dob);
+  const now = new Date();
+  if (dobDate > now) {
+    return {
+      valid: false,
+      code: 'DOB_FUTURE',
+      field: fieldName,
+      message: 'Date of birth cannot be in the future.'
+    };
+  }
+  // Max age: 18
+  const ageInMs = now.getTime() - dobDate.getTime();
+  const ageInYears = ageInMs / (1000 * 60 * 60 * 24 * 365.25);
+  if (ageInYears > 18) {
+    return {
+      valid: false,
+      code: 'CHILD_TOO_OLD',
+      field: fieldName,
+      message: 'Child must be under 18 years old.'
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Image File Validator
+ */
+export function validateImageFile(file: { type: string; size: number }, fieldName = 'image'): ValidationResult {
+  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedMimeTypes.includes(file.type.toLowerCase())) {
+    return {
+      valid: false,
+      code: 'INVALID_IMAGE_TYPE',
+      field: fieldName,
+      message: 'Please upload a JPG, PNG, or WebP image.'
+    };
+  }
+  // Max size: 10MB
+  if (file.size > 10 * 1024 * 1024) {
+    return {
+      valid: false,
+      code: 'IMAGE_TOO_LARGE',
+      field: fieldName,
+      message: 'This image is too large. Please choose a smaller photo.'
+    };
+  }
   return { valid: true };
 }
 
@@ -314,96 +826,51 @@ export function validateParentProfile(data: any): { valid: boolean; errors: { [k
   const errors: { [key: string]: ValidationResult } = {};
 
   // Full Name
-  const nameRes = validateName(data.fullName || data.full_name, 'fullName');
+  const nameRes = validateFullName(data.fullName || data.full_name, true, 'fullName');
   if (!nameRes.valid) {
     errors.fullName = nameRes;
   }
 
   // Phone
   const phoneVal = data.phone || data.phone_number;
-  const phoneRes = validatePhoneNumber(phoneVal || '', data.countryCode || 'NG');
+  const phoneRes = validatePhoneNumber(phoneVal || '', data.countryCode || 'NG', 'phone');
   if (!phoneRes.valid) {
-    errors.phone = { ...phoneRes, field: 'phone' };
+    errors.phone = phoneRes;
   }
 
   // WhatsApp (optional but if provided must be valid)
   const whatsappVal = data.whatsapp || data.whatsapp_number;
   if (whatsappVal) {
-    const whatsappRes = validatePhoneNumber(whatsappVal, data.countryCode || 'NG');
+    const whatsappRes = validatePhoneNumber(whatsappVal, data.countryCode || 'NG', 'whatsapp');
     if (!whatsappRes.valid) {
-      errors.whatsapp = { ...whatsappRes, field: 'whatsapp', message: 'Enter a valid WhatsApp number.' };
+      errors.whatsapp = { ...whatsappRes, message: 'Enter a valid WhatsApp number.' };
     }
   }
 
   // Country
-  if (!data.country || !data.country.trim()) {
-    errors.country = {
-      valid: false,
-      code: 'COUNTRY_REQUIRED',
-      field: 'country',
-      message: 'Select your country.'
-    };
+  const countryRes = validateCountry(data.country, 'country');
+  if (!countryRes.valid) {
+    errors.country = countryRes;
   }
 
   // State / Region
   const stateVal = data.stateRegion || data.state_region;
-  if (!stateVal || !stateVal.trim()) {
-    errors.stateRegion = {
-      valid: false,
-      code: 'STATE_REQUIRED',
-      field: 'stateRegion',
-      message: 'State / Region is required.'
-    };
+  const stateRes = validateStateRegion(stateVal, data.country || 'Nigeria', 'stateRegion');
+  if (!stateRes.valid) {
+    errors.stateRegion = stateRes;
   }
 
-  // City (free text, no numbers-only, max 80 chars)
-  const cityVal = (data.city || '').trim();
-  if (!cityVal) {
-    errors.city = {
-      valid: false,
-      code: 'CITY_REQUIRED',
-      field: 'city',
-      message: 'City is required.'
-    };
-  } else if (/^\d+$/.test(cityVal)) {
-    errors.city = {
-      valid: false,
-      code: 'INVALID_CITY',
-      field: 'city',
-      message: 'Enter a valid city name.'
-    };
-  } else if (cityVal.length > 80) {
-    errors.city = {
-      valid: false,
-      code: 'CITY_TOO_LONG',
-      field: 'city',
-      message: 'City name cannot exceed 80 characters.'
-    };
+  // City
+  const cityRes = validateCity(data.city, 'city');
+  if (!cityRes.valid) {
+    errors.city = cityRes;
   }
 
-  // Home Address (min 5, max 250)
-  const addressVal = (data.homeAddress || data.home_address || '').trim();
-  if (!addressVal) {
-    errors.homeAddress = {
-      valid: false,
-      code: 'ADDRESS_REQUIRED',
-      field: 'homeAddress',
-      message: 'Home address is required.'
-    };
-  } else if (addressVal.length < 5) {
-    errors.homeAddress = {
-      valid: false,
-      code: 'ADDRESS_TOO_SHORT',
-      field: 'homeAddress',
-      message: 'Enter a valid home address.'
-    };
-  } else if (addressVal.length > 250) {
-    errors.homeAddress = {
-      valid: false,
-      code: 'ADDRESS_TOO_LONG',
-      field: 'homeAddress',
-      message: 'Address cannot exceed 250 characters.'
-    };
+  // Home Address
+  const addressVal = data.homeAddress || data.home_address;
+  const addressRes = validateAddress(addressVal, 'homeAddress');
+  if (!addressRes.valid) {
+    errors.homeAddress = addressRes;
   }
 
   // Photo check
@@ -445,23 +912,19 @@ export function validatePickupPerson(pickup: any, defaultCountry = 'NG'): { vali
 
   const pickupType = pickup?.pickupType || 'parent';
   if (pickupType === 'other_person') {
-    const nameRes = validateName(pickup?.pickupPersonFullName, 'pickupPersonFullName');
+    const nameRes = validateFullName(pickup?.pickupPersonFullName, true, 'pickupPersonFullName');
     if (!nameRes.valid) {
       errors.pickupPersonFullName = nameRes;
     }
 
-    if (!pickup?.pickupPersonRelationship || !pickup?.pickupPersonRelationship.trim()) {
-      errors.pickupPersonRelationship = {
-        valid: false,
-        code: 'RELATIONSHIP_REQUIRED',
-        field: 'pickupPersonRelationship',
-        message: 'Relationship is required.'
-      };
+    const relationshipRes = validateRelationship(pickup?.pickupPersonRelationship, 'pickupPersonRelationship');
+    if (!relationshipRes.valid) {
+      errors.pickupPersonRelationship = relationshipRes;
     }
 
-    const phoneRes = validatePhoneNumber(pickup?.pickupPersonPhone || '', defaultCountry);
+    const phoneRes = validatePhoneNumber(pickup?.pickupPersonPhone || '', defaultCountry, 'pickupPersonPhone');
     if (!phoneRes.valid) {
-      errors.pickupPersonPhone = { ...phoneRes, field: 'pickupPersonPhone' };
+      errors.pickupPersonPhone = phoneRes;
     }
 
     const photoVal = pickup?.pickupPersonPhoto || pickup?.pickupPersonPhotoFileId;
@@ -491,16 +954,16 @@ export function validatePickupPerson(pickup: any, defaultCountry = 'NG'): { vali
 }
 
 /**
- * Validate entire child submission before review (Part 7)
+ * Validate entire child submission before review
  */
 export function validateChildDraftStep(draft: any, parentProfile: any): { valid: boolean; errors: { [key: string]: ValidationResult } } {
   const errors: { [key: string]: ValidationResult } = {};
 
   // STEP 1: Child details
   const nameVal = draft.childDetails?.fullName || draft.fullName;
-  const nameRes = validateName(nameVal || '', 'childFullName');
+  const nameRes = validateChildName(nameVal || '', 'childFullName');
   if (!nameRes.valid) {
-    errors.childFullName = { ...nameRes, message: 'Enter child\'s full name.' };
+    errors.childFullName = nameRes;
   }
 
   const genderVal = draft.childDetails?.gender || draft.gender;
@@ -514,34 +977,15 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
   }
 
   const dobVal = draft.childDetails?.dateOfBirth || draft.dob || draft.dateOfBirth;
-  if (!dobVal) {
-    errors.childDob = {
-      valid: false,
-      code: 'DOB_REQUIRED',
-      field: 'childDob',
-      message: 'Date of birth is required.'
-    };
-  } else {
-    const dobDate = new Date(dobVal);
-    const now = new Date();
-    if (dobDate > now) {
-      errors.childDob = {
-        valid: false,
-        code: 'DOB_FUTURE',
-        field: 'childDob',
-        message: 'Date of birth cannot be in the future.'
-      };
-    }
+  const dobRes = validateDateOfBirth(dobVal, 'childDob');
+  if (!dobRes.valid) {
+    errors.childDob = dobRes;
   }
 
   const relationshipVal = draft.childDetails?.relationshipToChild || draft.relationship;
-  if (!relationshipVal || !relationshipVal.trim()) {
-    errors.childRelationship = {
-      valid: false,
-      code: 'RELATIONSHIP_REQUIRED',
-      field: 'childRelationship',
-      message: 'Relationship to child is required.'
-    };
+  const relationshipRes = validateRelationship(relationshipVal, 'childRelationship');
+  if (!relationshipRes.valid) {
+    errors.childRelationship = { ...relationshipRes, message: 'Relationship to child is required.' };
   }
 
   const childPhotoVal = draft.childDetails?.photo || draft.photoUrl || draft.photoFileId;
@@ -565,6 +1009,12 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
     };
   }
 
+  const schoolNameVal = draft.schoolAndAgeGroup?.schoolName || draft.schoolName;
+  const schoolNameRes = validateSchoolName(schoolNameVal, 'schoolName');
+  if (!schoolNameRes.valid) {
+    errors.schoolName = schoolNameRes;
+  }
+
   const attendedBeforeVal = draft.schoolAndAgeGroup?.previousChildrenProgramme || draft.attendedBefore;
   if (!attendedBeforeVal || !['Yes', 'No'].includes(attendedBeforeVal)) {
     errors.previousAttendance = {
@@ -586,7 +1036,10 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
     };
   } else if (hasMedicalVal === 'Yes') {
     const medNotesVal = draft.healthAndSupport?.medicalNotes || draft.medicalNote;
-    if (!medNotesVal || !medNotesVal.trim()) {
+    const medRes = validateNotes(medNotesVal, 'medicalNotes');
+    if (!medRes.valid) {
+      errors.medicalNotes = medRes;
+    } else if (!medNotesVal || !medNotesVal.trim()) {
       errors.medicalNotes = {
         valid: false,
         code: 'MEDICAL_NOTES_REQUIRED',
@@ -606,7 +1059,10 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
     };
   } else if (needsSupportVal === 'Yes') {
     const supportNotesVal = draft.healthAndSupport?.supportNotes || draft.supportNote;
-    if (!supportNotesVal || !supportNotesVal.trim()) {
+    const supportRes = validateNotes(supportNotesVal, 'supportNotes');
+    if (!supportRes.valid) {
+      errors.supportNotes = supportRes;
+    } else if (!supportNotesVal || !supportNotesVal.trim()) {
       errors.supportNotes = {
         valid: false,
         code: 'SUPPORT_NOTES_REQUIRED',

@@ -6,6 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { KoinoniaDatePicker } from '../components/common/KoinoniaDatePicker';
 import { Button } from '../components/common/Button';
+import { validateChildName } from '../utils/validation';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -94,8 +95,9 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
       newErrors.photo = 'Add the child’s photo.';
     }
 
-    if (!fullName.trim() || fullName.trim().split(/\s+/).length < 2) {
-      newErrors.fullName = 'Enter the child’s full name.';
+    const nameError = validateChildName(fullName);
+    if (nameError) {
+      newErrors.fullName = nameError;
     }
 
     if (!gender) {
@@ -334,7 +336,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
               disabled={isUploadingPhoto || !(
                 photoUrl.trim() !== '' &&
                 fullName.trim() !== '' &&
-                fullName.trim().split(/\s+/).length >= 2 &&
+                validateChildName(fullName) === undefined &&
                 gender !== '' &&
                 (dob && new Date(dob) <= (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })()) &&
                 relationship !== ''

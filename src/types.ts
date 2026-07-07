@@ -8,6 +8,7 @@ export type AppRoute =
   | '/parent/new-password'
   | '/parent/profile-setup'
   | '/parent/profile/edit'
+  | '/parent/volunteer-request'
   | '/parent/home'
   | '/parent/profile'
   | '/parent/children'
@@ -22,7 +23,18 @@ export type AppRoute =
   | '/parent/passes'
   | `/parent/children/${string}/status`
   | `/parent/children/${string}/edit`
-  | `/parent/children/${string}/pass`;
+  | `/parent/children/${string}/pass`
+  | '/volunteer/sign-in'
+  | '/volunteer/forgot-password'
+  | '/volunteer/reset-password'
+  | '/volunteer/create-account'
+  | '/volunteer/verify-email'
+  | '/volunteer/pending-review'
+  | '/volunteer/event'
+  | '/volunteer/scan'
+  | '/volunteer/children'
+  | '/volunteer/reports'
+  | '/volunteer/profile';
 
 export type BottomNavTab = 'Home' | 'Children' | 'Status' | 'Passes' | 'Profile';
 

@@ -4,6 +4,7 @@ import { ArrowLeft, Check, ShieldCheck } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { Button } from '../components/common/Button';
+import { validateFullName, validatePhone } from '../utils/validation';
 
 interface AddChildStep4ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -94,24 +95,21 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
       if (!pickupPersonPhotoUrl) {
         newErrors.pickupPersonPhotoUrl = 'Add the pickup person’s photo.';
       }
-      if (!pickupPersonFullName.trim()) {
-        newErrors.pickupPersonFullName = 'Enter the pickup person’s full name.';
+      const nameErr = validateFullName(pickupPersonFullName, true);
+      if (nameErr) {
+        newErrors.pickupPersonFullName = nameErr;
       }
       if (!pickupPersonRelationship.trim()) {
         newErrors.pickupPersonRelationship = 'Add the person’s relationship to the child.';
       }
-      if (!pickupPersonPhone.trim()) {
-        newErrors.pickupPersonPhone = 'Enter the pickup person’s phone number.';
-      } else {
-        const cleanDigits = pickupPersonPhone.replace(/\D/g, '');
-        if (cleanDigits.length < 10) {
-          newErrors.pickupPersonPhone = 'Phone number must contain at least 10 digits.';
-        }
+      const phoneErr = validatePhone(pickupPersonPhone, 'NG');
+      if (phoneErr) {
+        newErrors.pickupPersonPhone = phoneErr;
       }
       if (pickupPersonWhatsapp.trim()) {
-        const cleanWhatsapp = pickupPersonWhatsapp.replace(/\D/g, '');
-        if (cleanWhatsapp.length < 10) {
-          newErrors.pickupPersonWhatsapp = 'WhatsApp number must contain at least 10 digits.';
+        const waErr = validatePhone(pickupPersonWhatsapp, 'NG');
+        if (waErr) {
+          newErrors.pickupPersonWhatsapp = waErr;
         }
       }
       if (!pickupPersonApproved) {
@@ -555,9 +553,11 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
                   pickupType === 'other_person' &&
                   pickupPersonPhotoUrl.trim() !== '' &&
                   pickupPersonFullName.trim() !== '' &&
+                  validateFullName(pickupPersonFullName, true) === undefined &&
                   pickupPersonRelationship.trim() !== '' &&
-                  pickupPersonPhone.replace(/\D/g, '').length >= 10 &&
-                  (!pickupPersonWhatsapp.trim() || pickupPersonWhatsapp.replace(/\D/g, '').length >= 10) &&
+                  pickupPersonPhone.trim() !== '' &&
+                  validatePhone(pickupPersonPhone, 'NG') === undefined &&
+                  (!pickupPersonWhatsapp.trim() || validatePhone(pickupPersonWhatsapp, 'NG') === undefined) &&
                   pickupPersonApproved
                 )
               )}

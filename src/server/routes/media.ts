@@ -34,7 +34,7 @@ router.get('/files/:fileId', async (req: Request, res: Response) => {
     }
 
     // Check local disk fallbacks during local dev
-    const subDirs = ['', 'parents', 'children', 'pickup-people', 'events', 'videos', 'gallery', 'general'];
+    const subDirs = ['', 'parents', 'volunteers', 'children', 'pickup-people', 'events', 'videos', 'gallery', 'general'];
     for (const sub of subDirs) {
       const filename = path.basename(media.storage_key || media.public_id || `${fileId}.jpg`);
       const filePath = path.join(MEDIA_DIR, sub, filename);
@@ -48,6 +48,96 @@ router.get('/files/:fileId', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error serving media file:', err);
     res.status(500).json({ error: 'Failed to retrieve media file' });
+  }
+});
+
+// Public endpoint for pre-account photo upload (only for volunteer_profile_photo)
+router.post('/public-upload', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    let buffer: Buffer;
+    let mimeType: string;
+
+    if (req.file) {
+      buffer = req.file.buffer;
+      mimeType = req.file.mimetype;
+    } else if (req.body && req.body.fileDataUrl) {
+      const { fileDataUrl } = req.body;
+      const matches = fileDataUrl.match(/^data:([a-zA-Z0-9.\/+-]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).json({ error: 'Please upload a JPG, PNG, or WebP image.' });
+      }
+      mimeType = matches[1];
+      buffer = Buffer.from(matches[2], 'base64');
+    } else {
+      return res.status(400).json({ error: 'Please upload a JPG, PNG, or WebP image.' });
+    }
+
+    const purpose: string = req.body.purpose || 'volunteer_profile_photo';
+    if (purpose !== 'volunteer_profile_photo') {
+      return res.status(400).json({ error: 'Unauthorized purpose for public upload.' });
+    }
+
+    const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedImageTypes.includes(mimeType)) {
+      return res.status(400).json({ error: 'Please upload a JPG, PNG, or WebP image.' });
+    }
+
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (buffer.length > maxSize) {
+      return res.status(400).json({ error: 'This photo is too large. Maximum image size is 10MB.' });
+    }
+
+    const uploadResult = await uploadMedia(buffer, {
+      purpose,
+      mimeType
+    });
+
+    const fileId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const folder = uploadResult.publicId.includes('/')
+      ? uploadResult.publicId.substring(0, uploadResult.publicId.lastIndexOf('/'))
+      : 'koinonia-children-teens';
+
+    await execute(`
+      INSERT INTO media_files (
+        id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
+        mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      fileId,
+      null,
+      uploadResult.provider,
+      purpose,
+      uploadResult.publicId,
+      uploadResult.secureUrl,
+      uploadResult.resourceType || 'image',
+      mimeType,
+      buffer.length,
+      uploadResult.width || null,
+      uploadResult.height || null,
+      uploadResult.duration || null,
+      folder,
+      uploadResult.secureUrl,
+      uploadResult.publicId,
+      now
+    ]);
+
+    res.status(201).json({
+      id: fileId,
+      provider: uploadResult.provider || 'cloudinary',
+      publicId: uploadResult.publicId,
+      secureUrl: uploadResult.secureUrl,
+      resourceType: uploadResult.resourceType || 'image',
+      fileType: purpose,
+      width: uploadResult.width || 800,
+      height: uploadResult.height || 800,
+      fileSize: uploadResult.bytes || buffer.length,
+      mimeType: mimeType,
+      url: `/api/media/files/${fileId}`
+    });
+  } catch (err: any) {
+    console.error('Public media upload error:', err);
+    res.status(500).json({ error: err.message || 'Failed to process media upload' });
   }
 });
 
@@ -86,24 +176,24 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
         return res.status(400).json({ error: 'This file is too large. Please choose a smaller file.' });
       }
     } else {
-      const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
       if (!allowedImageTypes.includes(mimeType)) {
         return res.status(400).json({ error: 'Please upload a JPG, PNG, or WebP image.' });
       }
 
-      let maxSize = 5 * 1024 * 1024;
+      let maxSize = 10 * 1024 * 1024; // Enforce standard 10MB
       const isParentFacing = ['parent_profile_photo', 'child_photo', 'pickup_person_photo'].includes(purpose);
       if (isParentFacing) {
-        maxSize = 2 * 1024 * 1024; // 2MB limit
+        maxSize = 10 * 1024 * 1024; // Standard 10MB
       } else if (purpose === 'landing_image' || purpose === 'gallery_media') {
         maxSize = 10 * 1024 * 1024;
       }
 
       if (buffer.length > maxSize) {
         if (isParentFacing) {
-          return res.status(400).json({ error: 'This photo is too large. Please choose a smaller photo.' });
+          return res.status(400).json({ error: 'This photo is too large. Maximum image size is 10MB.' });
         }
-        return res.status(400).json({ error: 'This file is too large. Please choose a smaller file.' });
+        return res.status(400).json({ error: 'This file is too large. Maximum size is 10MB.' });
       }
     }
 
@@ -154,7 +244,7 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       height: uploadResult.height || 800,
       fileSize: uploadResult.bytes || buffer.length,
       mimeType: mimeType,
-      url: uploadResult.secureUrl
+      url: `/api/media/files/${fileId}`
     });
   } catch (err: any) {
     console.error('Media upload error:', err);

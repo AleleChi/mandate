@@ -4,16 +4,39 @@ import { api } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { compressImageBeforeUpload } from '../../utils/imageCompression';
 
+export type PhotoUploadState =
+  | "empty"
+  | "preparing"
+  | "uploading"
+  | "uploaded"
+  | "upload_failed"
+  | "display_failed";
+
 interface PhotoUploadBoxProps {
   value: string;
-  onUploaded: (url: string) => void;
+  onUploaded: (savedRef: string) => void;
   label?: string;
   helperText?: string;
-  purpose: 'parent_profile_photo' | 'child_photo' | 'pickup_person_photo';
+  purpose: 'parent_profile_photo' | 'child_photo' | 'pickup_person_photo' | 'volunteer_profile_photo';
   required?: boolean;
   error?: string;
-  sizeVariant?: 'w-28' | 'w-24-28';
+  sizeVariant?: 'w-28' | 'w-24' | 'w-24-28';
   onUploadingStateChange?: (isUploading: boolean) => void;
+  allowPublicUpload?: boolean;
+  requireServerUpload?: boolean;
+  onUploadStatusChange?: (status: PhotoUploadState) => void;
+  onFileSelected?: (file: File | null) => void;
+  previewOnly?: boolean;
+}
+
+function isSavedMediaReference(value: string): boolean {
+  const ref = value.trim();
+  if (!ref) return false;
+  if (ref.startsWith("blob:") || ref.startsWith("data:")) return false;
+  return (
+    ref.startsWith("/api/media/files/") ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)
+  );
 }
 
 export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
@@ -24,10 +47,18 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
   purpose,
   error,
   sizeVariant = 'w-28',
-  onUploadingStateChange
+  onUploadingStateChange,
+  allowPublicUpload = false,
+  requireServerUpload = false,
+  onUploadStatusChange,
+  onFileSelected,
+  previewOnly = false
 }) => {
   const { showSuccess, showError } = useNotification();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Stored file reference for retries
+  const selectedFileRef = useRef<File | null>(null);
 
   // Core required variables to track on frontend
   const [mediaFileId, setMediaFileId] = useState<string>('');
@@ -37,8 +68,8 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string>('');
 
   // Operational states: 'empty' | 'preparing' | 'uploading' | 'uploaded' | 'upload_failed' | 'display_failed'
-  const [uploadState, setUploadState] = useState<'empty' | 'preparing' | 'uploading' | 'uploaded' | 'upload_failed' | 'display_failed'>(
-    value ? 'uploaded' : 'empty'
+  const [uploadState, setUploadState] = useState<PhotoUploadState>(
+    value ? (requireServerUpload && !isSavedMediaReference(value) ? 'upload_failed' : 'uploaded') : 'empty'
   );
 
   // Status of the currently active image tag load: 'idle' | 'loading' | 'loaded' | 'failed'
@@ -52,6 +83,11 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
   // Keep a set of blob URLs we created to revoke them safely when they are no longer needed
   const blobUrlsRef = useRef<Set<string>>(new Set());
 
+  // Notify parent of state changes
+  useEffect(() => {
+    onUploadStatusChange?.(uploadState);
+  }, [uploadState, onUploadStatusChange]);
+
   // Function to register a blob URL for cleanup
   const registerBlobUrl = (url: string) => {
     if (url.startsWith('blob:')) {
@@ -62,6 +98,22 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
   // Sync value changes from parent (essential for initialization and reset)
   useEffect(() => {
     if (value) {
+      if (previewOnly) {
+        setLocalPreviewUrl(value);
+        setDisplayedUrl(value);
+        setImageStatus('loading');
+        setUploadState('uploaded');
+        return;
+      }
+      if (requireServerUpload && !isSavedMediaReference(value)) {
+        setImageUrl('');
+        setMediaFileId('');
+        setLocalPreviewUrl(value);
+        setDisplayedUrl(value);
+        setImageStatus('loading');
+        setUploadState('upload_failed');
+        return;
+      }
       setImageUrl(value);
       setDisplayedUrl(value);
       setImageStatus('loading');
@@ -73,14 +125,18 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
         setMediaFileId(fileIdMatch[1]);
       }
     } else {
+      // Only clear if requireServerUpload isn't in a failed state we want to preserve, or if value is explicitly cleared
       setImageUrl('');
       setMediaFileId('');
       setLocalPreviewUrl('');
       setDisplayedUrl('');
       setImageStatus('idle');
       setUploadState('empty');
+      if (previewOnly) {
+        onFileSelected?.(null);
+      }
     }
-  }, [value]);
+  }, [value, requireServerUpload, previewOnly]);
 
   // Clean up all allocated local object URLs on unmount
   useEffect(() => {
@@ -110,12 +166,18 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const performUpload = async (file: File) => {
+    if (!navigator.onLine) {
+      showError('You are offline', 'Please reconnect before sending these details.');
+      return;
+    }
 
     onUploadingStateChange?.(true);
     setUploadState('preparing');
+    if (requireServerUpload) {
+      setMediaFileId('');
+      setImageUrl('');
+    }
 
     // Create immediate local blob URL of raw file
     const rawLocalUrl = URL.createObjectURL(file);
@@ -134,17 +196,25 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
       setLocalPreviewUrl(compressedBlobUrl);
       setDisplayedUrl(compressedBlobUrl);
 
+      if (previewOnly) {
+        setUploadState('uploaded');
+        setImageStatus('loading');
+        onFileSelected?.(compressionResult.compressedFile as File);
+        onUploaded(compressedBlobUrl);
+        onUploadingStateChange?.(false);
+        return;
+      }
+
       setUploadState('uploading');
 
-      if (api.getToken()) {
-        const uploadRes = await api.media.uploadFile(compressionResult.compressedFile, purpose);
-        const secureUrl = uploadRes.secureUrl || uploadRes.url;
+      if (api.getToken() || allowPublicUpload) {
+        const uploadRes = api.getToken()
+          ? await api.media.uploadFile(compressionResult.compressedFile, purpose)
+          : await api.media.publicUploadFile(compressionResult.compressedFile, purpose);
         
-        console.log('[DevLog] Media upload response has secureUrl:', !!secureUrl);
-
-        if (!secureUrl) {
-          throw new Error('Photo uploaded but secureUrl is missing from response');
-        }
+        const secureUrl = uploadRes.url || `/api/media/files/${uploadRes.id}`;
+        
+        console.log('[DevLog] Media upload response:', uploadRes);
 
         // Set state values
         setMediaFileId(uploadRes.id);
@@ -159,6 +229,9 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
         // Notify parent of the change
         onUploaded(secureUrl);
       } else {
+        if (requireServerUpload) {
+          throw new Error('Server upload is required, but user is unauthenticated.');
+        }
         // Fallback local-only preview if not logged in
         setUploadState('uploaded');
         setImageStatus('loaded');
@@ -168,12 +241,61 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
     } catch (err: any) {
       console.error('[DevLog] Photo upload failed:', err);
       setUploadState('upload_failed');
-      showError('Photo could not be uploaded', err.message || 'Please choose another photo and try again.');
+      if (requireServerUpload) {
+        onUploaded('');
+      }
+      showError('Photo could not be saved', err.message || 'Please choose another photo and try again.');
     } finally {
       onUploadingStateChange?.(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Strict validation check for file type and size (Max 10MB)
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadState('upload_failed');
+      if (requireServerUpload) {
+        onUploaded('');
+      }
+      showError('Invalid file type', 'Only JPG, PNG and WebP images are allowed.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSizeBytes) {
+      setUploadState('upload_failed');
+      if (requireServerUpload) {
+        onUploaded('');
+      }
+      showError('File too large', 'Maximum image size is 10MB.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    selectedFileRef.current = file;
+    if (requireServerUpload) {
+      onUploaded('');
+    }
+    await performUpload(file);
+  };
+
+  const handleRetryUpload = async () => {
+    if (selectedFileRef.current) {
+      await performUpload(selectedFileRef.current);
+    } else {
+      showError('No file selected', 'Please choose a photo to upload.');
     }
   };
 
@@ -212,9 +334,9 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
       case 'uploading':
         return 'Uploading photo...';
       case 'uploaded':
-        return 'Photo added. Click to change.';
+        return requireServerUpload ? 'Photo ready. Click to change.' : 'Photo added. Click to change.';
       case 'upload_failed':
-        return 'Photo could not be uploaded.';
+        return 'Photo could not be saved.';
       case 'display_failed':
         return 'Photo could not be displayed.';
       default:
@@ -225,7 +347,10 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
   // Determine fixed sizing class and direct styles to prevent expanding/shrinking
   let widthClass = 'w-28';
   let heightClass = 'h-28';
-  if (sizeVariant === 'w-24-28') {
+  if (sizeVariant === 'w-24') {
+    widthClass = 'w-24';
+    heightClass = 'h-24';
+  } else if (sizeVariant === 'w-24-28') {
     widthClass = 'w-24 sm:w-28';
     heightClass = 'h-24 sm:h-28';
   } else if (isPickup) {
@@ -271,15 +396,27 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
         {/* Uploading overlay */}
         {uploadState === 'uploading' && (
           <div className="flex flex-col items-center justify-center p-4 text-center bg-white/90 absolute inset-0 z-10">
-            <div className="text-xs font-medium text-[#715D3A] animate-pulse">Uploading photo...</div>
+            <div className="text-xs font-medium text-[#715D3A] animate-pulse">Saving photo...</div>
           </div>
         )}
 
         {/* Upload Failed overlay */}
         {uploadState === 'upload_failed' && (
-          <div className="flex flex-col items-center justify-center p-4 text-center bg-white/95 absolute inset-0 z-10">
-            <AlertCircle className="w-5 h-5 text-[#C53030] mb-1" />
-            <div className="text-[11px] font-bold text-[#C53030] leading-snug">Photo could not be uploaded</div>
+          <div className="flex flex-col items-center justify-center p-2 text-center bg-black/65 absolute inset-0 z-10 text-white">
+            <AlertCircle className="w-5 h-5 text-red-400 mb-1" />
+            <div className="text-[11px] font-bold text-white leading-snug">Photo not saved</div>
+            {selectedFileRef.current && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRetryUpload();
+                }}
+                className="mt-1.5 px-2 py-0.5 bg-[#C59B27] hover:bg-[#A67C2E] text-white text-[10px] font-bold rounded-md shadow-sm transition-colors cursor-pointer"
+              >
+                Try again
+              </button>
+            )}
           </div>
         )}
 
@@ -304,11 +441,11 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
       </div>
 
       {/* Underneath Helper Text / Labels / Messages */}
-      {/* "Photo added" only shows if image is visible/loaded successfully */}
+      {/* "Photo added" / "Photo ready" only shows if image is visible/loaded successfully */}
       {uploadState === 'uploaded' && imageStatus === 'loaded' && (
         <span className="text-[11px] font-semibold text-emerald-700 mt-2 flex items-center justify-center gap-1">
           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-          Photo added
+          {previewOnly ? 'Photo selected' : (requireServerUpload ? 'Photo ready' : 'Photo added')}
         </span>
       )}
 
@@ -323,8 +460,10 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
       {/* Upload failed label */}
       {uploadState === 'upload_failed' && (
         <div className="text-center mt-2 max-w-[240px]">
-          <p className="text-[11px] font-medium text-[#C53030]">Photo could not be uploaded</p>
-          <p className="text-[10px] text-[#715D3A] mt-0.5">Please try another photo.</p>
+          <p className="text-[11px] font-semibold text-[#C53030]">Photo not saved</p>
+          <p className="text-[10px] text-[#715D3A] mt-0.5">
+            {selectedFileRef.current ? 'Tap "Try again" to retry saving.' : 'Please try another photo.'}
+          </p>
         </div>
       )}
 

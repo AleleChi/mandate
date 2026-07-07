@@ -7,7 +7,8 @@ export type MediaPurpose =
   | 'pickup_person_photo'
   | 'landing_image'
   | 'event_video'
-  | 'gallery_media';
+  | 'gallery_media'
+  | 'volunteer_profile_photo';
 
 export interface UploadMediaOptions {
   purpose: MediaPurpose | string;
@@ -54,6 +55,8 @@ function getSubfolderForPurpose(purpose: string): string {
   switch (purpose) {
     case 'parent_profile_photo':
       return 'parents';
+    case 'volunteer_profile_photo':
+      return 'volunteers';
     case 'child_photo':
       return 'children';
     case 'pickup_person_photo':
