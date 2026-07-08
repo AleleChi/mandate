@@ -299,4 +299,120 @@ To complete the secure, real-time release pipeline for Koinonia Children and Tee
 ### C. Proof Compilation Attribute
 - **Verification Marker**: The parent container of the Success Screen is embedded with the proof attribute: `data-view-version="volunteer-pickup-success-stitch-v1"`.
 
+---
+
+## 16. Stitch Volunteer Event Dashboard Layout Implementation (July 2026)
+
+To completely align the volunteer interface with the high-fidelity Stitch design structure, we executed a complete replacement of the core Volunteer Event Dashboard UI (`/volunteer/event` inside `src/views/VolunteerEventDashboardView.tsx`):
+
+### A. Layout Component Structural Alignment
+1. **Top Header**: Custom-styled header (`data-component-version="volunteer-event-header-v2-stitch"`) displaying:
+   - Left-aligned circular volunteer image (or name initials fallback).
+   - "Event Dashboard" title in elegant serif typography.
+   - Dynamic event subtitle ("The General Assembly") in tracking-wider capitals.
+   - Right-aligned simple connection status label ("Ready to scan" with a Wi-Fi icon). No "Online" or flashing green indicators.
+2. **Hero Greeting**: Refined "Welcome, [First Name]" heading in large serif typography, paired with their assigned role/team subtitle (e.g. "Check-in Team").
+3. **Stitch Search Field**: Full-width persistent input (`data-component-version="volunteer-event-search-v2-stitch"`) with a magnifying glass icon, placeholder "Find child by name or parent phone", and auto-redirect search submission routing to the Children directory list.
+4. **Primary Action Cards**: Two compact cards (`data-component-version="volunteer-event-actions-v2-stitch"`) with thin borders and warm off-white surfaces:
+   - **Check-in Card**: Action-oriented with a primary gold button ("Start check-in").
+   - **Pickup Card**: Informational with a secondary outlined button ("Start pickup").
+5. **Stitch Metrics**: A highly-visible 2x2 grid (`data-component-version="volunteer-event-metrics-v2-stitch"`) bound directly to the database:
+   - Expected, Checked In, Picked Up, and Attention (highlighted with an elegant gold square badge). No hardcoded numbers or static design values are shown.
+6. **Needs Attention List**: A clean, numbered list card (`data-component-version="volunteer-event-attention-v2-stitch"`) featuring outline triangle warnings, real-time issue types, child names/IDs, and upper-case text action triggers ("Resolve", "Review", "Verify").
+
+### B. Validation & Compliance Proofs
+The implemented structure contains the following proof attributes for automatic test validation:
+- Main dashboard container: `data-view-version="volunteer-event-dashboard-v2-stitch"`
+- Header bar: `data-component-version="volunteer-event-header-v2-stitch"`
+- Action cards: `data-component-version="volunteer-event-actions-v2-stitch"`
+- Metrics grid: `data-component-version="volunteer-event-metrics-v2-stitch"`
+- Needs attention block: `data-component-version="volunteer-event-attention-v2-stitch"`
+- Persistent bottom nav: `data-component-version="volunteer-bottom-nav-v2-stitch"`
+- Search field: `data-component-version="volunteer-event-search-v2-stitch"`
+
+---
+
+## 17. Volunteer Approval Status & Routing Resolution (July 2026)
+
+To fix the volunteer approval routing issue where approved volunteers were incorrectly trapped on the onboarding pending screen, we have completed a comprehensive end-to-end upgrade of the backend authentication endpoints, routing guards, and status polling interfaces:
+
+### A. Core Database & Endpoint Upgrades
+1. **Unified Approved/Active Route Handling (`POST /api/volunteer/sign-in`)**:
+   - Both `active` and `approved` volunteer statuses are recognized as fully authorized, and the backend returns `nextRoute: '/volunteer/event'`.
+   - The response includes both `profile` and `volunteerProfile` keys to ensure client compatibility.
+2. **Robust Access Middleware (`GET /api/volunteer/me`)**:
+   - Updated the endpoint to support both `active` and `approved` volunteer statuses.
+   - Refactored the route to not throw a `403` error for pending/unapproved volunteers, instead gracefully returning a standard user block with their corresponding profile details so the client-side pending-review view can securely load and display details.
+3. **Dedicated Live Status Fetcher (`GET /api/volunteer/me/status`)**:
+   - Implements an un-cached, live query to the `volunteer_profiles` database table.
+   - Accurately checks email verification and approval status on every execution.
+   - Returns `{ success: true, profile, nextRoute }` to direct routing flow dynamically.
+
+### B. Frontend Robust Onboarding Status Checks
+1. **Dynamic Polling & Verification (`VolunteerPendingReviewView.tsx`)**:
+   - Replaced old `window.location.reload()` page refresh behaviour with an elegant `api.volunteer.getStatus()` fetch loop.
+   - Automatically checks approval status when the view mounts and when the "Check My Approval Status" button is clicked.
+   - Seamlessly triggers access updates and navigates approved users directly to `/volunteer/event`.
+   - Displays clear, contextual status and error messages if the profile was rejected or requires changes.
+2. **Race-Condition-Resistant Protect Guard (`VolunteerProtectedRoute` in `src/App.tsx`)**:
+   - Avoids trapping approved volunteers when their profile state is temporarily null (e.g. during slow initial network loads).
+   - Shows a clean, polished loading state while fetching or verifying the active volunteer profile.
+   - Authorizes route access for both `approved` and `active` statuses.
+
+### C. Developer & Preview Database Coordination Note
+- **AI Studio Database Mismatch**: Google AI Studio's preview container operates in its own isolated development database environment. If an administrator approves a volunteer profile in the production Netlify deployment dashboard, that approval does not automatically carry over to the preview database unless the container's environment `DATABASE_URL` is configured to target the shared database.
+- **Local Testing Workaround**: To approve a volunteer profile in the preview database during local testing:
+  - Access the admin panel in the preview environment at `#/admin/sign-in` (using admin credentials).
+  - Navigate to the **Volunteers** section.
+  - Find the newly registered volunteer account and click **Approve** or **Set Active**.
+  - Return to the volunteer view, and the status check will immediately authorize access and transition to the Event Dashboard!
+
+---
+
+## 11. Refined Stitch Volunteer Check-in Interface (`#/volunteer/scan`)
+
+The Volunteer Check-in screen has been completely redesigned to implement a high-fidelity "Stitch" UI (inspired by Screenshot A). The layout features enhanced security protocols and removes outdated admin elements:
+
+1. **Aesthetic Enhancements**:
+   - **Unified Context Header**: Replaced the default Event Dashboard header with a custom, mobile-first, sticky header (`data-component-version="volunteer-check-in-header-v2-stitch"`). Features an event-specific sub-label, a large "Check-in" title, a back-arrow button to navigate to `/volunteer/event`, and a static antique gold "Ready to scan" badge (no green dots or blinking indicators).
+   - **Tall Portrait Viewfinder Card**: Replaced the aspect-video viewer with a pristine, tall portrait aspect ratio (`3/4`) styled with antique gold photo-corners inside a white cards layout. If the camera is inactive, a blurred warm background with a centered "Scan child pass" button is shown.
+   - **Manual Code entry Trigger**: Tapping the "Enter pass code manually" button toggles a clean input drawer. All underlying code processing and validations are preserved.
+   - **Mag-Glass Search Bar**: Displays a full-width input field with a search icon to query children in real-time.
+   - **Interactive Last Checked-In Card**: Instantly computes and displays the last successfully verified child and relative timestamp using live `recentScans` data.
+   - **Double-Matching Metrics Trio**: Details "Expected", "Checked in", and "Waiting" statistics styled in high-contrast, polished serif typography.
+
+2. **Mobile-First Constraints**:
+   - The entire screen is wrapped in a `max-w-md mx-auto w-full` container to enforce a compact, native-app-like mobile view on desktop and tablet, avoiding stretched elements and awkward empty spaces.
+   - All interactive touch targets (buttons, search, select options) have a minimum height of 44px for fast, accurate touch interactions.
+
+3. **Attributes and Verifications**:
+   - `data-view-version="volunteer-check-in-v2-stitch"`
+   - `data-component-version="volunteer-check-in-header-v2-stitch"`
+   - `data-component-version="volunteer-check-in-scan-card-v2-stitch"`
+   - `data-component-version="volunteer-check-in-manual-pass-v2-stitch"`
+   - `data-component-version="volunteer-check-in-search-v2-stitch"`
+   - `data-component-version="volunteer-check-in-last-v2-stitch"`
+   - `data-component-version="volunteer-check-in-metrics-v2-stitch"`
+
+## 12. Refined Stitch Child Found Interface (`#/volunteer/scan` child state)
+
+The child-found review/lookup screen has been completely redesigned following Screenshot A and Screenshot B to replace the old placeholder review screen:
+
+1. **Aesthetic Enhancements**:
+   - **Child Found Header**: A custom sticky header (`data-component-version="volunteer-child-found-header-v1-stitch"`) with a back-arrow button to exit child state, "Check-in Portal" title, and a warm gold "Ready to scan" badge (no green dots or blinking indicators).
+   - **Scan Successful Banner**: Displays a gold checkmark icon, tracking-wider "Scan successful" label, and a serif "Child found" heading (`data-component-version="volunteer-child-found-title-v1-stitch"`).
+   - **Child Identity Card**: Showcases a large photo of the child in a 4:3 aspect-ratio block, full name, a stylish "Pass Ready" status badge, calculated age in years (calculated dynamically using the `calculateAge` helper from date of birth), age group class, and gender (`data-component-version="volunteer-child-identity-card-v1-stitch"`).
+   - **Care Notes Card**: Divided into Medical, Allergies, and Extra support rows, each displaying a safety icon, clean sub-heading, and human-friendly fallback state descriptions like "No medical note added.", "No allergy added.", and "None required." (`data-component-version="volunteer-child-care-notes-v1-stitch"`).
+   - **Entry Status Card**: Displays a calendar-clock icon, the attendance status ("Not checked in yet" or "Already checked in"), a primary gold "Mark checked in" CTA, a secondary "Scan another pass" button, and a safety message reminder to confirm the child photo (`data-component-version="volunteer-child-entry-status-v1-stitch"`).
+   - **Authorized Pickup Card**: Displays authorized pickup person photo, name, relationship status, and phone number (`data-component-version="volunteer-child-authorized-pickup-v1-stitch"`).
+
+2. **Attributes and Verifications**:
+   - `data-view-version="volunteer-child-found-v1-stitch"`
+   - `data-component-version="volunteer-child-found-header-v1-stitch"`
+   - `data-component-version="volunteer-child-found-title-v1-stitch"`
+   - `data-component-version="volunteer-child-identity-card-v1-stitch"`
+   - `data-component-version="volunteer-child-care-notes-v1-stitch"`
+   - `data-component-version="volunteer-child-entry-status-v1-stitch"`
+   - `data-component-version="volunteer-child-authorized-pickup-v1-stitch"`
+
 

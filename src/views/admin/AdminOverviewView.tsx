@@ -37,6 +37,7 @@ import { AdminReportsView } from './AdminReportsView';
 import { AdminMessagesView } from './AdminMessagesView';
 import { AdminVolunteersView } from './AdminVolunteersView';
 import { AdminParentsView } from './AdminParentsView';
+import { AdminParentDetailView } from './AdminParentDetailView';
 import { AdminSettingsView } from './AdminSettingsView';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents';
@@ -46,13 +47,15 @@ interface AdminOverviewViewProps {
   onSignOut: () => void;
   adminUser: any;
   initialTab?: AdminTab;
+  currentRoute?: string;
 }
 
 export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   onNavigate,
   onSignOut,
   adminUser,
-  initialTab = 'overview'
+  initialTab = 'overview',
+  currentRoute
 }) => {
   const { showError, showSuccess } = useNotification();
   const [activeTab, setActiveTab] = useState<AdminTab>((initialTab || 'overview') as AdminTab);
@@ -180,6 +183,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       onNavigate('/admin/reports');
     } else if (tab === 'messages') {
       onNavigate('/admin/messages');
+    } else if (tab === 'parents') {
+      onNavigate('/admin/parents');
+    } else if (tab === 'volunteers') {
+      onNavigate('/admin/volunteers');
     }
   };
 
@@ -901,7 +908,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* PARENTS MODULE VIEW PANEL */}
           {activeTab === 'parents' && (
-            <AdminParentsView onBackToOverview={() => handleTabChange('overview')} />
+            currentRoute && currentRoute.startsWith('/admin/parents/') ? (
+              <AdminParentDetailView 
+                parentId={currentRoute.split('/').pop() || ''} 
+                onNavigate={onNavigate} 
+                onBack={() => onNavigate('/admin/parents')}
+                adminUser={adminUser}
+              />
+            ) : (
+              <AdminParentsView onBackToOverview={() => handleTabChange('overview')} onNavigate={onNavigate} />
+            )
           )}
 
           {/* OTHER ADMIN TABS: DYNAMIC PLACEHOLDER INSIDE THE SHELL */}

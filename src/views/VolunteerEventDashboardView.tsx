@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
-  ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info
+  ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -51,6 +51,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [manualCode, setManualCode] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [lastVerifiedChild, setLastVerifiedChild] = useState<any | null>(null);
   const [lookedUpChild, setLookedUpChild] = useState<any | null>(null);
@@ -190,6 +191,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     try {
       const d = new Date(isoString);
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const calculateAge = (dobString?: string) => {
+    if (!dobString) return '';
+    try {
+      const dob = new Date(dobString);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+        age--;
+      }
+      return age > 0 ? `${age} years old` : '';
     } catch {
       return '';
     }
@@ -621,50 +638,119 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const teamName = volunteerProfile?.preferred_team || 'General Team';
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24">
+    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24" data-view-version="volunteer-event-dashboard-v2-stitch">
       {/* Top Header Bar */}
-      <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-base">
-              K
-            </div>
-            <div>
-              <h1 className="text-sm font-bold text-gray-900 leading-tight">Volunteer Access</h1>
-              <p className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
-                {teamName}
-              </p>
-            </div>
-          </div>
+      {cleanRoute === '/volunteer/scan' ? (
+        lookedUpChild ? (
+          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-child-found-header-v1-stitch">
+            <div className="max-w-md mx-auto flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={() => {
+                    setLookedUpChild(null);
+                    if (cameraActive) {
+                      startScanning();
+                    }
+                  }} 
+                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                  id="btn-volunteer-scan-back"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+                <div>
+                  <h1 className="text-sm font-serif font-bold text-gray-950 leading-tight">Check-in Portal</h1>
+                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
+                    The General Assembly Children and Teens
+                  </p>
+                </div>
+              </div>
 
-          <div className="flex items-center space-x-2">
-            {hasParentProfile && (
+              <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
+                <span className="w-1.5 h-1.5 bg-[#C59B27] rounded-full"></span>
+                <span>Ready to scan</span>
+              </div>
+            </div>
+          </header>
+        ) : (
+          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-check-in-header-v2-stitch">
+            <div className="max-w-md mx-auto flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={() => onNavigate('/volunteer/event')} 
+                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                  id="btn-volunteer-scan-back"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+                <div>
+                  <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Check-in</h1>
+                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
+                    The General Assembly Children and Teens
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
+                <span className="w-1.5 h-1.5 bg-[#C59B27] rounded-full"></span>
+                <span>Ready to scan</span>
+              </div>
+            </div>
+          </header>
+        )
+      ) : (
+        <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-event-header-v2-stitch">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-base overflow-hidden">
+                {volunteerProfile?.photoUrl ? (
+                  <img src={volunteerProfile.photoUrl} alt={fullName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  fullName.charAt(0)
+                )}
+              </div>
+              <div>
+                <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Event Dashboard</h1>
+                <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+                  {eventDetails.title || 'The General Assembly'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Ready to scan
+              </span>
+              {hasParentProfile && (
+                <button
+                  onClick={() => onNavigate('/parent/home')}
+                  className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-colors"
+                  title="Switch to Parent Access"
+                >
+                  <Home className="h-4 w-4" />
+                </button>
+              )}
               <button
-                onClick={() => onNavigate('/parent/home')}
-                className="p-2 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-colors"
-                title="Switch to Parent Access"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className={`p-1.5 text-gray-400 hover:text-[#C59B27] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-transform ${refreshing ? 'animate-spin' : ''}`}
+                title="Refresh Stats"
               >
-                <Home className="h-4.5 w-4.5" />
+                <RefreshCw className="h-4 w-4" />
               </button>
-            )}
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className={`p-2 text-gray-400 hover:text-[#C59B27] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-transform ${refreshing ? 'animate-spin' : ''}`}
-              title="Refresh Stats"
-            >
-              <RefreshCw className="h-4.5 w-4.5" />
-            </button>
-            <button
-              onClick={onSignOut}
-              className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer"
-              title="Sign Out"
-            >
-              <LogOut className="h-4.5 w-4.5" />
-            </button>
+              <button
+                onClick={onSignOut}
+                className="p-1.5 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Main Container */}
       <main className="max-w-4xl w-full mx-auto px-4 pt-6 space-y-6 flex-1">
@@ -685,178 +771,167 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         {/* Dynamic Route Content Router */}
         {cleanRoute === '/volunteer/event' && (
           /* ==================== 1. EVENT TOOLS / METRICS VIEW ==================== */
-          <div className="space-y-6">
-            {/* Event Header Card */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-sm gap-4">
-              <div className="space-y-1">
-                <p className="text-xs font-mono font-bold text-[#C59B27] tracking-wider uppercase">Active Event</p>
-                <h2 className="text-xl font-bold font-serif text-[#18181B] tracking-tight">
-                  {eventDetails.title || 'The General Assembly'}
-                </h2>
-                <p className="text-xs text-gray-400">Date: {eventDetails.date || '18th to 22nd November 2026'}</p>
+          <div className="space-y-6 animate-fade-in" data-view-version="volunteer-event-dashboard-v2-stitch">
+            {/* Hero Greeting */}
+            <div className="space-y-1">
+              <h2 className="text-3xl font-serif font-medium text-gray-900 tracking-tight">
+                Welcome, {fullName.split(' ')[0]}.
+              </h2>
+              <p className="text-sm text-gray-500">
+                {teamName}
+              </p>
+            </div>
+
+            {/* Stitch Search Field */}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                onNavigate('/volunteer/children');
+              }}
+              className="relative w-full"
+              data-component-version="volunteer-event-search-v2-stitch"
+            >
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Search className="h-4.5 w-4.5 text-gray-400" />
               </div>
-              <div className="flex items-center space-x-3 bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                  <ShieldCheck className="h-5 w-5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Find child by name or parent phone"
+                className="w-full pl-10 pr-4 py-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl text-sm text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] outline-hidden transition-all"
+              />
+            </form>
+
+            {/* Primary Action Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-component-version="volunteer-event-actions-v2-stitch">
+              {/* Check-in Card */}
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col justify-between">
+                <div className="space-y-2 mb-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-xl font-serif font-bold text-gray-900">Check-in</h3>
+                    <QrCode className="h-5 w-5 text-[#C59B27]" />
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Scan a child’s pass at entry.
+                  </p>
                 </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase leading-tight">Identity Status</p>
-                  <h3 className="text-xs font-bold text-gray-800">{fullName}</h3>
-                  <p className="text-[10px] text-emerald-600 font-medium">Verified Event Worker</p>
+                <button
+                  onClick={() => {
+                    setCameraActive(true);
+                    setScanMode('check_in');
+                    onNavigate('/volunteer/scan');
+                  }}
+                  className="w-full py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-sm text-center"
+                >
+                  Start check-in
+                </button>
+              </div>
+
+              {/* Pickup Card */}
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col justify-between">
+                <div className="space-y-2 mb-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-xl font-serif font-bold text-gray-900">Pickup</h3>
+                    <UserCheck className="h-5 w-5 text-[#C59B27]" />
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Confirm the approved person before releasing.
+                  </p>
                 </div>
+                <button
+                  onClick={() => onNavigate('/volunteer/pickup')}
+                  className="w-full py-3 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-xs text-center"
+                >
+                  Start pickup
+                </button>
               </div>
             </div>
 
-            {/* Metrics Dashboard Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-2">
-                <span className="text-[11px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-2 gap-4" data-component-version="volunteer-event-metrics-v2-stitch">
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
+                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   EXPECTED
                 </span>
-                <div className="flex items-baseline space-x-1.5">
-                  <span className="text-3xl font-extrabold text-gray-900 tracking-tight">
-                    {stats.expected}
-                  </span>
-                  <span className="text-xs text-gray-400 font-medium">total</span>
-                </div>
+                <span className="text-4xl font-serif font-medium text-gray-900 block leading-tight">
+                  {stats.expected || 0}
+                </span>
               </div>
 
-              <div className="bg-emerald-50/40 border border-emerald-100 rounded-3xl p-5 shadow-sm space-y-2">
-                <span className="text-[11px] font-mono font-bold text-emerald-700 tracking-wider uppercase block">
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
+                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   CHECKED IN
                 </span>
-                <div className="flex items-baseline space-x-1.5">
-                  <span className="text-3xl font-extrabold text-emerald-800 tracking-tight">
-                    {stats.checkedIn}
-                  </span>
-                  <span className="text-xs text-emerald-600 font-medium">inside</span>
-                </div>
+                <span className="text-4xl font-serif font-medium text-gray-900 block leading-tight text-[#C59B27]">
+                  {stats.checkedIn || 0}
+                </span>
               </div>
 
-              <div className="bg-gray-50 border border-gray-200/60 rounded-3xl p-5 shadow-sm space-y-2">
-                <span className="text-[11px] font-mono font-bold text-gray-500 tracking-wider uppercase block">
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
+                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   PICKED UP
                 </span>
-                <div className="flex items-baseline space-x-1.5">
-                  <span className="text-3xl font-extrabold text-gray-700 tracking-tight">
-                    {stats.pickedUp}
-                  </span>
-                  <span className="text-xs text-gray-400 font-medium">out</span>
-                </div>
+                <span className="text-4xl font-serif font-medium text-gray-900 block leading-tight">
+                  {stats.pickedUp || 0}
+                </span>
               </div>
 
-              <div className="bg-amber-50/50 border border-amber-200/60 rounded-3xl p-5 shadow-sm space-y-2">
-                <span className="text-[11px] font-mono font-bold text-amber-700 tracking-wider uppercase block">
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
+                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   ATTENTION
                 </span>
-                <div className="flex items-baseline space-x-1.5">
-                  <span className="text-3xl font-extrabold text-amber-800 tracking-tight">
-                    {stats.attention}
-                  </span>
-                  <span className="text-xs text-amber-600 font-medium">issues</span>
-                </div>
+                <span className="text-4xl font-serif font-medium text-[#C59B27] block leading-tight">
+                  {stats.attention || 0}
+                </span>
+                <div className="absolute top-4 right-4 w-3.5 h-3.5 bg-[#C59B27] rounded-xs" />
               </div>
             </div>
 
-            {/* Attention Required Items */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                  ATTENTION REQUIRED ({attentionItems.length || stats.attention})
-                </h2>
-                <span className="text-[10px] text-gray-400 font-medium">Real-time alerts</span>
+            {/* Needs Attention Section */}
+            <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-event-attention-v2-stitch">
+              <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
+                <AlertTriangle className="h-5 w-5 text-[#C59B27]" />
+                <h3 className="text-lg font-serif font-bold text-gray-900">Needs Attention</h3>
               </div>
 
               {attentionItems.length === 0 && !loading && (
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-8 text-center space-y-2">
-                  <div className="mx-auto w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600">
-                    <Check className="h-6 w-6 stroke-[2]" />
-                  </div>
-                  <h3 className="text-sm font-bold text-gray-800">All Clear!</h3>
-                  <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                    No active children logs require emergency review or support.
-                  </p>
+                <div className="py-4 text-center text-xs text-gray-400">
+                  No attention items right now.
                 </div>
               )}
 
               {attentionItems.length > 0 && (
-                <div className="space-y-3">
+                <div className="divide-y divide-gray-100">
                   {attentionItems.map((item, index) => (
                     <div
                       key={item.id || index}
-                      className="bg-white border border-[#EAE8E1] hover:border-[#C59B27]/40 rounded-2xl p-4 flex items-center justify-between transition-all"
+                      className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
                     >
-                      <div className="space-y-1">
-                        <span className="inline-block px-2 py-0.5 rounded-lg border text-[9px] font-bold bg-rose-50 text-rose-700 border-rose-100">
-                          {item.issue_type || 'Unresolved issue'}
+                      <div className="flex items-start space-x-3">
+                        <span className="text-sm font-serif font-bold text-[#C59B27] mt-0.5">
+                          {index + 1}
                         </span>
-                        <h3 className="text-sm font-bold text-gray-800">{item.child_name}</h3>
-                        <p className="text-[10px] text-gray-400">Child Code: #{item.child_id}</p>
+                        <div>
+                          <p className="text-xs font-bold text-gray-900 leading-tight">
+                            {item.issue_type || 'Unresolved issue'}
+                          </p>
+                          <p className="text-[11px] text-gray-500 mt-0.5">
+                            {item.child_name} {item.child_id ? `(ID: ${item.child_id})` : ''}
+                          </p>
+                        </div>
                       </div>
 
                       <button
                         onClick={() => handleResolveAction(item)}
-                        className="h-9 px-4 bg-[#18181B] hover:bg-gray-800 text-white font-bold text-xs tracking-wide rounded-xl transition-colors flex items-center justify-center cursor-pointer"
+                        className="text-[11px] font-bold text-[#C59B27] hover:text-[#A47E1F] tracking-wider uppercase shrink-0 transition-colors cursor-pointer"
                       >
-                        {item.action_text || 'RESOLVE'}
+                        {item.action_text === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' ? 'Verify' : 'Review'}
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
-
-            {/* Direct Navigation Quick links */}
-            <div className="space-y-3 pt-2">
-              <h2 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase px-1">
-                QUICK ACCESS PANEL
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button
-                  onClick={() => onNavigate('/volunteer/scan')}
-                  className="bg-white border border-[#EAE8E1] hover:border-[#C59B27]/30 p-5 rounded-3xl text-left flex items-start space-x-4 shadow-xs group cursor-pointer transition-all"
-                >
-                  <div className="w-12 h-12 bg-gray-50 group-hover:bg-[#C59B27]/10 text-gray-600 group-hover:text-[#C59B27] rounded-2xl flex items-center justify-center shrink-0 transition-all">
-                    <QrCode className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-800 flex items-center">
-                      Launch QR Scanner <ArrowRight className="h-4 w-4 ml-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                    </h3>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Physical gate scan-in or entry release.</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => onNavigate('/volunteer/pickup')}
-                  className="bg-white border border-[#EAE8E1] hover:border-[#C59B27]/30 p-5 rounded-3xl text-left flex items-start space-x-4 shadow-xs group cursor-pointer transition-all"
-                >
-                  <div className="w-12 h-12 bg-gray-50 group-hover:bg-[#C59B27]/10 text-gray-600 group-hover:text-[#C59B27] rounded-2xl flex items-center justify-center shrink-0 transition-all">
-                    <UserCheck className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-800 flex items-center">
-                      Child Pickup Tool <ArrowRight className="h-4 w-4 ml-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                    </h3>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Verify authorized guardians & exit release child.</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => onNavigate('/volunteer/children')}
-                  className="bg-white border border-[#EAE8E1] hover:border-[#C59B27]/30 p-5 rounded-3xl text-left flex items-start space-x-4 shadow-xs group cursor-pointer transition-all"
-                >
-                  <div className="w-12 h-12 bg-gray-50 group-hover:bg-[#C59B27]/10 text-gray-600 group-hover:text-[#C59B27] rounded-2xl flex items-center justify-center shrink-0 transition-all">
-                    <Search className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-800 flex items-center">
-                      Children Directory <ArrowRight className="h-4 w-4 ml-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                    </h3>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Manual search by parent phone, name & status lookup.</p>
-                  </div>
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -974,132 +1049,220 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </button>
               </div>
             </div>
-          ) : lookedUpChild ? (
-            /* ==================== 2.5 CHILD FOUND SCREEN (State 2) ==================== */
-            <div className="space-y-6" data-view-version="1.0" data-component-version="child-found-view">
-              
-              {/* Back / Navigation Bar */}
-              <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
-                <div className="flex items-center space-x-3">
-                  <h2 className="text-2xl font-bold text-gray-900 leading-tight tracking-tight font-serif">Child found</h2>
-                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-0.5 text-xs font-bold rounded-full">
-                    Pass Ready
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setLookedUpChild(null);
-                    if (cameraActive) {
-                      startScanning();
-                    }
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 cursor-pointer transition-colors"
-                  title="Close and scan another"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+          ) : lookedUpChild ? (() => {
+            const isAlreadyCheckedIn = lookedUpChild.entryStatus === 'checked_in' || lookedUpChild.entryStatus === 'inside';
+            const medicalNoteText = lookedUpChild.medicalNotes || '';
+            const allergiesText = lookedUpChild.allergies || '';
+            const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
-              {/* Child Profile Details Card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col sm:flex-row items-center sm:items-start gap-5">
-                <div className="w-20 h-20 rounded-full overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0 shadow-inner">
-                  {lookedUpChild.photoUrl ? (
-                    <img
-                      src={lookedUpChild.photoUrl}
-                      alt={lookedUpChild.fullName}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User className="h-10 w-10 text-gray-300" />
-                  )}
+            return (
+              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v1-stitch">
+                {/* Scan successful & Child found title */}
+                <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
+                  <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
+                    <span className="p-1 bg-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center">
+                      <Check className="h-3 w-3 stroke-[3]" />
+                    </span>
+                    <span>Scan successful</span>
+                  </div>
+                  <h2 className="text-3xl font-serif font-bold text-gray-950 leading-tight">Child found</h2>
                 </div>
-                <div className="text-center sm:text-left space-y-3 flex-1 min-w-0">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 leading-tight truncate">
-                      {lookedUpChild.fullName}
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-1 font-mono font-bold uppercase tracking-wider">
-                      {lookedUpChild.ageGroup || 'Creche'} &bull; {lookedUpChild.gender} &bull; DOB: {lookedUpChild.dateOfBirth || 'N/A'}
+
+                {/* Child Identity Card */}
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-identity-card-v1-stitch">
+                  {/* Photo area */}
+                  <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 relative">
+                    {lookedUpChild.photoUrl ? (
+                      <img
+                        src={lookedUpChild.photoUrl}
+                        alt={lookedUpChild.fullName}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                        <User className="h-14 w-14 stroke-[1]" />
+                        <span className="text-xs font-semibold text-gray-400 mt-2">No photo available</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Child details */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xl font-serif font-bold text-gray-900 leading-tight truncate">
+                        {lookedUpChild.fullName}
+                      </h3>
+                      <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md tracking-wider shrink-0 leading-none">
+                        Pass Ready
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 font-medium">
+                      {calculateAge(lookedUpChild.dateOfBirth) || 'Age verified'}
                     </p>
                   </div>
-                  <div className="bg-gray-50/80 rounded-2xl p-4 border border-gray-100 text-xs inline-block text-left w-full max-w-sm">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block leading-none">Parent / Guardian</span>
-                    <p className="font-bold text-gray-800 mt-2 text-sm">{lookedUpChild.parentName}</p>
-                    <p className="text-gray-500 mt-1 flex items-center space-x-1.5">
-                      <span>{lookedUpChild.parentPhone}</span>
-                      {lookedUpChild.parentWhatsapp && (
-                        <span className="text-emerald-600 font-medium">&bull; WhatsApp Registered</span>
+
+                  {/* Two column grid */}
+                  <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-3.5 text-xs">
+                    <div>
+                      <span className="text-[10px] text-gray-400 font-mono uppercase tracking-wider block">Class</span>
+                      <span className="font-semibold text-gray-800 block mt-0.5 truncate">
+                        {lookedUpChild.ageGroup || lookedUpChild.className || 'General Room'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-400 font-mono uppercase tracking-wider block">Gender</span>
+                      <span className="font-semibold text-gray-800 block mt-0.5 capitalize">
+                        {lookedUpChild.gender || 'Not specified'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Care Notes Card */}
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-care-notes-v1-stitch">
+                  <div className="flex items-center space-x-2 text-gray-900 pb-1 border-b border-gray-50">
+                    <ShieldCheck className="h-4.5 w-4.5 text-gray-500" />
+                    <h4 className="text-sm font-serif font-bold">Care Notes</h4>
+                  </div>
+                  
+                  <div className="space-y-3 text-xs">
+                    {/* Medical Note Row */}
+                    {medicalNoteText ? (
+                      <div className="bg-[#FFF8F2] border border-[#FFEADA] rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Medical Note</span>
+                          <p className="text-gray-800 font-medium mt-0.5 leading-relaxed">{medicalNoteText}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-gray-400 font-bold text-[10px] mt-0.5">✓</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Medical Note</span>
+                          <p className="text-gray-500 mt-0.5 font-medium">No medical note added.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Allergies Row */}
+                    {allergiesText ? (
+                      <div className="bg-[#FFF8F2] border border-[#FFEADA] rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Allergies</span>
+                          <p className="text-gray-800 font-medium mt-0.5 leading-relaxed">{allergiesText}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-gray-400 font-bold text-[10px] mt-0.5">✓</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Allergies</span>
+                          <p className="text-gray-500 mt-0.5 font-medium">No allergy added.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Extra Support Row */}
+                    {extraSupportText ? (
+                      <div className="bg-[#FFF8F2] border border-[#FFEADA] rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Extra Support</span>
+                          <p className="text-gray-800 font-medium mt-0.5 leading-relaxed">{extraSupportText}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-gray-400 font-bold text-[10px] mt-0.5">✓</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Extra Support</span>
+                          <p className="text-gray-500 mt-0.5 font-medium">None required.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Entry Status Card */}
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-entry-status-v1-stitch">
+                  <h4 className="text-lg font-serif font-bold text-gray-950">Entry Status</h4>
+                  
+                  {/* Status Info Box */}
+                  <div className="flex items-start space-x-3.5 bg-gray-50/50 border border-gray-100 rounded-2xl p-4">
+                    <div className="p-2 bg-amber-50 rounded-xl text-amber-600 shrink-0">
+                      <Clock className="h-5 w-5 stroke-[2]" />
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-bold text-gray-900 leading-tight">
+                        {isAlreadyCheckedIn ? 'Already checked in' : 'Not checked in yet'}
+                      </h5>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {isAlreadyCheckedIn 
+                          ? `Checked in at ${formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}` 
+                          : 'Ready for processing'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="space-y-3 pt-1">
+                    <button
+                      onClick={() => {
+                        if (isAlreadyCheckedIn) {
+                          showSuccess('Record Active', `${lookedUpChild.fullName} is already checked in.`);
+                        } else {
+                          handleConfirmCheckIn(lookedUpChild);
+                        }
+                      }}
+                      disabled={scanLoading}
+                      className={`w-full text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
+                        isAlreadyCheckedIn 
+                          ? 'bg-gray-400 hover:bg-gray-500' 
+                          : 'bg-[#C59B27] hover:bg-[#A47E1F] text-white'
+                      }`}
+                    >
+                      {scanLoading ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <>
+                          <UserCheck className="h-4 w-4 stroke-[2.5]" />
+                          <span>{isAlreadyCheckedIn ? 'VIEW RECORD' : 'MARK CHECKED IN'}</span>
+                        </>
                       )}
-                    </p>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setLookedUpChild(null);
+                        if (cameraActive) {
+                          startScanning();
+                        }
+                      }}
+                      className="w-full border border-gray-300 hover:border-gray-400 text-gray-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
+                    >
+                      <QrCode className="h-4 w-4 text-gray-600 stroke-[2]" />
+                      <span>SCAN ANOTHER PASS</span>
+                    </button>
+                  </div>
+
+                  {/* Helper Reminder */}
+                  <div className="flex items-center justify-center space-x-1.5 text-[10px] text-gray-400 mt-2">
+                    <Info className="h-3.5 w-3.5" />
+                    <span>Confirm the child photo before marking entry.</span>
                   </div>
                 </div>
-              </div>
 
-              {/* Care Notes Card (Yellow/Red Alert Box if notes exist) */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-3">
-                <h4 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                  Care Notes & Medical
-                </h4>
-                {lookedUpChild.hasMedicalNotes || lookedUpChild.needsExtraSupport ? (
-                  <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-rose-950">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500 mt-0.5" />
-                    <div className="space-y-1">
-                      <h5 className="font-bold text-rose-800">Allergies / Medical / Support Needs</h5>
-                      <p className="text-[11px] text-rose-700 leading-relaxed">
-                        {lookedUpChild.medicalNotes || lookedUpChild.supportNotes || 'Requires emergency attention or extra support.'}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500">
-                    <Check className="h-5 w-5 shrink-0 text-emerald-500 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <h5 className="font-bold text-gray-700">No care conditions</h5>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        No allergies, medical needs, or extra physical support alerts registered for this child.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Entry Registration / Attendance Status Card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-4">
-                <h4 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                  Entry Status & Class Room
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block leading-none">Registration Status</span>
-                    <span className="inline-block mt-2.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border bg-amber-50 text-amber-700 border-amber-200 capitalize">
-                      {lookedUpChild.entryStatus ? lookedUpChild.entryStatus.replace('_', ' ') : 'Ready'}
-                    </span>
-                  </div>
-                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block leading-none">School Name</span>
-                    <span className="font-bold text-gray-800 block mt-2.5 truncate">
-                      {lookedUpChild.schoolName || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 sm:col-span-2">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block leading-none">Class Room Assignment</span>
-                    <span className="font-bold text-gray-800 block mt-2 text-sm">
-                      {lookedUpChild.schoolClass || 'General Assembly Room'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Authorized Pickup Card */}
-              {lookedUpChild.pickup ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-4">
-                  <h4 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                    Authorized Pickup Person
-                  </h4>
-                  <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-50 border border-gray-200 shrink-0 flex items-center justify-center">
+                {/* Authorized Pickup Card */}
+                {lookedUpChild.pickup ? (
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-authorized-pickup-v1-stitch">
+                    <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
+                      Authorized Pickup
+                    </h4>
+                    <div className="flex items-center space-x-3.5">
+                      <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
                         {lookedUpChild.pickup.photoUrl ? (
                           <img
                             src={lookedUpChild.pickup.photoUrl}
@@ -1112,153 +1275,51 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-sm font-bold text-gray-900 leading-tight truncate">
+                        <h5 className="text-sm font-bold text-gray-900 leading-tight">
                           {lookedUpChild.pickup.fullName}
-                        </h4>
-                        <p className="text-[11px] text-[#C59B27] font-semibold mt-0.5 font-mono uppercase tracking-wider">
-                          {lookedUpChild.pickup.relationship || 'Parent'}
+                        </h5>
+                        <p className="text-[10px] text-[#C59B27] font-bold font-mono uppercase tracking-wider mt-0.5">
+                          {lookedUpChild.pickup.relationship || 'Authorized Person'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {lookedUpChild.pickup.phone || 'No phone number provided'}
                         </p>
                       </div>
                     </div>
-
-                    <div className="flex items-center space-x-1.5 shrink-0">
-                      <a
-                        href={`tel:${lookedUpChild.pickup.phone}`}
-                        className="p-2 bg-gray-50 border border-gray-200 hover:border-[#C59B27] text-gray-600 hover:text-[#C59B27] rounded-xl transition-all shadow-xs"
-                        title="Call pickup person"
-                      >
-                        <Phone className="h-4 w-4" />
-                      </a>
-                      {lookedUpChild.pickup.whatsapp && (
-                        <a
-                          href={`https://wa.me/${lookedUpChild.pickup.whatsapp.replace(/[^0-9]/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-2 bg-gray-50 border border-gray-200 hover:border-emerald-500 text-gray-600 hover:text-emerald-500 rounded-xl transition-all shadow-xs"
-                          title="WhatsApp pickup person"
-                        >
-                          <MessageCircle className="h-4 w-4" />
-                        </a>
-                      )}
-                    </div>
                   </div>
-                  <div className="bg-amber-50/50 border border-amber-200/60 rounded-2xl p-4 flex items-start space-x-3 text-amber-850">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <h5 className="font-bold text-amber-850 text-xs">Security Verification Check</h5>
-                      <p className="text-[11px] text-amber-700 leading-relaxed">
-                        Ensure the physical person picking up the child strictly matches the details and face photo listed above.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-3">
-                  <h4 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                    Authorized Pickup Person
-                  </h4>
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500">
-                    <User className="h-5 w-5 shrink-0 text-gray-400 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <h5 className="font-bold text-gray-700">Self Pickup / Default Parent Only</h5>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        No secondary pickup person was assigned. The child is authorized to be released to their primary parent ({lookedUpChild.parentName}).
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons (CTAs) */}
-              <div className="space-y-3 pt-3">
-                <button
-                  onClick={() => {
-                    if (scanMode === 'check_in') {
-                      handleConfirmCheckIn(lookedUpChild);
-                    } else {
-                      handleConfirmRelease(lookedUpChild);
-                    }
-                  }}
-                  disabled={scanLoading}
-                  className="w-full bg-neutral-900 text-white font-bold tracking-widest py-4 rounded-2xl text-sm transition-all shadow-md uppercase hover:bg-neutral-800 disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer flex items-center justify-center space-x-2"
-                >
-                  {scanLoading ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 stroke-[3]" />
-                      <span>{scanMode === 'check_in' ? 'MARK CHECKED IN' : 'CONFIRM RELEASE'}</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    setLookedUpChild(null);
-                    if (cameraActive) {
-                      startScanning();
-                    }
-                  }}
-                  className="w-full border-2 border-gray-300 hover:border-gray-400 text-gray-700 font-bold tracking-widest py-3.5 rounded-2xl text-sm transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50"
-                >
-                  SCAN ANOTHER PASS
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* ==================== 2. SCANNER VIEW (Screenshot A & B) ==================== */
-            <div className="space-y-6">
-              
-              {/* Mode Switch and Active Cam Info */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-base font-bold text-gray-900 font-serif">QR Gate Scanner</h2>
-                    <p className="text-[10px] text-gray-400 font-mono font-bold uppercase tracking-wider">
-                      {scanMode === 'check_in' ? 'CHECK-IN ENTRANCE' : 'PICKUP RELEASE EXIT'}
+                ) : (
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v1-stitch">
+                    <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
+                      Authorized Pickup
+                    </h4>
+                    <p className="text-xs text-gray-500 leading-relaxed bg-gray-50 border border-gray-100 rounded-2xl p-4 text-center">
+                      No pickup person has been added.
                     </p>
-                  </div>
-                  
-                  {/* Mode toggle */}
-                  <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
-                    <button
-                      onClick={() => setScanMode('check_in')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${scanMode === 'check_in' ? 'bg-[#18181B] text-white shadow-xs' : 'text-gray-500 hover:text-gray-800'}`}
-                    >
-                      Check-In
-                    </button>
-                    <button
-                      onClick={() => setScanMode('check_out')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${scanMode === 'check_out' ? 'bg-[#C59B27] text-white shadow-xs' : 'text-gray-500 hover:text-gray-800'}`}
-                    >
-                      Check-Out
-                    </button>
-                  </div>
-                </div>
-
-                {/* Camera selection dropdown if multiple cameras exist */}
-                {cameraActive && cameras.length > 1 && (
-                  <div className="flex items-center justify-between gap-4 bg-gray-50 p-2.5 rounded-2xl border border-gray-100">
-                    <span className="text-xs font-semibold text-gray-500">Camera Source:</span>
-                    <select
-                      value={selectedCameraId}
-                      onChange={(e) => setSelectedCameraId(e.target.value)}
-                      className="text-xs font-bold text-gray-700 bg-white border border-gray-200 rounded-xl px-2 py-1 outline-none focus:border-[#C59B27]"
-                    >
-                      {cameras.map((cam, i) => (
-                        <option key={cam.deviceId} value={cam.deviceId}>
-                          {cam.label || `Camera ${i + 1}`}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                 )}
               </div>
+            );
+          })() : (
+            /* ==================== 2. SCANNER VIEW (Stitch Design) ==================== */
+            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-check-in-v2-stitch">
+              
+              {/* Tall Portrait Scan Card */}
+              <div 
+                className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs relative" 
+                data-component-version="volunteer-check-in-scan-card-v2-stitch"
+              >
+                <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
+                  {/* Blurred warm background when camera is inactive */}
+                  {!cameraActive && (
+                    <div 
+                      className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
+                      style={{ 
+                        backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`,
+                        referrerPolicy: 'no-referrer' as any
+                      }}
+                    />
+                  )}
 
-              {/* Custom Camera Viewport (Matches Screenshot A Viewfinder) */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-sm relative">
-                
-                <div className="aspect-video bg-neutral-900 relative flex items-center justify-center overflow-hidden">
                   {cameraActive ? (
                     <>
                       <video
@@ -1268,160 +1329,215 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         muted
                       />
                       
-                      {/* Golden overlay frame animation */}
+                      {/* Gold overlay frame */}
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-52 h-52 border-2 border-dashed border-white/30 rounded-2xl relative flex items-center justify-center">
+                        <div className="w-56 h-56 border border-white/25 rounded-2xl relative flex items-center justify-center">
                           {/* Antique Gold corner highlights */}
                           <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
                           <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
                           <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
                           <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
                           
-                          {/* Scanning Sweep line animation */}
+                          {/* Scanning Sweep line */}
                           <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
                         </div>
                       </div>
+
+                      {/* Camera Controls Overlay */}
+                      <div className="absolute top-3 right-3 flex items-center space-x-2">
+                        {cameras.length > 1 && (
+                          <select
+                            value={selectedCameraId}
+                            onChange={(e) => setSelectedCameraId(e.target.value)}
+                            className="text-[10px] font-bold text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
+                          >
+                            {cameras.map((cam, i) => (
+                              <option key={cam.deviceId} value={cam.deviceId}>
+                                {cam.label || `Cam ${i + 1}`}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          onClick={() => setCameraActive(false)}
+                          className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
                     </>
                   ) : (
-                    <div className="text-center p-8 space-y-4">
-                      <div className="w-16 h-16 bg-neutral-800 text-neutral-400 rounded-full flex items-center justify-center mx-auto border border-neutral-700">
-                        <CameraOff className="h-7 w-7" />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-6 z-10">
+                      {/* Antique Gold corners even when camera is inactive */}
+                      <div className="absolute inset-12 pointer-events-none border border-white/10 rounded-2xl">
+                        <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
+                        <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
+                        <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
+                        <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-neutral-200">Camera Feed Suspended</h3>
-                        <p className="text-xs text-neutral-500 max-w-xs mx-auto mt-1">
-                          Turn on the camera to scan parent entry QR passes automatically.
+
+                      <div className="space-y-2">
+                        <p className="text-white font-serif font-bold text-lg">Scan child pass</p>
+                        <p className="text-xs text-white/60 max-w-[200px] mx-auto leading-relaxed">
+                          Align the child's entry pass QR inside the viewfinder area.
                         </p>
                       </div>
+
                       <button
                         onClick={() => setCameraActive(true)}
-                        className="h-9 px-4 bg-[#C59B27] text-white hover:bg-[#A47E1F] font-bold text-xs tracking-wide rounded-xl cursor-pointer transition-colors inline-flex items-center space-x-1.5"
+                        className="px-6 py-3 bg-white text-gray-900 font-bold text-xs tracking-wider rounded-full hover:bg-gray-100 transition-all active:scale-95 shadow-md flex items-center space-x-2 uppercase cursor-pointer"
                       >
                         <Camera className="h-4 w-4" />
-                        <span>Start Camera</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Top status bar overlay */}
-                  {cameraActive && (
-                    <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                      <span className="px-2.5 py-1 bg-emerald-600 text-white font-mono font-bold text-[9px] rounded-full uppercase tracking-wider flex items-center space-x-1 shadow-sm">
-                        <span>Scanner Active</span>
-                      </span>
-                      <button
-                        onClick={() => setCameraActive(false)}
-                        className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
-                      >
-                        <X className="h-4 w-4" />
+                        <span>Scan child pass</span>
                       </button>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Manual Pass Code Entry Card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-sm space-y-4">
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-gray-900">Manual Entry Pass Code</h3>
-                  <p className="text-xs text-gray-400">
-                    Enter the 6-character pass reference code printed on the parent’s card (e.g. KOI-2026-6E80A7)
-                  </p>
+              {/* Support message if scanner is not available on device */}
+              {cameras.length === 0 && !cameraActive && (
+                <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                  Scanner is not available on this device. Enter the pass code manually.
                 </div>
+              )}
 
-                <form onSubmit={handleManualVerifySubmit} className="flex gap-3">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={manualCode}
-                      onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. 6E80A7"
-                      disabled={scanLoading}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60"
-                    />
-                    {manualCode && (
-                      <button
-                        type="button"
-                        onClick={() => setManualCode('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={scanLoading || !manualCode}
-                    className="px-5 bg-[#18181B] hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs tracking-wide rounded-xl transition-all cursor-pointer flex items-center justify-center font-mono uppercase"
-                  >
-                    {scanLoading ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    ) : (
-                      <span>Verify Pass</span>
-                    )}
-                  </button>
-                </form>
-              </div>
-
-              {/* Real-Time Scan History stream (Screenshot B Section) */}
+              {/* Manual Pass Code Toggle Button */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                    RECENT ACTIVITY LOG
-                  </h2>
-                  <span className="text-[10px] text-gray-400 font-medium">Real-time gate updates</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowManualInput(!showManualInput)}
+                  className="w-full border border-gray-200 hover:border-gray-300 text-gray-700 font-bold text-xs tracking-wider py-4 px-4 rounded-2xl transition-all uppercase flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 cursor-pointer shadow-xs"
+                  data-component-version="volunteer-check-in-manual-pass-v2-stitch"
+                >
+                  <Keyboard className="h-4 w-4 text-gray-400" />
+                  <span>Enter pass code manually</span>
+                </button>
 
-                {recentScans.length === 0 && (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-8 text-center text-gray-500 text-xs">
-                    No scan logs found. Start checking children in to populate history logs.
-                  </div>
-                )}
-
-                {recentScans.length > 0 && (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden divide-y divide-gray-100 shadow-sm">
-                    {recentScans.slice(0, 10).map((log, index) => {
-                      const isCheckIn = log.status === 'checked_in' || log.status === 'inside';
-                      return (
-                        <div
-                          key={log.childId + '-' + index}
-                          className="p-4 flex items-center justify-between hover:bg-gray-50/50 transition-colors"
+                {/* Manual Pass Code Input Form */}
+                {showManualInput && (
+                  <form onSubmit={handleManualVerifySubmit} className="flex gap-3 animate-fade-in bg-white border border-[#EAE8E1] p-4 rounded-3xl shadow-sm">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={manualCode}
+                        onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+                        placeholder="e.g. 6E80A7"
+                        disabled={scanLoading}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60"
+                      />
+                      {manualCode && (
+                        <button
+                          type="button"
+                          onClick={() => setManualCode('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
                         >
-                          <div className="flex items-center space-x-3 min-w-0">
-                            <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-200/80 flex items-center justify-center shrink-0">
-                              {log.photoUrl ? (
-                                <img
-                                  src={log.photoUrl}
-                                  alt={log.childName}
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <User className="h-5 w-5 text-gray-400" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-gray-800 truncate">{log.childName}</h4>
-                              <p className="text-[10px] text-gray-400">{log.ageGroup || 'Creche'}</p>
-                            </div>
-                          </div>
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
 
-                          <div className="flex items-center space-x-3 shrink-0">
-                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border ${isCheckIn ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                              {isCheckIn ? 'Checked-In' : 'Released'}
-                            </span>
-                            <span className="text-[9px] font-mono font-bold text-gray-400 flex items-center space-x-0.5">
-                              <Clock className="h-3 w-3" />
-                              <span>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                    <button
+                      type="submit"
+                      disabled={scanLoading || !manualCode}
+                      className="px-5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs tracking-wide rounded-xl transition-all cursor-pointer flex items-center justify-center font-mono uppercase shrink-0"
+                    >
+                      {scanLoading ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <span>Verify Pass</span>
+                      )}
+                    </button>
+                  </form>
                 )}
               </div>
+
+              {/* Child Search Field */}
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (searchQuery.trim()) {
+                    onNavigate('/volunteer/children');
+                  }
+                }}
+                className="relative w-full"
+                data-component-version="volunteer-check-in-search-v2-stitch"
+              >
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Find child by name or parent phone"
+                  className="w-full bg-white border border-[#EAE8E1] rounded-2xl pl-11 pr-4 py-3.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:border-[#C59B27] transition-all shadow-xs"
+                />
+              </form>
+
+              {/* Last Checked In Card */}
+              {(() => {
+                const lastCheckedInItem = recentScans.find(
+                  (log) => log.status === 'checked_in' || log.status === 'inside'
+                ) || recentScans[0];
+
+                return (
+                  <div 
+                    className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs flex items-center justify-between"
+                    data-component-version="volunteer-check-in-last-v2-stitch"
+                  >
+                    <div className="flex items-center space-x-3.5 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-[#C59B27]/10 border border-[#C59B27]/25 flex items-center justify-center text-[#C59B27] shrink-0">
+                        <Check className="h-5 w-5 stroke-[2.5]" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Last checked in</p>
+                        {lastCheckedInItem ? (
+                          <>
+                            <h4 className="text-sm font-bold text-gray-900 leading-tight truncate">
+                              {lastCheckedInItem.childName}{lastCheckedInItem.ageGroup ? `, ${lastCheckedInItem.ageGroup}` : ''}
+                            </h4>
+                            <p className="text-[11px] text-gray-500 mt-0.5">
+                              Checked in at {formatTime(lastCheckedInItem.timestamp)}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-gray-500 font-medium mt-0.5">
+                            No child has been checked in yet.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Metrics Row */}
+              <div 
+                className="grid grid-cols-3 gap-3"
+                data-component-version="volunteer-check-in-metrics-v2-stitch"
+              >
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 text-center">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Expected</span>
+                  <span className="text-2xl font-serif text-gray-900 font-bold block mt-1.5">{stats.expected || 0}</span>
+                </div>
+                <div className="bg-[#C59B27]/5 border border-[#C59B27]/20 rounded-2xl p-4 text-center">
+                  <span className="text-[9px] font-bold text-[#C59B27] uppercase tracking-widest block font-mono">Checked in</span>
+                  <span className="text-2xl font-serif text-[#C59B27] font-bold block mt-1.5">{stats.checkedIn || 0}</span>
+                </div>
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 text-center">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Waiting</span>
+                  <span className="text-2xl font-serif text-gray-800 font-bold block mt-1.5">
+                    {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Offline Note */}
+              <div className="text-center pt-2">
+                <p className="text-[10px] text-gray-400 font-mono tracking-wider uppercase">
+                  Offline mode available if connection drops
+                </p>
+              </div>
+
             </div>
           )
         )}
@@ -2963,7 +3079,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       )}
 
       {/* Persistent Bottom Tab Bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-4 py-2 flex items-center justify-around z-20 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-4 py-2 flex items-center justify-around z-20 shadow-lg" data-component-version="volunteer-bottom-nav-v2-stitch">
         <button
           onClick={() => onNavigate('/volunteer/event')}
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}

@@ -1,22 +1,29 @@
 import React from 'react';
-import { ShieldCheck, Mail, Users, FileText, LogOut, Phone, MessageSquare, Briefcase, CheckSquare } from 'lucide-react';
+import { ShieldCheck, Users, LogOut, Phone, MessageSquare, Briefcase, CheckSquare } from 'lucide-react';
 import { AppRoute } from '../types';
 import { Button } from '../components/common/Button';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
+import { api } from '../services/api';
 
 interface VolunteerPendingReviewViewProps {
   onNavigate: (route: AppRoute) => void;
   volunteerProfile: any;
   onSignOut: () => void;
   hasParentProfile?: boolean;
+  onRefreshAccess?: () => Promise<void>;
 }
 
 export const VolunteerPendingReviewView: React.FC<VolunteerPendingReviewViewProps> = ({
   onNavigate,
   volunteerProfile,
   onSignOut,
-  hasParentProfile
+  hasParentProfile,
+  onRefreshAccess
 }) => {
+  const [checking, setChecking] = React.useState(false);
+  const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [statusError, setStatusError] = React.useState<string | null>(null);
+
   const fullName = volunteerProfile?.full_name || 'Volunteer';
   const preferredTeam = volunteerProfile?.preferred_team || 'General Assistance';
   const phone = volunteerProfile?.phone || '';
@@ -25,6 +32,62 @@ export const VolunteerPendingReviewView: React.FC<VolunteerPendingReviewViewProp
   const department = volunteerProfile?.department || '';
   const experience = volunteerProfile?.serving_experience || '';
   const photoFileId = volunteerProfile?.photo_file_id;
+
+  const checkStatus = async (isMount = false) => {
+    setChecking(true);
+    setStatusError(null);
+    setStatusMessage(isMount ? 'Checking your volunteer status...' : 'Refreshing your approval status...');
+    try {
+      const res = await api.volunteer.getStatus();
+      if (res.success) {
+        const nextRoute = res.nextRoute;
+        const profile = res.profile || res.volunteerProfile;
+        const currentStatus = profile?.status || 'none';
+
+        if (nextRoute === '/volunteer/event' || currentStatus === 'approved' || currentStatus === 'active') {
+          setStatusMessage('Access approved! Syncing credentials...');
+          if (onRefreshAccess) {
+            await onRefreshAccess();
+          }
+          onNavigate('/volunteer/event');
+          return;
+        } else if (nextRoute === '/volunteer/verify-email') {
+          onNavigate('/volunteer/verify-email');
+          return;
+        } else if (currentStatus === 'request_update') {
+          setStatusError('Your profile requires updates. Please check with an administrator.');
+          setStatusMessage(null);
+        } else if (currentStatus === 'not_approved' || currentStatus === 'rejected') {
+          setStatusError('Your application was not approved.');
+          setStatusMessage(null);
+        } else {
+          // Still pending
+          if (!isMount) {
+            setStatusMessage('Your application is still under review. Thank you for your patience!');
+          } else {
+            setStatusMessage(null);
+          }
+        }
+      } else {
+        setStatusError('Could not verify status. Please try again.');
+        setStatusMessage(null);
+      }
+    } catch (err: any) {
+      console.error('Error checking status:', err);
+      if (err.message?.includes('401') || err.description?.includes('401') || err.code === 'UNAUTHORIZED' || err.status === 401) {
+        onSignOut();
+      } else {
+        setStatusError('Could not verify status. Please try again.');
+        setStatusMessage(null);
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  React.useEffect(() => {
+    checkStatus(true);
+  }, []);
 
   return (
     <AuthScreenShell
@@ -153,15 +216,26 @@ export const VolunteerPendingReviewView: React.FC<VolunteerPendingReviewViewProp
           </div>
         </div>
 
+        {statusMessage && (
+          <div className="p-3 text-xs bg-amber-50 text-[#C59B27] border border-amber-100 rounded-xl text-center font-medium animate-pulse">
+            {statusMessage}
+          </div>
+        )}
+
+        {statusError && (
+          <div className="p-3 text-xs bg-red-50 text-red-600 border border-red-100 rounded-xl text-center font-medium">
+            {statusError}
+          </div>
+        )}
+
         <div className="space-y-3 pt-2">
           <Button
             variant="secondary"
             fullWidth
-            onClick={() => {
-              window.location.reload();
-            }}
+            onClick={() => checkStatus(false)}
+            disabled={checking}
           >
-            Check My Approval Status
+            {checking ? 'Checking Status...' : 'Check My Approval Status'}
           </Button>
 
           {hasParentProfile && (

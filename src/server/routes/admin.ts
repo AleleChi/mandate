@@ -3641,7 +3641,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// GET /api/admin/parents/:id - Get parent details and children records
+// GET /api/admin/parents/:id - Get parent details, children, event summary, attention and admin notes
 router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
@@ -3653,6 +3653,7 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
         p.*,
         u.email as user_email,
         u.role as user_role,
+        u.email_verified as user_email_verified,
         m.secure_url as photo_url
       FROM parent_profiles p
       JOIN users u ON u.id = p.user_id
@@ -3668,8 +3669,13 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       SELECT 
         c.*,
         m.secure_url as photo_url,
+        e.id as child_event_entry_id,
         e.status as entry_status,
-        e.submitted_at as entry_submitted_at
+        e.submitted_at as entry_submitted_at,
+        e.has_medical_notes,
+        e.needs_extra_support,
+        e.checked_in_at,
+        e.picked_up_at
       FROM children c
       LEFT JOIN media_files m ON m.id = c.photo_file_id
       LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = 'event-ga-2026'
@@ -3677,46 +3683,181 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       ORDER BY c.full_name ASC
     `, [id]);
 
-    const formattedChildren = kids.map((c: any) => ({
-      id: c.id,
-      fullName: c.full_name,
-      gender: c.gender,
-      dob: c.date_of_birth,
-      age: c.calculated_age,
-      ageGroup: c.age_group,
-      photoUrl: c.photo_url || (c.photo_file_id ? (c.photo_file_id.startsWith('http') || c.photo_file_id.startsWith('/') ? c.photo_file_id : `/api/media/files/${c.photo_file_id}`) : ''),
-      relationship: c.relationship_to_child,
-      needsAgeReview: c.needs_age_review === 1,
-      entryStatus: c.entry_status || 'not_registered',
-      submittedAt: c.entry_submitted_at
+    const linkedChildren = kids.map((c: any) => {
+      const careFlags: string[] = [];
+      if (c.has_medical_notes === 1) careFlags.push('medical_issue');
+      if (c.needs_extra_support === 1) careFlags.push('needs_support');
+      if (c.needs_age_review === 1) careFlags.push('age_review');
+
+      let pickupStatus = 'not_arrived';
+      if (c.picked_up_at) {
+        pickupStatus = 'picked_up';
+      } else if (c.checked_in_at) {
+        pickupStatus = 'checked_in';
+      } else if (c.entry_status === 'selected' || c.entry_status === 'pass_ready') {
+        pickupStatus = 'expected';
+      }
+
+      return {
+        id: c.id,
+        applicationId: c.child_event_entry_id || null,
+        fullName: c.full_name,
+        ageLabel: `${c.calculated_age || 0} years`,
+        gender: c.gender,
+        ageGroup: c.age_group || 'Not Assigned',
+        photoUrl: c.photo_url || (c.photo_file_id ? (c.photo_file_id.startsWith('http') || c.photo_file_id.startsWith('/') ? c.photo_file_id : `/api/media/files/${c.photo_file_id}`) : null),
+        reviewStatus: c.entry_status || 'not_registered',
+        entryStatus: c.entry_status || 'not_registered',
+        pickupStatus,
+        careFlags
+      };
+    });
+
+    // Event Summary calculation based on active children in event-ga-2026
+    const childrenAdded = kids.length;
+    const selected = kids.filter((c: any) => c.entry_status === 'selected' || c.entry_status === 'pass_ready').length;
+    const underReview = kids.filter((c: any) => c.entry_status === 'under_review').length;
+    const passReady = kids.filter((c: any) => c.entry_status === 'pass_ready').length;
+    const checkedIn = kids.filter((c: any) => c.checked_in_at).length;
+    const pickedUp = kids.filter((c: any) => c.picked_up_at).length;
+
+    const eventSummary = {
+      childrenAdded,
+      selected,
+      underReview,
+      passReady,
+      checkedIn,
+      pickedUp
+    };
+
+    // Attention validation checks
+    const attentionItems: string[] = [];
+    if (!p.phone_number) {
+      attentionItems.push('Missing contact phone number');
+    }
+    if (!p.photo_file_id) {
+      attentionItems.push('Parent profile photo not uploaded');
+    }
+    kids.forEach((c: any) => {
+      if (c.needs_age_review === 1) {
+        attentionItems.push(`Child ${c.full_name} age is flagged for review`);
+      }
+      if (c.has_medical_notes === 1) {
+        attentionItems.push(`Child ${c.full_name} has registered medical notes`);
+      }
+      if (!c.photo_file_id) {
+        attentionItems.push(`Child ${c.full_name} is missing a profile photo`);
+      }
+    });
+
+    const attention = {
+      hasIssue: attentionItems.length > 0,
+      message: attentionItems.length > 0 ? 'Needs attention' : 'No parent issue found',
+      items: attentionItems
+    };
+
+    // Get Admin Notes
+    const notesRows = await query(`
+      SELECT n.*, u.email as admin_email
+      FROM admin_parent_notes n
+      LEFT JOIN users u ON u.id = n.admin_user_id
+      WHERE n.parent_id = ?
+      ORDER BY n.created_at DESC
+    `, [id]);
+
+    const adminNotes = notesRows.map((n: any) => ({
+      id: n.id,
+      author: n.admin_name || n.admin_email || 'Admin Team',
+      note: n.note,
+      createdAt: n.created_at
     }));
 
-    const formatted = {
+    const locationParts = [];
+    if (p.city) locationParts.push(p.city);
+    if (p.state_region) locationParts.push(p.state_region);
+    if (p.country) locationParts.push(p.country);
+
+    const formattedParent = {
       id: p.id,
       userId: p.user_id,
       fullName: p.full_name,
+      email: p.email || p.user_email,
       phone: p.phone_number,
       whatsapp: p.whatsapp_number,
-      email: p.email || p.user_email,
       homeAddress: p.home_address,
-      preferredContact: p.preferred_contact,
+      location: locationParts.join(', ') || 'Not Specified',
+      preferredContact: p.preferred_contact || 'phone',
       isKoinoniaWorker: p.is_koinonia_worker === 1,
-      department: p.department,
-      photoFileId: p.photo_file_id,
-      photoUrl: p.photo_url || (p.photo_file_id ? (p.photo_file_id.startsWith('http') || p.photo_file_id.startsWith('/') ? p.photo_file_id : `/api/media/files/${p.photo_file_id}`) : ''),
-      country: p.country,
-      stateRegion: p.state_region,
-      city: p.city,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
-      userRole: p.user_role,
-      children: formattedChildren
+      department: p.department || '',
+      photoUrl: p.photo_url || (p.photo_file_id ? (p.photo_file_id.startsWith('http') || p.photo_file_id.startsWith('/') ? p.photo_file_id : `/api/media/files/${p.photo_file_id}`) : null),
+      photoFileId: p.photo_file_id || null,
+      emailVerified: p.user_email_verified === 1,
+      accountStatus: p.user_email_verified === 1 ? 'verified' : 'pending',
+      createdAt: p.created_at
     };
 
-    return res.json({ success: true, parent: formatted });
+    return res.json({
+      success: true,
+      parent: formattedParent,
+      linkedChildren,
+      eventSummary,
+      attention,
+      adminNotes
+    });
   } catch (err: any) {
     console.error('Error fetching admin parent details:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch parent details' });
+  }
+});
+
+// POST /api/admin/parents/:id/notes - Add an admin note
+router.post('/parents/:id/notes', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const { note } = req.body;
+    if (!note || !note.trim()) {
+      return res.status(400).json({ success: false, error: 'Note content cannot be empty' });
+    }
+
+    const parent = await queryOne('SELECT id FROM parent_profiles WHERE id = ?', [id]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    const noteId = 'note-' + Math.random().toString(36).substring(2, 11);
+    const nowStr = new Date().toISOString();
+    const adminEmail = req.user.email;
+    const adminName = (req.user as any).fullName || adminEmail.split('@')[0];
+
+    await execute(`
+      INSERT INTO admin_parent_notes (id, parent_id, admin_user_id, admin_name, note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      noteId,
+      id,
+      req.user.id,
+      adminName,
+      note.trim(),
+      nowStr,
+      nowStr
+    ]);
+
+    return res.json({
+      success: true,
+      message: 'Note saved successfully',
+      note: {
+        id: noteId,
+        author: adminName,
+        note: note.trim(),
+        createdAt: nowStr
+      }
+    });
+  } catch (err: any) {
+    console.error('Error saving admin parent note:', err);
+    return res.status(500).json({ success: false, error: 'Failed to save admin note' });
   }
 });
 

@@ -257,6 +257,9 @@ export const api = {
     async getProfile() {
       return api.request<any>('/api/volunteer/me');
     },
+    async getStatus() {
+      return api.request<{ success: boolean; user: any; profile: any; volunteerProfile: any; nextRoute?: string }>('/api/volunteer/me/status');
+    },
     async requestAccess(payload: any) {
       return api.request<any>('/api/volunteer/request', {
         method: 'POST',
@@ -648,7 +651,13 @@ export const api = {
       return api.request<{ success: boolean; parents: any[] }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
     },
     async getParentDetails(id: string) {
-      return api.request<{ success: boolean; parent: any }>(`/api/admin/parents/${id}`);
+      return api.request<{ success: boolean; parent: any; linkedChildren: any[]; eventSummary: any; attention: any; adminNotes: any[] }>(`/api/admin/parents/${id}`);
+    },
+    async saveParentNote(id: string, note: string) {
+      return api.request<{ success: boolean; message: string; note: any }>(`/api/admin/parents/${id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ note })
+      });
     },
     async updateParentProfile(id: string, payload: any) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}`, {

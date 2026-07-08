@@ -524,19 +524,21 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
         profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/pending-review'
       });
     }
 
-    // 10. If volunteerProfile.status === "active": return success with token, user, volunteerProfile, nextRoute: "/volunteer/event".
-    if (volunteerStatus === 'active') {
+    // 10. If volunteerProfile.status === "active" or "approved": return success with token, user, volunteerProfile, nextRoute: "/volunteer/event".
+    if (volunteerStatus === 'active' || volunteerStatus === 'approved') {
       // 5. Volunteer sign-in final result fields:
-      console.log(`Volunteer sign-in final result { outcome: "active" }`);
+      console.log(`Volunteer sign-in final result { outcome: "${volunteerStatus}" }`);
       return res.json({
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
         profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/event'
       });
@@ -550,6 +552,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
         profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/pending-review'
       });
@@ -562,6 +565,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
         profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/pending-review'
       });
@@ -573,6 +577,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       success: true,
       user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
       profile,
+      volunteerProfile: profile,
       token,
       nextRoute: '/volunteer/pending-review'
     });
@@ -1038,17 +1043,67 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
     });
   }
 
-  // Active or approved statuses are required
   const status = profile.status || 'none';
-  if (status !== 'active' && status !== 'approved') {
-    return res.status(403).json({
-      success: false,
-      code: 'PENDING_OR_INACTIVE',
-      message: `Access denied: Volunteer status is ${status}.`
-    });
-  }
+  const hasAccess = status === 'active' || status === 'approved';
 
   try {
+    // Map profile roles/teams/areas
+    let assignedTeam = 'General Team';
+    let assignedArea = 'General Hall';
+    let accessScope = 'General Access';
+
+    const pTeam = (profile.preferred_team || '').toLowerCase();
+    if (pTeam.includes('check-in') || pTeam.includes('entry') || pTeam.includes('gate') || pTeam.includes('event-day')) {
+      assignedTeam = 'Check-in Team';
+      assignedArea = 'Main Entrance';
+      accessScope = 'Check-in only';
+    } else if (pTeam.includes('pickup') || pTeam.includes('release') || pTeam.includes('checkout')) {
+      assignedTeam = 'Pickup Team';
+      assignedArea = 'Pickup Zone';
+      accessScope = 'Pickup only';
+    } else if (profile.preferred_team) {
+      assignedTeam = profile.preferred_team;
+    }
+
+    const photoUrl = profile.photo_file_id ? `/api/media/files/${profile.photo_file_id}` : null;
+
+    const volunteerProfileObj = {
+      id: profile.id,
+      status: profile.status,
+      preferredTeam: profile.preferred_team,
+      assignedTeam,
+      assignedArea,
+      accessScope
+    };
+
+    if (!hasAccess) {
+      return res.json({
+        success: true,
+        user: {
+          id: req.user.id,
+          fullName: profile.full_name || 'Volunteer',
+          email: req.user.email,
+          photoUrl
+        },
+        profile: volunteerProfileObj,
+        volunteerProfile: volunteerProfileObj,
+        event: {
+          name: 'Children and Teens',
+          section: 'The General Assembly'
+        },
+        activity: {
+          checkedInByYou: 0,
+          lastScanAt: null,
+          pendingUpdates: 0
+        },
+        help: {
+          eventLeadName: 'Pastor Isaac',
+          eventLeadPhone: '+234 803 123 4567',
+          eventLeadEmail: 'isaac@koinoniaglobal.org'
+        }
+      });
+    }
+
     // Real stats: count checkins / pick-ups by this user
     const checkInCountRow = await queryOne(
       "SELECT COUNT(*) as count FROM child_event_entries WHERE (checked_in_by = ? OR picked_up_by = ?)",
@@ -1071,26 +1126,6 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
     const eventName = activeEvent?.title || 'Children and Teens';
     const eventSection = activeEvent?.section_name || 'The General Assembly';
 
-    // Map profile roles/teams/areas
-    let assignedTeam = 'General Team';
-    let assignedArea = 'General Hall';
-    let accessScope = 'General Access';
-
-    const pTeam = (profile.preferred_team || '').toLowerCase();
-    if (pTeam.includes('check-in') || pTeam.includes('entry') || pTeam.includes('gate') || pTeam.includes('event-day')) {
-      assignedTeam = 'Check-in Team';
-      assignedArea = 'Main Entrance';
-      accessScope = 'Check-in only';
-    } else if (pTeam.includes('pickup') || pTeam.includes('release') || pTeam.includes('checkout')) {
-      assignedTeam = 'Pickup Team';
-      assignedArea = 'Pickup Zone';
-      accessScope = 'Pickup only';
-    } else if (profile.preferred_team) {
-      assignedTeam = profile.preferred_team;
-    }
-
-    const photoUrl = profile.photo_file_id ? `/api/media/files/${profile.photo_file_id}` : null;
-
     res.json({
       success: true,
       user: {
@@ -1099,14 +1134,8 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
         email: req.user.email,
         photoUrl
       },
-      volunteerProfile: {
-        id: profile.id,
-        status: profile.status,
-        preferredTeam: profile.preferred_team,
-        assignedTeam,
-        assignedArea,
-        accessScope
-      },
+      profile: volunteerProfileObj,
+      volunteerProfile: volunteerProfileObj,
       event: {
         name: eventName,
         section: eventSection
@@ -1126,6 +1155,62 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
     console.error('Error in /api/volunteer/me:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// 3a. GET ME STATUS
+router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  // Check email verified status
+  const emailVerified = req.user.email_verified === 1;
+
+  // Read fresh status from DB every time
+  const profile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+  if (!profile) {
+    return res.status(404).json({
+      success: false,
+      code: 'NO_VOLUNTEER_ACCESS',
+      message: 'Volunteer profile not found.'
+    });
+  }
+
+  const volunteerStatus = profile.status || 'none';
+  let nextRoute = '/volunteer/pending-review';
+  if (!emailVerified) {
+    nextRoute = '/volunteer/verify-email';
+  } else if (volunteerStatus === 'approved' || volunteerStatus === 'active') {
+    nextRoute = '/volunteer/event';
+  }
+
+  const photoUrl = profile.photo_file_id ? `/api/media/files/${profile.photo_file_id}` : null;
+
+  const volunteerProfileObj = {
+    id: profile.id,
+    status: volunteerStatus,
+    preferredTeam: profile.preferred_team,
+    photoUrl,
+    full_name: profile.full_name,
+    phone: profile.phone,
+    whatsapp: profile.whatsapp,
+    is_koinonia_worker: profile.is_koinonia_worker,
+    department: profile.department,
+    serving_experience: profile.serving_experience,
+    photo_file_id: profile.photo_file_id
+  };
+
+  res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      emailVerified
+    },
+    profile: volunteerProfileObj,
+    volunteerProfile: volunteerProfileObj,
+    nextRoute
+  });
 });
 
 // 3.5. VOLUNTEER REQUEST (For existing users, e.g. parents requesting access)

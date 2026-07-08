@@ -135,9 +135,9 @@ export default function App() {
 
         if (accessData.access.volunteer && accessData.access.volunteer.exists) {
           try {
-            const volMe = await api.volunteer.getMe();
-            if (volMe && volMe.profile) {
-              setVolunteerProfile(volMe.profile);
+            const volMe = await api.volunteer.getMe() as any;
+            if (volMe) {
+              setVolunteerProfile(volMe.profile || volMe.volunteerProfile);
             }
           } catch (e) {
             console.error('Failed to load initial volunteer profile:', e);
@@ -675,22 +675,38 @@ export default function App() {
       return <RedirectToRoute route="/volunteer/verify-email" />;
     }
 
-    // Direct pending volunteers to pending-review screen (except admin/super_admin)
-    const isPending = !volunteerProfile || volunteerProfile.status === 'pending_review';
     const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(user.role);
-    if (!isStaffOrAdmin && isPending) {
-      const cleanRoute = currentRoute.split('?')[0];
-      if (cleanRoute !== '/volunteer/pending-review' && cleanRoute !== '/volunteer/verify-email') {
-        return <RedirectToRoute route="/volunteer/pending-review" />;
-      }
+    if (isStaffOrAdmin) {
+      return <>{children}</>;
     }
 
-    // Direct active/approved volunteers away from pending-review screen to event dashboard
-    if (volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved')) {
+    // If volunteer profile is missing but user role is volunteer, wait for it or show loading state
+    if (!volunteerProfile) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
+            <p className="text-sm text-[#52525B] font-medium tracking-wide">Loading volunteer profile...</p>
+          </div>
+        </div>
+      );
+    }
+
+    const status = volunteerProfile.status;
+    const isApprovedOrActive = status === 'active' || status === 'approved';
+
+    if (isApprovedOrActive) {
       const cleanRoute = currentRoute.split('?')[0];
       if (cleanRoute === '/volunteer/pending-review') {
         return <RedirectToRoute route="/volunteer/event" />;
       }
+      return <>{children}</>;
+    }
+
+    // Direct other statuses (pending_review, request_update, rejected) to pending-review screen
+    const cleanRoute = currentRoute.split('?')[0];
+    if (cleanRoute !== '/volunteer/pending-review' && cleanRoute !== '/volunteer/verify-email') {
+      return <RedirectToRoute route="/volunteer/pending-review" />;
     }
 
     return <>{children}</>;
@@ -801,6 +817,43 @@ export default function App() {
           />
         </ProtectedRoute>
       );
+    }
+
+    if (cleanRoute.startsWith('/admin')) {
+      const isAdminSignRoute = cleanRoute === '/admin/sign-in' || cleanRoute === '/admin/forgot-password' || cleanRoute === '/admin/reset-password' || cleanRoute === '/admin/accept-invite';
+      if (!isAdminSignRoute) {
+        return (
+          <AdminProtectedRoute>
+            <AdminOverviewView
+              onNavigate={navigate}
+              onSignOut={handleSignOut}
+              adminUser={user}
+              currentRoute={currentRoute}
+              initialTab={
+                cleanRoute === '/admin/settings'
+                  ? 'settings'
+                  : cleanRoute === '/admin/applications'
+                    ? 'applications'
+                    : cleanRoute === '/admin/review'
+                      ? 'review'
+                      : cleanRoute === '/admin/children'
+                        ? 'children'
+                        : cleanRoute === '/admin/attendance'
+                          ? 'attendance'
+                          : cleanRoute === '/admin/reports'
+                            ? 'reports'
+                            : cleanRoute === '/admin/messages'
+                              ? 'messages'
+                              : cleanRoute === '/admin/volunteers'
+                                ? 'volunteers'
+                                : cleanRoute === '/admin/parents' || cleanRoute.startsWith('/admin/parents/')
+                                  ? 'parents'
+                                  : 'overview'
+              }
+            />
+          </AdminProtectedRoute>
+        );
+      }
     }
 
     switch (cleanRoute) {
@@ -1044,41 +1097,6 @@ export default function App() {
             }}
           />
         );
-      case '/admin':
-      case '/admin/overview':
-      case '/admin/settings':
-      case '/admin/applications':
-      case '/admin/review':
-      case '/admin/children':
-      case '/admin/attendance':
-      case '/admin/reports':
-      case '/admin/messages':
-        return (
-          <AdminProtectedRoute>
-            <AdminOverviewView
-              onNavigate={navigate}
-              onSignOut={handleSignOut}
-              adminUser={user}
-              initialTab={
-                cleanRoute === '/admin/settings'
-                  ? 'settings'
-                  : cleanRoute === '/admin/applications'
-                    ? 'applications'
-                    : cleanRoute === '/admin/review'
-                      ? 'review'
-                      : cleanRoute === '/admin/children'
-                        ? 'children'
-                        : cleanRoute === '/admin/attendance'
-                          ? 'attendance'
-                          : cleanRoute === '/admin/reports'
-                            ? 'reports'
-                            : cleanRoute === '/admin/messages'
-                              ? 'messages'
-                              : 'overview'
-              }
-            />
-          </AdminProtectedRoute>
-        );
       case '/admin/accept-invite':
         return <AdminAcceptInviteView onNavigate={navigate} />;
       case '/admin/sign-in':
@@ -1112,6 +1130,7 @@ export default function App() {
               volunteerProfile={volunteerProfile}
               onSignOut={handleSignOut}
               hasParentProfile={!!parentProfile && !!parentProfile.email}
+              onRefreshAccess={checkAuth}
             />
           </VolunteerProtectedRoute>
         );

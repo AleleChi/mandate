@@ -19,11 +19,14 @@ import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 
+import { AppRoute } from '../../types';
+
 interface AdminParentsViewProps {
   onBackToOverview: () => void;
+  onNavigate: (route: AppRoute) => void;
 }
 
-export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOverview }) => {
+export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOverview, onNavigate }) => {
   const { showError, showSuccess } = useNotification();
   const [parents, setParents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -280,7 +283,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
 
                     <td className="p-4 pr-6 text-right">
                       <button
-                        onClick={() => handleOpenParent(p.id)}
+                        onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
                         className="px-3.5 py-1.5 text-xs font-serif text-[#C59B27] font-bold hover:bg-[#C59B27]/5 border border-[#C59B27]/10 hover:border-[#C59B27] rounded-xl transition-all cursor-pointer focus:outline-none"
                       >
                         View Profile

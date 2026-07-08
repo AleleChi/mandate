@@ -143,6 +143,16 @@ To prevent accidental and duplicate entries at the event gates, checking in or c
 - **Chronological Logs**: Shows the last 10 entries (check-ins) and last 10 pickups (releases) in real-time, including verifying staff details and authorized pickup persons.
 - **Final Session Report**: Volunteers can enter observations, notes, or incident reviews. Submitting logs the report securely to the audit table (`volunteer_event_reports`) and displays the last submitted author and timestamp for transparent tracking.
 
+## 18a. Volunteer Event Dashboard (Stitch Layout)
+To match the approved high-fidelity Stitch design, the Volunteer Event Dashboard (`/volunteer/event`) employs a premium, highly focused, single-view mobile layout optimized for operational speed:
+- **Top Header**: Custom-styled header (`data-component-version="volunteer-event-header-v2-stitch"`) featuring a circular avatar fallback of the volunteer, the "Event Dashboard" title in serif typography, and a simplified connection status label ("Ready to scan" with a Wi-Fi icon) to indicate real-time operation readiness without noisy indicators.
+- **Hero Greeting**: Centered greeting displaying "Welcome, [First Name]" in warm serif display typography, accompanied by the designated role or team subtitle (e.g. "Check-in Team") to establish personal ownership and event authority.
+- **Stitch Search**: Full-width persistent search bar (`data-component-version="volunteer-event-search-v2-stitch"`) prompting volunteers to "Find child by name or parent phone". Submitting the query seamlessly routes the focus to the Children Directory search list.
+- **Primary Action Cards**: Two prominent side-by-side action cards (`data-component-version="volunteer-event-actions-v2-stitch"`) styled with thin borders, serif headings, and warm off-white backgrounds:
+  1. *Check-in Card*: Guides the user to entry scanning with a prominent gold button.
+  2. *Pickup Card*: Guides the user to verified release confirmation with a clean outlined button.
+- **Stitch Metrics**: A highly readable 2x2 grid (`data-component-version="volunteer-event-metrics-v2-stitch"`) highlighting key live event counts: Expected, Checked In, Picked Up, and Attention (marked with a warm accent badge). All metrics bind directly to real-time backend aggregation counters.
+- **Needs Attention List**: A clean, numbered attention registry (`data-component-version="volunteer-event-attention-v2-stitch"`) pairing real-time issues with explicit "Resolve", "Review", or "Verify" action prompts on the far right.
 
 ## 19. Admin Access & Event Command Centre
 - **Shortcut Entry**: Double-clicking (desktop) or double-tapping (mobile) the Koinonia logo on the Landing Page routes users directly to `/admin/sign-in`. This is an exclusive navigation shortcut and does not bypass authentication.
@@ -274,6 +284,40 @@ The attendance registry module offers real-time, high-fidelity metrics and track
   - `data-component-version="admin-settings-event-team-v1"`
   - `data-component-version="admin-settings-message-channels-v1"`
   - `data-component-version="admin-settings-profile-security-v2-refined"`
+
+## 25. Stitch Volunteer Check-in Screen layout (`#/volunteer/scan`)
+- **Stitch Design Implementation**: Centered mobile-first container (`max-w-md mx-auto`) offering a premium check-in dashboard matching Screenshot A aesthetics:
+  - **Dynamic Context Header**: Features a back arrow navigating to `/volunteer/event`, bold "Check-in" title, event sub-label ("The General Assembly Children and Teens"), and an amber "Ready to scan" pill indicator.
+  - **Tall Portrait Viewfinder Card**: Features an aspect ratio of `3/4` inside an ivory-bordered white card container. Displays a live camera feed with an antique gold corner overlay and bouncing laser horizontal sweep, or a blur-filtered warm background overlay with a "Scan child pass" trigger button. Shows device manual fallback notices if no cameras are available.
+  - **Manual Entry Trigger**: Compact secondary block toggling the manual code entry form (`data-component-version="volunteer-check-in-manual-pass-v2-stitch"`) to verify cards directly via alphanumeric inputs.
+  - **Integrated Child Directory Search**: Flat search form styled with a clean magnifying glass prefix to locate children in real time.
+  - **Historic Last Checked-In Card**: Interactive card showing the last successfully verified child and precise relative timestamp derived from `recentScans` data.
+  - **Serif Metrics Trio**: Features a horizontal grid detailing "Expected", "Checked in", and "Waiting" statistics styled in high-contrast serif typography.
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-check-in-v2-stitch"`
+  - `data-component-version="volunteer-check-in-header-v2-stitch"`
+  - `data-component-version="volunteer-check-in-scan-card-v2-stitch"`
+  - `data-component-version="volunteer-check-in-manual-pass-v2-stitch"`
+  - `data-component-version="volunteer-check-in-search-v2-stitch"`
+  - `data-component-version="volunteer-check-in-last-v2-stitch"`
+  - `data-component-version="volunteer-check-in-metrics-v2-stitch"`
+
+## 26. Stitch Volunteer Child Found Screen layout (`#/volunteer/scan` with child)
+- **Stitch Design Implementation**: Mobile-first container (`max-w-md mx-auto`) showing the child verification screen after lookup or scanning:
+  - **Dynamic Context Header**: Custom sticky header (`data-component-version="volunteer-child-found-header-v1-stitch"`) displaying back-arrow button to exit lookup state, "Check-in Portal" title, event sub-label, and gold "Ready to scan" pill indicator (fully removing Online/ONLINE and green dots).
+  - **Scan Successful Banner**: Mini banner displaying a checkmark and uppercase "Scan successful" label, and a serif "Child found" heading (`data-component-version="volunteer-child-found-title-v1-stitch"`).
+  - **Child Identity Card**: Displays the child photo filling the `4/3` aspect-ratio container, full name, "Pass Ready" status badge, calculated age in years, age group class, and gender (`data-component-version="volunteer-child-identity-card-v1-stitch"`).
+  - **Care Notes Card**: Sections for Medical note (colored light-peach if present, default gray if not), Allergies, and Extra support with human empty fallback text ("No allergy added", "None required") (`data-component-version="volunteer-child-care-notes-v1-stitch"`).
+  - **Entry Status Card**: Displays attendance status ("Not checked in yet" or "Already checked in"), helper text, a gold primary "Mark checked in" action calling the live `/check-in` endpoint, a secondary "Scan another pass" button, and a photo confirmation warning (`data-component-version="volunteer-child-entry-status-v1-stitch"`).
+  - **Authorized Pickup Card**: Showcases authorized pickup photo, name, relationship, and contact number (`data-component-version="volunteer-child-authorized-pickup-v1-stitch"`).
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-child-found-v1-stitch"`
+  - `data-component-version="volunteer-child-found-header-v1-stitch"`
+  - `data-component-version="volunteer-child-found-title-v1-stitch"`
+  - `data-component-version="volunteer-child-identity-card-v1-stitch"`
+  - `data-component-version="volunteer-child-care-notes-v1-stitch"`
+  - `data-component-version="volunteer-child-entry-status-v1-stitch"`
+  - `data-component-version="volunteer-child-authorized-pickup-v1-stitch"`
 
 
 
