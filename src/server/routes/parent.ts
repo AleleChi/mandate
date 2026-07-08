@@ -8,10 +8,13 @@ import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } fr
 const router = Router();
 router.use(authMiddleware);
 
-// Enforce parent role for all endpoints in this router
+// Enforce parent role or profile existence for all endpoints in this router
 router.use((req: AuthenticatedRequest, res: Response, next) => {
-  if (!req.user || req.user.role !== 'parent') {
-    return res.status(403).json({ error: 'Access denied: Parent role required' });
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (req.user.role !== 'parent' && !req.parentProfile) {
+    return res.status(403).json({ error: 'Access denied: Parent role or profile required' });
   }
   next();
 });

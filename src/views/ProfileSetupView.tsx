@@ -6,6 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { validateName, validateEmailSyntax, validatePhone } from '../utils/validation';
 import { Button } from '../components/common/Button';
+import { AuthScreenShell } from '../components/common/AuthScreenShell';
 
 interface ProfileSetupViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -310,34 +311,24 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     (!isWorker || validateField('department') === '');
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-4.5 pb-10">
+    <AuthScreenShell
+      dataViewVersion="parent-profile-setup-soft-surface-v1"
+      showBack
+      onBack={mode === 'edit' ? handleCancel : () => onNavigate('/parent/check-email')}
+      maxWidth="md"
+    >
       <div className="space-y-5">
-        {/* 1. Top bar */}
-        <div className="pt-5 pb-1 flex items-center space-x-3.5">
-          <button
-            type="button"
-            onClick={mode === 'edit' ? handleCancel : () => onNavigate('/parent/check-email')}
-            className="p-1 -ml-1 text-[#715D3A] hover:text-[#18181B] transition-colors cursor-pointer focus:outline-none"
-            aria-label="Back"
-          >
-            <ArrowLeft className="w-5 h-5 stroke-[2.25]" />
-          </button>
-          <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#715D3A] tracking-tight">
-            {mode === 'edit' ? 'Edit details' : 'Parent Profile'}
-          </span>
-        </div>
-
-        {/* 2. Intro text */}
-        {mode !== 'edit' && (
-          <div className="space-y-1">
-            <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#715D3A] leading-tight">
-              Set up your profile
-            </h1>
-            <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed">
+        {/* Intro text */}
+        <div className="text-center space-y-1.5 mb-2">
+          <h1 className="text-2xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
+            {mode === 'edit' ? 'Edit details' : 'Set up your profile'}
+          </h1>
+          {mode !== 'edit' && (
+            <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed max-w-sm mx-auto">
               Add your details so the team can contact you when needed.
             </p>
-          </div>
-        )}
+          )}
+        </div>
 
         <form onSubmit={handleContinue} className="space-y-5" noValidate>
           {/* 3. Photo upload card */}
@@ -798,6 +789,6 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </AuthScreenShell>
   );
 };

@@ -36,7 +36,7 @@ export const DevNavigator: React.FC<DevNavigatorProps> = ({
   ];
 
   return (
-    <div className="fixed bottom-20 right-4 z-50">
+    <div className="fixed bottom-20 right-4 z-50" data-dev-only="screen-navigator">
       {isOpen ? (
         <div className="bg-[#18181B] text-white rounded-2xl p-4 shadow-2xl border border-[#C59B27]/50 w-72 backdrop-blur-lg animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/15">

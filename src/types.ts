@@ -34,7 +34,20 @@ export type AppRoute =
   | '/volunteer/scan'
   | '/volunteer/children'
   | '/volunteer/reports'
-  | '/volunteer/profile';
+  | '/volunteer/profile'
+  | '/admin/sign-in'
+  | '/admin/forgot-password'
+  | '/admin/reset-password'
+  | '/admin'
+  | '/admin/overview'
+  | '/admin/events'
+  | '/admin/applications'
+  | '/admin/review'
+  | '/admin/children'
+  | '/admin/attendance'
+  | '/admin/reports'
+  | '/admin/messages'
+  | '/admin/settings';
 
 export type BottomNavTab = 'Home' | 'Children' | 'Status' | 'Passes' | 'Profile';
 

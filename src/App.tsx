@@ -36,6 +36,12 @@ import { DevNavigator } from './components/common/DevNavigator';
 import { AddChildDraft } from './types';
 import { Button } from './components/common/Button';
 
+import { AdminSignInView } from './views/admin/AdminSignInView';
+import { AdminForgotPasswordView } from './views/admin/AdminForgotPasswordView';
+import { AdminResetPasswordView } from './views/admin/AdminResetPasswordView';
+import { AdminOverviewView } from './views/admin/AdminOverviewView';
+import { AdminAcceptInviteView } from './views/admin/AdminAcceptInviteView';
+
 export default function App() {
   const { showSuccess, showError, showWarning } = useNotification();
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('/');
@@ -160,6 +166,12 @@ export default function App() {
 
   const fetchBackendData = async () => {
     if (api.getToken() && user) {
+      const isParentRoute = currentRoute.startsWith('/parent');
+      const hasParentRole = user.role === 'parent';
+      if (!hasParentRole && !isParentRoute) {
+        return;
+      }
+
       try {
         const homeData = await api.parent.getHome();
         if (homeData && homeData.parentProfile) {
@@ -223,6 +235,8 @@ export default function App() {
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) return true;
     if (cleanRoute.startsWith('/volunteer/')) return true;
+    if (cleanRoute.startsWith('/admin/')) return true;
+    if (cleanRoute === '/admin') return true;
     if (cleanRoute === '/parent/volunteer-request') return true;
     const validRoutes: string[] = [
       '/',
@@ -245,7 +259,14 @@ export default function App() {
       '/parent/children/new/review',
       '/parent/children/review-sent',
       '/parent/status',
-      '/parent/passes'
+      '/parent/passes',
+      '/admin/sign-in',
+      '/admin/forgot-password',
+      '/admin/reset-password',
+      '/admin/overview',
+      '/admin/settings',
+      '/admin/applications',
+      '/admin/accept-invite'
     ];
     return validRoutes.includes(cleanRoute);
   };
@@ -547,17 +568,23 @@ export default function App() {
     }
 
     if (requiredRole && user.role !== requiredRole) {
-      if (user.role === 'volunteer' || user.role === 'staff') {
+      const isParentHybrid = requiredRole === 'parent' && 
+        ['volunteer', 'staff', 'admin', 'super_admin', 'team'].includes(user.role) && 
+        parentProfile && parentProfile.fullName && parentProfile.fullName.trim() !== '';
+
+      if (isParentHybrid) {
+        // Allow access to parent routes for hybrid users!
+      } else if (user.role === 'volunteer' || user.role === 'staff') {
         return <RedirectToRoute route="/volunteer/event" />;
       } else if (user.role === 'admin' || user.role === 'super_admin') {
-        return <RedirectToRoute route="/admin/home" />;
+        return <RedirectToRoute route="/admin/overview" />;
       } else {
         return (
           <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4">
             <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
               <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Access Denied</h3>
               <p className="text-sm text-[#6B7280]">
-                You do not have access to this portal. Your account role is <span className="font-semibold">{user.role}</span>.
+                You do not have access to this area. Your account role is <span className="font-semibold">{user.role}</span>.
               </p>
               <Button onClick={handleSignOut} variant="primary" fullWidth>
                 Sign Out
@@ -664,6 +691,34 @@ export default function App() {
       if (cleanRoute === '/volunteer/pending-review') {
         return <RedirectToRoute route="/volunteer/event" />;
       }
+    }
+
+    return <>{children}</>;
+  };
+
+  const AdminProtectedRoute = ({
+    children
+  }: {
+    children: React.ReactNode;
+  }) => {
+    if (isCheckingAuth) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
+            <p className="text-sm text-[#52525B] font-medium tracking-wide">Checking administrator access...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return <RedirectToRoute route="/admin/sign-in" />;
+    }
+
+    const allowedRoles = ['admin', 'super_admin', 'team'];
+    if (!allowedRoles.includes(user.role)) {
+      return <RedirectToRoute route="/parent/home" />;
     }
 
     return <>{children}</>;
@@ -989,6 +1044,60 @@ export default function App() {
             }}
           />
         );
+      case '/admin':
+      case '/admin/overview':
+      case '/admin/settings':
+      case '/admin/applications':
+      case '/admin/review':
+      case '/admin/children':
+      case '/admin/attendance':
+      case '/admin/reports':
+      case '/admin/messages':
+        return (
+          <AdminProtectedRoute>
+            <AdminOverviewView
+              onNavigate={navigate}
+              onSignOut={handleSignOut}
+              adminUser={user}
+              initialTab={
+                cleanRoute === '/admin/settings'
+                  ? 'settings'
+                  : cleanRoute === '/admin/applications'
+                    ? 'applications'
+                    : cleanRoute === '/admin/review'
+                      ? 'review'
+                      : cleanRoute === '/admin/children'
+                        ? 'children'
+                        : cleanRoute === '/admin/attendance'
+                          ? 'attendance'
+                          : cleanRoute === '/admin/reports'
+                            ? 'reports'
+                            : cleanRoute === '/admin/messages'
+                              ? 'messages'
+                              : 'overview'
+              }
+            />
+          </AdminProtectedRoute>
+        );
+      case '/admin/accept-invite':
+        return <AdminAcceptInviteView onNavigate={navigate} />;
+      case '/admin/sign-in':
+        if (user && (user.role === 'admin' || user.role === 'super_admin' || user.role === 'team')) {
+          return <RedirectToRoute route="/admin/overview" />;
+        }
+        return (
+          <AdminSignInView
+            onNavigate={navigate}
+            onSignInSuccess={async (u) => {
+              setUser(u);
+              await checkAuth();
+            }}
+          />
+        );
+      case '/admin/forgot-password':
+        return <AdminForgotPasswordView onNavigate={navigate} />;
+      case '/admin/reset-password':
+        return <AdminResetPasswordView onNavigate={navigate} />;
       case '/volunteer/verify-email':
         return (
           <VolunteerVerifyEmailView
@@ -1011,6 +1120,7 @@ export default function App() {
       case '/volunteer/children':
       case '/volunteer/reports':
       case '/volunteer/profile':
+      case '/volunteer/pickup':
         return (
           <VolunteerProtectedRoute>
             <VolunteerEventDashboardView
@@ -1019,6 +1129,7 @@ export default function App() {
               onSignOut={handleSignOut}
               isOffline={isOffline}
               hasParentProfile={!!parentProfile && !!parentProfile.email}
+              currentRoute={currentRoute}
             />
           </VolunteerProtectedRoute>
         );
@@ -1053,8 +1164,8 @@ export default function App() {
       )}
       {renderCurrentRoute()}
 
-      {/* Only show DevNavigator on internal parent routes, remove from public landing page */}
-      {currentRoute !== '/' && (
+      {/* Only show DevNavigator on internal parent routes in local development mode, remove from public landing page & production builds */}
+      {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && currentRoute !== '/' && (
         <DevNavigator
           currentRoute={currentRoute}
           onNavigate={navigate}

@@ -6,6 +6,8 @@ export interface SendEmailOptions {
   subject: string;
   html?: string;
   text?: string;
+  fromName?: string;
+  replyTo?: string;
 }
 
 export interface SendEmailResult {
@@ -76,7 +78,7 @@ function wrapHtmlTemplate(title: string, bodyHtml: string, actionButton?: { labe
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   try {
     const provider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
-    const fromName = process.env.MAIL_FROM_NAME || 'Koinonia Children and Teens';
+    const fromName = options.fromName || process.env.MAIL_FROM_NAME || 'Koinonia Children and Teens';
     const fromAddress = process.env.MAIL_FROM_ADDRESS;
     
     if (!fromAddress) {
@@ -106,7 +108,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         to: options.to,
         subject: options.subject,
         html: options.html || options.text || options.subject,
-        text: options.text || options.subject
+        text: options.text || options.subject,
+        replyTo: options.replyTo
       });
 
       if (error) {
@@ -164,7 +167,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       to: options.to,
       subject: options.subject,
       html: options.html,
-      text: options.text || options.subject
+      text: options.text || options.subject,
+      replyTo: options.replyTo
     });
 
     return {
@@ -504,6 +508,66 @@ export async function sendVolunteerPasswordResetEmail(params: {
   const text = `${greeting}\n\nWe received a request to reset the password for your Volunteer Access.\n\nUse the link below to create a new password. This link will expire soon for your protection:\n${params.resetLink}\n\nIf you did not request this, you can ignore this email.\n\nKoinonia Children and Teens • Volunteer Access`;
 
   const html = wrapVolunteerHtmlTemplate(subject, bodyHtml, { label: 'Create new password', url: params.resetLink });
+
+  return sendEmail({ to: params.volunteerEmail, subject, html, text });
+}
+
+/**
+ * sendVolunteerUnderReviewEmail
+ */
+export async function sendVolunteerUnderReviewEmail(params: {
+  volunteerEmail: string;
+  volunteerFirstName?: string;
+  preferredTeam?: string;
+}): Promise<SendEmailResult> {
+  const subject = 'Your Volunteer Access profile is under review';
+  const firstName = getFirstName(params.volunteerFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const team = params.preferredTeam || 'General Assistance';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>Thank you for choosing to serve with Children and Teens. Your volunteer profile is now complete and has been sent for review.</p>
+    <p>Our review team will verify your details soon. You will receive an email once your profile has been approved.</p>
+    <p style="margin-top: 16px;"><strong>Preferred Service Team:</strong> ${team}</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+
+  const text = `${greeting}\n\nThank you for choosing to serve with Children and Teens. Your volunteer profile is now complete and has been sent for review.\n\nOur review team will verify your details soon. You will receive an email once your profile has been approved.\n\nPreferred Service Team: ${team}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const html = wrapVolunteerHtmlTemplate(subject, bodyHtml);
+
+  return sendEmail({ to: params.volunteerEmail, subject, html, text });
+}
+
+/**
+ * sendVolunteerApprovedEmail
+ */
+export async function sendVolunteerApprovedEmail(params: {
+  volunteerEmail: string;
+  volunteerFirstName?: string;
+  preferredTeam?: string;
+  loginLink?: string;
+}): Promise<SendEmailResult> {
+  const subject = 'Your Volunteer Access profile has been approved!';
+  const firstName = getFirstName(params.volunteerFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const team = params.preferredTeam || 'General Assistance';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>We are excited to inform you that your volunteer profile has been approved!</p>
+    <p>You now have full access to event-day check-in, pickup, and care tools. Thank you for your commitment to serving Children and Teens.</p>
+    <p style="margin-top: 16px;"><strong>Assigned Service Team:</strong> ${team}</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+
+  const text = `${greeting}\n\nWe are excited to inform you that your volunteer profile has been approved!\n\nYou now have full access to event-day check-in, pickup, and care tools. Thank you for your commitment to serving Children and Teens.\n\nAssigned Service Team: ${team}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const actionButton = params.loginLink ? { label: 'Sign in to Volunteer Access', url: params.loginLink } : undefined;
+  const html = wrapVolunteerHtmlTemplate(subject, bodyHtml, actionButton);
 
   return sendEmail({ to: params.volunteerEmail, subject, html, text });
 }

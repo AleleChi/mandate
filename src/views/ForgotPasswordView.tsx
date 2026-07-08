@@ -7,6 +7,7 @@ import { KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { api } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { validateEmailSyntax } from '../utils/validation';
+import { AuthScreenShell } from '../components/common/AuthScreenShell';
 
 interface ForgotPasswordViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -73,14 +74,14 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
   };
 
   return (
-    <MobileShell
-      title="Security"
-      subtitle="Forgot password"
+    <AuthScreenShell
+      dataViewVersion="parent-forgot-password-soft-surface-v1"
       showBack
       onBack={() => onNavigate('/parent/sign-in')}
+      maxWidth="md"
     >
-      <div className="bg-white rounded-3xl p-6 border border-[#EAE8E1] shadow-sm space-y-6">
-        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EB] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE]">
+      <div className="space-y-6 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE] mx-auto">
           <KeyRound className="w-7 h-7" />
         </div>
 
@@ -88,13 +89,13 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
           <h1 className="text-2xl font-serif-koinonia font-bold text-[#18181B]">
             Forgot password
           </h1>
-          <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">
+          <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed max-w-sm mx-auto">
             Enter your parent email address and we will send instructions to create a new secure password.
           </p>
         </div>
 
         {!submitted ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 text-left">
             <Input
               label="Email address"
               type="email"
@@ -131,14 +132,14 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
                 size="lg"
                 disabled={loading || !email.trim() || !validateEmailSyntax(email).valid}
               >
-                {loading ? 'Sending...' : 'Send recovery steps'}
+                {loading ? 'Sending...' : 'Send reset link'}
               </Button>
             </div>
           </form>
         ) : (
           <div className="bg-[#FAF9F6] p-5 rounded-2xl border border-[#EAE8E1] space-y-4 text-center">
             <p className="text-xs text-[#262626] leading-relaxed">
-              We have sent password recovery steps to <span className="font-bold">{email}</span>. Please check your inbox.
+              We have sent password reset link steps to <span className="font-bold">{email}</span>. Please check your inbox.
             </p>
             <div className="flex flex-col space-y-2">
               <Button
@@ -150,7 +151,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
               </Button>
               <button
                 onClick={() => setSubmitted(false)}
-                className="text-xs text-[#6B7280] hover:underline pt-2"
+                className="text-xs text-[#6B7280] hover:underline pt-2 focus:outline-none"
               >
                 Try a different email address
               </button>
@@ -161,13 +162,13 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
         <div className="pt-4 border-t border-[#EAE8E1] text-center">
           <button
             onClick={() => onNavigate('/parent/sign-in')}
-            className="inline-flex items-center text-xs font-semibold text-[#6B7280] hover:text-[#262626]"
+            className="inline-flex items-center text-xs font-semibold text-[#6B7280] hover:text-[#262626] focus:outline-none"
           >
             <ArrowLeft className="w-3.5 h-3.5 mr-1" />
             Back to sign in
           </button>
         </div>
       </div>
-    </MobileShell>
+    </AuthScreenShell>
   );
 };

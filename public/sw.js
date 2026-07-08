@@ -1,4 +1,4 @@
-const CACHE_NAME = 'koinonia-app-shell-v3';
+const CACHE_NAME = 'koinonia-app-shell-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -14,19 +14,16 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
-    })
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key.startsWith("koinonia-"))
+          .map((key) => caches.delete(key))
+      )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -70,20 +67,42 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets or general app-shell request: Cache first, fallback to network
+  // For style, script, and font assets, use a Network-First strategy
+  if (
+    event.request.destination === 'style' ||
+    event.request.destination === 'script' ||
+    event.request.destination === 'font'
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const cacheCopy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, cacheCopy);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
+  // Other static assets (e.g. images): Cache first, fallback to network
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
       return fetch(event.request).then((networkResponse) => {
-        // Cache safe static files (CSS, JS, Fonts, public images)
         if (
           networkResponse.ok &&
-          (event.request.destination === 'style' ||
-            event.request.destination === 'script' ||
-            event.request.destination === 'font' ||
-            (event.request.destination === 'image' && !url.pathname.includes('child') && !url.pathname.includes('profile')))
+          event.request.destination === 'image' &&
+          !url.pathname.includes('child') &&
+          !url.pathname.includes('profile')
         ) {
           const cacheCopy = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -91,11 +110,6 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return networkResponse;
-      }).catch(() => {
-        // Fallback for document navigation
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
       });
     })
   );

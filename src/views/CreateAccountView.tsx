@@ -7,6 +7,7 @@ import { api, extractApiError } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { validateEmailSyntax } from '../utils/validation';
 import { Button } from '../components/common/Button';
+import { AuthScreenShell } from '../components/common/AuthScreenShell';
 
 const generateStrongPassword = (): string => {
   const lowercase = 'abcdefghijkmnopqrstuvwxyz'; // avoided confusing 'l'
@@ -215,254 +216,234 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF8F3] text-[#18181B] flex flex-col justify-between font-sans selection:bg-[#C59B27]/20 pb-12">
-      {/* Top Header */}
-      <header className="w-full pt-4 pb-3 px-6">
-        <div className="max-w-[440px] mx-auto flex items-center justify-between">
-          <button
-            onClick={() => onNavigate('/')}
-            className="p-2 -ml-2 rounded-full text-[#18181B] hover:bg-black/5 transition-colors cursor-pointer focus:outline-none"
-            aria-label="Back"
-          >
-            <ArrowLeft className="w-6 h-6 stroke-[1.75]" />
-          </button>
+    <AuthScreenShell
+      dataViewVersion="parent-create-account-soft-surface-v1"
+      showBack
+      onBack={() => onNavigate('/')}
+      maxWidth="lg"
+    >
+      {/* Title Area */}
+      <div className="text-center mb-6">
+        <h1 className="font-serif-koinonia font-bold text-3xl sm:text-[34px] text-[#18181B] leading-tight tracking-tight">
+          Create parent account
+        </h1>
+        <p className="text-sm text-[#3F3F46] mt-3 max-w-[320px] mx-auto leading-relaxed">
+          Start here. You can add your children after your account is ready.
+        </p>
+      </div>
 
-          <div
-            onClick={() => onNavigate('/')}
-            className="font-serif-koinonia font-bold text-xl tracking-[0.2em] text-[#9A7326] uppercase cursor-pointer select-none"
-          >
-            Koinonia
+      {showNotice && (
+        <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-4 rounded-2xl text-sm font-medium mb-6 text-center shadow-sm">
+          Create a parent account to continue.
+        </div>
+      )}
+
+      {/* Clean, Aligned, Single-Column Form */}
+      <form onSubmit={handleContinue} noValidate className="space-y-5">
+        {/* Full name */}
+        <AuthFormField
+          id="fullName"
+          label="Full name"
+          placeholder="e.g. Grace Omikunle"
+          value={formData.fullName}
+          onChange={(e) => handleChange('fullName', e.target.value)}
+          onBlur={() => handleBlur('fullName')}
+          error={errors.fullName}
+          isValid={!errors.fullName}
+          isTouched={touched.fullName}
+        />
+
+        {/* Email address */}
+        <AuthFormField
+          id="email"
+          label="Email address"
+          type="email"
+          placeholder="sarah@example.com"
+          value={formData.email}
+          onChange={(e) => handleChange('email', e.target.value)}
+          onBlur={() => handleBlur('email')}
+          error={errors.email}
+          isValid={!errors.email}
+          isTouched={touched.email}
+          suggestion={emailSuggestion || undefined}
+          onApplySuggestion={() => {
+            setFormData(prev => ({ ...prev, email: emailSuggestion! }));
+            setEmailSuggestion(null);
+          }}
+        />
+
+        {/* Phone number */}
+        <AuthFormField
+          id="phone"
+          label="Phone number"
+          type="tel"
+          placeholder="0801 234 5678"
+          value={formData.phone}
+          onChange={(e) => handleChange('phone', e.target.value)}
+          onBlur={() => handleBlur('phone')}
+          error={errors.phone}
+          isValid={!errors.phone}
+          isTouched={touched.phone}
+        />
+
+        {/* WhatsApp number */}
+        <AuthFormField
+          id="whatsapp"
+          label="WhatsApp number"
+          type="tel"
+          placeholder="0801 234 5678"
+          helperText="We may send important updates here."
+          value={formData.whatsapp}
+          onChange={(e) => handleChange('whatsapp', e.target.value)}
+          onBlur={() => handleBlur('whatsapp')}
+          error={errors.whatsapp}
+          isValid={!errors.whatsapp}
+          isTouched={touched.whatsapp}
+        />
+
+        {/* Password */}
+        <div className="space-y-1 relative">
+          <div className="flex justify-between items-center -mb-7 relative z-10">
+            <span className="text-sm font-medium text-[#18181B]"></span>
+            <button
+              type="button"
+              onClick={handleSuggestPassword}
+              className="text-xs font-semibold text-[#B89047] hover:underline focus:outline-none cursor-pointer"
+            >
+              Suggest strong password
+            </button>
           </div>
-
-          <div className="w-6" />
+          <AuthFormField
+            id="password"
+            label="Password"
+            type={passwordType}
+            autoComplete="new-password"
+            placeholder="Create password"
+            value={formData.password}
+            onChange={(e) => {
+              handleChange('password', e.target.value);
+              setShowPasswordNotice(false);
+            }}
+            onBlur={() => handleBlur('password')}
+            error={errors.password}
+            isValid={!errors.password}
+            isTouched={touched.password}
+            helperText="Use at least 8 characters with a letter and a number."
+          />
         </div>
-      </header>
 
-      {/* Main Form Container: One Centered Column (max-w 440px on Desktop, px-6 on Mobile) */}
-      <main className="flex-1 max-w-[440px] w-full mx-auto px-6 pt-4 pb-8 flex flex-col justify-center">
-        {/* Title Area */}
-        <div className="text-center mb-8">
-          <h1 className="font-serif-koinonia font-bold text-3xl sm:text-[34px] text-[#18181B] leading-tight tracking-tight">
-            Create parent<br />account
-          </h1>
-          <p className="text-sm text-[#3F3F46] mt-3 max-w-[300px] mx-auto leading-relaxed">
-            Start here. You can add your children after your account is ready.
-          </p>
-        </div>
-
-        {showNotice && (
-          <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-4 rounded-2xl text-sm font-medium mb-6 text-center shadow-sm">
-            Create a parent account to continue.
+        {showPasswordNotice && (
+          <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-3 rounded-xl text-xs font-medium flex items-center justify-between shadow-sm">
+            <span>Strong password added. Please keep it somewhere safe.</span>
+            <button
+              type="button"
+              onClick={handleCopyPassword}
+              className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer shrink-0"
+            >
+              Copy
+            </button>
           </div>
         )}
 
-        {/* Clean, Aligned, Single-Column Form */}
-        <form onSubmit={handleContinue} noValidate className="space-y-5">
-          {/* Full name */}
-          <AuthFormField
-            id="fullName"
-            label="Full name"
-            placeholder="e.g. Grace Omikunle"
-            value={formData.fullName}
-            onChange={(e) => handleChange('fullName', e.target.value)}
-            onBlur={() => handleBlur('fullName')}
-            error={errors.fullName}
-            isValid={!errors.fullName}
-            isTouched={touched.fullName}
-          />
+        {/* Confirm password */}
+        <AuthFormField
+          id="confirmPassword"
+          label="Confirm password"
+          type={passwordType}
+          placeholder="Confirm password"
+          value={formData.confirmPassword}
+          onChange={(e) => handleChange('confirmPassword', e.target.value)}
+          onBlur={() => handleBlur('confirmPassword')}
+          error={errors.confirmPassword}
+          isValid={!errors.confirmPassword}
+          isTouched={touched.confirmPassword}
+        />
 
-          {/* Email address */}
-          <AuthFormField
-            id="email"
-            label="Email address"
-            type="email"
-            placeholder="sarah@example.com"
-            value={formData.email}
-            onChange={(e) => handleChange('email', e.target.value)}
-            onBlur={() => handleBlur('email')}
-            error={errors.email}
-            isValid={!errors.email}
-            isTouched={touched.email}
-            suggestion={emailSuggestion || undefined}
-            onApplySuggestion={() => {
-              setFormData(prev => ({ ...prev, email: emailSuggestion! }));
-              setEmailSuggestion(null);
-            }}
-          />
-
-          {/* Phone number */}
-          <AuthFormField
-            id="phone"
-            label="Phone number"
-            type="tel"
-            placeholder="0801 234 5678"
-            value={formData.phone}
-            onChange={(e) => handleChange('phone', e.target.value)}
-            onBlur={() => handleBlur('phone')}
-            error={errors.phone}
-            isValid={!errors.phone}
-            isTouched={touched.phone}
-          />
-
-          {/* WhatsApp number */}
-          <AuthFormField
-            id="whatsapp"
-            label="WhatsApp number"
-            type="tel"
-            placeholder="0801 234 5678"
-            helperText="We may send important updates here."
-            value={formData.whatsapp}
-            onChange={(e) => handleChange('whatsapp', e.target.value)}
-            onBlur={() => handleBlur('whatsapp')}
-            error={errors.whatsapp}
-            isValid={!errors.whatsapp}
-            isTouched={touched.whatsapp}
-          />
-
-          {/* Password */}
-          <div className="space-y-1 relative">
-            <div className="flex justify-between items-center -mb-7 relative z-10">
-              <span className="text-sm font-medium text-[#18181B]"></span>
-              <button
-                type="button"
-                onClick={handleSuggestPassword}
-                className="text-xs font-semibold text-[#B89047] hover:underline focus:outline-none cursor-pointer"
-              >
-                Suggest strong password
-              </button>
-            </div>
-            <AuthFormField
-              id="password"
-              label="Password"
-              type={passwordType}
-              autoComplete="new-password"
-              placeholder="Create password"
-              value={formData.password}
+        {/* Checkbox: I agree to receive event updates about my children */}
+        <div className="pt-2">
+          <label
+            htmlFor="agreement"
+            className="flex items-start gap-3 cursor-pointer select-none group"
+          >
+            <input
+              id="agreement"
+              type="checkbox"
+              className="sr-only"
+              checked={agreedToUpdates}
               onChange={(e) => {
-                handleChange('password', e.target.value);
-                setShowPasswordNotice(false);
+                setAgreedToUpdates(e.target.checked);
+                handleBlur('agreement');
               }}
-              onBlur={() => handleBlur('password')}
-              error={errors.password}
-              isValid={!errors.password}
-              isTouched={touched.password}
-              helperText="Use at least 8 characters with a letter and a number."
             />
-          </div>
-
-          {showPasswordNotice && (
-            <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-3 rounded-xl text-xs font-medium flex items-center justify-between shadow-sm">
-              <span>Strong password added. Please keep it somewhere safe.</span>
-              <button
-                type="button"
-                onClick={handleCopyPassword}
-                className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer shrink-0"
-              >
-                Copy
-              </button>
+            <div
+              className={`w-5 h-5 mt-0.5 rounded-md border flex items-center justify-center transition-all shrink-0 ${
+                touched.agreement && errors.agreement
+                  ? 'border-red-500 bg-red-50/20'
+                  : agreedToUpdates
+                  ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
+                  : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+              }`}
+            >
+              {agreedToUpdates && <Check className="w-3.5 h-3.5 stroke-[3] text-[#18181B]" />}
             </div>
+            <span className="text-sm text-[#18181B] leading-snug">
+              I agree to receive event updates about my children.
+            </span>
+          </label>
+
+          {touched.agreement && errors.agreement && (
+            <p className="text-xs text-red-600 font-medium mt-1.5 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{errors.agreement}</span>
+            </p>
           )}
-
-          {/* Confirm password */}
-          <AuthFormField
-            id="confirmPassword"
-            label="Confirm password"
-            type={passwordType}
-            placeholder="Confirm password"
-            value={formData.confirmPassword}
-            onChange={(e) => handleChange('confirmPassword', e.target.value)}
-            onBlur={() => handleBlur('confirmPassword')}
-            error={errors.confirmPassword}
-            isValid={!errors.confirmPassword}
-            isTouched={touched.confirmPassword}
-          />
-
-          {/* Checkbox: I agree to receive event updates about my children */}
-          <div className="pt-2">
-            <label
-              htmlFor="agreement"
-              className="flex items-start gap-3 cursor-pointer select-none group"
-            >
-              <input
-                id="agreement"
-                type="checkbox"
-                className="sr-only"
-                checked={agreedToUpdates}
-                onChange={(e) => {
-                  setAgreedToUpdates(e.target.checked);
-                  handleBlur('agreement');
-                }}
-              />
-              <div
-                className={`w-5 h-5 mt-0.5 rounded-md border flex items-center justify-center transition-all shrink-0 ${
-                  touched.agreement && errors.agreement
-                    ? 'border-red-500 bg-red-50/20'
-                    : agreedToUpdates
-                    ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
-                    : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
-                }`}
-              >
-                {agreedToUpdates && <Check className="w-3.5 h-3.5 stroke-[3] text-[#18181B]" />}
-              </div>
-              <span className="text-sm text-[#18181B] leading-snug">
-                I agree to receive event updates about my children.
-              </span>
-            </label>
-
-            {touched.agreement && errors.agreement && (
-              <p className="text-xs text-red-600 font-medium mt-1.5 flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{errors.agreement}</span>
-              </p>
-            )}
-          </div>
-
-          {errorMsg && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-medium">
-              {errorMsg}
-            </div>
-          )}
-
-          {/* Primary button */}
-          <div className="pt-3">
-            <Button
-              type="submit"
-              disabled={loading || !(
-                formData.fullName.trim() !== '' && !errors.fullName &&
-                formData.email.trim() !== '' && !errors.email &&
-                formData.phone.trim() !== '' && !errors.phone &&
-                formData.password.trim() !== '' && !errors.password &&
-                formData.confirmPassword.trim() !== '' && !errors.confirmPassword &&
-                agreedToUpdates
-              )}
-              fullWidth
-              size="lg"
-            >
-              {loading ? 'Creating account...' : 'Continue'}
-            </Button>
-          </div>
-
-          {/* Secondary text */}
-          <div className="pt-2 text-center">
-            <span className="text-sm text-[#71717A]">Already have an account? </span>
-            <button
-              type="button"
-              onClick={() => onNavigate('/parent/sign-in')}
-              className="text-sm font-medium text-[#18181B] hover:underline cursor-pointer focus:outline-none"
-            >
-              Sign in
-            </button>
-          </div>
-        </form>
-
-        {/* Small reassurance note */}
-        <div className="mt-8 text-center">
-          <p className="text-xs text-[#71717A] max-w-xs mx-auto leading-relaxed">
-            Your details are used for event updates, entry checks, and pickup confirmation.
-          </p>
         </div>
-      </main>
-    </div>
+
+        {errorMsg && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-medium">
+            {errorMsg}
+          </div>
+        )}
+
+        {/* Primary button */}
+        <div className="pt-3">
+          <Button
+            type="submit"
+            disabled={loading || !(
+              formData.fullName.trim() !== '' && !errors.fullName &&
+              formData.email.trim() !== '' && !errors.email &&
+              formData.phone.trim() !== '' && !errors.phone &&
+              formData.password.trim() !== '' && !errors.password &&
+              formData.confirmPassword.trim() !== '' && !errors.confirmPassword &&
+              agreedToUpdates
+            )}
+            fullWidth
+            size="lg"
+          >
+            {loading ? 'Creating account...' : 'Continue'}
+          </Button>
+        </div>
+
+        {/* Secondary text */}
+        <div className="pt-2 text-center">
+          <span className="text-sm text-[#71717A]">Already have an account? </span>
+          <button
+            type="button"
+            onClick={() => onNavigate('/parent/sign-in')}
+            className="text-sm font-medium text-[#18181B] hover:underline cursor-pointer focus:outline-none"
+          >
+            Sign in
+          </button>
+        </div>
+      </form>
+
+      {/* Small reassurance note */}
+      <div className="mt-6 text-center border-t border-[#EBE3D3] pt-4">
+        <p className="text-xs text-[#71717A] max-w-xs mx-auto leading-relaxed">
+          Your details are used for event updates, entry checks, and pickup confirmation.
+        </p>
+      </div>
+    </AuthScreenShell>
   );
 };
 

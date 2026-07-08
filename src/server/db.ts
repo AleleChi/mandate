@@ -369,6 +369,68 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_volunteer_user_id ON volunteer_profiles(user_id);
     CREATE INDEX IF NOT EXISTS idx_volunteer_status ON volunteer_profiles(status);
     CREATE INDEX IF NOT EXISTS idx_volunteer_pref_team ON volunteer_profiles(preferred_team);
+
+    CREATE TABLE IF NOT EXISTS volunteer_event_reports (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      volunteer_profile_id TEXT NOT NULL REFERENCES volunteer_profiles(id) ON DELETE CASCADE,
+      report_notes TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_report_notes (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      report_type TEXT NOT NULL,
+      notes TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(event_id, report_type)
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_message_drafts (
+      id TEXT PRIMARY KEY,
+      recipient_group TEXT NOT NULL,
+      message_type TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      subject TEXT,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_message_logs (
+      id TEXT PRIMARY KEY,
+      recipient_group TEXT NOT NULL,
+      message_type TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      subject TEXT,
+      body TEXT NOT NULL,
+      recipients_count INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_message_settings (
+      id TEXT PRIMARY KEY,
+      sender_name TEXT,
+      reply_to_email TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_general_settings (
+      id TEXT PRIMARY KEY,
+      parent_registration_enabled INTEGER DEFAULT 1,
+      parent_login_enabled INTEGER DEFAULT 1,
+      required_child_photo INTEGER DEFAULT 1,
+      required_parent_photo INTEGER DEFAULT 1,
+      required_medical_notes INTEGER DEFAULT 0,
+      required_pickup_person INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -443,6 +505,26 @@ function initSqliteSchema(db: Database.Database) {
     // Column likely already exists
   }
 
+  try {
+    db.exec(`ALTER TABLE child_event_entries ADD COLUMN checked_in_at TEXT;`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE child_event_entries ADD COLUMN checked_in_by TEXT;`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE child_event_entries ADD COLUMN picked_up_at TEXT;`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE child_event_entries ADD COLUMN picked_up_by TEXT;`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE child_event_entries ADD COLUMN pickup_person_id TEXT;`);
+  } catch (e) {}
+
   // Seed real approved event
   const now = new Date().toISOString();
   db.prepare(`
@@ -462,6 +544,23 @@ function initSqliteSchema(db: Database.Database) {
     '7:00 PM',
     'Koinonia Global Auditorium & Children Pavilion, Abuja',
     'open',
+    now,
+    now
+  );
+
+  db.prepare(`
+    INSERT OR IGNORE INTO admin_general_settings (
+      id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+      required_medical_notes, required_pickup_person, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'primary_general_settings',
+    1,
+    1,
+    1,
+    1,
+    0,
+    1,
     now,
     now
   );
@@ -730,6 +829,68 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_volunteer_user_id ON volunteer_profiles(user_id);
       CREATE INDEX IF NOT EXISTS idx_volunteer_status ON volunteer_profiles(status);
       CREATE INDEX IF NOT EXISTS idx_volunteer_pref_team ON volunteer_profiles(preferred_team);
+
+      CREATE TABLE IF NOT EXISTS volunteer_event_reports (
+        id VARCHAR(64) PRIMARY KEY,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        volunteer_profile_id VARCHAR(64) NOT NULL REFERENCES volunteer_profiles(id) ON DELETE CASCADE,
+        report_notes TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_report_notes (
+        id VARCHAR(64) PRIMARY KEY,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        report_type VARCHAR(64) NOT NULL,
+        notes TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        CONSTRAINT unique_event_report_type UNIQUE(event_id, report_type)
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_message_drafts (
+        id VARCHAR(64) PRIMARY KEY,
+        recipient_group VARCHAR(64) NOT NULL,
+        message_type VARCHAR(64) NOT NULL,
+        channel VARCHAR(32) NOT NULL,
+        subject TEXT,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_message_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        recipient_group VARCHAR(64) NOT NULL,
+        message_type VARCHAR(64) NOT NULL,
+        channel VARCHAR(32) NOT NULL,
+        subject TEXT,
+        body TEXT NOT NULL,
+        recipients_count INTEGER NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_message_settings (
+        id VARCHAR(64) PRIMARY KEY,
+        sender_name VARCHAR(255),
+        reply_to_email VARCHAR(255),
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_general_settings (
+        id VARCHAR(64) PRIMARY KEY,
+        parent_registration_enabled INTEGER DEFAULT 1,
+        parent_login_enabled INTEGER DEFAULT 1,
+        required_child_photo INTEGER DEFAULT 1,
+        required_parent_photo INTEGER DEFAULT 1,
+        required_medical_notes INTEGER DEFAULT 0,
+        required_pickup_person INTEGER DEFAULT 1,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
     `);
 
     const pgCols = [
@@ -797,6 +958,26 @@ async function initPostgresSchema(pool: any) {
       await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS withdrawn_at TIMESTAMP;`);
     } catch (e) {}
 
+    try {
+      await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMP;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS checked_in_by VARCHAR(255);`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMP;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS picked_up_by VARCHAR(255);`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS pickup_person_id VARCHAR(255);`);
+    } catch (e) {}
+
     const now = new Date().toISOString();
     await pool.query(`
       INSERT INTO events (
@@ -816,6 +997,24 @@ async function initPostgresSchema(pool: any) {
       '7:00 PM',
       'Koinonia Global Auditorium & Children Pavilion, Abuja',
       'open',
+      now,
+      now
+    ]);
+
+    await pool.query(`
+      INSERT INTO admin_general_settings (
+        id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+        required_medical_notes, required_pickup_person, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (id) DO NOTHING
+    `, [
+      'primary_general_settings',
+      1,
+      1,
+      1,
+      1,
+      0,
+      1,
       now,
       now
     ]);

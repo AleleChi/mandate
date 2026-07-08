@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { queryOne, execute, transaction } from '../db';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest } from '../auth';
-import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../services/email';
+import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 
 const router = Router();
@@ -188,6 +188,23 @@ router.post('/verify-email', async (req, res) => {
       // Mark user as verified
       await execute('UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?', [nowStr, dbToken.user_id]);
     });
+
+    // Check if verified user is a volunteer, and trigger "under-review" status email
+    try {
+      const verifiedUser = await queryOne('SELECT email, role FROM users WHERE id = ?', [dbToken.user_id]);
+      if (verifiedUser && verifiedUser.role === 'volunteer') {
+        const volProfile = await queryOne('SELECT full_name, preferred_team FROM volunteer_profiles WHERE user_id = ?', [dbToken.user_id]);
+        if (volProfile) {
+          sendVolunteerUnderReviewEmail({
+            volunteerEmail: verifiedUser.email,
+            volunteerFirstName: volProfile.full_name,
+            preferredTeam: volProfile.preferred_team
+          }).catch((err) => console.error('Error sending volunteer under-review email:', err));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to trigger under-review email post-verification:', e);
+    }
 
     res.json({ success: true, message: 'Email verified successfully.' });
   } catch (err) {

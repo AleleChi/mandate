@@ -234,8 +234,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* Minimal Mobile Header */}
         <header className="sticky top-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1] px-5 py-4 flex items-center justify-between">
           <div
+            onDoubleClick={() => onNavigate('/admin/sign-in')}
+            onTouchStart={(e) => {
+              const now = Date.now();
+              const lastTap = (window as any)._lastLogoTap || 0;
+              if (now - lastTap < 300) {
+                onNavigate('/admin/sign-in');
+              }
+              (window as any)._lastLogoTap = now;
+            }}
             onClick={() => onNavigate('/')}
-            className="flex items-center space-x-2.5 cursor-pointer"
+            className="flex items-center space-x-2.5 cursor-pointer select-none"
+            title="Double-click to access Administration"
           >
             <div className="w-8 h-8 rounded-lg bg-[#C59B27] flex items-center justify-center text-white font-serif-koinonia font-bold text-base shadow-sm">
               K
@@ -539,8 +549,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           {/* Koinonia Wordmark on the left */}
           <div
+            onDoubleClick={() => onNavigate('/admin/sign-in')}
+            onTouchStart={(e) => {
+              const now = Date.now();
+              const lastTap = (window as any)._lastLogoTap || 0;
+              if (now - lastTap < 300) {
+                onNavigate('/admin/sign-in');
+              }
+              (window as any)._lastLogoTap = now;
+            }}
             onClick={() => onNavigate('/')}
-            className="flex items-center space-x-3 cursor-pointer group"
+            className="flex items-center space-x-3 cursor-pointer group select-none"
+            title="Double-click to access Administration"
           >
             <div className="w-9 h-9 rounded-xl bg-[#C59B27] flex items-center justify-center text-white font-serif-koinonia font-bold text-lg shadow-sm group-hover:scale-105 transition-transform">
               K

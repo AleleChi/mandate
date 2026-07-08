@@ -106,3 +106,26 @@ Metadata catalog for uploaded assets stored via Cloudinary media provider.
 - `folder` (TEXT): Cloudinary folder hierarchy path
 - `file_url`, `storage_key`: Legacy compatibility references
 - `created_at` (TIMESTAMP): Upload timestamp
+
+### 9. `admin_message_drafts`
+Stores persistent composer states for manual admin notifications.
+- `id` (VARCHAR/TEXT PK): Set to `'primary_draft'` for single-user persistence
+- `recipient_group` (VARCHAR/TEXT NOT NULL): Filter group key (e.g. `all_parents`, `selected_children`)
+- `message_type` (VARCHAR/TEXT NOT NULL): Notification purpose key (e.g. `pass_ready`, `general_announcement`)
+- `channel` (VARCHAR/TEXT NOT NULL): Dispatch delivery channel (`email`, `whatsapp`, `both`)
+- `subject` (TEXT NULLABLE): Email header title line
+- `body` (TEXT NOT NULL): Notification body payload containing replacement tokens
+- `created_at`, `updated_at`: TIMESTAMP
+
+### 10. `admin_message_logs`
+Stores the definitive historical feed of dispatched manual notifications.
+- `id` (VARCHAR/TEXT PK): UUID
+- `recipient_group` (VARCHAR/TEXT NOT NULL): Filter group key (e.g. `all_parents`, `selected_children`)
+- `message_type` (VARCHAR/TEXT NOT NULL): Notification purpose key (e.g. `pass_ready`, `general_announcement`)
+- `channel` (VARCHAR/TEXT NOT NULL): Dispatch delivery channel (`email`, `whatsapp`, `both`)
+- `subject` (TEXT NULLABLE): Email header title line
+- `body` (TEXT NOT NULL): Fully composed markup body
+- `recipients_count` (INTEGER NOT NULL): Number of parent contacts targeted in the broadcast
+- `status` (VARCHAR/TEXT NOT NULL): Outcome status (`sent`, `failed`, `pending`)
+- `created_at`: TIMESTAMP
+

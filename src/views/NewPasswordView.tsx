@@ -5,6 +5,7 @@ import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { Lock, ShieldCheck } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
+import { AuthScreenShell } from '../components/common/AuthScreenShell';
 
 const generateStrongPassword = (): string => {
   const lowercase = 'abcdefghijkmnopqrstuvwxyz'; // avoided confusing 'l'
@@ -150,18 +151,18 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
   };
 
   return (
-    <MobileShell
-      title="Security"
-      subtitle="Create new password"
+    <AuthScreenShell
+      dataViewVersion="parent-new-password-soft-surface-v1"
       showBack
       onBack={() => onNavigate('/parent/forgot-password')}
+      maxWidth="md"
     >
-      <div className="bg-white rounded-3xl p-6 border border-[#EAE8E1] shadow-sm space-y-6">
+      <div className="space-y-6 text-center">
         <div>
           <h1 className="text-2xl font-serif-koinonia font-bold text-[#18181B]">
             Create new password
           </h1>
-          <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">
+          <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
             Choose a new secure password for your parent access account.
           </p>
         </div>
@@ -179,7 +180,7 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
             <p className="text-xs text-[#065F46]/80">Redirecting to sign in...</p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 text-left">
             <div className="space-y-1 relative">
               <div className="flex justify-between items-center -mb-7 relative z-10">
                 <span className="text-sm font-semibold text-[#262626]"></span>
@@ -247,12 +248,12 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
         <div className="pt-4 border-t border-[#EAE8E1] text-center">
           <button
             onClick={() => onNavigate('/parent/sign-in')}
-            className="text-xs font-semibold text-[#6B7280] hover:text-[#262626]"
+            className="text-xs font-semibold text-[#6B7280] hover:text-[#262626] focus:outline-none"
           >
             Back to sign in
           </button>
         </div>
       </div>
-    </MobileShell>
+    </AuthScreenShell>
   );
 };

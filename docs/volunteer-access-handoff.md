@@ -238,3 +238,65 @@ To provide a complete password recovery experience for volunteers, we designed a
    - Gracefully handles missing reset tokens or invalid/expired links by directing volunteers to request a new recovery link.
    - **No Auto-Sign-in**: To maintain strong security, users must proceed back to sign in with their new credentials.
 
+---
+
+## 14. Stitch / Parent Visual Style Alignment & Caching Resolution (July 2026)
+
+We have completed comprehensive visual style and asset caching audits to enforce brand-uniform mobile-first layouts across all Volunteer Auth routes, matching the premium parent Stitch layout:
+
+1. **Service Worker Asset Caching Resolution (`public/sw.js`)**:
+   - **Stale Build Bypass**: Upgraded asset fetch strategies for script, style, and font resources from **Cache-First** to **Network-First**, falling back to local cache storage exclusively when offline.
+   - **Cache Pruning**: Configured automatic deletion of outdated `koinonia-` caches on service worker registration and activation to instantly clear stale browser-cached files.
+   - **Cache Versioning**: Bumped the primary service worker shell identifier to `koinonia-app-shell-v4`.
+
+2. **Mobile-First Shell & Spacing Alignments**:
+   - Modified `VolunteerForgotPasswordView.tsx` and `VolunteerResetPasswordView.tsx` to fully align with parent/Stitch auth styles. Standardized the screen structure with a top header containing a centered KOINONIA wordmark and left-aligned navigation arrow, removing any legacy card boundaries from standard mobile viewports.
+   - Integrated `AuthFormField` across reset, forgot password, sign-in, and sign-up screens to enforce high-contrast borders, exact spacing, and clean error states.
+
+3. **Render Verification & Proof Markers**:
+   - Embedded silent, non-visible identification data attributes to prove rendered UI compilation:
+     - `VolunteerForgotPasswordView` root: `data-view-version="volunteer-forgot-password-stitch-v1"`
+     - `VolunteerResetPasswordView` root: `data-view-version="volunteer-reset-password-stitch-v1"`
+     - `VolunteerCreateAccountView` root: `data-view-version="volunteer-create-account-parent-style-v1"`
+     - `VolunteerSignInView` root: `data-view-version="volunteer-sign-in-brand-v1"`
+
+---
+
+## 15. Volunteer Child Pickup Success Screen Flow (July 2026)
+
+To complete the secure, real-time release pipeline for Koinonia Children and Teens, we have implemented a high-fidelity "Picked Up" success screen. This flow is strictly backend-backed, fully responsive, and complies with all custom brand guidelines:
+
+### A. Core Database & API Schema Contracts
+1. **`POST /api/volunteer/pickup/mark`**:
+   - Registers a secure release update inside a transactional query block, updating `child_event_entries` with state `'picked_up'`, active volunteer ID, and release timestamp.
+   - **JSON Response Payload**: Returns a structured contract containing real database metrics (no placeholder/dummy fields):
+     - `success`: `true`
+     - `message`: `"Child picked up."`
+     - `child`: `{ id, fullName, firstName, age, classGroup, photoUrl, passImageUrl, pickupStatus, pickedUpAt }`
+     - `pickup`: `{ pickedUpAt, pickedUpBy: { id, fullName, relationship, phone, photoUrl }, confirmedBy: { id, fullName }, point }`
+     - `stats`: `{ inside, pickedUp, attention }`
+2. **`api.volunteer.markChildPickedUp(payload)`**:
+   - Added as an alias/wrapper client service inside `src/services/api.ts` to execute and return the identical structure expected by Phase 4 & 5.
+
+### B. Visual & UX Execution Details
+1. **Branded Headers**:
+   - Renders a clean serif display title: **Picked up**, with a dynamic, warm helper greeting: *"{firstName} has been released to the approved pickup person."*
+   - Strictly removes legacy words like "Online", "Portal", or "Dashboard" from active UI screens. No green/blinking indicators are present.
+2. **"Checked Before Release" Verification Card**:
+   - Features a 2-column square grid showcasing the Child and Pickup Person photos.
+   - Overlay labels (`Child` and `Pickup Person`) are styled on a semi-transparent dark backdrop.
+   - Embeds visual checks: `✓ Child photo matched` and `✓ Pickup person confirmed` with emerald styling.
+3. **Action Triggers & State Resets**:
+   - **Scan another pass**: Resets the lookup state and prepares the scanner for the next pass code instantly.
+   - **View child record**: Populates search query state with the child's full name and seamlessly transitions the volunteer to the Children list view.
+   - **Back to Event Home**: Resets the pickup state and navigates back to Event tools page.
+4. **Bottom Event Statistics**:
+   - Integrates a real-time event stats bento card outlining the three core metrics: *Children inside*, *Picked up*, and *Needs attention* (highlighted in antique gold).
+5. **Standardized Bottom Tab Navigation**:
+   - Completely restructured the bottom bar into the 5 mobile-first tabs from Screenshot C: **Event** (`Home`), **Scan** (`QrCode`), **Children** (`Search`), **Reports** (`BarChart3`), and **Profile** (`User`).
+   - Created beautiful, fully active routing stubs for `/volunteer/reports` and `/volunteer/profile` to prevent empty page states.
+
+### C. Proof Compilation Attribute
+- **Verification Marker**: The parent container of the Success Screen is embedded with the proof attribute: `data-view-version="volunteer-pickup-success-stitch-v1"`.
+
+

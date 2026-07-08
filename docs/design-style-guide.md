@@ -25,6 +25,7 @@ This is the official Koinonia Children and Teens event access product. It must f
 ## Typography
 - Use clean readable typography
 - Headings can have a refined editorial feel
+- Admin dashboard typography should use elegant serif headings with medium or semibold weight. Avoid heavy bold, extrabold, or black heading weights. Hierarchy should come from spacing, scale, and calm contrast rather than excessive font weight.
 - Body text must remain simple and legible
 - No overly decorative fonts
 - No generic AI-looking type treatment
@@ -95,6 +96,13 @@ This is the official Koinonia Children and Teens event access product. It must f
 - Buttons must be clear and consistent
 - Bottom navigation is fixed on parent/staff mobile screens and must not cover content
 - Admin tables must be readable and not raw spreadsheet-like
+
+### Soft Content Surface Pattern
+To ensure a warm, premium, branded experience (avoiding generic SaaS layouts or raw, un-framed inputs sitting directly on the background), all Parent and Volunteer auth/account setup views must be contained within `AuthScreenShell`.
+- **Dimensions**: Centered, max-width `640px` (or `maxWidth="md"` wrapper).
+- **Background**: Soft ivory / warm off-white, providing an elegant, readable contrast.
+- **Borders & Shadows**: Encased in a subtle gold-tinted border (`border: 1px solid rgba(210, 190, 150, 0.35)`), rounded corners (`border-radius: 28px` or `32px` on desktop), and styled with a lightweight, premium depth shadow (`box-shadow: 0 18px 45px rgba(15, 23, 42, 0.05)`).
+- **Header Elements**: A sticky, lightweight top bar displaying a clear back button (if navigated from previous screen) paired with the Koinonia serif wordmark to establish brand trust instantly.
 
 ## Architectural & No Demo Data UI Rules
 - **No Hardcoded Demo Records:** Production UI components must never display mock sample children, dummy parent profiles, or fake QR codes in production.

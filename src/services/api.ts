@@ -254,6 +254,9 @@ export const api = {
     async getMe() {
       return api.request<{ user: any; profile: any }>('/api/volunteer/me');
     },
+    async getProfile() {
+      return api.request<any>('/api/volunteer/me');
+    },
     async requestAccess(payload: any) {
       return api.request<any>('/api/volunteer/request', {
         method: 'POST',
@@ -286,6 +289,76 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ token, password })
       });
+    },
+    async searchChildren(q: string) {
+      return api.request<any[]>(`/api/volunteer/children/search?q=${encodeURIComponent(q)}`);
+    },
+    async lookupPass(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
+      return api.request<any>('/api/volunteer/pass/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkIn(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
+      return api.request<any>('/api/volunteer/check-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkOut(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
+      return api.request<any>('/api/volunteer/check-out', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getCheckInHistory() {
+      return api.request<any[]>('/api/volunteer/check-in-history');
+    },
+    async lookupPickup(payload: { passCode: string; source?: string }) {
+      return api.request<any>('/api/volunteer/pickup/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async markPickup(payload: { childId?: string; passCode?: string; pickupPersonId?: string; source?: string }) {
+      return api.request<any>('/api/volunteer/pickup/mark', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async markChildPickedUp(payload: { childId?: string; passCode?: string; pickupPersonId?: string; source?: string }) {
+      return api.request<any>('/api/volunteer/pickup/mark', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getPickupHome() {
+      return api.request<any>('/api/volunteer/pickup-home');
+    },
+    async getChildren(params: { q?: string; status?: string; limit?: number }) {
+      const queryParams = new URLSearchParams();
+      if (params.q) queryParams.append('q', params.q);
+      if (params.status) queryParams.append('status', params.status);
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      return api.request<any[]>(`/api/volunteer/children?${queryParams.toString()}`);
+    },
+    async getChildProfile(childId: string) {
+      return api.request<any>(`/api/volunteer/children/${childId}`);
+    },
+    async preparePickup(childId: string) {
+      return api.request<any>('/api/volunteer/pickup/prepare-child', {
+        method: 'POST',
+        body: JSON.stringify({ childId })
+      });
+    },
+    async getReports() {
+      return api.request<any>('/api/volunteer/reports');
+    },
+    async submitFinalReport(notes: string) {
+      return api.request<any>('/api/volunteer/reports/submit', {
+        method: 'POST',
+        body: JSON.stringify({ notes })
+      });
     }
   },
 
@@ -313,6 +386,278 @@ export const api = {
         method: 'POST',
         body: formData
       });
+    }
+  },
+
+  admin: {
+    async signIn(payload: any) {
+      const res = await api.request<any>('/api/admin/sign-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async requestPasswordReset(email: string) {
+      return api.request<any>('/api/admin/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async resetPassword(payload: any) {
+      return api.request<any>('/api/admin/reset-password', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getMe() {
+      return api.request<{ user: any; profile: any }>('/api/admin/me');
+    },
+    async getOverview() {
+      return api.request<any>('/api/admin/overview');
+    },
+    async getChildren(params?: { q?: string; filter?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.filter) queryParams.append('filter', params.filter);
+      const queryString = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        stats: any;
+        children: any[];
+      }>(`/api/admin/children${queryString ? `?${queryString}` : ''}`);
+    },
+    async getAttendance(params?: { q?: string; status?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      const queryString = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        stats: {
+          expected: number;
+          checkedIn: number;
+          inside: number;
+          pickedUp: number;
+          notArrived: number;
+          needsAttention: number;
+        };
+        rows: any[];
+        ageGroups: any[];
+        recentScans: any[];
+        teamActivity: any[];
+        total: number;
+      }>(`/api/admin/attendance${queryString ? `?${queryString}` : ''}`);
+    },
+    async getApplications() {
+      return api.request<{ success: boolean; applications: any[] }>('/api/admin/applications');
+    },
+    async getApplicationDetails(id: string) {
+      return api.request<{ success: boolean; application: any }>(`/api/admin/applications/${id}`);
+    },
+    async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean }) {
+      return api.request<any>(`/api/admin/applications/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkReviewApplications(payload: { applicationIds: string[]; decision: string; note?: string }) {
+      return api.request<any>('/api/admin/applications/bulk-review', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async updateApplicationStatus(id: string, status: string, noteToTeam?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, noteToTeam })
+      });
+    },
+    async changePassword(payload: any) {
+      return api.request<any>('/api/admin/change-password', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async listAdmins() {
+      return api.request<{ success: boolean; admins: any[] }>('/api/admin/admins');
+    },
+    async inviteAdmin(payload: any) {
+      return api.request<any>('/api/admin/invites', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async acceptInvite(payload: any) {
+      return api.request<any>('/api/admin/accept-invite', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getReports(params?: { reportType?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.reportType) queryParams.append('reportType', params.reportType);
+      const queryString = queryParams.toString();
+      return api.request<any>(`/api/admin/reports${queryString ? `?${queryString}` : ''}`);
+    },
+    async saveReportNotes(payload: { eventId: string; reportType: string; notes: string }) {
+      return api.request<any>('/api/admin/reports/notes', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getMessages() {
+      return api.request<{
+        success: boolean;
+        stats: {
+          messagesSent: number;
+          whatsappSent: number;
+          emailSent: number;
+          failed: number;
+          pending: number;
+        };
+        recipientGroups: Array<{ key: string; label: string; count: number }>;
+        messageTypes: Array<{ key: string; label: string }>;
+        recentActivity: any[];
+        latestDraft: any;
+        emailEnabled?: boolean;
+        whatsappEnabled?: boolean;
+        providerStatus?: {
+          emailEnabled: boolean;
+          whatsappEnabled: boolean;
+          emailProvider: string | null;
+          whatsappProvider: string | null;
+          senderName: string | null;
+          fromEmail: string | null;
+          replyToEmail: string | null;
+        };
+      }>('/api/admin/messages');
+    },
+    async previewMessage(payload: {
+      recipientGroup: string;
+      messageType: string;
+      channel: string;
+      subject?: string;
+      body: string;
+    }) {
+      return api.request<{ success: boolean; preview: { subject: string; body: string } }>('/api/admin/messages/preview', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async saveMessageDraft(payload: {
+      recipientGroup: string;
+      messageType: string;
+      channel: string;
+      subject?: string;
+      body: string;
+    }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/messages/drafts', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async sendMessage(payload: {
+      recipientGroup: string;
+      messageType: string;
+      channel: string;
+      subject?: string;
+      body: string;
+      confirmed: boolean;
+    }) {
+      return api.request<{
+        success: boolean;
+        summary: { requested: number; sent: number; pending: number; failed: number };
+        message: string;
+      }>('/api/admin/messages/send', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getMessagesSettings() {
+      return api.request<{
+        success: boolean;
+        senderName: string;
+        fromEmail: string | null;
+        replyToEmail: string | null;
+        emailEnabled: boolean;
+        whatsappEnabled: boolean;
+        emailProvider: string | null;
+        whatsappProvider: string | null;
+      }>('/api/admin/messages/settings');
+    },
+    async updateMessagesSettings(payload: { senderName: string; replyToEmail: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/messages/settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getGeneralSettings() {
+      return api.request<{
+        success: boolean;
+        settings: {
+          parentRegistrationEnabled: number;
+          parentLoginEnabled: number;
+          requiredChildPhoto: number;
+          requiredParentPhoto: number;
+          requiredMedicalNotes: number;
+          requiredPickupPerson: number;
+        };
+      }>('/api/admin/general-settings');
+    },
+    async updateGeneralSettings(payload: {
+      parentRegistrationEnabled: boolean;
+      parentLoginEnabled: boolean;
+      requiredChildPhoto: boolean;
+      requiredParentPhoto: boolean;
+      requiredMedicalNotes: boolean;
+      requiredPickupPerson: boolean;
+    }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/general-settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async updateTeamMemberRole(payload: { userId: string; role: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/team/edit-role', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getVolunteers(params?: { q?: string; status?: string; team?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.team) queryParams.append('team', params.team);
+      const queryString = queryParams.toString();
+      return api.request<{ success: boolean; volunteers: any[] }>(`/api/admin/volunteers${queryString ? `?${queryString}` : ''}`);
+    },
+    async getVolunteerDetails(id: string) {
+      return api.request<{ success: boolean; volunteer: any }>(`/api/admin/volunteers/${id}`);
+    },
+    async reviewVolunteer(id: string, payload: { status: 'approved' | 'rejected'; team?: string; note?: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getParents(params?: { q?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      const queryString = queryParams.toString();
+      return api.request<{ success: boolean; parents: any[] }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
+    },
+    async getParentDetails(id: string) {
+      return api.request<{ success: boolean; parent: any }>(`/api/admin/parents/${id}`);
+    },
+    async updateParentProfile(id: string, payload: any) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getVolunteerParentStats() {
+      return api.request<{ success: boolean; stats: any }>('/api/admin/reports/volunteer-parent-stats');
     }
   }
 };
