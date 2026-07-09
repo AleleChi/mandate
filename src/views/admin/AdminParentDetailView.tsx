@@ -661,7 +661,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                 <div className="text-center py-12 bg-zinc-50 border border-zinc-100 rounded-2xl text-zinc-400 space-y-2">
                   <Baby className="w-8 h-8 stroke-[1.2] mx-auto text-zinc-300" />
                   <h5 className="font-serif font-bold text-zinc-700 text-xs">No Linked Children</h5>
-                  <p className="text-[10px] text-zinc-400 max-w-xs mx-auto">This parent profile has not created any child folders in the registry yet.</p>
+                  <p className="text-[10px] text-zinc-400 max-w-xs mx-auto">This parent profile has not registered any children yet.</p>
                 </div>
               ) : (
                 <div className="space-y-3">

@@ -349,7 +349,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Save Failed', parsed.message || 'Could not save gathering details.');
+      showError('Save Failed', parsed.message || 'Could not save event details.');
     } finally {
       setSubmitting(false);
     }
@@ -359,7 +359,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     try {
       const res = await api.admin.setCurrentEvent(eventId);
       if (res.success) {
-        showSuccess('Active Status Updated', 'This gathering is now designated as the active current event.');
+        showSuccess('Active Status Updated', 'This event is now designated as the active current event.');
         fetchEvents();
       }
     } catch (err: any) {
@@ -369,18 +369,18 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   };
 
   const handleArchiveEvent = async (eventId: string) => {
-    if (!window.confirm('Are you sure you want to archive this gathering? Once archived, parents will no longer be able to submit applications for it.')) {
+    if (!window.confirm('Are you sure you want to archive this event? Once archived, parents will no longer be able to submit applications for it.')) {
       return;
     }
     try {
       const res = await api.admin.archiveEvent(eventId);
       if (res.success) {
-        showSuccess('Archived', 'Gathering has been archived successfully.');
+        showSuccess('Archived', 'Event has been archived successfully.');
         fetchEvents();
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Action Failed', parsed.message || 'Could not archive gathering.');
+      showError('Action Failed', parsed.message || 'Could not archive event.');
     }
   };
 
@@ -426,7 +426,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   if (loading && events.length === 0 && currentScreen === 'home') {
     return (
       <div className="py-20 flex justify-center items-center">
-        <KoinoniaInlineLoader variant="line" label="Loading gatherings..." />
+        <KoinoniaInlineLoader variant="line" label="Loading events..." />
       </div>
     );
   }
@@ -442,7 +442,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <h2 className="font-serif text-2xl font-bold text-[#18181B] tracking-normal">Events</h2>
-              <p className="text-xs text-zinc-500">Create and manage gatherings for children, parents, and volunteers.</p>
+              <p className="text-xs text-zinc-500">Create and manage events for children, parents, and volunteers.</p>
             </div>
             
             <Button
@@ -485,7 +485,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               </div>
               <h3 className="font-serif text-base font-bold text-[#18181B]">No events found</h3>
               <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
-                There are no registered gatherings in this directory category yet. Create a new event to begin setup.
+                There are no registered events in this list yet. Create a new event to begin setup.
               </p>
               <Button
                 type="button"
@@ -547,7 +547,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       type="button"
                       onClick={() => loadEventForEdit(event.id!)}
                       className="p-2 text-zinc-600 hover:text-[#C59B27] bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
-                      title="Edit Gathering details"
+                      title="Edit Event details"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </Button>
@@ -569,7 +569,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                         type="button"
                         onClick={() => handleArchiveEvent(event.id!)}
                         className="p-2 text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
-                        title="Archive Gathering"
+                        title="Archive Event"
                       >
                         <Archive className="w-3.5 h-3.5" />
                       </Button>
@@ -621,7 +621,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               >
                 <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
                   <h3 className="font-serif text-lg font-bold text-[#18181B]">Event Details</h3>
-                  <p className="text-[11px] text-zinc-400">Define the core information for this gathering.</p>
+                  <p className="text-[11px] text-zinc-400">Define the core information for this event.</p>
                 </div>
 
                 <div className="space-y-4">
@@ -921,7 +921,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     {formSectionName || 'Children and Teens'}
                   </span>
                   <h5 className="font-serif text-sm font-bold text-[#18181B] leading-snug">
-                    {formTitle || 'Gathering Title Placeholder'}
+                    {formTitle || 'Event Title Placeholder'}
                   </h5>
                   <div className="space-y-1.5 text-[10px] text-zinc-500">
                     <div className="flex items-center space-x-1.5">

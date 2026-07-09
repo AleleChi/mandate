@@ -270,7 +270,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       </div>
       <h3 className="font-serif text-lg font-bold text-[#18181B]">{tabName}</h3>
       <p className="text-xs text-zinc-500 leading-relaxed max-w-md mx-auto">
-        This view displays gathering records and information. Select a primary option above or return to the overview page.
+        This view displays event records and information. Select a primary option above or return to the overview page.
       </p>
       <button
         onClick={() => setActiveTab('overview')}
@@ -608,7 +608,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           {/* Overview Metrics section */}
                           <div className="space-y-4" data-component-version="admin-overview-metrics-approved-v1">
                             <h3 className="font-serif text-lg font-medium text-zinc-800 tracking-normal">
-                              Overview Metrics
+                              Overview
                             </h3>
 
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
