@@ -449,6 +449,19 @@ function initSqliteSchema(db: Database.Database) {
       value_type TEXT NOT NULL DEFAULT 'text',
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS event_age_groups (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      min_age INTEGER NOT NULL,
+      max_age INTEGER NOT NULL,
+      capacity INTEGER NOT NULL,
+      manual_review INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -477,7 +490,17 @@ function initSqliteSchema(db: Database.Database) {
     "check_in_closes_at TEXT",
     "pickup_starts_at TEXT",
     "pickup_reminder_at TEXT",
-    "timezone TEXT DEFAULT 'Africa/Lagos'"
+    "timezone TEXT DEFAULT 'Africa/Lagos'",
+    "parent_access_opens_at TEXT",
+    "parent_access_closes_at TEXT",
+    "parents_can_create_account INTEGER DEFAULT 1",
+    "allow_multiple_children INTEGER DEFAULT 1",
+    "allow_save_and_continue INTEGER DEFAULT 1",
+    "allow_edit_after_submission INTEGER DEFAULT 0",
+    "created_by TEXT",
+    "updated_by TEXT",
+    "archived_at TEXT",
+    "description TEXT"
   ];
   for (const col of sqliteEventCols) {
     try {
@@ -720,7 +743,7 @@ function initSqliteSchema(db: Database.Database) {
 
     db.prepare(`
       INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, serving_experience, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(volunteerProfileId, volunteerUserId, 'Sarah Volunteer', '+2348011112222', '+2348011112222', 'Ages 7-9 Team', 2, 'active', now, now);
 
     console.log('[SQLite Seeder] Successfully seeded all development accounts.');
@@ -1069,6 +1092,19 @@ async function initPostgresSchema(pool: any) {
         value_type VARCHAR(64) NOT NULL DEFAULT 'text',
         updated_at TIMESTAMP NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS event_age_groups (
+        id VARCHAR(64) PRIMARY KEY,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        label VARCHAR(255) NOT NULL,
+        min_age INTEGER NOT NULL,
+        max_age INTEGER NOT NULL,
+        capacity INTEGER NOT NULL,
+        manual_review INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
     `);
 
     const pgCols = [
@@ -1099,7 +1135,17 @@ async function initPostgresSchema(pool: any) {
       "check_in_closes_at VARCHAR(64)",
       "pickup_starts_at VARCHAR(64)",
       "pickup_reminder_at VARCHAR(64)",
-      "timezone VARCHAR(64) DEFAULT 'Africa/Lagos'"
+      "timezone VARCHAR(64) DEFAULT 'Africa/Lagos'",
+      "parent_access_opens_at VARCHAR(64)",
+      "parent_access_closes_at VARCHAR(64)",
+      "parents_can_create_account INTEGER DEFAULT 1",
+      "allow_multiple_children INTEGER DEFAULT 1",
+      "allow_save_and_continue INTEGER DEFAULT 1",
+      "allow_edit_after_submission INTEGER DEFAULT 0",
+      "created_by VARCHAR(64)",
+      "updated_by VARCHAR(64)",
+      "archived_at VARCHAR(64)",
+      "description VARCHAR(1000)"
     ];
     for (const col of pgEventCols) {
       try {

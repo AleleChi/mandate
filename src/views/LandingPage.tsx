@@ -9,6 +9,7 @@ import { BrandLogo } from '../components/common/BrandLogo';
 import { REAL_ASSETS } from '../config/assets';
 import { AssetImage } from '../components/common/AssetImage';
 import { api } from '../services/api';
+import { Seo } from '../components/common/Seo';
 
 interface LandingPageProps {
   onNavigate: (route: AppRoute) => void;
@@ -257,12 +258,46 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     }
   };
 
+  const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://themandate.dontechservicesconst.com');
+  const seoTitle = 'Koinonia Children and Teens Event Registration';
+  const seoDescription = 'Register, manage child details, receive event updates, and access secure check-in and pickup support for Koinonia Children and Teens events.';
+  const seoOgDescription = 'A secure event registration and check-in experience for parents, children, and approved volunteers.';
+  const seoImage = assets.heroMain || REAL_ASSETS.heroMain || (siteUrl + '/social_share.jpg');
+
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Koinonia Children and Teens",
+      "url": siteUrl,
+      "logo": assets.site_logo || (typeof window !== 'undefined' ? `${window.location.origin}/logo.png` : '')
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Koinonia Children and Teens",
+      "url": siteUrl
+    }
+  ];
+
   // ==========================================
   // MOBILE LANDING PAGE VIEW (Stitch Mobile)
   // ==========================================
   if (isMobileLandingView) {
     return (
       <div className="min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans pb-24 flex flex-col justify-between selection:bg-[#C59B27]/30">
+        <Seo
+          title={seoTitle}
+          description={seoDescription}
+          canonical={siteUrl + '/'}
+          robots="index, follow"
+          ogTitle={seoTitle}
+          ogDescription={seoOgDescription}
+          ogImage={seoImage}
+          ogType="website"
+          twitterCard="summary_large_image"
+          structuredData={structuredData}
+        />
         {/* Minimal Mobile Header */}
         <header className="sticky top-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1] px-5 py-4 flex items-center justify-between relative" data-component-version="landing-header-v2-responsive-menu">
           <BrandLogo
@@ -623,6 +658,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   // ==========================================
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans flex flex-col selection:bg-[#C59B27]/30">
+      <Seo
+        title={seoTitle}
+        description={seoDescription}
+        canonical={siteUrl + '/'}
+        robots="index, follow"
+        ogTitle={seoTitle}
+        ogDescription={seoOgDescription}
+        ogImage={seoImage}
+        ogType="website"
+        twitterCard="summary_large_image"
+        structuredData={structuredData}
+      />
       {/* 1. Header (Stitch Light Header) */}
       <header className="sticky top-0 z-40 w-full bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1]" data-component-version="landing-header-v2-responsive-menu">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between relative">

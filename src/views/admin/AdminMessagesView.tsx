@@ -22,6 +22,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
@@ -388,9 +389,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-4 bg-[#FAF9F6]">
-        <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-        <p className="text-xs text-zinc-500 font-mono">Loading messages...</p>
+      <div className="flex-1 flex items-center justify-center p-12 bg-[#FAF9F6] w-full">
+        <KoinoniaInlineLoader
+          variant="logo"
+          size="lg"
+          label="Loading messages..."
+          centered
+        />
       </div>
     );
   }

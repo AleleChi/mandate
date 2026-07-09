@@ -59,16 +59,35 @@ Every `child_event_entry` transitions through these deterministic review states:
 - `draft` — Application started by parent but incomplete.
 - `details_sent` — Submitted by parent; pending review team assignment.
 - `under_review` — Being evaluated by Review Team.
-- `selected` — Approved for capacity allocation.
+- `selected` — Approved for capacity allocation, but secure pass is pending (e.g. if the required child photo has not been uploaded or is pending approval). The parent portal displays "Selected (Pass Pending)", and the pass step is not yet marked complete.
 - `waiting_list` — Placed on queue due to capacity constraints.
 - `not_selected` — Unable to accommodate for current event.
-- `pass_ready` — Cryptographic QR pass generated and available to parent.
+- `pass_ready` — Approved, required pass details are present, and the cryptographic QR pass has been successfully generated and made available to the parent.
 - `checked_in` — Child physically scanned and inside event gate.
 - `picked_up` — Child safely released to verified pickup person.
 
 ## 7. Multi-Event Capabilities
-- The platform supports multiple concurrent or sequential events (`events`).
+- The platform supports multiple concurrent or sequential events (`events`) with comprehensive administrative control.
 - Each event maintains distinct dates, themes, venues, capacity rules, review workflows, passes, and attendance logs.
+- **Administrative Events Dashboard:**
+  - **Gatherings View:** Allows administrative list filtering of current, upcoming, draft, and past events with live application counts, total capacity, and confirmed seat tallies.
+  - **Active Control:** Administrators can promote any upcoming event to become the singular active `current` event at the press of a button (automatically demoting other events).
+  - **Archiving:** Events can be securely archived to stop new submissions.
+- **Gathering Details Setup & Validation:**
+  - **Event Name:** Required field, maximum 120 characters.
+  - **Event Group:** Dropdown option determining target audience (e.g., *Children and Teens*, *Young Adults*, *Families*, *Volunteers & Workers*).
+  - **Venue:** Required field, maximum 120 characters.
+  - **Event Date:** Required field, calendar selection.
+  - **Start & End Time:** Required fields; end time must be strictly after start time.
+  - **Description:** Optional details, maximum 1000 characters.
+- **Parent Access Configuration:**
+  - **Access Window:** Start and end datetime stamps controlling parent registration portals. Close stamp must be after start.
+  - **Permissions Toggles:** Toggle control for "Parents can create account", "Add more than one child", "Save and finish later", and "Edit details after sending for review".
+- **Age Groups & Capacity Limits:**
+  - Multiple distinct age groups/brackets can be added per gathering.
+  - Individual age groups require a label, min age, max age (min must not exceed max), total head count capacity, and a toggle for "Manual Review" status.
+  - Total gathering capacity is computed dynamically as the sum of age group capacities.
+
 - **Current Active Event:**
   - **Name:** The General Assembly
   - **Audience:** Children and Teens
@@ -143,6 +162,12 @@ The Koinonia Children and Teens landing page serves two distinct audiences with 
   - The header logo uses `object-contain`, ensuring the aspect ratio remains perfectly unaltered without stretching, cropping, or overflowing.
   - When a custom logo is active, the logo image is rendered exclusively. The separate typed word "KOINONIA" is hidden beside it to elevate visual polish.
   - Double-click (desktop) and double-tap (mobile) shortcuts on the logo are preserved at all times for easy administrator portal navigation.
+  - **Preloader Logo Flash Prevention**:
+    - The startup preloader is structurally decoupled from raw initial mounts to prevent logo flickering or fallback flashes.
+    - Before animating the logo stage, the preloader fetches public landing page configuration settings and preloads the resolved custom `site_logo` URL.
+    - The logo entrance animation only begins once the logo image is fully cached, ensuring immediate, smooth rendering of the correct custom asset.
+    - If no custom logo exists or the image failed to load, the preloader instantly resolves to render the new official main logo fallback (the gold-gradient "K" badge with refined KOINONIA typography) with no broken image states.
+    - Showing a raw "K" icon or fallback wordmark before replacing it with the custom uploaded logo is strictly forbidden.
 
 ## 17. Two-Step Child Check-In Flow (Lookup & Finalize)
 To prevent accidental and duplicate entries at the event gates, checking in or checking out a child requires a secure, two-step lookup and confirmation process:
@@ -482,5 +507,28 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Wording & Styling Compliance**:
   - The word **Remove** (e.g. "Remove parent", "Remove volunteer") is used exclusively in the UI instead of "Delete" to emphasize that this is a non-destructive archive action.
   - Standard ivory layouts, backdrop blur confirmations, and warm gold/emerald cues are maintained across all action modals.
+
+## 35. Parent Profile Help and Safety Guides
+- **Parent Profile Actions**: Inside the Parent Profile view (`#renderProfileTab`), there are dedicated action rows for "Help and questions" and "Safety information". Clicking these rows opens dedicated, parent-facing mobile-friendly sheets.
+- **Help Row**: Styled with `data-component-version="parent-profile-help-row-v1"`.
+- **Safety Row**: Styled with `data-component-version="parent-profile-safety-row-v1"`.
+- **Interactive Sheets**:
+  - **Help and questions**: Opens a bottom sheet displaying common FAQs. Styled with `data-view-version="parent-help-v1-brand"`.
+  - **Safety information**: Opens a bottom sheet displaying event safety guidelines. Styled with `data-view-version="parent-safety-v1-brand"`.
+- **Aesthetic Mobile Panels**: Both sheets are designed as fully responsive, scrollable bottom-sheets with ivory background cards, warm gold accents, and elegant serif headings. Each sheet utilizes `data-component-version="parent-profile-info-sheet-v1"` on the sheet panel.
+
+## 36. Safe SEO & Privacy Architecture
+- **Dual-Visibility Guardrails**: The application enforces a strict SEO visibility separation between public and private/role-based areas:
+  - **Public Landing Page (Indexable)**: The root public page (`/`) is fully indexable, optimized, and discoverable. It features high-quality meta tags, a clean canonical link, OpenGraph social properties, a responsive viewport, and JSON-LD structured data (Organization schema, Event schema, and Website schema).
+  - **Private Dashboards and Auth Screens (Strictly Non-Indexable)**: Parent, volunteer, check-in, review, and administrator dashboards—along with all registration, sign-in, check-email, verify-email, reset-password, and new-password views—must **never** be indexed by search engines. These pages are strictly configured with a robots directive of `"noindex, nofollow"`.
+- **Centralized SEO Controller**: All dynamic head state (title, meta tags, script tags) is governed on the client-side by a reusable, high-fidelity `<Seo />` component built with custom state-restoration logic. This component automatically sanitizes and removes stale meta tags upon route changes, preventing leaks or cross-route pollution.
+- **Privacy Enforcement**:
+  - No private data (such as child biometrics, medical notes, check-in statuses, or parent full names/addresses) is ever rendered or leaked inside HTML meta elements, headers, or client-side JSON-LD markup.
+  - Opaque SHA-256 tokens are used instead of database auto-incrementing IDs to prevent ID harvesting or route scanning.
+- **Robots and Sitemap Rules**:
+  - **robots.txt**: Configured at the root to disallow access to hash-routed sub-routes (`/#/admin`, `/#/parent`, `/#/volunteer`) and physical path redirects (`/admin`, `/parent`, `/volunteer`), ensuring search engine crawlers do not traverse private areas.
+  - **sitemap.xml**: Lists only the safe, public, and indexable landing page, preventing crawler indexing on private route variants.
+- **Cache Control**: The static configuration on Netlify redirects all spa traffic via `/public/_redirects` and serves optimal CDN cache-control headers via `/public/_headers` (re-validating `index.html` immediately while storing static assets), preventing browser-side metadata stale-cache errors.
+
 
 

@@ -108,6 +108,18 @@ This is the official Koinonia Children and Teens event access product. It must f
   - `compact`: App footers, mobile app headers, or utility navigation bars (height 32px, max-width 120px).
 - **Fallback Integrity**: In the absence of a configured `site_logo` in landing media settings, the component gracefully renders a premium gold-gradient letter "K" badge alongside refined brand typography.
 - **Presentation Controls**: All logo images must use `object-contain` to preserve their native aspect ratios without any vertical stretching or clipping.
+- **Preloader Logo Resolution & Flash Prevention**:
+  - The application preloader MUST use the exact same official main Koinonia logo that is used on the landing page and role-based screens.
+  - Traditional "K" icon fallback or old wordmark fallback is forbidden during preloader entrance if a custom logo has been uploaded.
+  - To completely prevent the fallback logo flashing/switching visibly before the custom logo is loaded, the preloader must fetch the landing page settings and preload the custom logo image into the browser cache *before* initiating the logo stage animation.
+  - If the custom logo fetch fails or no logo is configured, the preloader must immediately and seamlessly render the official bundled main logo fallback (the gold-gradient "K" badge with refined KOINONIA typography) with no delay, broken icons, or blank spaces.
+
+### Brand Notification & Information Sheets Specifications
+To ensure notifications and info drawers meet the Koinonia premium brand standards, all parent notifications, drawers, and modal sheets (such as Help and Safety screens) must adhere to the following design rules:
+- **Background Palette**: Soft Ivory (`#FAF8F3` or `#FAF9F6`) only. Do not use generic cold white, plain gray, or black panels for content.
+- **Accents & Borders**: Warm, elegant gold accents (`#C59B27`, `#8C6D23`) and soft gold borders (`rgba(197, 155, 39, 0.25)`) to frame content cards.
+- **Visual Cards**: Individual sections/FAQs are housed in soft, rounded cards (`rounded-2xl` or `rounded-3xl`) with generous padding and subtle, elegant drop shadows.
+- **Typography & Voice**: Headers must use serif display typography with clean contrast, while messages are written in a warm, welcoming, and administrative-professional tone. Avoid technical, robotic, or developer jargon (such as "portal", "system token", "status code", etc.).
 
 ### Soft Content Surface Pattern
 To ensure a warm, premium, branded experience (avoiding generic SaaS layouts or raw, un-framed inputs sitting directly on the background), all Parent and Volunteer auth/account setup views must be contained within `AuthScreenShell`.
@@ -120,3 +132,19 @@ To ensure a warm, premium, branded experience (avoiding generic SaaS layouts or 
 - **No Hardcoded Demo Records:** Production UI components must never display mock sample children, dummy parent profiles, or fake QR codes in production.
 - **Intentional Empty States:** When a data collection is empty (e.g., no children added yet, no active event passes), the UI must display a clean, reassuring empty card with clear typography and a direct call-to-action button.
 - **Media Upload UI & Fallbacks:** Photo upload containers must maintain aspect ratios and show clean loading spinners or progress indicators during upload. If a photo fails to load or is unassigned, render an elegant circular or square badge displaying the user's initials on a warm background (`#EFECE4` with `#715D3A` text). Never display broken image browser icons.
+
+## SEO, Metadata & Social Sharing Guidelines
+- **Premium Metadata Copy**: Metadata (such as `<title>` and descriptions) must always align with Koinonia's elegant, welcoming, and high-fidelity tone. Avoid technical, jargon-heavy keywords, spammy keyword stuffing, or robotic titles.
+- **Social Media (OG) Banner Design**: The default fallback social preview image (`/social_share.jpg`) must feature an elegant, warm off-white canvas with soft gold border details and subtle family silhouettes. Do not use generic, cold stock photos or empty placeholder patterns.
+- **Dynamic Title Standard**:
+  - Public pages use literal, inviting, brand-aligned titles (e.g., `'Koinonia Children and Teens Event Registration'`).
+  - Private dashboards must never expose individual database IDs, child names, or parent biometrics in page titles or descriptions. They use generic, safe placeholders such as `'Parent Access | Koinonia Children and Teens'` or `'Volunteer Operations | Koinonia Children and Teens'`.
+- **Search Engine Isolation**: Ensure all role-based dashboards, authentication paths, and password resets are strictly sealed from indexation via `"noindex, nofollow"` tags to guarantee total user privacy and compliance.
+
+## Administrative Events & Switch Style Specifications
+To ensure the administrative event management pages match Koinonia's premium brand:
+- **Warm sliding switches:** Toggles must utilize a custom fluid pill shape with a white sliding knob. The active track must highlight in Koinonia's official warm gold color (`#C59B27`) instead of cold tech-blue or purple.
+- **Two-Column Editorial Flow:** Complex form structures should be divided into a primary form area on the left and a secondary review/context panel on the right (containing live setup checkers, real parent-view rendering, and safety banners) to organize density beautifully.
+- **Table density:** Tables listing age capacity buckets must feature soft borders (`#EAE8E1`) over light, warm backgrounds (`#FAF9F6`), with subtle input indicators and elegant delete triggers.
+- **Checklist indicators:** Progress markers use gold-tinted solid check circles (`text-[#C59B27]`) upon completeness to reinforce a sense of warmth and accomplishment.
+

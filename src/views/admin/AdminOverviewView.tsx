@@ -30,6 +30,7 @@ import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminApplicationsView } from './AdminApplicationsView';
 import { AdminReviewBoardView } from './AdminReviewBoardView';
 import { AdminChildrenView } from './AdminChildrenView';
@@ -40,6 +41,7 @@ import { AdminVolunteersView } from './AdminVolunteersView';
 import { AdminParentsView } from './AdminParentsView';
 import { AdminParentDetailView } from './AdminParentDetailView';
 import { AdminSettingsView } from './AdminSettingsView';
+import { AdminEventsView } from './AdminEventsView';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents';
 
@@ -266,15 +268,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/15 text-[#C59B27] rounded-2xl flex items-center justify-center mx-auto">
         <ClipboardList className="w-6 h-6" />
       </div>
-      <h3 className="font-serif text-lg font-bold text-[#18181B]">{tabName} Section</h3>
+      <h3 className="font-serif text-lg font-bold text-[#18181B]">{tabName}</h3>
       <p className="text-xs text-zinc-500 leading-relaxed max-w-md mx-auto">
-        This registry index allows managing current entries securely. Detailed registration folders are synchronized with the local parish rosters.
+        This view displays gathering records and information. Select a primary option above or return to the overview page.
       </p>
       <button
         onClick={() => setActiveTab('overview')}
         className="text-xs font-semibold text-[#C59B27] hover:underline block mx-auto"
       >
-        Return to Overview Metrics
+        Return to Overview
       </button>
     </div>
   );
@@ -535,11 +537,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   )}
 
                   {loading ? (
-                    <div className="flex items-center justify-center py-24">
-                      <div className="text-center space-y-3">
-                        <RefreshCw className="w-7 h-7 text-[#C59B27] animate-spin mx-auto" />
-                        <p className="text-xs text-zinc-500">Loading dashboard...</p>
-                      </div>
+                    <div data-view-version="admin-dashboard-loading-v2-koinonia" className="w-full">
+                      <KoinoniaInlineLoader
+                        variant="logo"
+                        size="md"
+                        label="Loading dashboard..."
+                        centered
+                      />
                     </div>
                   ) : (
                     <div className="space-y-6 sm:space-y-8">
@@ -911,8 +915,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             )
           )}
 
+          {/* EVENTS VIEW PANEL */}
+          {activeTab === 'events' && (
+            <AdminEventsView onBackToOverview={() => handleTabChange('overview')} />
+          )}
+
           {/* OTHER ADMIN TABS: DYNAMIC PLACEHOLDER INSIDE THE SHELL */}
-          {activeTab !== 'overview' && activeTab !== 'settings' && activeTab !== 'applications' && activeTab !== 'review' && activeTab !== 'children' && activeTab !== 'attendance' && activeTab !== 'reports' && activeTab !== 'messages' && activeTab !== 'volunteers' && activeTab !== 'parents' && (
+          {activeTab !== 'overview' && activeTab !== 'settings' && activeTab !== 'applications' && activeTab !== 'review' && activeTab !== 'children' && activeTab !== 'attendance' && activeTab !== 'reports' && activeTab !== 'messages' && activeTab !== 'volunteers' && activeTab !== 'parents' && activeTab !== 'events' && (
             renderPlaceholderSection(
               activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
             )

@@ -107,6 +107,10 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
   if (status === 'under_review') {
     frontendStatus = 'Under review';
     statusNote = 'Details sent for review';
+  } else if (status === 'review_reopened') {
+    frontendStatus = 'Review reopened';
+    const first_name = childRow.full_name ? childRow.full_name.split(' ')[0] : 'your child';
+    statusNote = `The event team has reopened the review for ${first_name}. We will share an update when a new decision is made.`;
   } else if (status === 'selected') {
     frontendStatus = 'Selected';
     statusNote = 'Selected for event entry';

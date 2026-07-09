@@ -2026,9 +2026,12 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
           cleanRef = `KOI-2026-${cleanRef}`;
         }
         
-        const passRow = await queryOne('SELECT child_event_entry_id FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
+        const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
           return res.status(404).json({ error: `Event pass with reference "${passReference}" not found` });
+        }
+        if (passRow.status === 'revoked' || passRow.status === 'inactive') {
+          return res.status(400).json({ error: 'This pass has been revoked. Review reopened.' });
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
@@ -2151,9 +2154,12 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
           cleanRef = `KOI-2026-${cleanRef}`;
         }
         
-        const passRow = await queryOne('SELECT child_event_entry_id FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
+        const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
           return res.status(404).json({ error: `Event pass with reference "${passReference}" not found` });
+        }
+        if (passRow.status === 'revoked' || passRow.status === 'inactive') {
+          return res.status(400).json({ error: 'This pass has been revoked. Review reopened.' });
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
@@ -2347,9 +2353,12 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
           cleanRef = `KOI-2026-${cleanRef}`;
         }
         
-        const passRow = await queryOne('SELECT child_event_entry_id FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
+        const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
           return res.status(404).json({ error: `Event pass with reference "${passReference}" not found` });
+        }
+        if (passRow.status === 'revoked' || passRow.status === 'inactive') {
+          return res.status(400).json({ error: 'This pass has been revoked. Review reopened.' });
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
@@ -2511,12 +2520,19 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
       cleanRef = `KOI-2026-${cleanRef}`;
     }
 
-    const passRow = await queryOne('SELECT child_event_entry_id FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
+    const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
     if (!passRow) {
       return res.status(404).json({
         success: false,
         code: 'INVALID_PASS',
         message: 'We could not find a child for this pass.'
+      });
+    }
+    if (passRow.status === 'revoked' || passRow.status === 'inactive') {
+      return res.status(400).json({
+        success: false,
+        code: 'REVOKED_PASS',
+        message: 'This pass has been revoked. Review has been reopened.'
       });
     }
 
@@ -2646,8 +2662,11 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
         cleanRef = `KOI-2026-${cleanRef}`;
       }
-      const passRow = await queryOne('SELECT child_event_entry_id FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
+      const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
       if (passRow) {
+        if (passRow.status === 'revoked' || passRow.status === 'inactive') {
+          return res.status(400).json({ error: 'This pass has been revoked. Review reopened.' });
+        }
         entryId = passRow.child_event_entry_id;
       }
     }

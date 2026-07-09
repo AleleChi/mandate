@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import { safeStorage } from '../utils/storage';
+
 const TOKEN_KEY = 'koinonia_token';
 
 const FORBIDDEN_WORDS = [
@@ -50,12 +52,12 @@ export function extractApiError(err: any): { message: string; description: strin
 }
 
 export const api = {
-  getToken: () => localStorage.getItem(TOKEN_KEY),
-  setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clearToken: () => localStorage.removeItem(TOKEN_KEY),
+  getToken: () => safeStorage.getItem(TOKEN_KEY),
+  setToken: (token: string) => safeStorage.setItem(TOKEN_KEY, token),
+  clearToken: () => safeStorage.removeItem(TOKEN_KEY),
 
   async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = safeStorage.getItem(TOKEN_KEY);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {})
@@ -511,6 +513,12 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async reopenApplicationReview(id: string, reason?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/reopen-review`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
     async bulkReviewApplications(payload: { applicationIds: string[]; decision: string; note?: string }) {
       return api.request<any>('/api/admin/applications/bulk-review', {
         method: 'POST',
@@ -746,6 +754,42 @@ export const api = {
     },
     async getVolunteerParentStats() {
       return api.request<{ success: boolean; stats: any }>('/api/admin/reports/volunteer-parent-stats');
+    },
+    async getEvents(params?: { status?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.status) queryParams.append('status', params.status);
+      const queryString = queryParams.toString();
+      return api.request<{ success: boolean; events: any[] }>(`/api/admin/events${queryString ? `?${queryString}` : ''}`);
+    },
+    async getEvent(eventId: string) {
+      return api.request<{ success: boolean; event: any; ageGroups: any[] }>(`/api/admin/events/${eventId}`);
+    },
+    async createEvent(payload: any) {
+      return api.request<{ success: boolean; eventId: string; message?: string }>('/api/admin/events', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async updateEvent(eventId: string, payload: any) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+    },
+    async publishEvent(eventId: string) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/publish`, {
+        method: 'POST'
+      });
+    },
+    async archiveEvent(eventId: string) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/archive`, {
+        method: 'POST'
+      });
+    },
+    async setCurrentEvent(eventId: string) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/set-current`, {
+        method: 'POST'
+      });
     }
   }
 };

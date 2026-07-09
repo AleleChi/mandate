@@ -25,6 +25,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
 
 interface AdminReviewBoardViewProps {
@@ -420,11 +421,14 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
       {/* 1. METRICS ROW */}
       {loading ? (
-        <div className="flex items-center justify-center py-20 bg-white border border-[#EAE8E1] rounded-2xl">
-          <div className="text-center space-y-3">
-            <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin mx-auto" />
-            <p className="text-xs text-zinc-400 font-medium animate-pulse">Loading applications for review...</p>
-          </div>
+        <div className="w-full">
+          <KoinoniaInlineLoader
+            variant="logo"
+            size="md"
+            label="Loading applications for review..."
+            fullCard
+            centered
+          />
         </div>
       ) : (
         <>

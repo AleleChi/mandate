@@ -7,6 +7,7 @@ interface AssetImageProps {
   className?: string;
   iconType?: 'camera' | 'sparkles' | 'shield' | 'users' | 'heart' | 'default';
   label?: string;
+  loading?: 'lazy' | 'eager';
 }
 
 export const AssetImage: React.FC<AssetImageProps> = ({
@@ -14,7 +15,8 @@ export const AssetImage: React.FC<AssetImageProps> = ({
   alt,
   className = '',
   iconType = 'default',
-  label
+  label,
+  loading = 'lazy'
 }) => {
   const [hasError, setHasError] = useState(false);
 
@@ -35,6 +37,7 @@ export const AssetImage: React.FC<AssetImageProps> = ({
         src={src}
         alt={alt}
         className={className}
+        loading={loading}
         onError={() => setHasError(true)}
       />
     );

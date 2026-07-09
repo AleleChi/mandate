@@ -20,6 +20,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 
 import { AppRoute } from '../../types';
 
@@ -294,9 +295,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
       {/* Parents Registry Index */}
       <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 space-y-3">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27]"></div>
-            <p className="text-xs text-zinc-500 font-medium font-serif">Loading family folders...</p>
+          <div className="p-8">
+            <KoinoniaInlineLoader
+              variant="skeleton"
+              size="lg"
+              label="Loading family folders..."
+              centered
+            />
           </div>
         ) : parents.length === 0 ? (
           <div className="text-center py-20 text-zinc-400 space-y-2">
@@ -427,9 +432,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
             </div>
 
             {loadingDetails ? (
-              <div className="flex flex-col items-center justify-center py-24 space-y-3">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27]"></div>
-                <p className="text-xs text-zinc-500">Retrieving secure directory folder...</p>
+              <div className="p-8 w-full">
+                <KoinoniaInlineLoader
+                  variant="logo"
+                  size="md"
+                  label="Loading profile..."
+                  centered
+                />
               </div>
             ) : !parentDetails ? (
               <div className="p-12 text-center text-zinc-400">

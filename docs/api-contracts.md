@@ -774,16 +774,16 @@ Retrieves detailed, comprehensive folder information for a single child registra
   ```
 
 ### POST `/api/admin/applications/:id/review`
-Submits an administrative decision for a child's registration, optionally updating team notes and triggering highly personalized, warm pastoral emails and WhatsApp notifications to the parent.
+Submits an administrative decision for a child's registration, optionally updating team notes and triggering warm, brand-compliant notifications.
+- **Decoupled Selection and Pass Generation Logic**:
+  - If `status` is set to `"selected"`, the system automatically checks for the presence of a valid child photo file (`photo_file_id`).
+  - **With Photo**: The system automatically promotes the entry to `"pass_ready"`, issues a secure event pass, and dispatches a "Pass Ready" notification.
+  - **Without Photo**: The entry remains in `"selected"` status, no pass is generated, and the parent receives a "Selected (Pass Pending)" notification stating that the pass will be generated shortly.
 - **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
 - **Request Body**:
-  ```json
-  {
-    "status": "selected",
-    "noteToTeam": "Reviewed pickup photos and certified medical notes. High-trust parent worker.",
-    "sendNotification": true
-  }
-  ```
+  - `status`: `"selected" | "not_selected" | "waiting_list" | "pass_ready" | "under_review"`
+  - `noteToTeam` (optional): string
+  - `sendNotification` (optional): boolean
 - **Response** (`200 OK`):
   ```json
   {
@@ -1287,5 +1287,159 @@ Restores an archived volunteer profile back to active status, making them availa
   {
     "success": true,
     "message": "Volunteer profile restored successfully."
+  }
+  ```
+
+---
+
+## Administrative Events & Gathering Operations (`/api/admin/events`)
+
+The following endpoints manage the administrative lifecycle of gatherings, events, and age groups/capacities.
+
+### 16.1 GET `/api/admin/events`
+Returns all registered gatherings.
+- **Query Parameters**:
+  - `status` (optional): Filter events by status (`draft`, `upcoming`, `current`, `closed`, `archived`).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "events": [
+      {
+        "id": "event-xyz",
+        "title": "Koinonia Autumn Gathering",
+        "sectionName": "Children and Teens",
+        "location": "Main Auditorium",
+        "startsAt": "2025-11-22",
+        "endsAt": "2025-11-22",
+        "dailyStartTime": "09:00",
+        "dailyEndTime": "17:00",
+        "status": "upcoming",
+        "timezone": "Africa/Lagos",
+        "parentAccessOpensAt": "2025-10-01T00:00:00.000Z",
+        "parentAccessClosesAt": "2025-11-20T23:59:59.000Z",
+        "parentsCanCreateAccount": true,
+        "allowMultipleChildren": true,
+        "allowSaveAndContinue": true,
+        "allowEditAfterSubmission": false,
+        "description": "Annual Autumn gathering for spiritual fellowship and fun.",
+        "totalCapacity": 310,
+        "applicationsCount": 15,
+        "selectedCount": 8
+      }
+    ]
+  }
+  ```
+
+### 16.2 GET `/api/admin/events/:eventId`
+Returns full details of an individual event and its configured age capacity limits.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "event": {
+      "id": "event-xyz",
+      "title": "Koinonia Autumn Gathering",
+      "sectionName": "Children and Teens",
+      "location": "Main Auditorium",
+      "startsAt": "2025-11-22",
+      "endsAt": "2025-11-22",
+      "dailyStartTime": "09:00",
+      "dailyEndTime": "17:00",
+      "status": "upcoming",
+      "parentAccessOpensAt": "2025-10-01T00:00:00.000Z",
+      "parentAccessClosesAt": "2025-11-20T23:59:59.000Z",
+      "parentsCanCreateAccount": true,
+      "allowMultipleChildren": true,
+      "allowSaveAndContinue": true,
+      "allowEditAfterSubmission": false,
+      "description": "Annual Autumn gathering..."
+    },
+    "ageGroups": [
+      {
+        "id": "group-abc",
+        "label": "Ages 4",
+        "minAge": 4,
+        "maxAge": 6,
+        "capacity": 60,
+        "manualReview": false,
+        "sortOrder": 2
+      }
+    ]
+  }
+  ```
+
+### 16.3 POST `/api/admin/events`
+Creates a new event and registers its corresponding age capacity records.
+- **Request Body**:
+  ```json
+  {
+    "title": "Youth Summer Camp",
+    "sectionName": "Children and Teens",
+    "location": "Youth Hall",
+    "startsAt": "2025-07-15",
+    "endsAt": "2025-07-15",
+    "dailyStartTime": "08:30",
+    "dailyEndTime": "16:30",
+    "description": "Summer camp details...",
+    "status": "draft",
+    "parentAccessOpensAt": "2025-06-01T09:00:00",
+    "parentAccessClosesAt": "2025-07-10T18:00:00",
+    "parentsCanCreateAccount": true,
+    "allowMultipleChildren": true,
+    "allowSaveAndContinue": true,
+    "allowEditAfterSubmission": false,
+    "ageGroups": [
+      { "label": "Ages 4", "minAge": 4, "maxAge": 6, "capacity": 60, "manualReview": false }
+    ]
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "eventId": "event-xyz",
+    "message": "Event created successfully."
+  }
+  ```
+
+### 16.4 PATCH `/api/admin/events/:eventId`
+Updates event details and synchronizes/re-registers age groups.
+- **Request Body**: Same schema as POST `/api/admin/events` (fields can be individually omitted/included for partial updates).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Event updated successfully."
+  }
+  ```
+
+### 16.5 POST `/api/admin/events/:eventId/publish`
+Transitions an event status to `upcoming`.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Event published successfully."
+  }
+  ```
+
+### 16.6 POST `/api/admin/events/:eventId/archive`
+Archives an event, locking parent access and application submissions.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Event archived successfully."
+  }
+  ```
+
+### 16.7 POST `/api/admin/events/:eventId/set-current`
+Promotes a gathering to the single active `current` event, demoting other events.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Event is now set as the active current event."
   }
   ```

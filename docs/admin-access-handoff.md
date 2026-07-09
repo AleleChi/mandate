@@ -149,9 +149,13 @@ console.log("🎉 All rendering-proofing criteria met successfully!");
 
 ## 6. Admin Review Child Application Detail Screen (V2 - Stitch-Aligned)
 
-The detailed child application review panel (`AdminReviewChildView`) is integrated within the Applications tab workflow when an administrator clicks "Review details" on a registration entry. It has been redesigned to strictly align with the premium "Stitch" visual specification (Screenshot A).
+The detailed child application review panel (`AdminReviewChildView`) is integrated within the Applications tab workflow when an administrator clicks "Review details" on a registration entry. It has been redesigned to strictly align with the premium "Stitch" visual specification (Screenshot A) and incorporates the decoupled status review workflow.
 
 ### A. Core Capabilities & UI Highlights
+- **Decoupled Status Review Flow**:
+  - The decision panel supports the selection state of the child independently from the generation of event passes.
+  - Selecting a child with a valid photo automatically transitions the database status to `"pass_ready"`, generates their cryptographic QR pass, and triggers the "Pass Ready" notification.
+  - Selecting a child whose photo is missing or unapproved transitions the database status to `"selected"`, holds pass generation in a pending state, and notifies the parent that the selection is successful with the pass forthcoming.
 - **Human-Centric & Pastoral Language**: Implements Koinonia's official tone, removing technical workflow jargon (e.g., using "Team notes", "Choose how this child should move forward", and "open Parent Access" instead of portals, workflows, or triages).
 - **Stitch Design Layout Harmony**: Restructured as a multi-tier two-column grid. The left column serves child credentials (profile header, details block, medical notes, parents and pickup contacts). The right column houses decision controls, notes, automated parent preview blocks, and timeline logs.
 - **Age Discrepancy block**: Highlights computed age gaps next to details in a distinctive pink-tinted warning card.
@@ -301,6 +305,31 @@ To ensure high audit readiness and prevent accidental data loss (which would vio
   - `id="remove-parent-btn-[id]"` / `id="restore-parent-btn-[id]"`
   - `id="remove-volunteer-btn-[id]"` / `id="restore-volunteer-btn-[id]"`
   - `id="modal-remove-volunteer-btn"`
+
+---
+
+## 12. Administrative Events & Capacity Management (`#/admin/events`)
+
+The **Events** view provides comprehensive administrative management of gathering schedules, parent registration controls, and detailed age-bracket capacities, strictly using the premium Ivory/Gold brand styling.
+
+### A. Key Attributes & Visual Architecture
+- **Interactive Multi-Tab Dashboard**: Features filter tabs to inspect gatherings by status: *Current event*, *Upcoming*, *Drafts*, and *Past events* alongside dynamic registration capacities, child applications, and confirmed seat counts.
+- **Active Current Promotion**: Offers one-click active promotion of upcoming gatherings, designating them as the singular primary current active event on the platform while automatically demoting others.
+- **Two-Column Setup Page Layout**:
+  - **Left Form Canvas**: Includes modular input cards for *Event Details*, *Parent Access Configuration*, and *Age Groups & Capacity Limits*.
+  - **Right Sidebar Panels**: Incorporates a live dynamic *Setup Progress checklist*, a live rendered *Parent View Preview* displaying active card configurations, and a sticky *Before Opening Access Warning* banner.
+- **Default Age-Bracket Presets**: Automatically bootstraps events with Koinonia's standardized five age capacities (*Below*, *Ages 1*, *Ages 4*, *Ages 7*, *Ages 10*), allowing inline edits of min/max age constraints, manual reviews, and capacity sizes.
+- **Warm Golden Custom Switches**: Uses custom-designed sliding switches styled in Koinonia's brand warm gold color (`bg-[#C59B27]`).
+
+### B. Render-Proofing Attributes Added
+- **Events View Container**: `data-view-version="admin-events-v1-stitch-implemented"`
+- **Events Home Screen**: `data-component-version="admin-events-home-v1"`
+- **Create/Edit Event Page**: `data-view-version="admin-create-event-v1-stitch"`
+- **Event Details Card**: `data-component-version="admin-create-event-details-v1"`
+- **Parent Access Card**: `data-component-version="admin-create-event-parent-access-v1"`
+- **Age Groups & Capacity Table**: `data-component-version="admin-create-event-age-capacity-v1"`
+- **Setup Progress Card**: `data-component-version="admin-create-event-setup-progress-v1"`
+- **Parent Live Preview Card**: `data-component-version="admin-create-event-parent-preview-v1"`
 
 
 

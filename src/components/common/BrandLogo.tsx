@@ -56,7 +56,7 @@ export function getSafePublicAssetUrl(url: string | null): string | null {
   return url;
 }
 
-const fetchLogoUrl = async (): Promise<string | null> => {
+export const fetchLogoUrl = async (): Promise<string | null> => {
   if (globalSiteLogo) return globalSiteLogo;
   if (globalPromise) return globalPromise;
 

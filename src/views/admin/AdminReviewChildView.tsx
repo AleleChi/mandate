@@ -23,6 +23,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 
 interface AdminReviewChildViewProps {
   applicationId: string;
@@ -47,6 +48,11 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   
   // Interactive confirmation checkbox (from Stitch target "Age group checked & confirmed")
   const [ageChecked, setAgeChecked] = useState(false);
+
+  // Reopen review states
+  const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+  const [reopening, setReopening] = useState(false);
 
   const fetchDetails = async () => {
     setLoading(true);
@@ -120,6 +126,31 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     }
   };
 
+  const handleConfirmReopen = async () => {
+    if (!reopenReason.trim()) return;
+    setReopening(true);
+    try {
+      const res = await api.admin.reopenApplicationReview(applicationId, reopenReason);
+      if (res.success) {
+        showSuccess(
+          'Review Reopened',
+          `The application review for ${app?.child?.fullName || 'the child'} has been reopened successfully.`
+        );
+        setIsReopenModalOpen(false);
+        setReopenReason('');
+        await fetchDetails();
+        onSave();
+      } else {
+        showError('Reopen Failed', res.error || 'Could not reopen application review.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Reopen Failed', parsed.message || 'An error occurred while reopening the review.');
+    } finally {
+      setReopening(false);
+    }
+  };
+
   // Generate real-time live preview of the pastoral parent notification email (human-centered, off-portal)
   const getNotificationPreview = () => {
     if (!app) return '';
@@ -142,11 +173,13 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
   if (loading) {
     return (
-      <div className="py-24 text-center flex flex-col items-center justify-center space-y-4 bg-[#FAF9F6] min-h-screen">
-        <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-        <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider">
-          Loading child review details...
-        </span>
+      <div className="flex items-center justify-center min-h-screen bg-[#FAF9F6] p-6 w-full">
+        <KoinoniaInlineLoader
+          variant="logo"
+          size="lg"
+          label="Loading child review details..."
+          centered
+        />
       </div>
     );
   }
@@ -155,6 +188,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
   const statusColors: Record<string, string> = {
     under_review: 'bg-amber-50 text-amber-700 border-amber-200',
+    review_reopened: 'bg-amber-100 text-amber-800 border-amber-300',
     selected: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     pass_ready: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     waiting_list: 'bg-amber-50/70 text-amber-800 border-amber-200',
@@ -165,6 +199,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
   const statusLabels: Record<string, string> = {
     under_review: 'Under Review',
+    review_reopened: 'Review Reopened',
     selected: 'Selected',
     pass_ready: 'Pass Ready',
     waiting_list: 'Waiting List',
@@ -595,7 +630,51 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             </p>
           </div>
 
-          {/* ATTENTION REQUIRED CHECKBOX IF AGE REVISIONS NEEDED */}
+          {/* Approved Status / Reopen Action Card */}
+          {['selected', 'pass_ready'].includes(app.status) && (
+            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Approved & Verified</h4>
+                  <p className="text-xs text-emerald-700 leading-relaxed">
+                    This child's application is currently approved and marked <strong>{statusLabels[app.status]}</strong>. 
+                    Parents can access and download their secure digital event pass.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-emerald-100/50 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsReopenModalOpen(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-50 text-xs font-bold text-zinc-700 transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Clock className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>REOPEN REVIEW</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Checked-in Attendance State Card */}
+          {['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) && (
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-[#C59B27] shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Child In Attendance</h4>
+                  <p className="text-xs text-zinc-600 leading-relaxed">
+                    This child has already checked in or been picked up at the event. Review decisions cannot be reopened or revoked.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) ? (
+            <>
+              {/* ATTENTION REQUIRED CHECKBOX IF AGE REVISIONS NEEDED */}
           {app.child.needsAgeReview && (
             <div className="bg-[#FFF8F6] border border-red-100 rounded-xl p-4 space-y-3">
               <div className="flex items-center space-x-2 text-red-700 font-bold text-[10px] uppercase tracking-wider">
@@ -720,6 +799,14 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </label>
             </div>
           </div>
+          </>
+          ) : (
+            <div className="bg-zinc-50 border border-dashed border-zinc-200 rounded-xl p-4 text-center">
+              <p className="text-xs text-zinc-500">
+                Decision options are locked because the child is already checked in.
+              </p>
+            </div>
+          )}
 
           {/* REVIEWS HISTORY LOG */}
           <div 
@@ -764,6 +851,75 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         </div>
 
       </div>
+
+      {/* REOPEN REVIEW CONFIRMATION MODAL */}
+      {isReopenModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in">
+            <div className="flex items-start gap-3 text-amber-700">
+              <AlertCircle className="w-6 h-6 shrink-0 text-amber-600" />
+              <div className="space-y-1">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Reopen Application Review?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to reopen the review for <strong>{app.child.fullName}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3.5 text-xs text-amber-800 leading-relaxed space-y-1.5">
+              <p className="font-semibold">Important Consequences:</p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                <li>The child's status will revert to <strong>Review Reopened</strong> immediately.</li>
+                <li>The digital event pass will be <strong>revoked</strong> and no longer valid for scan or check-in.</li>
+                <li>The parent will be notified to check their dashboard.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="reopenReason" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Reason for Reopening (Required for audit trail)
+              </label>
+              <textarea
+                id="reopenReason"
+                rows={3}
+                placeholder="e.g. Discrepancy in medical notes, parent requested update, age limit verification required..."
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                className="w-full p-3 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={reopening}
+                onClick={() => {
+                  setIsReopenModalOpen(false);
+                  setReopenReason('');
+                }}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reopening || !reopenReason.trim()}
+                onClick={handleConfirmReopen}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white border border-amber-600 rounded-xl text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center space-x-1.5 shadow-xs"
+              >
+                {reopening ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Reopening...</span>
+                  </>
+                ) : (
+                  <span>Reopen Review</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FOOTER ACTIONS BAR */}
       <div className="border-t border-[#EAE8E1] pt-6 flex items-center justify-between">

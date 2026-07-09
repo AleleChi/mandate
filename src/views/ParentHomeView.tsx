@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -89,6 +89,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [showHelpDrawer, setShowHelpDrawer] = useState(false);
+  const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
   const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
 
@@ -959,7 +962,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         <button
           type="button"
+          data-component-version="parent-profile-help-row-v1"
           onClick={() => {
+            setShowHelpDrawer(true);
             try {
               window.history.pushState(null, '', '#/parent/help');
             } catch {}
@@ -975,7 +980,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         <button
           type="button"
+          data-component-version="parent-profile-safety-row-v1"
           onClick={() => {
+            setShowSafetyDrawer(true);
             try {
               window.history.pushState(null, '', '#/parent/safety');
             } catch {}
@@ -1225,17 +1232,20 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
       {/* Notifications Drawer Bottom Sheet */}
       {showNotificationsDrawer && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end">
-          <div className="bg-white rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#EAE8E1] shadow-2xl animate-in slide-in-from-bottom duration-300">
+        <div 
+          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end"
+          data-component-version="notification-panel-v2-brand"
+        >
+          <div className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300">
             {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#FAF9F6] flex items-center justify-between shrink-0">
+            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2">
                 <Bell className="w-5 h-5 text-[#C59B27]" />
-                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
+                <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
                   Notifications
                 </h3>
                 {unreadCount > 0 && (
-                  <span className="bg-[#E07A5F] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  <span className="bg-[#C59B27] text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">
                     {unreadCount} new
                   </span>
                 )}
@@ -1256,13 +1266,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         console.error(e);
                       }
                     }}
-                    className="text-xs font-semibold text-[#9A7326] hover:underline cursor-pointer focus:outline-none"
+                    className="text-xs font-bold text-[#9A7326] hover:underline cursor-pointer focus:outline-none"
                   >
                     Mark all read
                   </button>
                 )}
                 <button
-                  onClick={() => setShowNotificationsDrawer(false)}
+                  onClick={() => {
+                    setShowNotificationsDrawer(false);
+                    setSelectedNotification(null);
+                  }}
                   className="p-1 rounded-lg hover:bg-black/5 cursor-pointer focus:outline-none"
                 >
                   <X className="w-5 h-5 text-[#6B7280]" />
@@ -1270,72 +1283,173 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               </div>
             </div>
 
-            {/* List */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-3.5 min-h-[280px]">
-              {notifications.length === 0 ? (
-                <div className="text-center py-16 space-y-3">
-                  <Bell className="w-10 h-10 text-[#D9D6CE] mx-auto stroke-[1.5]" />
-                  <p className="text-sm font-medium text-[#3F3F46]">No reminders yet</p>
-                  <p className="text-xs text-[#6B7280] max-w-[240px] mx-auto leading-relaxed">
-                    Personalized event schedules, check-in details, and pickup reminders will appear here.
-                  </p>
-                </div>
-              ) : (
-                notifications.map((notif) => {
-                  const isUnread = !notif.readAt && !notif.isRead;
-                  return (
-                    <div
-                      key={notif.id}
-                      onClick={async () => {
-                        if (isUnread) {
-                          try {
-                            await api.parent.markNotificationAsRead(notif.id);
-                            fetchNotifications();
-                          } catch (e) {
-                            console.error(e);
-                          }
-                        }
-                      }}
-                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                        isUnread
-                          ? 'bg-[#FAF8F4] border-[#C59B27]/40 shadow-2xs'
-                          : 'bg-white border-[#EAE8E1] hover:border-[#D9D6CE]'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug">
-                          {notif.title}
-                        </h4>
-                        {isUnread && (
-                          <span className="w-2 h-2 rounded-full bg-[#E07A5F] shrink-0 mt-1.5" />
-                        )}
-                      </div>
-                      <p className="text-xs text-[#3F3F46] mt-2 leading-relaxed whitespace-pre-wrap">
-                        {notif.message}
-                      </p>
-                      <div className="text-[10px] text-[#A1A1AA] mt-3 font-mono">
-                        {new Date(notif.createdAt).toLocaleTimeString('en-US', {
+            {/* Content Area */}
+            {selectedNotification ? (
+              /* PHASE 3 - Notification Detail View */
+              <div 
+                className="flex-1 overflow-y-auto p-5 space-y-4 text-left"
+                data-component-version="notification-detail-v2-brand"
+              >
+                <button
+                  onClick={() => setSelectedNotification(null)}
+                  className="flex items-center space-x-1.5 text-xs font-bold text-[#9A7326] hover:underline cursor-pointer focus:outline-none"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to notifications</span>
+                </button>
+
+                <div className="bg-white border border-[#E5D5AE] p-5 rounded-2xl space-y-3.5 shadow-2xs">
+                  <div className="flex items-start gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-[#FAF6EB] text-[#C59B27]">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-base font-serif-koinonia font-bold text-[#18181B] leading-tight">
+                        {selectedNotification.title}
+                      </h4>
+                      <div className="text-[10px] text-[#A1A1AA] mt-1 font-mono">
+                        {new Date(selectedNotification.createdAt).toLocaleTimeString('en-US', {
                           hour: 'numeric',
                           minute: '2-digit',
                           hour12: true
-                        })} • {new Date(notif.createdAt).toLocaleDateString('en-US', {
+                        })} • {new Date(selectedNotification.createdAt).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric'
                         })}
                       </div>
                     </div>
-                  );
-                })
-              )}
-            </div>
+                  </div>
 
-            {/* Sound & Push Settings footer panel */}
-            <div className="px-5 py-4 bg-[#FAF8F4] border-t border-[#EAE8E1] flex flex-col gap-3 shrink-0">
-              {/* Sound toggle */}
-              <div className="flex items-center justify-between text-xs">
+                  <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed whitespace-pre-wrap">
+                    {selectedNotification.message}
+                  </p>
+                  
+                  {selectedNotification.childId && (
+                    <div className="pt-2 flex gap-2">
+                      {(() => {
+                        const child = childrenList.find(c => c.id === selectedNotification.childId);
+                        const isPassReady = child && child.status === 'Pass ready';
+                        if (isPassReady) {
+                          return (
+                            <button
+                              onClick={() => {
+                                setShowNotificationsDrawer(false);
+                                setSelectedNotification(null);
+                                onNavigate(`/parent/children/${selectedNotification.childId}/pass`);
+                              }}
+                              className="px-4 py-2 bg-[#C59B27] text-white hover:bg-[#B58E33] text-xs font-bold rounded-xl shadow-2xs cursor-pointer focus:outline-none"
+                            >
+                              View pass
+                            </button>
+                          );
+                        } else {
+                          return (
+                            <button
+                              onClick={() => {
+                                setShowNotificationsDrawer(false);
+                                setSelectedNotification(null);
+                                onNavigate(`/parent/children/${selectedNotification.childId}/status`);
+                              }}
+                              className="px-4 py-2 bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] hover:bg-[#FAF8F3] text-xs font-bold rounded-xl shadow-2xs cursor-pointer focus:outline-none"
+                            >
+                              View child status
+                            </button>
+                          );
+                        }
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Notification List View */
+              <div className="flex-1 overflow-y-auto p-5 space-y-3.5 min-h-[280px]">
+                {notifications.length === 0 ? (
+                  <div className="text-center py-16 space-y-3">
+                    <Bell className="w-10 h-10 text-[#D9D6CE] mx-auto stroke-[1.5]" />
+                    <p className="text-sm font-medium text-[#3F3F46]">No reminders yet</p>
+                    <p className="text-xs text-[#6B7280] max-w-[240px] mx-auto leading-relaxed">
+                      Personalized event schedules, check-in details, and pickup reminders will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  notifications.map((notif) => {
+                    const isUnread = !notif.readAt && !notif.isRead;
+                    return (
+                      <div
+                        key={notif.id}
+                        onClick={async () => {
+                          setSelectedNotification(notif);
+                          if (isUnread) {
+                            try {
+                              await api.parent.markNotificationAsRead(notif.id);
+                              fetchNotifications();
+                            } catch (e) {
+                              console.error(e);
+                            }
+                          }
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                          isUnread
+                            ? 'bg-white border-[#C59B27] shadow-sm'
+                            : 'bg-white/60 border-[#EAE8E1] hover:border-[#D9D6CE]'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`p-1.5 rounded-lg shrink-0 ${isUnread ? 'bg-[#FAF6EB] text-[#C59B27]' : 'bg-[#FAF8F3] text-zinc-400'}`}>
+                            {notif.title?.toLowerCase().includes('pass') ? (
+                              <Ticket className="w-4 h-4" />
+                            ) : notif.title?.toLowerCase().includes('check') ? (
+                              <ShieldCheck className="w-4 h-4" />
+                            ) : (
+                              <Bell className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug truncate">
+                                {notif.title}
+                              </h4>
+                              {isUnread && (
+                                <span className="w-2 h-2 rounded-full bg-[#C59B27] shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-xs text-[#3F3F46] mt-1.5 leading-relaxed line-clamp-2">
+                              {notif.message}
+                            </p>
+                            <div className="text-[10px] text-[#A1A1AA] mt-2 font-mono">
+                              {new Date(notif.createdAt).toLocaleTimeString('en-US', {
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true
+                              })} • {new Date(notif.createdAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* PHASE 4 - Notification preferences UI */}
+            <div 
+              className="px-5 py-4.5 bg-white border-t border-[#E5D5AE]/40 flex flex-col gap-3 shrink-0"
+              data-component-version="notification-preferences-v2-brand"
+            >
+              <h4 className="text-xs font-serif-koinonia font-bold text-[#8C6D23] uppercase tracking-wider">
+                Notification settings
+              </h4>
+
+              {/* Sound alerts row */}
+              <div className="flex items-center justify-between text-xs py-1">
                 <div className="flex flex-col text-left">
-                  <span className="font-semibold text-[#18181B]">Sound Notifications</span>
-                  <span className="text-[10px] text-[#6B7280]">Play gentle chime for new alerts</span>
+                  <span className="font-semibold text-[#18181B]">Sound alerts</span>
+                  <span className="text-[10px] text-[#6B7280]">Play a soft alert for new updates.</span>
                 </div>
                 <button
                   onClick={() => {
@@ -1346,25 +1460,29 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       soundUtility.playChime(true);
                     }
                   }}
-                  className={`px-3.5 py-1.5 rounded-full text-[10px] font-bold tracking-wider uppercase transition-all ${
+                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all ${
                     isSoundOn 
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                      : 'bg-white border border-[#D9D6CE] text-[#3F3F46]'
+                      ? 'bg-[#C59B27] text-white' 
+                      : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
                   }`}
                 >
-                  {isSoundOn ? 'ON' : 'OFF'}
+                  {isSoundOn ? 'On' : 'Off'}
                 </button>
               </div>
 
-              {/* Push notifications button */}
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-[#EAE8E1]/60">
+              {/* Push notifications row */}
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E5D5AE]/30">
                 <div className="flex flex-col text-left">
-                  <span className="font-semibold text-[#18181B]">Push Notifications</span>
-                  <span className="text-[10px] text-[#6B7280]">Receive instant device updates</span>
+                  <span className="font-semibold text-[#18181B]">Push notifications</span>
+                  <span className="text-[10px] text-[#6B7280]">Receive updates on this device.</span>
                 </div>
-                {isPushEnabled ? (
-                  <span className="px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-[#FAF6EB] text-[#C59B27] border border-[#EAE8E1] tracking-wider uppercase">
-                    Active
+                {typeof Notification === 'undefined' ? (
+                  <span className="text-[10px] font-semibold text-[#6B7280]">
+                    Push notifications are not available yet.
+                  </span>
+                ) : isPushEnabled ? (
+                  <span className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE] tracking-wider uppercase">
+                    On
                   </span>
                 ) : (
                   <button
@@ -1374,15 +1492,219 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         setIsPushEnabled(true);
                         showInfo('Push notifications enabled!', 'You will now receive alerts directly on your device.');
                       } else {
-                        showInfo('Setup Alert', res.error || 'Failed to register push subscription.');
+                        showInfo('Setup Alert', 'Push notifications are not available yet.');
                       }
                     }}
-                    className="px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-white border border-[#D9D6CE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all"
+                    className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all"
                   >
                     Enable
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help and questions Drawer Bottom Sheet */}
+      {showHelpDrawer && (
+        <div 
+          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          data-view-version="parent-help-v1-brand"
+          onClick={() => setShowHelpDrawer(false)}
+        >
+          <div 
+            className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            data-component-version="parent-profile-info-sheet-v1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3.5">
+                <div className="p-2.5 bg-[#FAF6EB] rounded-2xl border border-[#E5D5AE]/60 text-[#C59B27]">
+                  <HelpCircle className="w-5 h-5 stroke-[1.75]" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
+                    Help and questions
+                  </h3>
+                  <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
+                    Common answers for parents during the event.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowHelpDrawer(false)}
+                className="p-2 rounded-xl hover:bg-[#FAF6EB] text-[#6B7280] hover:text-[#18181B] cursor-pointer transition-colors focus:outline-none"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4.5">
+              {[
+                {
+                  id: "faq-1",
+                  title: "How do I check my child’s status?",
+                  body: "Open your child’s profile from your parent account to see review, pass, check-in, and pickup updates."
+                },
+                {
+                  id: "faq-2",
+                  title: "When will the event pass be ready?",
+                  body: "If your child has been selected, the pass will appear once it has been issued by the event team."
+                },
+                {
+                  id: "faq-3",
+                  title: "What should I do if my child’s details are wrong?",
+                  body: "Use the update option on your child’s record, or contact the event team for support."
+                },
+                {
+                  id: "faq-4",
+                  title: "What if I cannot open my child’s pass?",
+                  body: "A volunteer can search for your child by name or parent phone number at the event desk."
+                },
+                {
+                  id: "faq-5",
+                  title: "Who can pick up my child?",
+                  body: "Only the approved pickup person listed on the child’s record should pick up the child."
+                },
+                {
+                  id: "faq-6",
+                  title: "Need more help?",
+                  body: "Contact the event team through the support option provided in your account."
+                }
+              ].map((faq, idx) => (
+                <div 
+                  key={faq.id} 
+                  id={faq.id}
+                  className="bg-white rounded-2xl border border-[#EAE8E1]/80 p-4.5 shadow-2xs space-y-2 text-left"
+                >
+                  <div className="flex items-start space-x-2.5">
+                    <span className="text-xs font-serif-koinonia font-semibold text-[#C59B27] mt-0.5">
+                      {idx + 1}.
+                    </span>
+                    <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                      {faq.title}
+                    </h4>
+                  </div>
+                  <p className="text-xs text-[#3F3F46] leading-relaxed pl-5">
+                    {faq.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4.5 bg-white border-t border-[#EAE8E1]/60 flex justify-center shrink-0">
+              <button
+                onClick={() => setShowHelpDrawer(false)}
+                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
+              >
+                Close help guide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Safety information Drawer Bottom Sheet */}
+      {showSafetyDrawer && (
+        <div 
+          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          data-view-version="parent-safety-v1-brand"
+          onClick={() => setShowSafetyDrawer(false)}
+        >
+          <div 
+            className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            data-component-version="parent-profile-info-sheet-v1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3.5">
+                <div className="p-2.5 bg-[#FAF6EB] rounded-2xl border border-[#E5D5AE]/60 text-[#C59B27]">
+                  <Shield className="w-5 h-5 stroke-[1.75]" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
+                    Safety information
+                  </h3>
+                  <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
+                    How we help keep children safe during the event.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSafetyDrawer(false)}
+                className="p-2 rounded-xl hover:bg-[#FAF6EB] text-[#6B7280] hover:text-[#18181B] cursor-pointer transition-colors focus:outline-none"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4.5">
+              {[
+                {
+                  id: "safety-1",
+                  title: "Child check-in",
+                  body: "Each child is checked in before joining the event area. Volunteers confirm the child’s record before marking entry."
+                },
+                {
+                  id: "safety-2",
+                  title: "Authorized pickup",
+                  body: "Children are released only to an approved pickup person listed on the child’s record."
+                },
+                {
+                  id: "safety-3",
+                  title: "Photo confirmation",
+                  body: "Where photos are provided, volunteers use them to help confirm the child and pickup person."
+                },
+                {
+                  id: "safety-4",
+                  title: "Care notes",
+                  body: "Medical notes, allergies, and extra support details are shown to the event team when needed."
+                },
+                {
+                  id: "safety-5",
+                  title: "Pass protection",
+                  body: "Event passes should only be shared with trusted parents or approved pickup persons."
+                },
+                {
+                  id: "safety-6",
+                  title: "If something looks wrong",
+                  body: "Please contact the event team immediately so they can review the child’s record."
+                }
+              ].map((safety, idx) => (
+                <div 
+                  key={safety.id} 
+                  id={safety.id}
+                  className="bg-white rounded-2xl border border-[#EAE8E1]/80 p-4.5 shadow-2xs space-y-2 text-left"
+                >
+                  <div className="flex items-start space-x-2.5">
+                    <span className="text-xs font-serif-koinonia font-semibold text-[#C59B27] mt-0.5">
+                      {idx + 1}.
+                    </span>
+                    <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                      {safety.title}
+                    </h4>
+                  </div>
+                  <p className="text-xs text-[#3F3F46] leading-relaxed pl-5">
+                    {safety.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4.5 bg-white border-t border-[#EAE8E1]/60 flex justify-center shrink-0">
+              <button
+                onClick={() => setShowSafetyDrawer(false)}
+                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
+              >
+                Close safety guide
+              </button>
             </div>
           </div>
         </div>

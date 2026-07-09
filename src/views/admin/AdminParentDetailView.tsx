@@ -26,6 +26,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AppRoute } from '../../types';
 
 interface AdminParentDetailViewProps {
@@ -221,9 +222,13 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <Loader2 className="w-10 h-10 animate-spin text-[#C59B27] stroke-[1.5]" />
-        <p className="text-sm font-serif text-zinc-500 font-medium">Retrieving Parent Record Folders...</p>
+      <div className="flex items-center justify-center min-h-[60vh] w-full p-6">
+        <KoinoniaInlineLoader
+          variant="logo"
+          size="lg"
+          label="Loading profile..."
+          centered
+        />
       </div>
     );
   }

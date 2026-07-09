@@ -1159,16 +1159,25 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     }
 
     const now = new Date().toISOString();
+    let finalStatus = status;
+
+    if (status === 'selected') {
+      const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [app.child_id]);
+      if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
+        // Required pass data exists (valid photo) -> Promote status to 'pass_ready'
+        finalStatus = 'pass_ready';
+      }
+    }
 
     // Update status and team notes in database
     await execute(`
       UPDATE child_event_entries 
       SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
       WHERE id = ?
-    `, [status, noteToTeam || app.note_to_team, now, now, id]);
+    `, [finalStatus, noteToTeam || app.note_to_team, now, now, id]);
 
-    // Auto-generate event pass if status is pass_ready or selected
-    if (status === 'pass_ready' || status === 'selected') {
+    // Auto-generate event pass if status is pass_ready
+    if (finalStatus === 'pass_ready') {
       const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
       if (!pass) {
         const passId = crypto.randomUUID();
@@ -1190,10 +1199,13 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       const pName = app.parent_name?.split(' ')[0] || 'Parent';
       const cName = app.child_name || 'your child';
 
-      if (status === 'selected' || status === 'pass_ready') {
-        subject = 'Koinonia Application Selected!';
+      if (finalStatus === 'pass_ready') {
+        subject = 'Koinonia Event Pass Ready!';
         message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-      } else if (status === 'waiting_list') {
+      } else if (finalStatus === 'selected') {
+        subject = 'Koinonia Application Selected!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (finalStatus === 'waiting_list') {
         subject = 'Koinonia Application Waitlist Update';
         message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
       } else if (status === 'not_selected') {
@@ -1249,6 +1261,106 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
   }
 });
 
+// POST reopen child application review (admin revoke selection/pass)
+router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const app = await queryOne(`
+      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!app) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    // Validate child check-in status: cannot reopen if checked in or picked up
+    if (['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'This child has already checked in or been picked up. Review cannot be reopened.' 
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    // Update child_event_entries status, reviewed_at to NULL, and append reason to note_to_team as audit trail
+    let auditNote = app.note_to_team || '';
+    if (reason && reason.trim()) {
+      const formattedReason = `\n\n[Review reopened on ${new Date().toLocaleDateString()} for reason: ${reason}]`;
+      auditNote = auditNote ? `${auditNote}${formattedReason}` : formattedReason;
+    }
+
+    await execute(`
+      UPDATE child_event_entries 
+      SET status = 'review_reopened', note_to_team = ?, reviewed_at = NULL, updated_at = ?
+      WHERE id = ?
+    `, [auditNote, now, id]);
+
+    // Revoke any generated event pass
+    await execute(`
+      UPDATE event_passes
+      SET status = 'revoked', revoked_at = ?, updated_at = ?
+      WHERE child_event_entry_id = ?
+    `, [now, now, id]);
+
+    // Send gentle, comforting parent notification
+    const pName = app.parent_name?.split(' ')[0] || 'Parent';
+    const cFirstName = app.child_name ? app.child_name.split(' ')[0] : 'your child';
+    
+    const subject = 'Koinonia Application Update';
+    const message = `The event team has reopened the review for ${cFirstName}. We will share an update when a new decision is made.`;
+
+    // 1. Send transactional email
+    if (app.parent_email) {
+      await sendEmail({
+        to: app.parent_email,
+        subject,
+        text: message,
+        html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+            <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+          </div>
+          <p>Hello ${pName},</p>
+          <p>${message}</p>
+          <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+          <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+        </div>`
+      }).catch(err => console.error('Failed to send revoke email notification:', err));
+    }
+
+    // 2. Dispatch WhatsApp if phone is available
+    if (app.parent_phone) {
+      await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
+    }
+
+    // 3. Create In-App Notification
+    const notifId = `notif-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+      ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+    `, [notifId, subject, `Hello ${pName},\n\n${message}`, app.event_id, app.child_id, app.parent_profile_id, now]);
+
+    const pNotifId = `pnotif-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, `Hello ${pName},\n\n${message}`, now]);
+
+    return res.json({ success: true, message: 'Application review reopened successfully.' });
+  } catch (err: any) {
+    console.error('Error reopening application review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to reopen application review.' });
+  }
+});
+
 // POST bulk review applications
 router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -1273,15 +1385,25 @@ router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: 
 
       if (!app) continue;
 
+      let finalDecision = decision;
+
+      if (decision === 'selected') {
+        const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [app.child_id]);
+        if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
+          // Required pass data exists (valid photo) -> Promote to 'pass_ready'
+          finalDecision = 'pass_ready';
+        }
+      }
+
       // Update status
       await execute(`
         UPDATE child_event_entries 
         SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [decision, note || app.note_to_team, now, now, id]);
+      `, [finalDecision, note || app.note_to_team, now, now, id]);
 
-      // If selected, auto-generate pass
-      if (decision === 'selected') {
+      // If pass_ready, auto-generate pass
+      if (finalDecision === 'pass_ready') {
         const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
         if (!pass) {
           const passId = crypto.randomUUID();
@@ -1302,10 +1424,13 @@ router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: 
         const pName = app.parent_name?.split(' ')[0] || 'Parent';
         const cName = app.child_name || 'your child';
 
-        if (decision === 'selected') {
-          subject = 'Koinonia Application Selected!';
+        if (finalDecision === 'pass_ready') {
+          subject = 'Koinonia Event Pass Ready!';
           message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (decision === 'waiting_list') {
+        } else if (finalDecision === 'selected') {
+          subject = 'Koinonia Application Selected!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalDecision === 'waiting_list') {
           subject = 'Koinonia Application Waitlist Update';
           message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
         } else if (decision === 'not_selected') {
@@ -1377,6 +1502,15 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
     }
 
     const now = new Date().toISOString();
+    let finalStatus = status;
+
+    if (status === 'selected') {
+      const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [entry.child_id]);
+      if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
+        // Required pass data exists (valid photo) -> Promote to 'pass_ready'
+        finalStatus = 'pass_ready';
+      }
+    }
 
     // Update status in database
     if (noteToTeam !== undefined) {
@@ -1384,17 +1518,17 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
         UPDATE child_event_entries 
         SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [status, noteToTeam, now, now, id]);
+      `, [finalStatus, noteToTeam, now, now, id]);
     } else {
       await execute(`
         UPDATE child_event_entries 
         SET status = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [status, now, now, id]);
+      `, [finalStatus, now, now, id]);
     }
 
-    // Auto-generate pass if status is pass_ready or selected and pass doesn't exist
-    if (status === 'pass_ready' || status === 'selected') {
+    // Auto-generate pass if status is pass_ready and pass doesn't exist
+    if (finalStatus === 'pass_ready') {
       const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
       if (!pass) {
         const passId = crypto.randomUUID();
@@ -1674,14 +1808,18 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// GET event details including scheduler fields
+// GET event details including scheduler fields and age groups
 router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) => {
   const { eventId } = req.params;
   const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) {
     return res.status(404).json({ error: 'Event not found' });
   }
+
+  const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
+
   res.json({
+    // flat fields for backward compatibility
     id: event.id,
     title: event.title,
     sectionName: event.section_name,
@@ -1699,7 +1837,46 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     pickupStartsAt: event.pickup_starts_at || '',
     pickupReminderAt: event.pickup_reminder_at || '',
     timezone: event.timezone || 'Africa/Lagos',
-    status: event.status
+    status: event.status,
+
+    // nested objects for structured events client
+    success: true,
+    event: {
+      id: event.id,
+      title: event.title,
+      sectionName: event.section_name,
+      theme: event.theme,
+      scripture: event.scripture,
+      location: event.location,
+      startsAt: event.starts_at,
+      endsAt: event.ends_at,
+      dailyStartTime: event.daily_start_time,
+      dailyEndTime: event.daily_end_time,
+      eventStartAt: event.event_start_at || '',
+      eventEndAt: event.event_end_at || '',
+      checkInOpensAt: event.check_in_opens_at || '',
+      checkInClosesAt: event.check_in_closes_at || '',
+      pickupStartsAt: event.pickup_starts_at || '',
+      pickupReminderAt: event.pickup_reminder_at || '',
+      timezone: event.timezone || 'Africa/Lagos',
+      status: event.status,
+      parentAccessOpensAt: event.parent_access_opens_at,
+      parentAccessClosesAt: event.parent_access_closes_at,
+      parentsCanCreateAccount: event.parents_can_create_account === 1,
+      allowMultipleChildren: event.allow_multiple_children === 1,
+      allowSaveAndContinue: event.allow_save_and_continue === 1,
+      allowEditAfterSubmission: event.allow_edit_after_submission === 1,
+      description: event.description
+    },
+    ageGroups: ageGroups.map((g: any) => ({
+      id: g.id,
+      label: g.label,
+      minAge: g.min_age,
+      maxAge: g.max_age,
+      capacity: g.capacity,
+      manualReview: g.manual_review === 1 || g.manual_review === true,
+      sortOrder: g.sort_order
+    }))
   });
 });
 
@@ -1757,6 +1934,326 @@ router.put('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     success: true,
     message: 'Event notification settings updated successfully and jobs have been synchronized.'
   });
+});
+
+// GET all events
+router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const statusFilter = req.query.status as string;
+    let sql = 'SELECT * FROM events';
+    const params: any[] = [];
+    if (statusFilter) {
+      sql += ' WHERE status = ?';
+      params.push(statusFilter);
+    }
+    sql += ' ORDER BY starts_at DESC, created_at DESC';
+    const events = await query(sql, params);
+
+    const enrichedEvents = [];
+    for (const event of events) {
+      // Get capacities sum
+      const capRes = await queryOne('SELECT SUM(capacity) as total_capacity FROM event_age_groups WHERE event_id = ?', [event.id]);
+      const totalCapacity = capRes?.total_capacity || 0;
+
+      // Get applications count
+      const appsRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [event.id]);
+      const applicationsCount = appsRes?.count || 0;
+
+      // Get pass ready / selected count
+      const selectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')", [event.id]);
+      const selectedCount = selectedRes?.count || 0;
+
+      enrichedEvents.push({
+        id: event.id,
+        title: event.title,
+        sectionName: event.section_name,
+        location: event.location,
+        startsAt: event.starts_at,
+        endsAt: event.ends_at,
+        dailyStartTime: event.daily_start_time,
+        dailyEndTime: event.daily_end_time,
+        status: event.status,
+        timezone: event.timezone || 'Africa/Lagos',
+        parentAccessOpensAt: event.parent_access_opens_at,
+        parentAccessClosesAt: event.parent_access_closes_at,
+        parentsCanCreateAccount: event.parents_can_create_account === 1 || event.parents_can_create_account === true,
+        allowMultipleChildren: event.allow_multiple_children === 1 || event.allow_multiple_children === true,
+        allowSaveAndContinue: event.allow_save_and_continue === 1 || event.allow_save_and_continue === true,
+        allowEditAfterSubmission: event.allow_edit_after_submission === 1 || event.allow_edit_after_submission === true,
+        description: event.description,
+        totalCapacity,
+        applicationsCount,
+        selectedCount
+      });
+    }
+
+    res.json({ success: true, events: enrichedEvents });
+  } catch (err: any) {
+    console.error('Error fetching events:', err);
+    res.status(500).json({ error: 'Failed to fetch events.' });
+  }
+});
+
+// CREATE a new event with its age groups
+router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const {
+      title,
+      sectionName,
+      location,
+      startsAt,
+      endsAt,
+      dailyStartTime,
+      dailyEndTime,
+      description,
+      parentAccessOpensAt,
+      parentAccessClosesAt,
+      parentsCanCreateAccount,
+      allowMultipleChildren,
+      allowSaveAndContinue,
+      allowEditAfterSubmission,
+      status = 'draft',
+      ageGroups = []
+    } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ error: 'Event name is required.' });
+    }
+    if (title.length > 120) {
+      return res.status(400).json({ error: 'Event name cannot exceed 120 characters.' });
+    }
+    if (!sectionName) {
+      return res.status(400).json({ error: 'Event group (section) is required.' });
+    }
+    if (!location) {
+      return res.status(400).json({ error: 'Venue is required.' });
+    }
+    if (location.length > 120) {
+      return res.status(400).json({ error: 'Venue name cannot exceed 120 characters.' });
+    }
+    if (!startsAt) {
+      return res.status(400).json({ error: 'Event date is required.' });
+    }
+    if (!dailyStartTime) {
+      return res.status(400).json({ error: 'Start time is required.' });
+    }
+    if (!dailyEndTime) {
+      return res.status(400).json({ error: 'End time is required.' });
+    }
+
+    const eventId = 'event-' + Math.random().toString(36).substring(2, 11);
+    const now = new Date().toISOString();
+
+    await execute(`
+      INSERT INTO events (
+        id, title, section_name, location, starts_at, ends_at,
+        daily_start_time, daily_end_time, description, status,
+        parent_access_opens_at, parent_access_closes_at,
+        parents_can_create_account, allow_multiple_children,
+        allow_save_and_continue, allow_edit_after_submission,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      eventId,
+      title,
+      sectionName,
+      location,
+      startsAt,
+      endsAt || startsAt,
+      dailyStartTime,
+      dailyEndTime,
+      description || '',
+      status,
+      parentAccessOpensAt || null,
+      parentAccessClosesAt || null,
+      parentsCanCreateAccount ? 1 : 0,
+      allowMultipleChildren ? 1 : 0,
+      allowSaveAndContinue ? 1 : 0,
+      allowEditAfterSubmission ? 1 : 0,
+      now,
+      now
+    ]);
+
+    if (ageGroups && Array.isArray(ageGroups)) {
+      let sortOrder = 0;
+      for (const group of ageGroups) {
+        const groupId = 'group-' + Math.random().toString(36).substring(2, 11);
+        await execute(`
+          INSERT INTO event_age_groups (
+            id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          groupId,
+          eventId,
+          group.label,
+          parseInt(group.minAge) || 0,
+          parseInt(group.maxAge) || 0,
+          parseInt(group.capacity) || 0,
+          group.manualReview ? 1 : 0,
+          sortOrder++,
+          now,
+          now
+        ]);
+      }
+    }
+
+    res.json({ success: true, eventId, message: 'Event created successfully.' });
+  } catch (err: any) {
+    console.error('Error creating event:', err);
+    res.status(500).json({ error: 'Failed to create event.' });
+  }
+});
+
+// UPDATE event details (PATCH style for full/partial editing, handles age group sync)
+router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const {
+      title,
+      sectionName,
+      location,
+      startsAt,
+      endsAt,
+      dailyStartTime,
+      dailyEndTime,
+      description,
+      parentAccessOpensAt,
+      parentAccessClosesAt,
+      parentsCanCreateAccount,
+      allowMultipleChildren,
+      allowSaveAndContinue,
+      allowEditAfterSubmission,
+      status,
+      ageGroups
+    } = req.body;
+
+    const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    if (title !== undefined) {
+      if (!title) return res.status(400).json({ error: 'Event name is required.' });
+      if (title.length > 120) return res.status(400).json({ error: 'Event name cannot exceed 120 characters.' });
+    }
+    if (sectionName !== undefined && !sectionName) {
+      return res.status(400).json({ error: 'Event section name is required.' });
+    }
+    if (location !== undefined) {
+      if (!location) return res.status(400).json({ error: 'Venue is required.' });
+      if (location.length > 120) return res.status(400).json({ error: 'Venue name cannot exceed 120 characters.' });
+    }
+
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE events SET
+        title = COALESCE(?, title),
+        section_name = COALESCE(?, section_name),
+        location = COALESCE(?, location),
+        starts_at = COALESCE(?, starts_at),
+        ends_at = COALESCE(?, ends_at),
+        daily_start_time = COALESCE(?, daily_start_time),
+        daily_end_time = COALESCE(?, daily_end_time),
+        description = COALESCE(?, description),
+        status = COALESCE(?, status),
+        parent_access_opens_at = ?,
+        parent_access_closes_at = ?,
+        parents_can_create_account = COALESCE(?, parents_can_create_account),
+        allow_multiple_children = COALESCE(?, allow_multiple_children),
+        allow_save_and_continue = COALESCE(?, allow_save_and_continue),
+        allow_edit_after_submission = COALESCE(?, allow_edit_after_submission),
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      title || null,
+      sectionName || null,
+      location || null,
+      startsAt || null,
+      endsAt || null,
+      dailyStartTime || null,
+      dailyEndTime || null,
+      description !== undefined ? description : null,
+      status || null,
+      parentAccessOpensAt !== undefined ? parentAccessOpensAt : event.parent_access_opens_at,
+      parentAccessClosesAt !== undefined ? parentAccessClosesAt : event.parent_access_closes_at,
+      parentsCanCreateAccount !== undefined ? (parentsCanCreateAccount ? 1 : 0) : null,
+      allowMultipleChildren !== undefined ? (allowMultipleChildren ? 1 : 0) : null,
+      allowSaveAndContinue !== undefined ? (allowSaveAndContinue ? 1 : 0) : null,
+      allowEditAfterSubmission !== undefined ? (allowEditAfterSubmission ? 1 : 0) : null,
+      now,
+      eventId
+    ]);
+
+    if (ageGroups && Array.isArray(ageGroups)) {
+      await execute('DELETE FROM event_age_groups WHERE event_id = ?', [eventId]);
+
+      let sortOrder = 0;
+      for (const group of ageGroups) {
+        const groupId = 'group-' + Math.random().toString(36).substring(2, 11);
+        await execute(`
+          INSERT INTO event_age_groups (
+            id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          groupId,
+          eventId,
+          group.label,
+          parseInt(group.minAge) || 0,
+          parseInt(group.maxAge) || 0,
+          parseInt(group.capacity) || 0,
+          group.manualReview ? 1 : 0,
+          sortOrder++,
+          now,
+          now
+        ]);
+      }
+    }
+
+    res.json({ success: true, message: 'Event updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating event:', err);
+    res.status(500).json({ error: 'Failed to update event.' });
+  }
+});
+
+// PUBLISH event
+router.post('/events/:eventId/publish', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    await execute("UPDATE events SET status = 'upcoming', updated_at = ? WHERE id = ?", [new Date().toISOString(), eventId]);
+    res.json({ success: true, message: 'Event published successfully.' });
+  } catch (err: any) {
+    console.error('Error publishing event:', err);
+    res.status(500).json({ error: 'Failed to publish event.' });
+  }
+});
+
+// ARCHIVE event
+router.post('/events/:eventId/archive', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const now = new Date().toISOString();
+    await execute("UPDATE events SET status = 'archived', archived_at = ?, updated_at = ? WHERE id = ?", [now, now, eventId]);
+    res.json({ success: true, message: 'Event archived successfully.' });
+  } catch (err: any) {
+    console.error('Error archiving event:', err);
+    res.status(500).json({ error: 'Failed to archive event.' });
+  }
+});
+
+// SET CURRENT ACTIVE event
+router.post('/events/:eventId/set-current', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const now = new Date().toISOString();
+    await execute("UPDATE events SET status = 'upcoming', updated_at = ? WHERE status = 'current'", [now]);
+    await execute("UPDATE events SET status = 'current', updated_at = ? WHERE id = ?", [now, eventId]);
+    res.json({ success: true, message: 'Event is now set as the active current event.' });
+  } catch (err: any) {
+    console.error('Error setting current event:', err);
+    res.status(500).json({ error: 'Failed to set current event.' });
+  }
 });
 
 // Safe report query helpers to prevent any route crashing

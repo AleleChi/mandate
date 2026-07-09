@@ -20,6 +20,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { motion } from 'motion/react';
 
 interface AdminReportsViewProps {
@@ -125,9 +126,13 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-stone-500">
-        <Loader2 className="w-8 h-8 animate-spin text-[#C59B27] mb-3" />
-        <p className="text-sm font-medium">Loading report metrics and logs...</p>
+      <div className="flex items-center justify-center min-h-[60vh] w-full p-6">
+        <KoinoniaInlineLoader
+          variant="logo"
+          size="lg"
+          label="Loading reports..."
+          centered
+        />
       </div>
     );
   }

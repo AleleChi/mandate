@@ -177,11 +177,12 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   // Determine active progress steps based on status
   const currentStatus = foundChild.status || 'Under review';
   const isDetailsSentDone = true;
-  const isReviewDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready'].includes(currentStatus);
+  const isReviewDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
   const isReviewActive = currentStatus === 'Under review';
-  const isDecisionDone = ['Pass ready'].includes(currentStatus);
-  const isDecisionActive = ['Selected', 'Not selected', 'Waiting list'].includes(currentStatus);
-  const isPassDone = currentStatus === 'Pass ready';
+  const isDecisionDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
+  const isDecisionActive = false;
+  const isPassDone = ['Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
+  const isPassPending = currentStatus === 'Selected';
 
   return (
     <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 pb-24">
@@ -316,20 +317,16 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                 <div className="w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shadow-2xs shrink-0 mt-0.5">
                   <Check className="w-3 h-3 stroke-[3]" />
                 </div>
-              ) : isDecisionActive ? (
-                <div className="w-5 h-5 rounded-full border-2 border-[#8C6D23] bg-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                  <div className="w-2 h-2 rounded-full bg-[#8C6D23]" />
-                </div>
               ) : (
                 <div className="w-5 h-5 rounded-full border-2 border-[#EAE8E1] bg-[#FAF8F3] shrink-0 mt-0.5" />
               )}
               <div>
-                <span className={`font-medium text-sm sm:text-base leading-snug block ${isDecisionActive ? 'font-serif-koinonia font-bold text-[#18181B]' : isDecisionDone ? 'font-bold text-[#3F3F46]' : 'text-[#A1A1AA]'}`}>
+                <span className={`font-medium text-sm sm:text-base leading-snug block ${isDecisionDone ? 'font-bold text-[#3F3F46]' : 'text-[#A1A1AA]'}`}>
                   Decision
                 </span>
-                {isDecisionActive && (
-                  <span className="text-xs text-[#3F3F46] block mt-0.5">
-                    {currentStatus}
+                {isDecisionDone && (
+                  <span className="text-xs text-[#8C6D23] font-medium block mt-0.5">
+                    {currentStatus === 'Pass ready' || currentStatus === 'Selected' ? 'Selected' : currentStatus}
                   </span>
                 )}
               </div>
@@ -341,13 +338,27 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                 <div className="w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shadow-2xs shrink-0 mt-0.5">
                   <Check className="w-3 h-3 stroke-[3]" />
                 </div>
+              ) : isPassPending ? (
+                <div className="w-5 h-5 rounded-full border-2 border-[#8C6D23] bg-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs animate-pulse">
+                  <div className="w-2 h-2 rounded-full bg-[#8C6D23]" />
+                </div>
               ) : (
                 <div className="w-5 h-5 rounded-full border-2 border-[#EAE8E1] bg-[#FAF8F3] shrink-0 mt-0.5" />
               )}
               <div>
-                <span className={`font-medium text-sm sm:text-base leading-snug block ${isPassDone ? 'font-serif-koinonia font-bold text-[#18181B]' : 'text-[#A1A1AA]'}`}>
+                <span className={`font-medium text-sm sm:text-base leading-snug block ${isPassDone || isPassPending ? 'font-serif-koinonia font-bold text-[#18181B]' : 'text-[#A1A1AA]'}`}>
                   Pass
                 </span>
+                {isPassPending && (
+                  <span className="text-xs text-[#8C6D23] font-medium block mt-0.5 animate-pulse">
+                    Generating shortly...
+                  </span>
+                )}
+                {isPassDone && (
+                  <span className="text-xs text-[#22C55E] font-medium block mt-0.5">
+                    Ready
+                  </span>
+                )}
               </div>
             </div>
           </div>

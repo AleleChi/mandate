@@ -16,6 +16,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
 
 interface AdminApplicationsViewProps {
@@ -319,9 +320,13 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       {/* REGISTRATION DATA TABLE */}
       <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs">
         {loading ? (
-          <div className="py-24 text-center flex flex-col items-center justify-center space-y-3">
-            <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-            <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Loading applications...</span>
+          <div className="p-8">
+            <KoinoniaInlineLoader
+              variant="skeleton"
+              size="lg"
+              label="Loading applications..."
+              centered
+            />
           </div>
         ) : filteredApplications.length === 0 ? (
           <div className="py-20 text-center flex flex-col items-center justify-center space-y-2">

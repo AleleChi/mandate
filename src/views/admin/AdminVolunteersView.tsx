@@ -21,6 +21,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 
 interface AdminVolunteersViewProps {
   onBackToOverview: () => void;
@@ -306,9 +307,13 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       {/* 3. Volunteers List Table */}
       <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 space-y-3">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27]"></div>
-            <p className="text-xs text-zinc-500 font-medium font-serif">Loading volunteers directory...</p>
+          <div className="p-8">
+            <KoinoniaInlineLoader
+              variant="skeleton"
+              size="lg"
+              label="Loading volunteers directory..."
+              centered
+            />
           </div>
         ) : volunteers.length === 0 ? (
           <div className="text-center py-20 text-zinc-400 space-y-2">

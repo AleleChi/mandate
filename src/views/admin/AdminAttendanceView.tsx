@@ -19,6 +19,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 
 interface AdminAttendanceViewProps {
   onBackToOverview: () => void;
@@ -378,9 +379,13 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
             </div>
 
             {loading ? (
-              <div className="py-20 flex flex-col items-center justify-center space-y-3">
-                <RefreshCw className="w-6 h-6 text-[#C59B27] animate-spin" />
-                <span className="text-xs text-zinc-500">Loading registers...</span>
+              <div className="py-8">
+                <KoinoniaInlineLoader
+                  variant="skeleton"
+                  size="lg"
+                  label="Loading registers..."
+                  centered
+                />
               </div>
             ) : (
               <>
@@ -514,8 +519,12 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
             </div>
 
             {loading ? (
-              <div className="py-12 flex items-center justify-center">
-                <RefreshCw className="w-5 h-5 text-[#C59B27] animate-spin" />
+              <div className="py-4">
+                <KoinoniaInlineLoader
+                  variant="line"
+                  size="sm"
+                  centered
+                />
               </div>
             ) : ageGroups.length === 0 ? (
               <div className="py-8 text-center text-xs text-zinc-400">
@@ -625,8 +634,12 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
             </h4>
             
             {loading ? (
-              <div className="py-6 flex justify-center">
-                <RefreshCw className="w-4 h-4 text-[#C59B27] animate-spin" />
+              <div className="py-2">
+                <KoinoniaInlineLoader
+                  variant="line"
+                  size="sm"
+                  centered
+                />
               </div>
             ) : recentScans.length === 0 ? (
               <p className="text-zinc-400 text-xs text-center py-4">No recent scans yet.</p>
@@ -668,8 +681,12 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
             </h4>
 
             {loading ? (
-              <div className="py-6 flex justify-center">
-                <RefreshCw className="w-4 h-4 text-[#C59B27] animate-spin" />
+              <div className="py-2">
+                <KoinoniaInlineLoader
+                  variant="line"
+                  size="sm"
+                  centered
+                />
               </div>
             ) : teamActivity.length === 0 ? (
               <p className="text-zinc-400 text-xs text-center py-4">No team activity yet.</p>

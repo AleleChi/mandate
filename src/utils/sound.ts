@@ -7,6 +7,8 @@
  * user interaction.
  */
 
+import { safeStorage } from './storage';
+
 const SOUND_PREF_KEY = 'koinonia_notification_sound_enabled';
 
 // Elegant default chime sound (MP3 URL)
@@ -18,8 +20,7 @@ export const soundUtility = {
    * Defaults to false (off) per system rules.
    */
   isEnabled(): boolean {
-    if (typeof localStorage === 'undefined') return false;
-    const val = localStorage.getItem(SOUND_PREF_KEY);
+    const val = safeStorage.getItem(SOUND_PREF_KEY);
     return val === 'true'; // Defaults to false if not set
   },
 
@@ -27,8 +28,7 @@ export const soundUtility = {
    * Enable or disable notification sounds.
    */
   setEnabled(enabled: boolean) {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(SOUND_PREF_KEY, enabled ? 'true' : 'false');
+    safeStorage.setItem(SOUND_PREF_KEY, enabled ? 'true' : 'false');
   },
 
   /**

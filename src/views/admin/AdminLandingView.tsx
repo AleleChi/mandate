@@ -16,6 +16,7 @@ import {
   FileVideo
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 
 interface AdminLandingViewProps {
   isSuperAdmin: boolean;
@@ -371,9 +372,14 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-[#EAE8E1]">
-        <Loader2 className="w-10 h-10 text-[#C59B27] animate-spin mb-4" />
-        <p className="text-sm font-medium text-zinc-500">Loading Landing Page configuration slots...</p>
+      <div className="w-full">
+        <KoinoniaInlineLoader
+          variant="logo"
+          size="md"
+          label="Loading Landing Page configuration slots..."
+          fullCard
+          centered
+        />
       </div>
     );
   }
@@ -480,9 +486,13 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                 {/* Media Preview Stage */}
                 <div className="relative mt-3 h-48 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl overflow-hidden flex items-center justify-center">
                   {isUploading ? (
-                    <div className="flex flex-col items-center justify-center text-center space-y-2 p-4">
-                      <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-                      <p className="text-xs font-medium text-zinc-500">Uploading file and saving config...</p>
+                    <div className="p-4 w-full">
+                      <KoinoniaInlineLoader
+                        variant="logo"
+                        size="sm"
+                        label="Loading updates..."
+                        centered
+                      />
                     </div>
                   ) : customUrl ? (
                     slot.type === 'video' ? (

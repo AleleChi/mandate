@@ -19,6 +19,7 @@ import {
 import { api } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
 
 interface AdminChildrenViewProps {
@@ -353,9 +354,13 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
       {/* ERROR OR LOADING OR DATA */}
       {loading ? (
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center shadow-2xs">
-          <div className="w-8 h-8 border-2 border-[#C59B27] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-xs text-zinc-500 font-medium">Loading child records...</p>
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center shadow-2xs">
+          <KoinoniaInlineLoader
+            variant="skeleton"
+            size="lg"
+            label="Loading child records..."
+            centered
+          />
         </div>
       ) : error ? (
         <div className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center shadow-2xs space-y-3">

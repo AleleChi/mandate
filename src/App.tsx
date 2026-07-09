@@ -35,12 +35,138 @@ import { ChildStatusView } from './views/ChildStatusView';
 import { DevNavigator } from './components/common/DevNavigator';
 import { AddChildDraft } from './types';
 import { Button } from './components/common/Button';
+import { AppPreloader } from './components/common/AppPreloader';
+import { KoinoniaInlineLoader } from './components/common/KoinoniaInlineLoader';
+import { safeStorage } from './utils/storage';
 
 import { AdminSignInView } from './views/admin/AdminSignInView';
 import { AdminForgotPasswordView } from './views/admin/AdminForgotPasswordView';
 import { AdminResetPasswordView } from './views/admin/AdminResetPasswordView';
 import { AdminOverviewView } from './views/admin/AdminOverviewView';
 import { AdminAcceptInviteView } from './views/admin/AdminAcceptInviteView';
+import { Seo } from './components/common/Seo';
+
+const getSeoPropsForRoute = (route: string) => {
+  const cleanRoute = route.split('?')[0];
+
+  // Note: '/' is handled directly inside LandingPage.tsx for deep landing page metadata
+  if (cleanRoute === '/') {
+    return null;
+  }
+
+  // Safe defaults
+  const defaults = {
+    robots: 'noindex, nofollow',
+  };
+
+  // Auth & Private Route Titles
+  if (cleanRoute === '/parent/sign-in') {
+    return {
+      title: 'Parent Sign In | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/create-account') {
+    return {
+      title: 'Create Parent Account | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/check-email') {
+    return {
+      title: 'Verify Your Inbox | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/verify-email') {
+    return {
+      title: 'Email Verification | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/forgot-password') {
+    return {
+      title: 'Reset Parent Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/new-password') {
+    return {
+      title: 'Choose New Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/parent')) {
+    return {
+      title: 'Parent Access | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+
+  // Volunteer Routes
+  if (cleanRoute === '/volunteer/sign-in') {
+    return {
+      title: 'Volunteer Sign In | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/volunteer/create-account') {
+    return {
+      title: 'Volunteer Account Creation | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/volunteer/forgot-password') {
+    return {
+      title: 'Reset Volunteer Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/volunteer/reset-password') {
+    return {
+      title: 'Choose New Volunteer Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/volunteer')) {
+    return {
+      title: 'Volunteer Operations | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+
+  // Admin Routes
+  if (cleanRoute === '/admin/sign-in') {
+    return {
+      title: 'Admin Sign In | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/admin/forgot-password') {
+    return {
+      title: 'Reset Administrator Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/admin/reset-password') {
+    return {
+      title: 'Choose New Administrator Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/admin')) {
+    return {
+      title: 'Admin Command Center | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+
+  // Fallback for other unrecognized paths
+  return {
+    title: 'Koinonia Children and Teens',
+    ...defaults,
+  };
+};
 
 export default function App() {
   const { showSuccess, showError, showWarning } = useNotification();
@@ -53,6 +179,7 @@ export default function App() {
   const [addChildDraft, setAddChildDraft] = useState<AddChildDraft | null>(null);
   const [lastSubmittedChild, setLastSubmittedChild] = useState<ChildItem | null>(null);
   const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [showPreloader, setShowPreloader] = useState<boolean>(true);
 
   // Sync route with URL hash for easy browser bookmarking/testing
   useEffect(() => {
@@ -119,7 +246,7 @@ export default function App() {
               }
               if (Array.isArray(homeData.childrenList)) {
                 setChildrenList(homeData.childrenList);
-                const activeId = localStorage.getItem('koinonia_active_draft_id');
+                const activeId = safeStorage.getItem('koinonia_active_draft_id');
                 if (activeId) {
                   const matched = homeData.childrenList.find((c) => c.id === activeId);
                   if (matched && matched.draftData) {
@@ -179,7 +306,7 @@ export default function App() {
           setParentEmail(homeData.parentProfile.email || '');
           if (Array.isArray(homeData.childrenList)) {
             setChildrenList(homeData.childrenList);
-            const activeId = localStorage.getItem('koinonia_active_draft_id');
+            const activeId = safeStorage.getItem('koinonia_active_draft_id');
             if (activeId) {
               const matched = homeData.childrenList.find((c) => c.id === activeId);
               if (matched && matched.draftData) {
@@ -293,7 +420,7 @@ export default function App() {
     setVolunteerProfile(null);
     setChildrenList([]);
     setAddChildDraft(null);
-    localStorage.removeItem('koinonia_active_draft_id');
+    safeStorage.removeItem('koinonia_active_draft_id');
     navigate('/');
     showSuccess('Signed out', 'You have been successfully signed out.');
   };
@@ -301,14 +428,14 @@ export default function App() {
   const handleSaveDraft = async (draft: AddChildDraft, isFinishLater?: boolean) => {
     setAddChildDraft(draft);
     if (draft.id) {
-      localStorage.setItem('koinonia_active_draft_id', draft.id);
+      safeStorage.setItem('koinonia_active_draft_id', draft.id);
     }
     if (api.getToken()) {
       try {
         const savedChild = await api.parent.saveChildDraft(draft, draft.id);
         if (savedChild && savedChild.id) {
           draft.id = savedChild.id;
-          localStorage.setItem('koinonia_active_draft_id', savedChild.id);
+          safeStorage.setItem('koinonia_active_draft_id', savedChild.id);
           if (savedChild.draftData) setAddChildDraft(savedChild.draftData);
           setChildrenList((prev) => {
             const existingIdx = prev.findIndex((c) => c.id === savedChild.id);
@@ -374,7 +501,7 @@ export default function App() {
     const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
     const photoVal = draft.childDetails?.photo || draft.photoUrl || '';
 
-    localStorage.removeItem('koinonia_active_draft_id');
+    safeStorage.removeItem('koinonia_active_draft_id');
 
     if (api.getToken() && draft.id) {
       try {
@@ -438,7 +565,7 @@ export default function App() {
 
   const handleEditChild = (child: ChildItem) => {
     if (child.id) {
-      localStorage.setItem('koinonia_active_draft_id', child.id);
+      safeStorage.setItem('koinonia_active_draft_id', child.id);
     }
     if (child.draftData) {
       setAddChildDraft(child.draftData);
@@ -458,14 +585,14 @@ export default function App() {
   };
 
   const handleStartNewChild = () => {
-    localStorage.removeItem('koinonia_active_draft_id');
+    safeStorage.removeItem('koinonia_active_draft_id');
     setAddChildDraft(null);
     navigate('/parent/children/new');
   };
 
   const handleResumeChildDraft = (child: ChildItem) => {
     if (child.id) {
-      localStorage.setItem('koinonia_active_draft_id', child.id);
+      safeStorage.setItem('koinonia_active_draft_id', child.id);
     }
     if (child.draftData) {
       setAddChildDraft(child.draftData);
@@ -683,11 +810,13 @@ export default function App() {
     // If volunteer profile is missing but user role is volunteer, wait for it or show loading state
     if (!volunteerProfile) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-            <p className="text-sm text-[#52525B] font-medium tracking-wide">Loading volunteer profile...</p>
-          </div>
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans p-6">
+          <KoinoniaInlineLoader
+            variant="logo"
+            size="lg"
+            label="Loading volunteer profile..."
+            centered
+          />
         </div>
       );
     }
@@ -1165,8 +1294,11 @@ export default function App() {
     }
   };
 
+  const seoProps = getSeoPropsForRoute(currentRoute);
+
   return (
     <div className="min-h-screen bg-[#FAF9F6] selection:bg-[#C59B27]/30 selection:text-[#18181B]">
+      {seoProps && <Seo {...seoProps} />}
       {isOffline && (
         <div className="bg-amber-600 text-white text-xs font-semibold py-2.5 px-4 text-center sticky top-0 z-[100] flex items-center justify-center gap-2 shadow-md">
           <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1182,6 +1314,13 @@ export default function App() {
         </div>
       )}
       {renderCurrentRoute()}
+
+      {showPreloader && (
+        <AppPreloader 
+          isAppReady={!isCheckingAuth} 
+          onComplete={() => setShowPreloader(false)} 
+        />
+      )}
 
       {/* Only show DevNavigator on internal parent routes in local development mode, remove from public landing page & production builds */}
       {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && currentRoute !== '/' && (
