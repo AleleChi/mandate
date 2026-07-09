@@ -62,6 +62,7 @@ export interface ChildItem {
   specialNeeds?: string;
   draftData?: AddChildDraft;
   submittedAt?: string;
+  passReference?: string;
 }
 
 export interface AddChildDraft {

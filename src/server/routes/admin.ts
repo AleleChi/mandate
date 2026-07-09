@@ -4,6 +4,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendEmail, sendVolunteerApprovedEmail } from '../services/email';
+import { issuePassForChild, revokePassForChild } from '../services/passService';
 
 const router = Router();
 
@@ -1085,10 +1086,14 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       });
     }
 
+    const pass = await queryOne('SELECT pass_reference FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [id, 'active']);
+    const passReference = pass ? pass.pass_reference : undefined;
+
     const applicationDetails = {
       id: app.entry_id,
       childId: app.child_id,
       status: app.status,
+      passReference,
       schoolClass: app.school_class,
       schoolName: app.school_name,
       previousProgramme: app.previous_children_programme,
@@ -1160,36 +1165,33 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
 
     const now = new Date().toISOString();
     let finalStatus = status;
+    let passData = null;
+    let passErrorReason = null;
 
-    if (status === 'selected') {
-      const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [app.child_id]);
-      if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
-        // Required pass data exists (valid photo) -> Promote status to 'pass_ready'
+    if (status === 'selected' || status === 'pass_ready') {
+      // First update to selected so we have an approved status before issuing
+      await execute(`
+        UPDATE child_event_entries 
+        SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `, [noteToTeam || app.note_to_team, now, now, id]);
+
+      try {
+        passData = await issuePassForChild({ childId: app.child_id });
         finalStatus = 'pass_ready';
+      } catch (err: any) {
+        console.error('Failed to issue pass during admin review:', err);
+        passErrorReason = err.message || 'Pass generation failed';
+        finalStatus = 'selected';
       }
     }
 
-    // Update status and team notes in database
+    // Update status and team notes in database (final update)
     await execute(`
       UPDATE child_event_entries 
       SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
       WHERE id = ?
     `, [finalStatus, noteToTeam || app.note_to_team, now, now, id]);
-
-    // Auto-generate event pass if status is pass_ready
-    if (finalStatus === 'pass_ready') {
-      const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
-      if (!pass) {
-        const passId = crypto.randomUUID();
-        const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-        const passHash = crypto.randomBytes(16).toString('hex');
-        
-        await execute(`
-          INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
-        `, [passId, id, passRef, passHash, now, now, now]);
-      }
-    }
 
     // Process notification if requested
     if (sendNotification) {
@@ -1240,21 +1242,39 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       }
 
       // 3. Create In-App Notification
+      let inAppTitle = subject;
+      let inAppMessage = message;
+      
+      const childFirstName = app.child_name ? app.child_name.trim().split(' ')[0] : 'your child';
+      if (finalStatus === 'pass_ready') {
+        inAppTitle = 'Pass ready';
+        inAppMessage = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+      } else if (finalStatus === 'selected') {
+        inAppTitle = 'Application selected';
+        inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
+      }
+
       const notifId = `notif-${crypto.randomUUID()}`;
       await execute(`
         INSERT INTO notifications (
           id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
         ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-      `, [notifId, subject, message, app.event_id, app.child_id, app.parent_profile_id, now]);
+      `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]);
 
       const pNotifId = `pnotif-${crypto.randomUUID()}`;
       await execute(`
         INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]);
+      `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]);
     }
 
-    return res.json({ success: true, message: 'Application review submitted successfully.' });
+    return res.json({ 
+      success: true, 
+      message: 'Application review submitted successfully.',
+      status: finalStatus,
+      pass: passData,
+      passErrorReason
+    });
   } catch (err: any) {
     console.error('Error submitting application review:', err);
     return res.status(500).json({ success: false, error: 'Failed to submit application review.' });
@@ -1503,16 +1523,36 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
 
     const now = new Date().toISOString();
     let finalStatus = status;
+    let passData = null;
+    let passErrorReason = null;
 
-    if (status === 'selected') {
-      const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [entry.child_id]);
-      if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
-        // Required pass data exists (valid photo) -> Promote to 'pass_ready'
+    if (status === 'selected' || status === 'pass_ready') {
+      // First update to selected so we have an approved status before issuing
+      if (noteToTeam !== undefined) {
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [noteToTeam, now, now, id]);
+      } else {
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'selected', reviewed_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [now, now, id]);
+      }
+
+      try {
+        passData = await issuePassForChild({ childId: entry.child_id });
         finalStatus = 'pass_ready';
+      } catch (err: any) {
+        console.error('Failed to issue pass during admin review:', err);
+        passErrorReason = err.message || 'Pass generation failed';
+        finalStatus = 'selected';
       }
     }
 
-    // Update status in database
+    // Final update status in database
     if (noteToTeam !== undefined) {
       await execute(`
         UPDATE child_event_entries 
@@ -1527,22 +1567,13 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
       `, [finalStatus, now, now, id]);
     }
 
-    // Auto-generate pass if status is pass_ready and pass doesn't exist
-    if (finalStatus === 'pass_ready') {
-      const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
-      if (!pass) {
-        const passId = crypto.randomUUID();
-        const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-        const passHash = crypto.randomBytes(16).toString('hex');
-        
-        await execute(`
-          INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
-        `, [passId, id, passRef, passHash, now, now, now]);
-      }
-    }
-
-    return res.json({ success: true, message: 'Application status updated successfully.' });
+    return res.json({ 
+      success: true, 
+      message: 'Application status updated successfully.',
+      status: finalStatus,
+      pass: passData,
+      passErrorReason
+    });
   } catch (err: any) {
     console.error('Error updating application status:', err);
     return res.status(500).json({ error: 'Failed to update application status.' });
@@ -4681,6 +4712,101 @@ router.get('/reports/volunteer-parent-stats', async (req: AuthenticatedRequest, 
   } catch (err: any) {
     console.error('Error fetching volunteer and parent reports stats:', err);
     return res.status(500).json({ success: false, error: 'Failed to load custom stats.' });
+  }
+});
+
+// PASS MANAGEMENT ENDPOINTS
+router.get('/children/:childId/pass', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childId } = req.params;
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ?', [childId]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child event registration not found' });
+    }
+    const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
+    return res.json({
+      success: true,
+      entryStatus: entry.status,
+      pass: pass ? {
+        id: pass.id,
+        passReference: pass.pass_reference,
+        status: pass.status,
+        issuedAt: pass.issued_at
+      } : null
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/admin/children/:childId/pass:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  }
+});
+
+router.post('/children/:childId/pass/generate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childId } = req.params;
+    
+    // First let's check if the child has registration
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ?', [childId]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child registration not found' });
+    }
+
+    const pass = await issuePassForChild({ childId });
+    if (!pass) {
+      return res.status(400).json({ success: false, error: 'Failed to issue pass' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    const childFirstName = child ? child.full_name.split(' ')[0] : 'Child';
+    const parentId = child ? child.parent_profile_id : null;
+    
+    // Send Pass Ready Notification
+    if (parentId) {
+      const now = new Date().toISOString();
+      const subject = 'Pass ready';
+      const message = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+      
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+      `, [notifId, subject, message, entry.event_id, childId, parentId, now]);
+
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, parentId, entry.event_id, childId, subject, message, now]);
+    }
+
+    return res.json({
+      success: true,
+      pass: {
+        id: pass.id,
+        passReference: pass.pass_reference,
+        status: pass.status,
+        issuedAt: pass.issued_at
+      }
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/children/:childId/pass/generate:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to generate pass' });
+  }
+});
+
+router.post('/children/:childId/pass/revoke', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childId } = req.params;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Revocation reason is required' });
+    }
+    const adminId = req.user?.id || 'admin';
+    await revokePassForChild(childId, undefined, reason, adminId);
+    return res.json({ success: true, message: 'Pass revoked successfully' });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/children/:childId/pass/revoke:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to revoke pass' });
   }
 });
 

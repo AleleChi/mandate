@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Camera, Upload, CheckCircle } from 'lucide-react';
 import { REAL_ASSETS } from '../../config/assets';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 
 interface PhotoUploadPlaceholderProps {
   label: string;
@@ -35,7 +36,13 @@ export const PhotoUploadPlaceholder: React.FC<PhotoUploadPlaceholderProps> = ({
       <div className="flex items-center space-x-4">
         <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-[#EAE8E1] border-2 border-[#C59B27]/30 flex items-center justify-center shrink-0 shadow-inner">
           {photo && photo.trim() !== '' ? (
-            <img src={photo} alt={label} className="w-full h-full object-cover" />
+            <img 
+              src={resolveMediaUrl(photo)} 
+              alt={label} 
+              className="w-full h-full object-cover" 
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
           ) : (
             <Camera className="w-7 h-7 text-[#9A7326]" />
           )}

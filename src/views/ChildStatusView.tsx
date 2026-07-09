@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { AppRoute, ChildItem, BottomNavTab, ParentProfile } from '../types';
 import { REAL_ASSETS } from '../config/assets';
+import { resolveMediaUrl } from '../utils/mediaUrl';
+import { api } from '../services/api';
 
 interface ChildStatusViewProps {
   childId?: string;
@@ -45,13 +47,16 @@ const FallbackAvatar: React.FC<{
   };
 
   if (src && src.trim() !== '' && !error) {
+    const resolved = resolveMediaUrl(src);
     return (
       <div className={`overflow-hidden bg-[#FAF6EB] flex items-center justify-center shrink-0 ${className}`}>
         <img
-          src={src}
+          src={resolved}
           alt=""
           className="w-full h-full object-cover"
           onError={() => setError(true)}
+          loading="lazy"
+          referrerPolicy="no-referrer"
         />
       </div>
     );
@@ -80,6 +85,36 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   const foundChild = childId
     ? childrenList.find((c) => c.id === childId)
     : childrenList.find((c) => c.status === 'Under review' || c.status !== 'Draft') || childrenList[0];
+
+  const [localStatus, setLocalStatus] = useState<string>(foundChild?.status || 'Under review');
+
+  useEffect(() => {
+    if (foundChild) {
+      setLocalStatus(foundChild.status);
+    }
+  }, [foundChild?.id, foundChild?.status]);
+
+  useEffect(() => {
+    let intervalId: any;
+    if (foundChild && (localStatus === 'Selected' || localStatus === 'selected')) {
+      const pollStatus = async () => {
+        try {
+          const res = await api.parent.getChildStatus(foundChild.id);
+          if (res && res.status) {
+            setLocalStatus(res.status);
+          }
+        } catch (e) {
+          console.error('Error polling child status:', e);
+        }
+      };
+      
+      // Poll every 5 seconds
+      intervalId = setInterval(pollStatus, 5000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [foundChild?.id, localStatus]);
 
   useEffect(() => {
     if (!foundChild) {
@@ -133,9 +168,16 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
     : pickupData?.pickupPersonPhoto;
 
   const handleBack = () => {
-    if (window.history.length > 2) {
-      window.history.back();
-    } else {
+    try {
+      const hash = window.location.hash;
+      if (hash.includes('from=passes')) {
+        onNavigate('/parent/passes');
+      } else if (hash.includes('from=children')) {
+        onNavigate('/parent/children');
+      } else {
+        onNavigate('/parent/home');
+      }
+    } catch (e) {
       onNavigate('/parent/home');
     }
   };
@@ -175,7 +217,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   };
 
   // Determine active progress steps based on status
-  const currentStatus = foundChild.status || 'Under review';
+  const currentStatus = localStatus || 'Under review';
   const isDetailsSentDone = true;
   const isReviewDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
   const isReviewActive = currentStatus === 'Under review';
@@ -185,7 +227,10 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   const isPassPending = currentStatus === 'Selected';
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 pb-24">
+    <div 
+      data-view-version="parent-child-status-v8-brand-refined"
+      className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 pb-24"
+    >
       {/* Scrollable Content */}
       <div className="px-5 pt-5 pb-8">
         {/* Top bar */}
@@ -193,186 +238,223 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
           <button
             type="button"
             onClick={handleBack}
+            data-component-version="parent-child-status-back-action-v1"
             className="p-1 -ml-1 text-[#18181B] hover:text-[#715D3A] active:opacity-75 transition-all cursor-pointer focus:outline-none shrink-0"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
           <h1 className="text-xl font-serif-koinonia font-bold text-[#8C6D23] tracking-tight">
-            Status
+            Child Status
           </h1>
           <div className="w-5" />
         </div>
 
-        {/* Child summary card */}
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs mt-3">
-          <div className="relative inline-block">
-            <FallbackAvatar
-              src={isRealUploadedPhoto(foundChild.photoUrl) ? foundChild.photoUrl : undefined}
-              name={foundChild.name}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border border-[#EAE8E1]"
-            />
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center border border-white shadow-2xs">
-              <ShieldCheck className="w-3.5 h-3.5 stroke-[2.25]" />
+        {/* Child summary card (Elegant Header) */}
+        <div data-component-version="parent-child-status-summary-card-v2" className="bg-white rounded-3xl p-5 border border-[#EAE8E1] shadow-xs mt-3 space-y-4">
+          <div className="flex items-center space-x-4">
+            <div className="relative shrink-0">
+              <FallbackAvatar
+                src={isRealUploadedPhoto(foundChild.photoUrl) ? foundChild.photoUrl : undefined}
+                name={foundChild.name}
+                className="w-16 h-16 rounded-2xl border border-[#E5D5AE]"
+              />
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#C59B27] text-white flex items-center justify-center border border-white shadow-2xs">
+                <Check className="w-3 h-3 stroke-[3]" />
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-serif-koinonia font-bold text-[#18181B] truncate leading-tight">
+                {foundChild.name}
+              </h2>
+              <p className="text-xs text-[#5C5A54] mt-0.5 font-medium">
+                {foundChild.age} yrs old • {foundChild.ageGroup}
+              </p>
             </div>
           </div>
 
-          <div className="mt-3.5">
-            <h2 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B]">
-              {foundChild.name}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#3F3F46] mt-0.5">
-              {foundChild.age} years old • {foundChild.ageGroup}
-            </p>
-          </div>
-
-          <div className="mt-3 flex items-center gap-2.5 flex-wrap">
-            <span className="inline-block px-2.5 py-0.5 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] sm:text-[11px] font-bold tracking-wider uppercase">
-              {currentStatus.toUpperCase()}
+          <div className="pt-3 border-t border-[#EAE8E1]/60 flex items-center justify-between gap-2.5 flex-wrap">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] font-bold uppercase tracking-wider">
+              ● {currentStatus.toUpperCase()}
             </span>
-            <span className="text-xs sm:text-sm text-[#6B7280]">
-              Details sent on {submittedDateText}
+            <span className="text-[10px] text-[#8E8B82] font-semibold">
+              Submitted on {submittedDateText}
             </span>
           </div>
         </div>
 
         {/* Status message card */}
-        <div className="bg-[#FAF8F3] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] flex items-start gap-3 sm:gap-3.5 mt-4">
-          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-            <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+        <div data-component-version="parent-child-status-message-card-v2" className="bg-[#FAF6EB]/40 rounded-2xl p-4 border border-[#E5D5AE]/40 flex items-start gap-3 mt-4">
+          <div className="w-6 h-6 rounded-full bg-white text-[#C59B27] flex items-center justify-center shrink-0 mt-0.5 border border-[#EAE8E1]">
+            <Info className="w-3.5 h-3.5 stroke-[2.5]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-serif-koinonia font-bold text-base sm:text-lg text-[#8C6D23] leading-snug">
-              {currentStatus === 'Pass ready' ? 'Pass ready' : currentStatus === 'Selected' ? 'Selected' : currentStatus === 'Not selected' ? 'Not selected' : currentStatus === 'Waiting list' ? 'Waiting list' : 'Under review'}
+            <h3 className="font-serif-koinonia font-bold text-sm text-[#18181B] leading-snug">
+              {currentStatus === 'Pass ready' ? 'Pass ready' : currentStatus === 'Selected' ? 'Selected' : currentStatus === 'Not selected' ? 'Not selected' : currentStatus === 'Waiting list' ? 'Waiting list' : 'Details under review'}
             </h3>
-            <p className="text-xs sm:text-sm text-[#3F3F46] mt-1 leading-relaxed">
+            <p className="text-xs text-[#5C5A54] mt-1 leading-relaxed">
               {currentStatus === 'Pass ready' ? (
-                <>Great news! {childFirstName}’s event pass is now available.</>
+                <>Your child’s event pass is ready. Please present it at arrival and keep it available for pickup.</>
               ) : currentStatus === 'Selected' ? (
-                <>{childFirstName} has been selected. Your pass will be generated shortly.</>
+                <>Your child has been selected. The event pass is being generated.</>
               ) : currentStatus === 'Not selected' ? (
-                <>Thank you for your submission. Unfortunately {childFirstName} was not selected this time.</>
+                <>Unfortunately, your child was not selected for this session.</>
               ) : currentStatus === 'Waiting list' ? (
-                <>{childFirstName} is currently on the waiting list. We will notify you if a space opens up.</>
+                <>Your child is currently on the waiting list. We will notify you if a space opens up.</>
               ) : (
-                <>
-                  The team is checking {childFirstName}’s details.<br />
-                  You will receive a message when there is a decision.
-                </>
+                <>The care team is reviewing your child’s details. You will be notified once verified.</>
               )}
             </p>
           </div>
         </div>
 
-        {/* Progress section */}
-        <div className="mt-8">
-          <h4 className="text-[11px] sm:text-xs font-bold text-[#6B7280] tracking-widest uppercase pb-2">
-            PROGRESS
+        {/* Progress section (Vertical Timeline) */}
+        <div className="mt-8 space-y-4">
+          <h4 className="text-[10px] font-bold text-[#8E8B82] tracking-widest uppercase pb-1 border-b border-[#EAE8E1]">
+            Progress
           </h4>
 
-          <div className="relative pt-3 pl-1 space-y-6">
-            {/* Vertical connecting line */}
-            <div className="absolute left-[13px] top-[24px] bottom-[24px] w-[2px] bg-[#EAE8E1]" />
-
+          {/* Timeline Wrapper */}
+          <div className="relative border-l-2 border-[#E5D5AE] ml-4 pl-6 py-2 space-y-6">
+            
             {/* Step 1: Details sent */}
-            <div className="flex items-start space-x-3.5 relative z-10">
-              <div className="w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shadow-2xs shrink-0 mt-0.5">
-                <Check className="w-3 h-3 stroke-[3]" />
+            <div className="relative">
+              {/* Dot */}
+              <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-[#137333]/10 border border-[#137333]/30 flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full bg-[#137333]" />
               </div>
-              <div>
-                <span className="font-bold text-sm sm:text-base text-[#3F3F46] block leading-snug">
-                  Details sent
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#137333] block">Details sent</span>
+                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">Your child’s details were received.</span>
+                <span className="text-[9px] text-[#8E8B82] font-semibold block">Verified on {submittedDateText}</span>
+              </div>
+            </div>
+
+            {/* Step 2: Review completed */}
+            <div className="relative">
+              {/* Dot */}
+              <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
+                isReviewDone 
+                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]' 
+                  : 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${isReviewDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+              </div>
+              <div className="space-y-0.5">
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${isReviewDone ? 'text-[#137333]' : 'text-[#C59B27]'}`}>
+                  Review completed
+                </span>
+                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                  {isReviewDone ? 'The care team has reviewed the details.' : 'The care team is reviewing the details.'}
                 </span>
               </div>
             </div>
 
-            {/* Step 2: Team review */}
-            <div className="flex items-start space-x-3.5 relative z-10">
-              {isReviewDone ? (
-                <div className="w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shadow-2xs shrink-0 mt-0.5">
-                  <Check className="w-3 h-3 stroke-[3]" />
-                </div>
-              ) : isReviewActive ? (
-                <div className="w-5 h-5 rounded-full border-2 border-[#8C6D23] bg-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                  <div className="w-2 h-2 rounded-full bg-[#8C6D23]" />
-                </div>
-              ) : (
-                <div className="w-5 h-5 rounded-full border-2 border-[#EAE8E1] bg-[#FAF8F3] shrink-0 mt-0.5" />
-              )}
-              <div>
-                <span className={`font-bold text-sm sm:text-base leading-snug block ${isReviewActive ? 'font-serif-koinonia text-[#18181B]' : isReviewDone ? 'text-[#3F3F46]' : 'text-[#A1A1AA]'}`}>
-                  Team review
+            {/* Step 3: Pass ready */}
+            <div className="relative">
+              {/* Dot */}
+              <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
+                isPassDone 
+                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]' 
+                  : (currentStatus === 'Selected') 
+                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse' 
+                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+              }`}>
+                {isPassDone || currentStatus === 'Selected' ? (
+                  <div className={`w-1.5 h-1.5 rounded-full ${isPassDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                ) : null}
+              </div>
+              <div className="space-y-0.5">
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                  isPassDone ? 'text-[#137333]' : (currentStatus === 'Selected') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                }`}>
+                  Pass ready
                 </span>
-                {(isReviewActive || isReviewDone) && (
-                  <span className="text-xs text-[#3F3F46] block mt-0.5">
-                    {isReviewDone ? 'Review completed' : 'Currently processing'}
-                  </span>
-                )}
+                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                  {isPassDone ? 'Your child’s event pass is ready.' : (currentStatus === 'Selected') ? 'Generating secure pass...' : 'Your pass reference is being compiled.'}
+                </span>
               </div>
             </div>
 
-            {/* Step 3: Decision */}
-            <div className="flex items-start space-x-3.5 relative z-10">
-              {isDecisionDone ? (
-                <div className="w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shadow-2xs shrink-0 mt-0.5">
-                  <Check className="w-3 h-3 stroke-[3]" />
-                </div>
-              ) : (
-                <div className="w-5 h-5 rounded-full border-2 border-[#EAE8E1] bg-[#FAF8F3] shrink-0 mt-0.5" />
-              )}
-              <div>
-                <span className={`font-medium text-sm sm:text-base leading-snug block ${isDecisionDone ? 'font-bold text-[#3F3F46]' : 'text-[#A1A1AA]'}`}>
-                  Decision
+            {/* Step 4: Arrival check-in */}
+            <div className="relative">
+              {/* Dot */}
+              <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
+                (currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up')
+                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]'
+                  : (currentStatus === 'Pass ready')
+                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+              }`}>
+                {(currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up' || currentStatus === 'Pass ready') ? (
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    (currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up') ? 'bg-[#137333]' : 'bg-[#C59B27]'
+                  }`} />
+                ) : null}
+              </div>
+              <div className="space-y-0.5">
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                  (currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up')
+                    ? 'text-[#137333]'
+                    : (currentStatus === 'Pass ready')
+                      ? 'text-[#C59B27]'
+                      : 'text-[#8E8B82]'
+                }`}>
+                  Arrival check-in
                 </span>
-                {isDecisionDone && (
-                  <span className="text-xs text-[#8C6D23] font-medium block mt-0.5">
-                    {currentStatus === 'Pass ready' || currentStatus === 'Selected' ? 'Selected' : currentStatus}
-                  </span>
-                )}
+                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                  {(currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up')
+                    ? 'Child successfully checked in.'
+                    : 'Show the pass when your child arrives.'}
+                </span>
               </div>
             </div>
 
-            {/* Step 4: Pass */}
-            <div className="flex items-start space-x-3.5 relative z-10">
-              {isPassDone ? (
-                <div className="w-5 h-5 rounded-full bg-[#8C6D23] text-white flex items-center justify-center shadow-2xs shrink-0 mt-0.5">
-                  <Check className="w-3 h-3 stroke-[3]" />
-                </div>
-              ) : isPassPending ? (
-                <div className="w-5 h-5 rounded-full border-2 border-[#8C6D23] bg-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs animate-pulse">
-                  <div className="w-2 h-2 rounded-full bg-[#8C6D23]" />
-                </div>
-              ) : (
-                <div className="w-5 h-5 rounded-full border-2 border-[#EAE8E1] bg-[#FAF8F3] shrink-0 mt-0.5" />
-              )}
-              <div>
-                <span className={`font-medium text-sm sm:text-base leading-snug block ${isPassDone || isPassPending ? 'font-serif-koinonia font-bold text-[#18181B]' : 'text-[#A1A1AA]'}`}>
-                  Pass
+            {/* Step 5: Pickup and release */}
+            <div className="relative">
+              {/* Dot */}
+              <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
+                currentStatus === 'Picked up'
+                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]'
+                  : (currentStatus === 'Checked in' || currentStatus === 'Inside')
+                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+              }`}>
+                {currentStatus === 'Picked up' || currentStatus === 'Checked in' || currentStatus === 'Inside' ? (
+                  <div className={`w-1.5 h-1.5 rounded-full ${currentStatus === 'Picked up' ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                ) : null}
+              </div>
+              <div className="space-y-0.5">
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                  currentStatus === 'Picked up' ? 'text-[#137333]' : (currentStatus === 'Checked in' || currentStatus === 'Inside') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                }`}>
+                  Pickup and release
                 </span>
-                {isPassPending && (
-                  <span className="text-xs text-[#8C6D23] font-medium block mt-0.5 animate-pulse">
-                    Generating shortly...
-                  </span>
-                )}
-                {isPassDone && (
-                  <span className="text-xs text-[#22C55E] font-medium block mt-0.5">
-                    Ready
-                  </span>
-                )}
+                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                  {currentStatus === 'Picked up'
+                    ? 'Child safely picked up.'
+                    : 'Pickup will be confirmed before release.'}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Details shared section */}
-        <div className="mt-8 pt-2">
-          <h3 className="font-serif-koinonia text-lg sm:text-xl font-bold text-[#18181B]">
-            Details shared
+        <div data-component-version="parent-child-details-confirmed-v2" className="mt-8 pt-2">
+          <h3 className="font-serif-koinonia text-base font-bold text-[#18181B]">
+            Details confirmed
           </h3>
-          <div className="mt-3.5 space-y-3">
-            {['Child details', 'Health and support', 'Pickup person', 'Parent details'].map((item) => (
-              <div key={item} className="flex items-center space-x-3 text-sm sm:text-base text-[#3F3F46] font-medium">
-                <Check className="w-4 h-4 text-[#8C6D23] shrink-0 stroke-[2.5]" />
+          <div className="mt-3 space-y-2">
+            {[
+              'Child photo and age group',
+              'Health and support notes',
+              'Approved pickup details',
+              'Parent contact details'
+            ].map((item) => (
+              <div key={item} className="flex items-center space-x-3 text-xs text-[#5C5A54] font-medium">
+                <Check className="w-4 h-4 text-[#137333] shrink-0 stroke-[2.5]" />
                 <span>{item}</span>
               </div>
             ))}
@@ -380,78 +462,79 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
         </div>
 
         {/* Pickup person card */}
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs mt-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[22px] font-serif-koinonia text-[#18181B] font-medium leading-tight">
+        <div data-component-version="parent-child-pickup-person-card-v2" className="bg-white rounded-2xl p-4 border border-[#EAE8E1] mt-6">
+          <div className="flex items-center justify-between border-b border-[#FAF9F6] pb-3 mb-3">
+            <h3 className="text-sm font-serif-koinonia text-[#18181B] font-bold">
               Pickup person
             </h3>
             {isRealUploadedPhoto(pickupPhoto) || pickupPhoto ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-semibold">
-                <Camera className="w-3.5 h-3.5" />
-                <span>Photo added</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[9px] font-bold uppercase tracking-wider">
+                Photo Added
               </span>
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 min-[560px]:grid-cols-2 gap-y-4 gap-x-8 min-w-0 mt-5">
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
-                NAME
-              </span>
-              <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
-                {pickupName || 'Not specified'}
-              </span>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Name</span>
+              <span className="font-semibold text-[#18181B] block mt-0.5 truncate">{pickupName || 'Not specified'}</span>
             </div>
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
-                RELATION
-              </span>
-              <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
-                {pickupRelation || 'Not specified'}
-              </span>
+            <div>
+              <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Relationship</span>
+              <span className="font-semibold text-[#18181B] block mt-0.5 truncate">{pickupRelation || 'Not specified'}</span>
             </div>
-            <div className="min-w-0 min-[560px]:col-span-2">
-              <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
-                PHONE
-              </span>
-              <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
-                {pickupPhone || 'Not specified'}
-              </span>
+            <div className="col-span-2">
+              <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Phone</span>
+              <span className="font-semibold text-[#18181B] block mt-0.5 font-mono">{pickupPhone || 'Not specified'}</span>
             </div>
           </div>
 
-          <div className="bg-[#FAF8F3] rounded-xl p-3 border border-[#EAE8E1] mt-4 flex items-center gap-2.5">
-            <Shield className="w-4 h-4 text-[#8C6D23] shrink-0 stroke-[2]" />
-            <span className="text-xs sm:text-sm text-[#3F3F46]">
-              This person will be checked at pickup.
+          <div className="bg-[#FAF6EB]/40 rounded-xl p-2.5 border border-[#E5D5AE]/20 mt-4 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
+            <span className="text-[10px] text-[#9A7326] font-medium">
+              Photo ID and pass details may be checked before pickup.
             </span>
           </div>
         </div>
 
         {/* Actions */}
         <div className="mt-8 space-y-3">
+          {(currentStatus === 'Pass ready' || currentStatus === 'Checked in' || currentStatus === 'Inside') ? (
+            <button
+              type="button"
+              onClick={() => onNavigate(`/parent/children/${foundChild.id}/pass`)}
+              data-component-version="parent-status-view-pass-action-v6"
+              className="w-full py-3.5 px-5 rounded-2xl bg-[#18181B] hover:bg-[#27272A] active:opacity-90 text-white font-bold text-sm transition-all duration-200 shadow-sm cursor-pointer focus:outline-none flex items-center justify-center gap-2"
+            >
+              <QrCode className="w-4 h-4" />
+              <span>View pass</span>
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => onNavigate('/parent/home')}
-            className="w-full py-3.5 px-5 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all duration-200 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#8C6D23]"
+            className="w-full py-3.5 px-5 rounded-2xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-bold text-sm transition-all duration-200 shadow-2xs cursor-pointer focus:outline-none"
           >
             Back to Home
           </button>
-          <button
-            type="button"
-            onClick={handleEditDetails}
-            className="w-full py-3.5 px-5 rounded-xl bg-white hover:bg-[#FAF9F6] active:bg-[#F4F1EA] border border-[#18181B] text-[#18181B] font-semibold text-sm transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#18181B]"
-          >
-            Edit details
-          </button>
-          {foundChild?.status === 'Under review' && (
-            <button
-              type="button"
-              onClick={() => setShowWithdrawModal(true)}
-              className="w-full py-2 px-5 rounded-xl text-[#6B7280] hover:text-[#4B5563] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent mt-1"
-            >
-              Withdraw details
-            </button>
+          
+          {currentStatus === 'Under review' && (
+            <>
+              <button
+                type="button"
+                onClick={handleEditDetails}
+                className="w-full py-3.5 px-5 rounded-2xl bg-white hover:bg-[#FAF9F6] border border-[#18181B] text-[#18181B] font-bold text-sm transition-all duration-200 cursor-pointer focus:outline-none"
+              >
+                Edit details
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWithdrawModal(true)}
+                className="w-full py-2.5 px-5 rounded-2xl text-[#6B7280] hover:text-[#4B5563] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent mt-1"
+              >
+                Withdraw details
+              </button>
+            </>
           )}
         </div>
       </div>

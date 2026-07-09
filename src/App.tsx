@@ -168,6 +168,28 @@ const getSeoPropsForRoute = (route: string) => {
   };
 };
 
+function normalizeParentProfile(p: any): ParentProfile {
+  if (!p) return initialParentProfile;
+  return {
+    fullName: p.fullName || p.full_name || '',
+    email: p.email || '',
+    phone: p.phone || p.phone_number || '',
+    phoneNumber: p.phone || p.phone_number || '',
+    whatsapp: p.whatsapp || p.whatsapp_number || p.phone_number || p.phone || '',
+    whatsappNumber: p.whatsapp || p.whatsapp_number || p.phone_number || p.phone || '',
+    homeAddress: p.homeAddress || p.home_address || '',
+    country: p.country || '',
+    stateRegion: p.stateRegion || p.state_region || '',
+    city: p.city || '',
+    preferredContact: p.preferredContact || p.preferred_contact || 'WhatsApp',
+    isWorker: p.isWorker !== undefined ? Boolean(p.isWorker) : Boolean(p.is_koinonia_worker),
+    department: p.department || '',
+    photoFileId: p.photoFileId || p.photo_file_id || '',
+    photoUrl: p.photoUrl || p.photo_url || '',
+    profileCompletedAt: p.profileCompletedAt || p.profile_completed_at || null
+  };
+}
+
 export default function App() {
   const { showSuccess, showError, showWarning } = useNotification();
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('/');
@@ -203,17 +225,10 @@ export default function App() {
 
   const isProfileComplete = (p: ParentProfile | null | undefined): boolean => {
     if (!p) return false;
-    if (!p.fullName || !p.fullName.trim()) return false;
-    if (!p.email || !p.email.trim()) return false;
-    if (!p.phone || !p.phone.trim()) return false;
-    if (!p.whatsapp || !p.whatsapp.trim()) return false;
-    if (!p.homeAddress || !p.homeAddress.trim()) return false;
-    if (!p.country || !p.country.trim()) return false;
-    if (!p.stateRegion || !p.stateRegion.trim()) return false;
-    if (!p.city || !p.city.trim()) return false;
-    if (!p.preferredContact || !p.preferredContact.trim()) return false;
-    if (!p.photoUrl || !p.photoUrl.trim()) return false;
-    if (p.isWorker && (!p.department || !p.department.trim())) return false;
+    const name = p.fullName || (p as any).full_name;
+    const phone = p.phone || (p as any).phone_number || (p as any).phone;
+    if (!name || !name.trim()) return false;
+    if (!phone || !phone.trim()) return false;
     return true;
   };
 
@@ -241,7 +256,7 @@ export default function App() {
             const homeData = await api.parent.getHome();
             if (homeData) {
               if (homeData.parentProfile) {
-                setParentProfile(homeData.parentProfile);
+                setParentProfile(normalizeParentProfile(homeData.parentProfile));
                 setParentEmail(homeData.parentProfile.email || '');
               }
               if (Array.isArray(homeData.childrenList)) {
@@ -302,7 +317,7 @@ export default function App() {
       try {
         const homeData = await api.parent.getHome();
         if (homeData && homeData.parentProfile) {
-          setParentProfile(homeData.parentProfile);
+          setParentProfile(normalizeParentProfile(homeData.parentProfile));
           setParentEmail(homeData.parentProfile.email || '');
           if (Array.isArray(homeData.childrenList)) {
             setChildrenList(homeData.childrenList);
@@ -872,7 +887,7 @@ export default function App() {
   const handleSignInSuccess = (userData: any, profileData: any) => {
     setUser(userData);
     if (profileData) {
-      setParentProfile(profileData);
+      setParentProfile(normalizeParentProfile(profileData));
       setParentEmail(profileData.email || '');
     }
   };

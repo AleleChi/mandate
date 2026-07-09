@@ -9,6 +9,7 @@ interface EventPassPreviewCardProps {
   photoUrl: string;
   eventTitle?: string;
   eventDate?: string;
+  passReference?: string;
 }
 
 export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
@@ -17,7 +18,8 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
   status,
   photoUrl,
   eventTitle = 'The General Assembly',
-  eventDate = '18th to 22nd November 2026'
+  eventDate = '18th to 22nd November 2026',
+  passReference
 }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -74,8 +76,18 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
           </span>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="bg-white/95 p-1.5 rounded-xl text-black shadow-inner">
-            <QrCode className="w-7 h-7 text-[#18181B]" />
+          <div className="bg-white p-1 rounded-xl text-black shadow-inner w-10 h-10 flex items-center justify-center overflow-hidden">
+            {passReference ? (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(passReference)}`}
+                alt="QR Code"
+                className="w-full h-full object-cover"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <QrCode className="w-7 h-7 text-[#18181B]" />
+            )}
           </div>
         </div>
       </div>

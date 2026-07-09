@@ -3,6 +3,7 @@ import { Camera, Check, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { compressImageBeforeUpload } from '../../utils/imageCompression';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 
 export type PhotoUploadState =
   | "empty"
@@ -424,11 +425,13 @@ export const PhotoUploadBox: React.FC<PhotoUploadBoxProps> = ({
         {displayedUrl && uploadState !== 'display_failed' && (
           <>
             <img
-              src={displayedUrl}
+              src={resolveMediaUrl(displayedUrl)}
               alt="Preview"
               onLoad={handleImageLoad}
               onError={handleImageError}
               className="w-full h-full object-cover object-center block"
+              loading="lazy"
+              referrerPolicy="no-referrer"
             />
             {/* Hover overlay to change photo */}
             {uploadState !== 'preparing' && uploadState !== 'uploading' && (

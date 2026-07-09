@@ -98,6 +98,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   const [formAllowEditAfterSubmission, setFormAllowEditAfterSubmission] = useState(false);
 
   const [formAgeGroups, setFormAgeGroups] = useState<AgeGroup[]>(defaultAgeGroups);
+  const [formAllowOverlappingAges, setFormAllowOverlappingAges] = useState(true);
 
   useEffect(() => {
     fetchEvents();
@@ -148,6 +149,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           setFormAgeGroups(defaultAgeGroups);
         }
         
+        setFormAllowOverlappingAges(true);
         setCurrentScreen('edit');
       }
     } catch (err: any) {
@@ -178,6 +180,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     setFormAllowEditAfterSubmission(false);
 
     setFormAgeGroups(defaultAgeGroups);
+    setFormAllowOverlappingAges(true);
     setCurrentScreen('create');
   };
 
@@ -295,6 +298,20 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       if (group.capacity <= 0) {
         showError('Validation Error', `Capacity at row ${i + 1} must be a positive integer.`);
         return false;
+      }
+    }
+
+    if (!formAllowOverlappingAges) {
+      for (let i = 0; i < formAgeGroups.length; i++) {
+        const g1 = formAgeGroups[i];
+        for (let j = i + 1; j < formAgeGroups.length; j++) {
+          const g2 = formAgeGroups[j];
+          const overlap = Math.max(g1.minAge, g2.minAge) <= Math.min(g1.maxAge, g2.maxAge);
+          if (overlap) {
+            showError('Validation Error', `Overlapping age ranges detected between "${g1.label}" (${g1.minAge}-${g1.maxAge}) and "${g2.label}" (${g2.minAge}-${g2.maxAge}).`);
+            return false;
+          }
+        }
       }
     }
 
@@ -862,6 +879,19 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="pt-4 border-t border-[#EAE8E1]/60 flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="allow-overlapping-ages"
+                    checked={formAllowOverlappingAges}
+                    onChange={e => setFormAllowOverlappingAges(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded-sm border-zinc-300 text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer"
+                  />
+                  <label htmlFor="allow-overlapping-ages" className="text-xs text-zinc-500 font-medium select-none cursor-pointer">
+                    Allow overlapping age ranges (e.g. Below 0-1 and Ages 1-3)
+                  </label>
                 </div>
               </div>
 

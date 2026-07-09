@@ -4,6 +4,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } from '../utils/validation';
+import { getPassesForParent, issuePassForChild } from '../services/passService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -103,6 +104,22 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
   const status = entryRow ? entryRow.status : 'incomplete';
   let frontendStatus: any = 'Incomplete';
   let statusNote = 'Continue entering child details';
+  let passReference = undefined;
+  let passObject = undefined;
+
+  if (entryRow) {
+    const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
+    if (pass) {
+      passReference = pass.pass_reference;
+      passObject = {
+        id: pass.id,
+        status: pass.status,
+        passCode: pass.pass_reference,
+        qrPayload: pass.pass_reference,
+        issuedAt: pass.issued_at
+      };
+    }
+  }
 
   if (status === 'under_review') {
     frontendStatus = 'Under review';
@@ -111,12 +128,14 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     frontendStatus = 'Review reopened';
     const first_name = childRow.full_name ? childRow.full_name.split(' ')[0] : 'your child';
     statusNote = `The event team has reopened the review for ${first_name}. We will share an update when a new decision is made.`;
-  } else if (status === 'selected') {
-    frontendStatus = 'Selected';
-    statusNote = 'Selected for event entry';
-  } else if (status === 'pass_ready') {
-    frontendStatus = 'Pass ready';
-    statusNote = 'Event pass is available';
+  } else if (status === 'selected' || status === 'pass_ready') {
+    if (passReference) {
+      frontendStatus = 'Pass ready';
+      statusNote = 'Event pass is available';
+    } else {
+      frontendStatus = 'Selected';
+      statusNote = 'Event pass will be available shortly.';
+    }
   } else if (status === 'waiting_list') {
     frontendStatus = 'Waiting list';
     statusNote = 'Placed on waiting list';
@@ -206,6 +225,8 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     photoFileId: childRow.photo_file_id || '',
     photoUrl: resolvedChildPhoto,
     submittedAt: entryRow?.submitted_at || undefined,
+    passReference,
+    pass: passObject,
     draftData
   };
 }
@@ -624,6 +645,49 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     status: 'under_review',
     ...mapped
   });
+});
+
+router.get('/passes', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  try {
+    const result = await getPassesForParent(req.parentProfile.id, REAL_EVENT_ID);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch passes' });
+  }
+});
+
+router.get('/passes/:passId', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  const { passId } = req.params;
+  try {
+    const pass = await queryOne('SELECT * FROM event_passes WHERE id = ?', [passId]);
+    if (!pass) {
+      return res.status(404).json({ error: 'Event pass not found' });
+    }
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [pass.child_event_entry_id]);
+    if (!entry) {
+      return res.status(404).json({ error: 'Child registration not found' });
+    }
+    const c = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
+    if (!c) {
+      return res.status(404).json({ error: 'Child not found' });
+    }
+    if (c.parent_profile_id !== req.parentProfile.id) {
+      return res.status(403).json({ error: 'You are not authorized to view this pass' });
+    }
+    const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
+    const mappedChild = await mapChildToFrontend(c, entry, pickup);
+    res.json({
+      success: true,
+      passReference: pass.pass_reference,
+      status: pass.status,
+      issuedAt: pass.issued_at,
+      child: mappedChild
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch pass' });
+  }
 });
 
 router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: Response) => {

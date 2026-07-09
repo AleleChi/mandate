@@ -337,6 +337,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     };
   }, [cleanRoute, cameraActive, selectedCameraId]);
 
+  const handleFlipCamera = () => {
+    if (cameras.length > 1) {
+      const currentIndex = cameras.findIndex(c => c.deviceId === selectedCameraId);
+      const nextIndex = (currentIndex + 1) % cameras.length;
+      setSelectedCameraId(cameras[nextIndex].deviceId);
+    }
+  };
+
   const startScanning = async () => {
     try {
       setCameraUnavailable(false);
@@ -349,7 +357,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       setCameras(devices);
 
       if (devices.length > 0) {
-        const deviceId = selectedCameraId || devices[0].deviceId;
+        let defaultDeviceId = devices[0].deviceId;
+        if (!selectedCameraId) {
+          const backCam = devices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear') || 
+            device.label.toLowerCase().includes('environment')
+          );
+          if (backCam) {
+            defaultDeviceId = backCam.deviceId;
+          }
+        }
+        const deviceId = selectedCameraId || defaultDeviceId;
         if (!selectedCameraId) {
           setSelectedCameraId(deviceId);
         }
@@ -357,7 +376,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         if (videoRef.current) {
           // Clean any prior controls
           if (controlsRef.current) {
-            controlsRef.current.stop();
+            try {
+              controlsRef.current.stop();
+            } catch (e) {}
           }
 
           const controls = await codeReaderRef.current.decodeFromVideoDevice(
@@ -387,8 +408,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const stopScanning = () => {
     if (controlsRef.current) {
-      controlsRef.current.stop();
+      try {
+        controlsRef.current.stop();
+      } catch (err) {
+        console.error('Error stopping ZXing controls:', err);
+      }
       controlsRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      if (stream && typeof stream.getTracks === 'function') {
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {}
+        });
+      }
+      videoRef.current.srcObject = null;
     }
   };
 
@@ -411,7 +447,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         
         const res = await api.volunteer.lookupPickup({ passCode: passCode.trim().toUpperCase() });
         if (res && res.success && res.child) {
-          setPickupChild(res.child);
+          const childWithPickup = {
+            ...res.child,
+            pickup: res.child.authorizedPickup && res.child.authorizedPickup.length > 0 ? res.child.authorizedPickup[0] : null
+          };
+          setPickupChild(childWithPickup);
           setCameraActive(false);
           showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please verify pickup person.`);
           if (navigator.vibrate) {
@@ -618,7 +658,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     try {
       const res = await api.volunteer.lookupPickup({ passCode: code.trim().toUpperCase() });
       if (res && res.success && res.child) {
-        setPickupChild(res.child);
+        const childWithPickup = {
+          ...res.child,
+          pickup: res.child.authorizedPickup && res.child.authorizedPickup.length > 0 ? res.child.authorizedPickup[0] : null
+        };
+        setPickupChild(childWithPickup);
+        setCameraActive(false);
         showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please verify pickup person.`);
       } else {
         showError('Not Found', 'No active checked-in child found for this pass code.');
@@ -1326,7 +1371,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
             return (
-              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v1-stitch">
+              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v2-pass-scan">
                 {/* Scan successful & Child found title */}
                 <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
                   <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
@@ -1488,6 +1533,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         }
                       }}
                       disabled={scanLoading}
+                      data-component-version="volunteer-child-found-checkin-action-v2"
                       className={`w-full text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
                         isAlreadyCheckedIn 
                           ? 'bg-gray-400 hover:bg-gray-500' 
@@ -1571,7 +1617,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             );
           })() : (
             /* ==================== 2. SCANNER VIEW (Stitch Design) ==================== */
-            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-check-in-v2-stitch">
+            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-scanner-v2-camera-flip">
               
               {/* Tall Portrait Scan Card */}
               <div 
@@ -1614,7 +1660,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </div>
 
                       {/* Camera Controls Overlay */}
-                      <div className="absolute top-3 right-3 flex items-center space-x-2">
+                      <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
+                        {cameras.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={handleFlipCamera}
+                            data-component-version="volunteer-camera-flip-action-v1"
+                            className="p-1.5 bg-[#C59B27] hover:bg-[#B58E33] text-gray-900 rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-bold text-[10px]"
+                            title="Flip Camera"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Flip</span>
+                          </button>
+                        )}
                         {cameras.length > 1 && (
                           <select
                             value={selectedCameraId}
@@ -1667,8 +1725,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Support message if scanner is not available on device */}
               {cameras.length === 0 && !cameraActive && (
-                <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                <div 
+                  data-component-version="volunteer-camera-error-v1"
+                  className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4"
+                >
                   Scanner is not available on this device. Enter the pass code manually.
+                </div>
+              )}
+
+              {cameraUnavailable && (
+                <div 
+                  data-component-version="volunteer-camera-error-v1"
+                  className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4"
+                >
+                  Could not access camera. Please ensure camera permissions are granted or enter pass code manually.
                 </div>
               )}
 
@@ -2016,7 +2086,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
           ) : pickupChild ? (
             /* ==================== ACTIVE PICKUP CARD / VERIFICATION SCREEN ==================== */
-            <div className="space-y-6 animate-fade-in" data-view-version="1.0" data-component-version="pickup-verification">
+            <div className="space-y-6 animate-fade-in" data-view-version="volunteer-pickup-verify-v2" data-component-version="pickup-verification">
               
               {/* Back / Navigation Bar */}
               <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
@@ -2181,6 +2251,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   onClick={() => handleConfirmPickupRelease(pickupChild)}
                   disabled={pickupLoading}
+                  data-component-version="volunteer-pickup-release-action-v2"
                   className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold tracking-widest py-4 rounded-2xl text-sm transition-all shadow-md uppercase flex items-center justify-center space-x-2 cursor-pointer disabled:bg-gray-200 disabled:text-gray-400"
                 >
                   {pickupLoading ? (
@@ -2205,7 +2276,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
           ) : (
             /* ==================== PICKUP DASHBOARD / HOME SCREEN ==================== */
-            <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-pickup-v1-stitch">
+            <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-scanner-v2-camera-flip">
               
               {/* Event label */}
               <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
@@ -2253,7 +2324,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </div>
 
                       {/* Camera Controls Overlay */}
-                      <div className="absolute top-3 right-3 flex items-center space-x-2">
+                      <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
+                        {cameras.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={handleFlipCamera}
+                            data-component-version="volunteer-camera-flip-action-v1"
+                            className="p-1.5 bg-[#C59B27] hover:bg-[#B58E33] text-gray-900 rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-bold text-[10px]"
+                            title="Flip Camera"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Flip</span>
+                          </button>
+                        )}
                         {cameras.length > 1 && (
                           <select
                             value={selectedCameraId}

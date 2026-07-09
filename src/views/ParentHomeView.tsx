@@ -10,6 +10,7 @@ import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { soundUtility } from '../utils/sound';
 import { subscribeUserToPush } from '../utils/pushSubscription';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -48,13 +49,16 @@ const FallbackAvatar: React.FC<{
   };
 
   if (src && src.trim() !== '' && !error) {
+    const resolved = resolveMediaUrl(src);
     return (
       <div className={`overflow-hidden bg-[#FAF6EB] flex items-center justify-center shrink-0 ${className}`}>
         <img
-          src={src}
+          src={resolved}
           alt=""
           className="w-full h-full object-cover"
           onError={() => setError(true)}
+          loading="lazy"
+          referrerPolicy="no-referrer"
         />
       </div>
     );
@@ -250,6 +254,28 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             />
           </div>
         </div>
+
+        {/* Gentle completion banner if photo, address, etc. are missing */}
+        {(!parentProfile.homeAddress || !parentProfile.photoUrl || !isRealUploadedPhoto(parentProfile.photoUrl)) && (
+          <div data-component-version="parent-profile-reminder-v1" className="bg-[#FCF9F2] border border-[#E8DFCA] rounded-2xl p-4 flex items-start gap-3">
+            <Info className="w-5 h-5 text-[#9A7326] shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="text-xs font-bold text-[#18181B]">Complete your profile</h4>
+              <p className="text-[11px] text-[#6B7280] mt-0.5">
+                Add any missing contact details so the event team can reach you when needed.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onNavigate('/parent/profile/edit');
+                }}
+                className="mt-2 text-[11px] font-bold text-[#9A7326] hover:underline focus:outline-none cursor-pointer"
+              >
+                Update profile
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 3, 4, 5. Event hero card with image, Date/Time row, Continue button */}
         <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-sm overflow-hidden">
@@ -570,49 +596,243 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   );
 
   const renderPassesTab = () => {
-    const readyChildren = childrenList.filter(c => c.status === 'Pass ready');
+    const readyChildren = childrenList.filter(c => c.status === 'Pass ready' || c.status === 'Selected');
     const displayChild = selectedPassChild || readyChildren[0] || childrenList[0];
     const isPassReady = displayChild && displayChild.status === 'Pass ready';
+    const isPassPending = displayChild && displayChild.status === 'Selected';
+
+    const getInitialsLocal = (name: string) => {
+      if (!name || !name.trim()) return 'CH';
+      const parts = name.trim().split(/\s+/);
+      if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    };
 
     return (
-      <div className="space-y-5">
+      <div data-view-version="parent-passes-v7-brand-refined" className="space-y-5">
         <div>
           <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Event Passes</h2>
-          <p className="text-xs text-[#6B7280]">Present digital pass during child arrival and verified pickup.</p>
+          <p className="text-xs text-[#5C5A54] font-medium">Present digital pass during child arrival and verified pickup.</p>
         </div>
 
         {displayChild && isPassReady ? (
-          <div className="space-y-4">
-            <EventPassPreviewCard
-              childName={displayChild.name}
-              ageGroup={displayChild.ageGroup}
-              status={displayChild.status}
-              photoUrl={isRealUploadedPhoto(displayChild.photoUrl) ? displayChild.photoUrl : undefined}
-            />
+          <div data-view-version="parent-pass-detail-v4-stitch-original" className="space-y-4">
+            <div data-component-version="parent-pass-detail-card-v4-stitch" className="w-full bg-[#FAF9F6] text-[#18181B] rounded-3xl p-5 border border-[#E5D5AE] shadow-xs relative overflow-hidden space-y-5">
+              {/* Decorative corners */}
+              <div className="absolute top-0 left-0 w-8 h-8 border-t border-l border-[#C59B27]/20 m-2 pointer-events-none" />
+              <div className="absolute top-0 right-0 w-8 h-8 border-t border-r border-[#C59B27]/20 m-2 pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b border-l border-[#C59B27]/20 m-2 pointer-events-none" />
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b border-r border-[#C59B27]/20 m-2 pointer-events-none" />
 
+              {/* Official Koinonia logo/header */}
+              <div className="text-center pt-2 pb-1 border-b border-[#EAE8E1]/60 space-y-1">
+                <span className="font-serif-koinonia text-sm tracking-[0.25em] text-[#C59B27] font-bold block">KOINONIA</span>
+                <span className="text-[9px] tracking-widest text-[#8E8B82] uppercase font-semibold block">Official children's ministry pass</span>
+              </div>
+
+              {/* Pass ready pill */}
+              <div className="flex justify-center">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] font-bold uppercase tracking-wider">
+                  ● PASS ACTIVE & READY
+                </span>
+              </div>
+
+              {/* Event title & date */}
+              <div className="text-center space-y-0.5">
+                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] tracking-tight">The General Assembly</h3>
+                <p className="text-[11px] text-[#8E8B82] font-semibold flex items-center justify-center">
+                  <Calendar className="w-3 h-3 mr-1 text-[#C59B27]" /> 18th to 22nd November 2026
+                </p>
+              </div>
+
+              {/* Child photo & details */}
+              <div className="flex items-center space-x-3 bg-white p-3 rounded-2xl border border-[#EAE8E1]">
+                <div className="w-14 h-14 rounded-xl overflow-hidden border border-[#E5D5AE] shrink-0 bg-white flex items-center justify-center font-serif-koinonia text-sm font-bold text-[#9A7326]">
+                  {isRealUploadedPhoto(displayChild.photoUrl) ? (
+                    <img
+                      src={displayChild.photoUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span>{getInitialsLocal(displayChild.name)}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-[#18181B] truncate">{displayChild.name}</h4>
+                  <div className="flex items-center space-x-2 mt-0.5">
+                    <span className="text-[10px] text-[#5C5A54] bg-[#FAF6EB] px-2 py-0.5 rounded-md font-semibold">{displayChild.ageGroup}</span>
+                    {displayChild.passReference && (
+                      <span className="text-[9px] font-mono text-[#8E8B82] font-bold">{displayChild.passReference}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Centered QR code card */}
+              <div className="flex flex-col items-center justify-center space-y-2.5 py-1">
+                <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
+                  {/* Small corner brackets inside QR */}
+                  <div className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#C59B27]/40 pointer-events-none" />
+                  <div className="absolute top-1.5 right-1.5 w-2 h-2 border-t border-r border-[#C59B27]/40 pointer-events-none" />
+                  <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
+                  <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
+                  {displayChild.passReference ? (
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(displayChild.passReference)}`}
+                      alt="QR Code"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <QrCode className="w-12 h-12 text-[#18181B]" />
+                  )}
+                </div>
+                <span className="text-[9px] font-mono font-bold tracking-[0.2em] text-[#C59B27] uppercase">
+                  SHOW THIS PASS AT ENTRY
+                </span>
+              </div>
+
+              {/* Parent and pickup person details */}
+              <div className="border-t border-[#EAE8E1] pt-3 space-y-2.5 text-xs">
+                <div className="grid grid-cols-2 gap-3 bg-white p-2.5 rounded-xl border border-[#EAE8E1]">
+                  <div>
+                    <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Primary Parent</span>
+                    <span className="font-semibold text-[#18181B] truncate block">{parentProfile.fullName}</span>
+                    <span className="text-[10px] text-[#5C5A54] font-medium block">{parentProfile.phone}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Authorized Pickup</span>
+                    {displayChild.draftData?.pickup?.pickupType === 'other_person' ? (
+                      <>
+                        <span className="font-semibold text-[#18181B] truncate block">
+                          {displayChild.draftData.pickup.pickupPersonFullName}
+                        </span>
+                        <span className="text-[10px] text-[#5C5A54] font-medium block">
+                          {displayChild.draftData.pickup.pickupPersonRelationship}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-[#18181B] truncate block">Primary Parent Only</span>
+                        <span className="text-[10px] text-[#8E8B82] font-medium block font-sans">No secondary listed</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pickup confirmation note */}
+                <div className="bg-[#FAF6EB]/40 p-2.5 rounded-xl text-[10px] text-[#9A7326] font-medium flex items-start gap-1.5 border border-[#E5D5AE]/20 leading-normal">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#C59B27] shrink-0 mt-0.5" />
+                  <span>
+                    Important: Present this secure digital pass during arrival check-in and pickup release. Release is strictly restricted to listed authorized persons.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
             <div className="flex items-center gap-3 pt-1">
               <button
                 type="button"
+                data-component-version="parent-pass-save-action-v2"
                 onClick={() => showInfo('Pass saving is not ready yet', 'You can still show this pass from the app.')}
-                className="flex-1 py-2.5 px-4 rounded-2xl bg-[#18181B] text-white text-xs font-semibold hover:bg-[#27272A] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                className="flex-1 py-3 px-4 rounded-2xl bg-[#18181B] text-white text-xs font-bold hover:bg-[#27272A] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
               >
                 <span>Save pass</span>
               </button>
               <button
                 type="button"
+                data-component-version="parent-pass-whatsapp-action-v2"
                 onClick={() => {
                   showInfo('Opening WhatsApp', 'You can share the pass from there.');
                 }}
-                className="flex-1 py-2.5 px-4 rounded-2xl bg-white border border-[#EAE8E1] text-[#18181B] text-xs font-semibold hover:bg-[#FAF9F6] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-2xs"
+                className="flex-1 py-3 px-4 rounded-2xl bg-white border border-[#EAE8E1] text-[#18181B] text-xs font-bold hover:bg-[#FAF9F6] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
               >
                 <MessageCircle className="w-4 h-4 text-[#B89047]" />
                 <span>Share to WhatsApp</span>
               </button>
             </div>
 
+            {/* View child status link */}
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                data-component-version="parent-pass-status-link-v2"
+                onClick={() => onNavigate(`/parent/children/${displayChild.id}/status`)}
+                className="text-xs text-[#9A7326] font-bold hover:underline inline-flex items-center"
+              >
+                View child status <ChevronRight className="w-3 h-3 ml-0.5" />
+              </button>
+            </div>
+
+            {/* Switch child pass */}
+            {childrenList.length > 1 && (
+              <div className="space-y-2 pt-2 border-t border-[#EAE8E1]">
+                <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider">Switch child pass</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {childrenList.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelectedPassChild(c)}
+                      className={`p-3 rounded-2xl border text-left flex items-center space-x-2.5 transition-all cursor-pointer ${
+                        displayChild.id === c.id
+                          ? 'bg-[#FAF6EB] border-[#C59B27] shadow-sm'
+                          : 'bg-white border-[#EAE8E1] hover:border-[#D9D6CE]'
+                      }`}
+                    >
+                      <FallbackAvatar
+                        src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
+                        name={c.name}
+                        className="w-8 h-8 rounded-lg text-xs font-bold"
+                      />
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-[#18181B] block truncate">{c.name}</span>
+                        <span className="text-[10px] text-[#6B7280] block truncate">{c.status}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : displayChild && isPassPending ? (
+          <div data-component-version="parent-pass-card-v4-pending" className="space-y-4">
+            <div className="w-full bg-white text-[#18181B] rounded-3xl p-5 border border-dashed border-[#E5D5AE] shadow-xs relative overflow-hidden space-y-5">
+              <div className="absolute top-0 right-0 w-36 h-36 bg-[#FAF6EB] rounded-full blur-2xl pointer-events-none -mr-10 -mt-10" />
+              
+              <div className="flex items-center justify-between border-b border-[#EAE8E1]/60 pb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 rounded-full bg-[#C59B27] animate-pulse" />
+                  <span className="text-xs font-serif-koinonia tracking-wider font-bold text-[#9A7326]">
+                    Pass Pending
+                  </span>
+                </div>
+                <div className="flex items-center text-[10px] text-[#8E8B82] font-semibold">
+                  <Clock className="w-3.5 h-3.5 mr-1 text-[#C59B27] animate-pulse" />
+                  <span>Will be available shortly</span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-4 bg-[#FAF6EB]/40 p-4 rounded-2xl border border-[#E5D5AE]/30">
+                <div className="w-14 h-14 rounded-xl overflow-hidden border border-dashed border-[#E5D5AE] shrink-0 bg-white flex items-center justify-center">
+                  <QrCode className="w-6 h-6 text-[#C59B27] animate-pulse" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-base font-serif-koinonia font-bold text-[#18181B] truncate">{displayChild.name}</h4>
+                  <p className="text-xs text-[#5C5A54] font-medium mt-0.5">{displayChild.ageGroup || 'Section'}</p>
+                </div>
+              </div>
+
+              <div className="bg-[#FAF6EB]/30 p-3 rounded-xl border border-[#E5D5AE]/20 text-[11px] text-[#5C5A54] leading-relaxed">
+                <span className="font-bold text-[#18181B] block mb-0.5">Under final preparation</span>
+                Your secure digital pass is being generated by our team and will be ready very shortly.
+              </div>
+            </div>
+
             {childrenList.length > 1 && (
               <div className="space-y-2">
-                <span className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Switch child pass</span>
+                <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider">Switch child pass</span>
                 <div className="grid grid-cols-2 gap-2">
                   {childrenList.map((c) => (
                     <button
@@ -1030,7 +1250,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   );
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50">
+    <div data-view-version="parent-dashboard-v3-default-after-login" className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50">
       {/* Top Header shown only on non-Home and non-Profile screens */}
       {activeTab !== 'Home' && activeTab !== 'Profile' && (
         <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 backdrop-blur-md border-b border-[#EAE8E1]">

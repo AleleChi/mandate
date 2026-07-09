@@ -18,12 +18,14 @@ import {
   Edit,
   X,
   MapPin,
-  ChevronDown
+  ChevronDown,
+  QrCode
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { EventPassPreviewCard } from '../../components/common/EventPassPreviewCard';
 
 interface AdminReviewChildViewProps {
   applicationId: string;
@@ -148,6 +150,29 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
       showError('Reopen Failed', parsed.message || 'An error occurred while reopening the review.');
     } finally {
       setReopening(false);
+    }
+  };
+
+  const handleGeneratePass = async () => {
+    if (!app?.childId) return;
+    setSaving(true);
+    try {
+      const res = await api.admin.generateChildPass(app.childId);
+      if (res.success) {
+        showSuccess(
+          'Pass Issued',
+          `The digital event pass for ${app?.child?.fullName || 'the child'} has been generated successfully.`
+        );
+        await fetchDetails();
+        onSave();
+      } else {
+        showError('Generation Failed', res.error || 'Could not generate pass.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Generation Failed', parsed.message || 'An error occurred while generating the pass.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -632,15 +657,43 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
           {/* Approved Status / Reopen Action Card */}
           {['selected', 'pass_ready'].includes(app.status) && (
-            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-5 space-y-4">
+            <div 
+              data-component-version="admin-child-pass-card-v4-repair"
+              className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-5 space-y-4"
+            >
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
+                <div className="space-y-1 flex-1">
                   <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Approved & Verified</h4>
-                  <p className="text-xs text-emerald-700 leading-relaxed">
+                  <p className="text-xs text-emerald-700 leading-relaxed mb-3">
                     This child's application is currently approved and marked <strong>{statusLabels[app.status]}</strong>. 
                     Parents can access and download their secure digital event pass.
                   </p>
+                  {app.status === 'selected' && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleGeneratePass}
+                        disabled={saving}
+                        data-component-version="admin-child-generate-pass-action-v4"
+                        className="w-full sm:w-auto px-4 py-2.5 bg-[#8C6D23] hover:bg-[#715D3A] active:bg-[#5C4B2E] disabled:bg-[#FAF8F3] disabled:text-[#A1A1AA] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer focus:outline-none"
+                      >
+                        <QrCode className="w-4 h-4 animate-pulse" />
+                        <span>Generate pass</span>
+                      </button>
+                    </div>
+                  )}
+                  {app.status === 'pass_ready' && (
+                    <div className="max-w-[320px] mx-auto pt-2 pb-2">
+                      <EventPassPreviewCard
+                        childName={app.child.fullName}
+                        ageGroup={app.child.ageGroup || 'Section'}
+                        status="Pass ready"
+                        photoUrl={app.child.photoUrl || undefined}
+                        passReference={app.passReference}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 

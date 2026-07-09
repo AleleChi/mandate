@@ -206,6 +206,12 @@ export const api = {
     async getHome() {
       return api.request<any>('/api/parent/home');
     },
+    async getPasses() {
+      return api.request<any>('/api/parent/passes');
+    },
+    async getPass(passId: string) {
+      return api.request<any>(`/api/parent/passes/${passId}`);
+    },
     async getChildren() {
       return api.request<any[]>('/api/parent/children');
     },
@@ -529,6 +535,20 @@ export const api = {
       return api.request<any>(`/api/admin/applications/${id}/status`, {
         method: 'PUT',
         body: JSON.stringify({ status, noteToTeam })
+      });
+    },
+    async generateChildPass(childId: string) {
+      return api.request<any>(`/api/admin/children/${childId}/pass/generate`, {
+        method: 'POST'
+      });
+    },
+    async getChildPass(childId: string) {
+      return api.request<any>(`/api/admin/children/${childId}/pass`);
+    },
+    async revokeChildPass(childId: string, reason: string) {
+      return api.request<any>(`/api/admin/children/${childId}/pass/revoke`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
       });
     },
     async changePassword(payload: any) {

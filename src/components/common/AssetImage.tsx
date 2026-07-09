@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Image as ImageIcon, Camera, Sparkles, Shield, Users, Heart } from 'lucide-react';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 
 interface AssetImageProps {
   src?: string;
@@ -32,13 +33,15 @@ export const AssetImage: React.FC<AssetImageProps> = ({
   };
 
   if (src && src.trim() !== '' && !hasError) {
+    const resolved = resolveMediaUrl(src);
     return (
       <img
-        src={src}
+        src={resolved}
         alt={alt}
         className={className}
         loading={loading}
         onError={() => setHasError(true)}
+        referrerPolicy="no-referrer"
       />
     );
   }

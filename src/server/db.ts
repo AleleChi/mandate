@@ -35,10 +35,45 @@ export function getDb() {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     const dbPath = path.join(dataDir, 'koinonia-dev.sqlite');
-    sqliteDb = new Database(dbPath);
-    sqliteDb.pragma('journal_mode = WAL');
-    sqliteDb.pragma('foreign_keys = ON');
-    initSqliteSchema(sqliteDb);
+    try {
+      sqliteDb = new Database(dbPath);
+      sqliteDb.pragma('journal_mode = WAL');
+      sqliteDb.pragma('foreign_keys = ON');
+      initSqliteSchema(sqliteDb);
+    } catch (e) {
+      console.error('Database corruption or open error detected, rebuilding SQLite:', e);
+      if (sqliteDb) {
+        try {
+          sqliteDb.close();
+        } catch (_) {}
+        sqliteDb = null;
+      }
+      // Backup corrupted files
+      const timestamp = Date.now();
+      const filesToMove = [
+        'koinonia-dev.sqlite',
+        'koinonia-dev.sqlite-shm',
+        'koinonia-dev.sqlite-wal'
+      ];
+      for (const f of filesToMove) {
+        const fullPath = path.join(dataDir, f);
+        if (fs.existsSync(fullPath)) {
+          try {
+            fs.renameSync(fullPath, `${fullPath}.corrupt-${timestamp}`);
+          } catch (renameErr) {
+            console.error(`Failed to rename corrupt file ${f}:`, renameErr);
+            try {
+              fs.unlinkSync(fullPath);
+            } catch (_) {}
+          }
+        }
+      }
+      // Re-initialize a fresh database
+      sqliteDb = new Database(dbPath);
+      sqliteDb.pragma('journal_mode = WAL');
+      sqliteDb.pragma('foreign_keys = ON');
+      initSqliteSchema(sqliteDb);
+    }
   }
 
   return { query, queryOne, execute, transaction, REAL_EVENT_ID };
