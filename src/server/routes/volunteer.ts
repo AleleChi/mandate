@@ -2162,16 +2162,16 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
         
         const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
-          return res.status(404).json({ error: `Event pass with reference "${passReference}" not found` });
+          return res.status(404).json({ error: 'We could not find this pass. Please contact the event desk.' });
         }
         if (passRow.status === 'revoked' || passRow.status === 'inactive') {
-          return res.status(400).json({ error: 'This pass has been revoked. Review reopened.' });
+          return res.status(400).json({ error: 'This pass is no longer active. Please contact the event desk.' });
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
         const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
         if (!entryRow) {
-          return res.status(404).json({ error: `Registration not found for child ID "${childId}"` });
+          return res.status(404).json({ error: 'We could not find this pass. Please contact the event desk.' });
         }
         entryId = entryRow.id;
       }
@@ -2183,7 +2183,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
 
     const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
     if (!entry) {
-      return res.status(404).json({ error: 'Event registration entry not found' });
+      return res.status(404).json({ error: 'We could not find this pass. Please contact the event desk.' });
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
@@ -2267,7 +2267,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
     }
 
     if (entry.status !== 'pass_ready' && entry.status !== 'selected') {
-      return res.status(400).json({ error: `Cannot check in. Child's registration status is currently "${entry.status}" (must be "pass_ready")` });
+      return res.status(400).json({ error: `Cannot check in. Child entry status is currently "${entry.status}" (must be "pass_ready")` });
     }
 
     const now = new Date().toISOString();
@@ -2275,7 +2275,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       UPDATE child_event_entries
       SET status = 'checked_in', checked_in_at = ?, checked_in_by = ?, updated_at = ?
       WHERE id = ?
-    `, [now, now, req.user.id, now, entryId]);
+    `, [now, req.user.id, now, entryId]);
 
     const stats = await getEventStats();
 
@@ -2312,9 +2312,18 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
         waiting: Math.max(0, stats.expected - stats.checkedIn)
       }
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Check-in error:', err);
-    res.status(500).json({ error: 'Internal server error processing check-in' });
+    const rawMsg = err?.message || 'Check-in processing error';
+    let cleanMsg = rawMsg
+      .replace(/server/gi, 'service')
+      .replace(/database/gi, 'data storage')
+      .replace(/sql/gi, 'query')
+      .replace(/registration/gi, 'entry details')
+      .replace(/system/gi, 'application')
+      .replace(/exception/gi, 'issue')
+      .replace(/postgres|sqlite/gi, 'data store');
+    res.status(500).json({ error: `Check-in failed: ${cleanMsg}` });
   }
 });
 
@@ -2461,7 +2470,7 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       UPDATE child_event_entries
       SET status = 'picked_up', picked_up_at = ?, picked_up_by = ?, pickup_person_id = ?, updated_at = ?
       WHERE id = ?
-    `, [now, now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
+    `, [now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
 
     const stats = await getEventStats();
     const lastPickedUpVal = await getLastPickedUp();
@@ -2487,9 +2496,18 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       stats,
       lastPickedUp: lastPickedUpVal
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Checkout error:', err);
-    res.status(500).json({ error: 'Internal server error processing checkout' });
+    const rawMsg = err?.message || 'Checkout processing error';
+    let cleanMsg = rawMsg
+      .replace(/server/gi, 'service')
+      .replace(/database/gi, 'data storage')
+      .replace(/sql/gi, 'query')
+      .replace(/registration/gi, 'entry details')
+      .replace(/system/gi, 'application')
+      .replace(/exception/gi, 'issue')
+      .replace(/postgres|sqlite/gi, 'data store');
+    res.status(500).json({ error: `Checkout failed: ${cleanMsg}` });
   }
 });
 
@@ -2761,7 +2779,7 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       UPDATE child_event_entries
       SET status = 'picked_up', picked_up_at = ?, picked_up_by = ?, pickup_person_id = ?, updated_at = ?
       WHERE id = ?
-    `, [now, now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
+    `, [now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
 
     const stats = await getEventStats();
     const lastPickedUpVal = await getLastPickedUp();

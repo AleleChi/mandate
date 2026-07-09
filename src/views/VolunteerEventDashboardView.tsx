@@ -54,6 +54,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [manualCode, setManualCode] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isReleasing, setIsReleasing] = useState(false);
+  const [isMarkingPickup, setIsMarkingPickup] = useState(false);
   const [lastVerifiedChild, setLastVerifiedChild] = useState<any | null>(null);
   const [lookedUpChild, setLookedUpChild] = useState<any | null>(null);
   const [recentScans, setRecentScans] = useState<any[]>([]);
@@ -453,6 +456,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setLookedUpChild(null);
     setCheckedInSuccessChild(null);
     setCheckedInSuccessEntry(null);
+    setIsCheckingIn(false);
     
     // Reset all lookup and deduplication refs
     isLookupInFlightRef.current = false;
@@ -662,9 +666,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Confirm and perform Check-in
   const handleConfirmCheckIn = async (child: any) => {
+    if (isCheckingIn) return;
+    setIsCheckingIn(true);
     setScanLoading(true);
     try {
-      const res = await api.volunteer.checkIn({ childEventEntryId: child.entryId || child.id });
+      const payload: any = {};
+      if (child.id) payload.childId = child.id;
+      if (child.passReference) payload.passReference = child.passReference.trim();
+      if (child.entryId || child.id) payload.childEventEntryId = child.entryId || child.id;
+
+      const res = await api.volunteer.checkIn(payload);
       if (res.success) {
         showSuccess('Check-In Successful', `${child.fullName || (res.child && res.child.fullName)} is now checked in.`);
         
@@ -708,14 +719,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Check-In Failed', apiErr.message);
+      console.error('[volunteer check-in failed]', err);
+      showError('Check-In Failed', apiErr.message || 'We could not complete check-in. Please try again.');
     } finally {
       setScanLoading(false);
+      setIsCheckingIn(false);
     }
   };
 
   // Confirm and perform release of child
   const handleConfirmRelease = async (child: any) => {
+    if (isReleasing) return;
+    setIsReleasing(true);
     setScanLoading(true);
     try {
       const res = await api.volunteer.checkOut({ childEventEntryId: child.entryId || child.id || child.childEventEntryId });
@@ -739,6 +754,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       showError('Release Failed', apiErr.message);
     } finally {
       setScanLoading(false);
+      setIsReleasing(false);
     }
   };
 
@@ -768,6 +784,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   const handleConfirmPickupRelease = async (child: any, pickupPersonId?: string) => {
+    if (isMarkingPickup) return;
+    setIsMarkingPickup(true);
     setPickupLoading(true);
     try {
       const pPersonId = pickupPersonId || (child.authorizedPickup && child.authorizedPickup[0]?.id) || (child.pickup?.id);
@@ -794,6 +812,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       showError('Release Failed', apiErr.message || 'Failed to record child release.');
     } finally {
       setPickupLoading(false);
+      setIsMarkingPickup(false);
     }
   };
 
@@ -1267,7 +1286,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               const hasCareNotes = medicalNote || (allergies && allergies.toLowerCase() !== 'no') || (extraSupport && extraSupport.toLowerCase() !== 'no');
 
               return (
-                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v4-stitch-active">
+                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v5-connected">
                   {/* Event label */}
                   <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
                     {eventDetails?.title?.toUpperCase() || 'THE GENERAL ASSEMBLY CHILDREN AND TEENS'}
@@ -1288,14 +1307,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* Success badge card */}
                   <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-3xl p-5 shadow-xs text-center space-y-1" data-component-version="volunteer-checked-in-success-badge-v1-stitch">
-                    <span className="text-sm font-bold text-[#047857] block">Checked In</span>
+                    <span className="text-sm font-bold text-[#047857] block">Checked in</span>
                     <p className="text-xs text-[#065F46] font-medium leading-relaxed">
-                      Child can now safely enter the event hall.
+                      {firstName} has been marked present.
                     </p>
                   </div>
 
                   {/* Child summary card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-child-card-v1-stitch">
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-child-summary-v5">
                     <div className="flex items-center space-x-4">
                       <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 shadow-inner flex items-center justify-center">
                         {checkedInSuccessChild.photoUrl ? (
@@ -1325,7 +1344,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </div>
                     </div>
 
-                    <div className="border-t border-gray-100 pt-3.5 space-y-2.5 text-xs">
+                    <div className="border-t border-gray-100 pt-3.5 space-y-2.5 text-xs" data-component-version="volunteer-checked-in-entry-details-v5">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">ENTRY TIME</span>
                         <span className="font-semibold text-gray-850">{checkInTime}</span>
@@ -1342,7 +1361,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Care notes card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-care-notes-v1-stitch">
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-care-notes-v5">
                     <h4 className="text-[10px] font-mono font-bold text-[#8F7020] uppercase tracking-[0.15em] border-b border-gray-100 pb-2">
                       CARE NOTES
                     </h4>
@@ -1390,7 +1409,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Children inside / Waiting metrics card */}
-                  <div className="grid grid-cols-2 gap-4 bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm" data-component-version="volunteer-checked-in-metrics-v1-stitch">
+                  <div className="grid grid-cols-2 gap-4 bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm" data-component-version="volunteer-checked-in-metrics-v5">
                     <div className="text-center space-y-1 border-r border-gray-100 pr-2">
                       <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">CHILDREN INSIDE</span>
                       <span className="text-3xl font-serif font-black text-gray-900">{stats.checkedIn}</span>
@@ -1405,7 +1424,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <div className="space-y-3 pt-2" data-component-version="volunteer-checked-in-actions-v2-stitch">
                     <button
                       onClick={handleResetScannerState}
-                      data-component-version="volunteer-checked-in-scan-another-v4"
+                      data-component-version="volunteer-checked-in-scan-another-v5"
                       className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 stroke-[2.5]" />
@@ -1418,7 +1437,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         handleResetScannerState();
                         onNavigate('/volunteer/children');
                       }}
-                      data-component-version="volunteer-view-profile-action-v4"
+                      data-component-version="volunteer-checked-in-view-child-v5"
                       className="w-full border border-gray-300 hover:border-gray-400 text-gray-850 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
                     >
                       <User className="h-4 w-4 text-gray-600 stroke-[2]" />
@@ -1431,6 +1450,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           handleResetScannerState();
                           onNavigate('/volunteer/event');
                         }}
+                        data-component-version="volunteer-checked-in-back-home-v5"
                         className="text-xs font-serif font-bold text-[#C59B27] hover:text-[#A47E1F] transition-colors underline underline-offset-4 cursor-pointer uppercase tracking-wider"
                       >
                         Back to Event Home
@@ -1590,15 +1610,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           handleConfirmCheckIn(lookedUpChild);
                         }
                       }}
-                      disabled={scanLoading}
-                      data-component-version="volunteer-child-checkin-action-v4"
+                      disabled={scanLoading || isCheckingIn}
+                      data-component-version="volunteer-child-checkin-action-v6"
                       className={`w-full text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
                         isAlreadyCheckedIn 
                           ? 'bg-gray-400 hover:bg-gray-500' 
                           : 'bg-[#C59B27] hover:bg-[#A47E1F] text-white'
                       }`}
                     >
-                      {scanLoading ? (
+                      {isCheckingIn ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <span>Checking in...</span>
+                        </>
+                      ) : scanLoading ? (
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                       ) : (
                         <>
