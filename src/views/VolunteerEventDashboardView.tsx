@@ -92,6 +92,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const controlsRef = useRef<any>(null);
   const isLookupInFlight = useRef<boolean>(false);
   const lastScannedCode = useRef<string>('');
+  const isLookupInFlightRef = useRef(false);
+  const hasSuccessfulScanRef = useRef(false);
+  const lastScannedCodeRef = useRef<string | null>(null);
+  const lastScanAtRef = useRef<number>(0);
 
   // Reports states
   const [reportsData, setReportsData] = useState<any | null>(null);
@@ -350,6 +354,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const startScanning = async () => {
     try {
       setCameraUnavailable(false);
+
+      // Attempt to prompt for permission explicitly if mediaDevices API is available
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: { ideal: 'environment' } } 
+          });
+          // Stop stream tracks immediately as this is just to acquire permissions
+          stream.getTracks().forEach(track => track.stop());
+        } catch (permErr) {
+          console.warn('Explicit getUserMedia permission request was denied or failed:', permErr);
+        }
+      }
+
       if (!codeReaderRef.current) {
         codeReaderRef.current = new BrowserQRCodeReader();
       }
@@ -394,15 +412,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             }
           );
           controlsRef.current = controls;
+          setCameraUnavailable(false);
         }
       } else {
-        showError('No Cameras Found', 'Please connect a camera or enter the pass reference code manually.');
+        console.warn('No cameras detected on this device.');
         setCameraActive(false);
         setCameraUnavailable(true);
       }
     } catch (err) {
       console.error('ZXing QR reader initialization error:', err);
-      showError('Camera Error', 'Could not open camera. Please grant camera permission.');
       setCameraActive(false);
       setCameraUnavailable(true);
     }
@@ -431,20 +449,58 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   // Process QR Scans or Manual Input
+  const handleResetScannerState = () => {
+    setLookedUpChild(null);
+    setCheckedInSuccessChild(null);
+    setCheckedInSuccessEntry(null);
+    
+    // Reset all lookup and deduplication refs
+    isLookupInFlightRef.current = false;
+    hasSuccessfulScanRef.current = false;
+    lastScannedCodeRef.current = null;
+    lastScanAtRef.current = 0;
+    
+    // Legacy refs
+    isLookupInFlight.current = false;
+    lastScannedCode.current = '';
+    
+    // Reset inputs
+    setManualCode('');
+    
+    // Restart camera
+    setCameraActive(true);
+  };
+
   const handlePassScanned = async (text: string) => {
     const trimmedText = text.trim();
     if (!trimmedText) return;
 
-    if (isLookupInFlight.current) {
+    const now = Date.now();
+    
+    // Cooldown logic: if same code repeats within 4 seconds, ignore it
+    if (lastScannedCodeRef.current === trimmedText && (now - lastScanAtRef.current) < 4000) {
+      console.debug('[scan] duplicate ignored within cooldown');
       return;
     }
 
-    if (lastScannedCode.current === trimmedText) {
+    if (isLookupInFlightRef.current) {
+      console.debug('[scan] lookup is already in flight');
       return;
     }
 
+    if (hasSuccessfulScanRef.current) {
+      console.debug('[scan] scan already successful');
+      return;
+    }
+
+    isLookupInFlightRef.current = true;
+    lastScannedCodeRef.current = trimmedText;
+    lastScanAtRef.current = now;
+    
+    // Legacy refs
     isLookupInFlight.current = true;
     lastScannedCode.current = trimmedText;
+
     setScanLoading(true);
     
     // Stop scanning immediately on success to prevent multi-scans
@@ -471,12 +527,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           };
           setPickupChild(childWithPickup);
           setCameraActive(false);
-          showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please verify pickup person.`);
+          hasSuccessfulScanRef.current = true;
+          // No "Child Found" toast popup to prevent stacking!
           if (navigator.vibrate) {
             navigator.vibrate([100]);
           }
         } else {
           showError('Not Found', 'No active checked-in child found for this pass.');
+          isLookupInFlightRef.current = false;
+          lastScannedCodeRef.current = null;
           isLookupInFlight.current = false;
           lastScannedCode.current = '';
           setCameraActive(true);
@@ -496,6 +555,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         
         if (res.success && res.child) {
           setLookedUpChild(res.child);
+          hasSuccessfulScanRef.current = true;
           
           // Haptic feedback if available
           if (navigator.vibrate) {
@@ -506,6 +566,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           setManualCode('');
         } else {
           showError('Not Found', 'We could not find this pass. Please contact the event desk.');
+          isLookupInFlightRef.current = false;
+          lastScannedCodeRef.current = null;
           isLookupInFlight.current = false;
           lastScannedCode.current = '';
           setCameraActive(true);
@@ -514,6 +576,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const apiErr = extractApiError(err);
       showError('Pass Error', apiErr.message || 'We could not find this pass. Please contact the event desk.');
+      isLookupInFlightRef.current = false;
+      lastScannedCodeRef.current = null;
       isLookupInFlight.current = false;
       lastScannedCode.current = '';
       setCameraActive(true);
@@ -524,6 +588,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const handleManualVerifySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (scanLoading || isLookupInFlightRef.current || hasSuccessfulScanRef.current) {
+      console.debug('[manual-lookup] already in flight or success');
+      return;
+    }
     if (!manualCode.trim()) {
       showWarning('Input required', 'Please enter a valid pass reference code.');
       return;
@@ -757,13 +825,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <div className="max-w-md mx-auto flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <button 
-                  onClick={() => {
-                    setCheckedInSuccessChild(null);
-                    setCheckedInSuccessEntry(null);
-                    isLookupInFlight.current = false;
-                    lastScannedCode.current = '';
-                    setCameraActive(true);
-                  }} 
+                  onClick={handleResetScannerState} 
                   className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                   id="btn-volunteer-success-back"
                 >
@@ -790,12 +852,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <div className="max-w-md mx-auto flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <button 
-                  onClick={() => {
-                    setLookedUpChild(null);
-                    isLookupInFlight.current = false;
-                    lastScannedCode.current = '';
-                    setCameraActive(true);
-                  }} 
+                  onClick={handleResetScannerState} 
                   className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                   id="btn-volunteer-scan-back"
                 >
@@ -1210,7 +1267,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               const hasCareNotes = medicalNote || (allergies && allergies.toLowerCase() !== 'no') || (extraSupport && extraSupport.toLowerCase() !== 'no');
 
               return (
-                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v3">
+                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v4-stitch-active">
                   {/* Event label */}
                   <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
                     {eventDetails?.title?.toUpperCase() || 'THE GENERAL ASSEMBLY CHILDREN AND TEENS'}
@@ -1345,16 +1402,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Actions buttons */}
-                  <div className="space-y-3 pt-2" data-component-version="volunteer-checked-in-actions-v1-stitch">
+                  <div className="space-y-3 pt-2" data-component-version="volunteer-checked-in-actions-v2-stitch">
                     <button
-                      onClick={() => {
-                        setCheckedInSuccessChild(null);
-                        setCheckedInSuccessEntry(null);
-                        isLookupInFlight.current = false;
-                        lastScannedCode.current = '';
-                        setCameraActive(true);
-                      }}
-                      data-component-version="volunteer-scan-another-action-v3"
+                      onClick={handleResetScannerState}
+                      data-component-version="volunteer-checked-in-scan-another-v4"
                       className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 stroke-[2.5]" />
@@ -1364,13 +1415,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       onClick={() => {
                         setSelectedChildId(checkedInSuccessChild.id);
-                        setCheckedInSuccessChild(null);
-                        setCheckedInSuccessEntry(null);
-                        isLookupInFlight.current = false;
-                        lastScannedCode.current = '';
+                        handleResetScannerState();
                         onNavigate('/volunteer/children');
                       }}
-                      data-component-version="volunteer-view-profile-action-v3"
+                      data-component-version="volunteer-view-profile-action-v4"
                       className="w-full border border-gray-300 hover:border-gray-400 text-gray-850 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
                     >
                       <User className="h-4 w-4 text-gray-600 stroke-[2]" />
@@ -1380,10 +1428,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <div className="text-center pt-2">
                       <button
                         onClick={() => {
-                          setCheckedInSuccessChild(null);
-                          setCheckedInSuccessEntry(null);
-                          isLookupInFlight.current = false;
-                          lastScannedCode.current = '';
+                          handleResetScannerState();
                           onNavigate('/volunteer/event');
                         }}
                         className="text-xs font-serif font-bold text-[#C59B27] hover:text-[#A47E1F] transition-colors underline underline-offset-4 cursor-pointer uppercase tracking-wider"
@@ -1402,7 +1447,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
             return (
-              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v4-stitch-checkin">
+              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v5-stitch-active">
                 {/* Scan successful & Child found title */}
                 <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
                   <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
@@ -1564,13 +1609,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </button>
 
                     <button
-                      onClick={() => {
-                        setLookedUpChild(null);
-                        isLookupInFlight.current = false;
-                        lastScannedCode.current = '';
-                        setCameraActive(true);
-                      }}
-                      data-component-version="volunteer-scan-another-action-v3"
+                      onClick={handleResetScannerState}
+                      data-component-version="volunteer-scan-another-action-v4"
                       className="w-full border border-gray-300 hover:border-gray-400 text-gray-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 text-gray-600 stroke-[2]" />
@@ -1633,178 +1673,213 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             /* ==================== 2. SCANNER VIEW (Stitch Design) ==================== */
             <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-scanner-v3-single-scan-safe">
               
-              {/* Tall Portrait Scan Card */}
-              <div 
-                className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs relative" 
-                data-component-version="volunteer-scan-dedupe-guard-v1"
-              >
-                <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
-                  {/* Blurred warm background when camera is inactive */}
-                  {!cameraActive && (
-                    <div 
-                      className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
-                      style={{ 
-                        backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`,
-                        referrerPolicy: 'no-referrer' as any
-                      }}
-                    />
-                  )}
+              {cameraUnavailable ? (
+                /* Camera is unavailable: show only the manual entry card */
+                <div className="space-y-6" data-component-version="volunteer-scan-manual-fallback-v1">
+                  <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
+                    CAMERA NOT FOUND
+                  </div>
+                  
+                  <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4 leading-relaxed">
+                    Scanner is not available on this device. Please enter the child's entry pass code manually below to continue.
+                  </div>
 
-                  {cameraActive ? (
-                    <>
-                      <video
-                        ref={videoRef}
-                        className="w-full h-full object-cover"
-                        playsInline
-                        muted
-                      />
-                      
-                      {/* Gold overlay frame */}
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-56 h-56 border border-white/25 rounded-2xl relative flex items-center justify-center">
-                          {/* Antique Gold corner highlights */}
-                          <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
-                          <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
-                          <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
-                          <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
-                          
-                          {/* Scanning Sweep line */}
-                          <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
-                        </div>
-                      </div>
-
-                      {/* Camera Controls Overlay */}
-                      <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
-                        {cameras.length > 1 && (
+                  <div className="bg-white border border-[#EAE8E1] p-5 rounded-3xl shadow-sm space-y-4">
+                    <div className="flex items-center space-x-2 text-gray-900 pb-2 border-b border-gray-50">
+                      <Keyboard className="h-5 w-5 text-gray-400" />
+                      <h4 className="text-sm font-serif font-bold">Enter Pass Reference</h4>
+                    </div>
+                    
+                    <form onSubmit={handleManualVerifySubmit} className="space-y-4">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={manualCode}
+                          onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+                          placeholder="e.g. 6E80A7"
+                          disabled={scanLoading}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60 text-center"
+                        />
+                        {manualCode && (
                           <button
                             type="button"
-                            onClick={handleFlipCamera}
-                            data-component-version="volunteer-camera-flip-action-v1"
-                            className="p-1.5 bg-[#C59B27] hover:bg-[#B58E33] text-gray-900 rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-bold text-[10px]"
-                            title="Flip Camera"
+                            onClick={() => setManualCode('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            <span>Flip</span>
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        {cameras.length > 1 && (
-                          <select
-                            value={selectedCameraId}
-                            onChange={(e) => setSelectedCameraId(e.target.value)}
-                            className="text-[10px] font-bold text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
-                          >
-                            {cameras.map((cam, i) => (
-                              <option key={cam.deviceId} value={cam.deviceId}>
-                                {cam.label || `Cam ${i + 1}`}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <button
-                          onClick={() => setCameraActive(false)}
-                          className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-6 z-10">
-                      {/* Antique Gold corners even when camera is inactive */}
-                      <div className="absolute inset-12 pointer-events-none border border-white/10 rounded-2xl">
-                        <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
-                        <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
-                        <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
-                        <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <p className="text-white font-serif font-bold text-lg">Scan child pass</p>
-                        <p className="text-xs text-white/60 max-w-[200px] mx-auto leading-relaxed">
-                          Align the child's entry pass QR inside the viewfinder area.
-                        </p>
                       </div>
 
                       <button
-                        onClick={() => setCameraActive(true)}
-                        className="px-6 py-3 bg-white text-gray-900 font-bold text-xs tracking-wider rounded-full hover:bg-gray-100 transition-all active:scale-95 shadow-md flex items-center space-x-2 uppercase cursor-pointer"
+                        type="submit"
+                        disabled={scanLoading || !manualCode}
+                        className="w-full py-3.5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center font-serif uppercase"
                       >
-                        <Camera className="h-4 w-4" />
-                        <span>Scan child pass</span>
+                        {scanLoading ? (
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        ) : (
+                          <span>Verify Pass</span>
+                        )}
                       </button>
-                    </div>
-                  )}
+                    </form>
+                  </div>
                 </div>
-              </div>
-
-              {/* Support message if scanner is not available on device */}
-              {cameras.length === 0 && !cameraActive && (
-                <div 
-                  data-component-version="volunteer-camera-error-v1"
-                  className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4"
-                >
-                  Scanner is not available on this device. Enter the pass code manually.
-                </div>
-              )}
-
-              {cameraUnavailable && (
-                <div 
-                  data-component-version="volunteer-camera-error-v1"
-                  className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4"
-                >
-                  Could not access camera. Please ensure camera permissions are granted or enter pass code manually.
-                </div>
-              )}
-
-              {/* Manual Pass Code Toggle Button */}
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setShowManualInput(!showManualInput)}
-                  className="w-full border border-gray-200 hover:border-gray-300 text-gray-700 font-bold text-xs tracking-wider py-4 px-4 rounded-2xl transition-all uppercase flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 cursor-pointer shadow-xs"
-                  data-component-version="volunteer-check-in-manual-pass-v2-stitch"
-                >
-                  <Keyboard className="h-4 w-4 text-gray-400" />
-                  <span>Enter pass code manually</span>
-                </button>
-
-                {/* Manual Pass Code Input Form */}
-                {showManualInput && (
-                  <form onSubmit={handleManualVerifySubmit} className="flex gap-3 animate-fade-in bg-white border border-[#EAE8E1] p-4 rounded-3xl shadow-sm">
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        value={manualCode}
-                        onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                        placeholder="e.g. 6E80A7"
-                        disabled={scanLoading}
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60"
-                      />
-                      {manualCode && (
-                        <button
-                          type="button"
-                          onClick={() => setManualCode('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+              ) : (
+                /* Camera is active/available: show portrait card with dedupe guard */
+                <div className="space-y-6" data-component-version="volunteer-scan-dedupe-guard-v2">
+                  {/* Tall Portrait Scan Card */}
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs relative">
+                    <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
+                      {/* Blurred warm background when camera is inactive */}
+                      {!cameraActive && (
+                        <div 
+                          className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
+                          style={{ 
+                            backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`,
+                            referrerPolicy: 'no-referrer' as any
+                          }}
+                        />
                       )}
-                    </div>
 
-                    <button
-                      type="submit"
-                      disabled={scanLoading || !manualCode}
-                      className="px-5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs tracking-wide rounded-xl transition-all cursor-pointer flex items-center justify-center font-mono uppercase shrink-0"
-                    >
-                      {scanLoading ? (
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      {cameraActive ? (
+                        <>
+                          <video
+                            ref={videoRef}
+                            className="w-full h-full object-cover"
+                            playsInline
+                            muted
+                          />
+                          
+                          {/* Gold overlay frame */}
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-56 h-56 border border-white/25 rounded-2xl relative flex items-center justify-center">
+                              {/* Antique Gold corner highlights */}
+                              <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
+                              <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
+                              <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
+                              <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
+                              
+                              {/* Scanning Sweep line */}
+                              <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
+                            </div>
+                          </div>
+
+                          {/* Camera Controls Overlay */}
+                          <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
+                            {cameras.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={handleFlipCamera}
+                                data-component-version="volunteer-camera-flip-action-v1"
+                                className="p-1.5 bg-[#C59B27] hover:bg-[#B58E33] text-gray-900 rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-bold text-[10px]"
+                                title="Flip Camera"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                <span>Flip</span>
+                              </button>
+                            )}
+                            {cameras.length > 1 && (
+                              <select
+                                value={selectedCameraId}
+                                onChange={(e) => setSelectedCameraId(e.target.value)}
+                                className="text-[10px] font-bold text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
+                              >
+                                {cameras.map((cam, i) => (
+                                  <option key={cam.deviceId} value={cam.deviceId}>
+                                    {cam.label || `Cam ${i + 1}`}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <button
+                              onClick={() => setCameraActive(false)}
+                              className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </>
                       ) : (
-                        <span>Verify Pass</span>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-6 z-10">
+                          {/* Antique Gold corners even when camera is inactive */}
+                          <div className="absolute inset-12 pointer-events-none border border-white/10 rounded-2xl">
+                            <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
+                            <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
+                            <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
+                            <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <p className="text-white font-serif font-bold text-lg">Scan child pass</p>
+                            <p className="text-xs text-white/60 max-w-[200px] mx-auto leading-relaxed">
+                              Align the child's entry pass QR inside the viewfinder area.
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => setCameraActive(true)}
+                            className="px-6 py-3 bg-white text-gray-900 font-bold text-xs tracking-wider rounded-full hover:bg-gray-100 transition-all active:scale-95 shadow-md flex items-center space-x-2 uppercase cursor-pointer"
+                          >
+                            <Camera className="h-4 w-4" />
+                            <span>Scan child pass</span>
+                          </button>
+                        </div>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Manual Pass Code Toggle Button */}
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowManualInput(!showManualInput)}
+                      className="w-full border border-gray-200 hover:border-gray-300 text-gray-700 font-bold text-xs tracking-wider py-4 px-4 rounded-2xl transition-all uppercase flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 cursor-pointer shadow-xs"
+                      data-component-version="volunteer-check-in-manual-pass-v2-stitch"
+                    >
+                      <Keyboard className="h-4 w-4 text-gray-400" />
+                      <span>Enter pass code manually</span>
                     </button>
-                  </form>
-                )}
-              </div>
+
+                    {/* Manual Pass Code Input Form */}
+                    {showManualInput && (
+                      <form onSubmit={handleManualVerifySubmit} className="flex gap-3 animate-fade-in bg-white border border-[#EAE8E1] p-4 rounded-3xl shadow-sm">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={manualCode}
+                            onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+                            placeholder="e.g. 6E80A7"
+                            disabled={scanLoading}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60"
+                          />
+                          {manualCode && (
+                            <button
+                              type="button"
+                              onClick={() => setManualCode('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={scanLoading || !manualCode}
+                          className="px-5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs tracking-wide rounded-xl transition-all cursor-pointer flex items-center justify-center font-mono uppercase shrink-0"
+                        >
+                          {scanLoading ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          ) : (
+                            <span>Verify Pass</span>
+                          )}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Child Search Field */}
               <form 

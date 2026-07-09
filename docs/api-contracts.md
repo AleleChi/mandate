@@ -1506,3 +1506,13 @@ Marks all active, unread notifications matching the user's role and scoping para
   }
   ```
 
+---
+
+## 18. Volunteer Check-In Client Integration & Guardrails
+
+The mobile check-in scanner leverages the `/api/volunteer/pass/lookup` and `/api/volunteer/check-in` contracts with critical client-side state protections:
+- **Lookup Debouncing & Locking**: Prior to triggering a lookup request, the client locks scanning using a local reference guard (`isLookupInFlightRef`). No multiple requests are triggered for the same code.
+- **Immediate Viewfinder Shutdown**: On a successful lookup, the camera stream is halted instantly to prevent background scans.
+- **Transition Flow**: The lookup response drives transition directly to the "Child Found" screen, which contains custom action triggers pointing to `/api/volunteer/check-in` and state-cleanup handlers to safely restore operational scanning on dismiss.
+
+

@@ -540,5 +540,13 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Empty State Presentation**: When no notifications are active, the center displays the heading `"No updates yet"`.
 
 
+## 38. Hardened Mobile Volunteer Scanner & Manual Fallback Flow
+- **Deduplication Scan Guard**: Built a robust, real-time look-up deduplication engine utilizing `useRef` to govern scan cooldown states. It guarantees that subsequent rapid scans or duplicate frames do not trigger multiple redundant database calls.
+- **Single-Screen Transition State**: Replaced stacking popups or toast notifications with a smooth, direct state transition to the single "Child Found" review screen. The camera is stopped immediately (`stopScanning()`) upon a successful match to guarantee that the scanner is not running in the background.
+- **Smart Camera Fallback**: On load, if the camera is unavailable on the device, permissions are denied, or no media devices are found, the app completely hides the tall portrait scanning viewfinder card. Instead, it displays only the beautifully styled manual pass code verification card directly with no extra clicks required.
+- **State Restoration**: Centralized scanner state cleanup via `handleResetScannerState` ensuring that all refs (`isLookupInFlightRef`, `hasSuccessfulScanRef`, `lastScannedCodeRef`, `lastScanAtRef`) and active stream instances are completely cleared before resuming scan mode, preventing permanent lockout or frozen screens.
+
+
+
 
 
