@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, Mail, Phone, MapPin, Shield, Calendar, RefreshCw, 
   HelpCircle, Lock, LogOut, CheckCircle2, AlertTriangle, 
-  ExternalLink, MessageSquare, Copy, Check 
+  Copy, Check, ChevronDown, ChevronUp, Info, ArrowRight, X,
+  Camera, AlertCircle
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 
@@ -25,7 +26,94 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   const [profileData, setProfileData] = useState<any>(null);
   const [sendingReset, setSendingReset] = useState<boolean>(false);
   const [resetSent, setResetSent] = useState<boolean>(false);
-  const [copiedContact, setCopiedContact] = useState<boolean>(false);
+
+  // Edit profile states
+  const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
+  const [editFullName, setEditFullName] = useState<string>('');
+  const [editPhone, setEditPhone] = useState<string>('');
+  const [editWhatsapp, setEditWhatsapp] = useState<string>('');
+  const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState<boolean>(false);
+  const [editIsKoinoniaWorker, setEditIsKoinoniaWorker] = useState<boolean>(false);
+  const [editDepartment, setEditDepartment] = useState<string>('');
+  const [editPreferredTeam, setEditPreferredTeam] = useState<string>('');
+  const [editServingExperience, setEditServingExperience] = useState<boolean>(false);
+  const [editNote, setEditNote] = useState<string>('');
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState<string>('');
+  const [saving, setSaving] = useState<boolean>(false);
+
+  // Synchronize edit state when profile data loads or edit modal opens
+  useEffect(() => {
+    if (isEditOpen && profileData) {
+      const u = profileData.user || {};
+      const p = profileData.volunteerProfile || {};
+      setEditFullName(u.fullName || u.full_name || '');
+      const phoneVal = p.phone || '';
+      const whatsappVal = p.whatsapp || '';
+      setEditPhone(phoneVal);
+      setEditWhatsapp(whatsappVal);
+      setWhatsappSameAsPhone(phoneVal !== '' && phoneVal === whatsappVal);
+      setEditIsKoinoniaWorker(p.is_koinonia_worker === 1 || p.isKoinoniaWorker === true);
+      setEditDepartment(p.department || '');
+      setEditPreferredTeam(p.preferredTeam || p.preferred_team || 'General Team');
+      setEditServingExperience(p.serving_experience === 1 || p.servingExperience === true);
+      setEditNote(p.note || '');
+      setEditPhotoFile(null);
+      setEditPhotoPreview(u.photoUrl || '');
+    }
+  }, [isEditOpen, profileData]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editFullName.trim()) {
+      showError('Validation Error', 'Full Name is required.');
+      return;
+    }
+    if (!editPhone.trim()) {
+      showError('Validation Error', 'Phone number is required.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('fullName', editFullName.trim());
+      fd.append('phone', editPhone.trim());
+      // Always submit the copied phone value if synced checkbox is checked
+      const finalWhatsapp = whatsappSameAsPhone ? editPhone.trim() : editWhatsapp.trim();
+      fd.append('whatsapp', finalWhatsapp);
+      fd.append('isKoinoniaWorker', editIsKoinoniaWorker ? 'true' : 'false');
+      fd.append('department', editIsKoinoniaWorker ? editDepartment.trim() : '');
+      fd.append('preferredTeam', editPreferredTeam);
+      fd.append('servingExperience', editServingExperience ? 'true' : 'false');
+      fd.append('note', editNote.trim());
+      if (editPhotoFile) {
+        fd.append('photo', editPhotoFile);
+      }
+
+      const res = await api.volunteer.updateProfile(fd);
+      if (res && res.success) {
+        showSuccess('Profile Updated', 'Your onboarding details have been successfully updated.');
+        setIsEditOpen(false);
+        await fetchProfile(true);
+      } else {
+        showError('Update Failed', res.message || 'Could not update profile details.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      const is405 = err?.message?.includes('405') || apiErr.message?.includes('405');
+      if (is405) {
+        showError('Update Error', 'We could not save your changes. Please try again.');
+      } else {
+        showError('Update Error', apiErr.message || 'We could not save your changes. Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  // Local state for expandable help rows
+  const [activeHelpIndex, setActiveHelpIndex] = useState<number | null>(null);
 
   // Load and cache profile data
   const fetchProfile = async (silent = false) => {
@@ -34,12 +122,10 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
       const data = await api.volunteer.getProfile();
       if (data && data.success) {
         setProfileData(data);
-        // Cache to localStorage for offline fallback
         localStorage.setItem('koinonia_cached_volunteer_profile', JSON.stringify(data));
       }
     } catch (err: any) {
       console.error('Error fetching volunteer profile:', err);
-      // Try to load from cache
       const cached = localStorage.getItem('koinonia_cached_volunteer_profile');
       if (cached) {
         setProfileData(JSON.parse(cached));
@@ -58,7 +144,10 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   }, []);
 
   const handlePasswordReset = async () => {
-    if (!profileData?.user?.email) return;
+    if (!profileData?.user?.email) {
+      showError('Reset Error', 'Your profile email is not loaded yet.');
+      return;
+    }
     setSendingReset(true);
     try {
       const email = profileData.user.email;
@@ -76,17 +165,17 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
     }
   };
 
-  const copyLeadContact = () => {
-    if (!profileData?.help) return;
-    const contactInfo = `Lead: ${profileData.help.eventLeadName || 'Pastor Isaac'}\nPhone: ${profileData.help.eventLeadPhone || '+234 803 123 4567'}\nEmail: ${profileData.help.eventLeadEmail || 'isaac@koinoniaglobal.org'}`;
-    navigator.clipboard.writeText(contactInfo);
-    setCopiedContact(true);
-    showSuccess('Copied', 'Lead contact information copied to clipboard.');
-    setTimeout(() => setCopiedContact(false), 2000);
+  const getInitials = (name: string) => {
+    if (!name) return 'V';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
   };
 
   const formatTime = (isoString: string | null) => {
-    if (!isoString) return 'No scans recorded';
+    if (!isoString) return 'No scan yet';
     try {
       const d = new Date(isoString);
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -95,232 +184,633 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
     }
   };
 
+  const helpTopics = [
+    {
+      title: 'How to check in a child',
+      content: '1. Open the "Scan" tab from the bottom navigation.\n2. Position the parent’s Event Pass QR code in the camera frame (or tap manual input to enter the child’s security reference code).\n3. Match the child’s physical face with their system profile photo.\n4. Tap "Confirm Check-In" to record gate admission. Guide the child to their designated age-group department.'
+    },
+    {
+      title: 'How pickup works',
+      content: '1. Ask the parent or authorized guardian for their Event Pass QR code or pickup code.\n2. Scan the pass or lookup the pickup code. The screen will display the side-by-side identity verification cards.\n3. Strictly verify that the physical pickup person matches the authorized photo card displayed on the screen.\n4. Only tap "Confirm Release" after a successful visual identity match.'
+    },
+    {
+      title: 'Report an issue',
+      content: 'If you encounter behavioral incidents, medical needs, or technical issues: \n- Open the "Reports" tab to file official notes or view children requiring attention.\n- Use the Emergency Contact below to call or WhatsApp the lead coordinator immediately.'
+    },
+    {
+      title: 'Contact event lead',
+      content: 'Your lead coordinator is Pastor Isaac. \n- Emergency Number: +234 803 123 4567\n- Email: isaac@koinoniaglobal.org\n\nIf there is any emergency or security escalation, call or contact the lead coordinator immediately at the Main Entrance or Pickup Zone.'
+    }
+  ];
+
   if (loading && !profileData) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 space-y-4" id="profile-loading-stage">
+      <div className="flex flex-col items-center justify-center py-24 space-y-4" id="profile-loading-stage">
         <div className="w-10 h-10 border-3 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
         <p className="text-xs text-gray-400 font-mono tracking-wider uppercase">Loading profile...</p>
       </div>
     );
   }
 
-  // Fallback state if no data could be fetched or found in cache
-  const finalUser = profileData?.user || { fullName: 'Event Worker', email: 'N/A' };
-  const finalProfile = profileData?.volunteerProfile || { status: 'approved', preferredTeam: 'General Team', assignedTeam: 'General Team', assignedArea: 'General Hall', accessScope: 'General Access' };
-  const finalEvent = profileData?.event || { name: 'Children and Teens', section: 'The General Assembly' };
+  // Safe fallback mapping from backend
+  const finalUser = profileData?.user || { fullName: 'Volunteer', email: '' };
+  const finalProfile = profileData?.volunteerProfile || { status: 'approved', preferredTeam: 'Not assigned', assignedTeam: 'Not assigned', assignedArea: 'Not assigned', accessScope: 'Not assigned' };
   const finalActivity = profileData?.activity || { checkedInByYou: 0, lastScanAt: null, pendingUpdates: 0 };
-  const finalHelp = profileData?.help || { eventLeadName: 'Pastor Isaac', eventLeadPhone: '+234 803 123 4567', eventLeadEmail: 'isaac@koinoniaglobal.org' };
 
   return (
     <div 
-      className="space-y-6 pb-16 animate-fade-in" 
-      data-view-version="volunteer-profile-v1"
+      className="max-w-md mx-auto w-full space-y-6 pb-24 px-4 animate-fade-in font-sans" 
+      data-view-version="volunteer-profile-v2-stitch-handover"
       id="volunteer-profile-view-container"
     >
-      {/* 1. Header Profile Card */}
+      {/* 1. Header */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs relative overflow-hidden"
-        data-component-version="volunteer-profile-sub-v1"
-        id="profile-header-card"
+        className="space-y-1"
+        data-component-version="volunteer-profile-header-v2-stitch-handover"
+        id="profile-header-section"
       >
-        <div className="flex items-start space-x-4">
-          {/* Avatar frame */}
-          <div className="relative shrink-0">
-            {finalUser.photoUrl ? (
-              <img 
-                src={finalUser.photoUrl} 
-                alt={finalUser.fullName}
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#C59B27]/20 shadow-xs"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-16 h-16 rounded-2xl bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] border-2 border-[#C59B27]/20 shadow-xs">
-                <User className="h-8 w-8" />
-              </div>
-            )}
-            {/* Status Badge */}
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center shadow-xs" title="Ready to serve">
-              <Check className="h-3 w-3 text-white stroke-[3]" />
-            </div>
-          </div>
-
-          {/* User info */}
-          <div className="space-y-1 flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 truncate leading-tight font-sans">
-                {finalUser.fullName}
-              </h2>
-              <span className="shrink-0 px-2.5 py-0.5 rounded-full text-[9px] font-bold font-mono tracking-wider uppercase bg-emerald-50 text-emerald-700 border border-emerald-100">
-                Ready
-              </span>
-            </div>
-            <p className="text-xs text-gray-400 truncate">{finalUser.email}</p>
-            <p className="text-[10px] font-bold font-mono text-[#C59B27] tracking-wider uppercase">
-              {finalProfile.assignedTeam}
-            </p>
-          </div>
-        </div>
-
-        {/* Detailed Meta Items */}
-        <div className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-gray-100">
-          <div className="bg-gray-50/50 rounded-xl p-2.5 border border-gray-100 flex items-center space-x-2.5">
-            <Shield className="h-4 w-4 text-[#C59B27] shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider leading-none mb-0.5">Authorization</p>
-              <p className="text-[11px] font-semibold text-gray-800 truncate">{finalProfile.accessScope}</p>
-            </div>
-          </div>
-
-          <div className="bg-gray-50/50 rounded-xl p-2.5 border border-gray-100 flex items-center space-x-2.5">
-            <MapPin className="h-4 w-4 text-[#C59B27] shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider leading-none mb-0.5">Assigned Area</p>
-              <p className="text-[11px] font-semibold text-gray-800 truncate">{finalProfile.assignedArea}</p>
-            </div>
-          </div>
-        </div>
+        <h2 className="text-3xl font-extrabold text-neutral-900 tracking-tight font-serif-koinonia font-serif">Profile</h2>
+        <p className="text-xs text-gray-500 font-medium">The General Assembly Children and Teens</p>
       </div>
 
-      {/* 2. Today's Activity Stats Section */}
+      {/* 2. Profile identity card */}
       <div 
-        className="space-y-2.5"
-        data-component-version="volunteer-profile-sub-v1"
-        id="profile-activity-section"
+        className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4"
+        data-component-version="volunteer-profile-identity-v2-stitch-handover"
+        id="profile-identity-card"
       >
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">Today's Activity</h3>
-          <span className="text-[10px] text-[#C59B27] font-semibold flex items-center space-x-1 font-mono">
-            <span>Saved updates</span>
-          </span>
+        {/* Profile photo with soft gold border (rectangular portrait frame) */}
+        <div className="relative shrink-0" data-component-version="volunteer-profile-photo-rect-v1">
+          {finalUser.photoUrl ? (
+            <img 
+              src={finalUser.photoUrl} 
+              alt={finalUser.fullName}
+              className="w-20 h-24 rounded-2xl object-cover border-2 border-[#C59B27] shadow-xs bg-white"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-20 h-24 rounded-2xl bg-[#EFECE4] text-[#715D3A] flex items-center justify-center text-xl font-bold border-2 border-[#C59B27] shadow-xs">
+              {getInitials(finalUser.fullName)}
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 text-center space-y-1">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 mx-auto" />
-            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Checked In</p>
-            <p className="text-lg font-extrabold text-gray-900 leading-tight">{finalActivity.checkedInByYou}</p>
-          </div>
-
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 text-center space-y-1 col-span-2 flex flex-col justify-between">
-            <div className="flex items-center justify-between text-left">
-              <div className="space-y-0.5">
-                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Last Scan</p>
-                <p className="text-xs font-bold text-gray-800 leading-tight">
-                  {formatTime(finalActivity.lastScanAt)}
-                </p>
-              </div>
-              <Calendar className="h-4 w-4 text-[#C59B27]" />
-            </div>
-            
-            <div className="border-t border-gray-100 pt-2 flex items-center justify-between text-[10px]">
-              <span className="text-gray-400 font-medium">Sync Queue</span>
-              <span className="font-bold text-emerald-600 font-mono">Synced (0)</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Help & Emergency Support Section */}
-      <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
-        data-component-version="volunteer-profile-sub-v1"
-        id="profile-help-section"
-      >
-        <div className="flex items-start space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <HelpCircle className="h-5 w-5" />
-          </div>
-          <div className="space-y-0.5">
-            <h4 className="text-sm font-bold text-gray-900">Need Assistance?</h4>
-            <p className="text-xs text-gray-500 leading-normal">
-              For security escalation, logistics, or child issues, reach the event team lead immediately:
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 space-y-3.5 relative">
-          <div className="flex items-start justify-between">
-            <div className="space-y-0.5">
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Event Lead</p>
-              <h5 className="text-xs font-bold text-gray-800">{finalHelp.eventLeadName || 'Pastor Isaac'}</h5>
-              <p className="text-[10px] text-gray-400">Children and Teens &bull; Lead Coordinator</p>
-            </div>
-            <button 
-              onClick={copyLeadContact}
-              className="p-2 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl transition-colors text-gray-400 hover:text-gray-600 cursor-pointer"
-              title="Copy details"
+        {/* Serif name, small warm badge, and edit action */}
+        <div className="space-y-2">
+          <h3 className="text-xl font-serif-koinonia font-bold text-gray-900 leading-tight">
+            {finalUser.fullName}
+          </h3>
+          <div className="flex flex-col items-center gap-2">
+            <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold font-mono tracking-wider uppercase bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20">
+              {finalProfile.assignedTeam || finalProfile.preferredTeam || 'Volunteer'}
+            </span>
+            <button
+              onClick={() => setIsEditOpen(true)}
+              data-component-version="volunteer-profile-edit-entry-v1"
+              className="text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] flex items-center gap-1 transition-colors cursor-pointer bg-amber-50/50 hover:bg-amber-50 px-3 py-1 rounded-full border border-[#C59B27]/20"
             >
-              {copiedContact ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+              Edit profile
             </button>
           </div>
-
-          <div className="grid grid-cols-2 gap-3.5 pt-3.5 border-t border-gray-200/50">
-            <a 
-              href={`tel:${finalHelp.eventLeadPhone || '+2348031234567'}`}
-              className="py-2.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center space-x-2 text-gray-700 font-bold text-xs tracking-wide transition-colors cursor-pointer"
-            >
-              <Phone className="h-3.5 w-3.5 text-gray-400" />
-              <span>Call Lead</span>
-            </a>
-            
-            <a 
-              href={`https://wa.me/${(finalHelp.eventLeadPhone || '+2348031234567').replace(/[^0-9]/g, '')}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-2.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center space-x-2 text-gray-700 font-bold text-xs tracking-wide transition-colors cursor-pointer"
-            >
-              <MessageSquare className="h-3.5 w-3.5 text-emerald-500" />
-              <span>WhatsApp</span>
-            </a>
-          </div>
         </div>
       </div>
 
-      {/* 4. Settings Actions & Sign Out Section */}
+      {/* 3. Connection card */}
       <div 
-        className="space-y-3"
-        data-component-version="volunteer-profile-sub-v1"
-        id="profile-actions-section"
+        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs flex items-start space-x-3"
+        data-component-version="volunteer-profile-offline-v2-stitch-handover"
+        id="profile-connection-card"
       >
-        {/* Reset password card */}
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center shrink-0">
-              <Lock className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <h5 className="text-xs font-bold text-gray-800 leading-tight">Change Password</h5>
-              <p className="text-[10px] text-gray-400 truncate">Request a secure password reset link via email</p>
-            </div>
+        <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+          <Info className="h-5 w-5" />
+        </div>
+        <div className="space-y-0.5">
+          <h4 className="text-xs font-bold text-gray-900">Connection</h4>
+          <p className="text-[11px] text-gray-500 leading-normal">
+            Some actions may need connection.
+          </p>
+        </div>
+      </div>
+
+      {/* 4. Event role card */}
+      <div 
+        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
+        data-component-version="volunteer-profile-role-v2-stitch-handover"
+        id="profile-role-card"
+      >
+        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Event role</h4>
+        
+        <div className="space-y-3.5 text-xs">
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
+            <span className="font-medium text-gray-500">Role</span>
+            <span className="font-bold text-gray-900">{finalProfile.assignedTeam || 'Not assigned'}</span>
           </div>
           
-          <button
-            onClick={handlePasswordReset}
-            disabled={sendingReset || resetSent}
-            className="shrink-0 text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors font-mono"
-          >
-            {sendingReset ? 'Sending...' : resetSent ? 'Sent' : 'Reset Link'}
-          </button>
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
+            <span className="font-medium text-gray-500">Assigned area</span>
+            <span className="font-bold text-gray-900">{finalProfile.assignedArea || 'Not assigned'}</span>
+          </div>
+          
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
+            <span className="font-medium text-gray-500">Access</span>
+            <span className="font-bold text-gray-900">{finalProfile.accessScope || 'Not assigned'}</span>
+          </div>
         </div>
+      </div>
 
-        {/* Sign Out Card */}
-        <button
-          onClick={onSignOut}
-          className="w-full bg-white border border-rose-100 hover:bg-rose-50/50 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all group"
-          id="btn-profile-signout"
+      {/* 5. Today card */}
+      <div 
+        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
+        data-component-version="volunteer-profile-today-v2-stitch-handover"
+        id="profile-today-card"
+      >
+        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Today</h4>
+        
+        <div className="space-y-3.5 text-xs">
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
+            <span className="font-medium text-gray-500">Checked in by you</span>
+            <span className="font-bold text-gray-900">{finalActivity.checkedInByYou ?? 0}</span>
+          </div>
+          
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
+            <span className="font-medium text-gray-500">Last scan</span>
+            <span className="font-bold text-gray-900">{formatTime(finalActivity.lastScanAt)}</span>
+          </div>
+          
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
+            <span className="font-medium text-gray-500">Pending updates</span>
+            <span className="font-bold text-gray-900">{finalActivity.pendingUpdates ?? 0}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Help card */}
+      <div 
+        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
+        data-component-version="volunteer-profile-help-v2-stitch-handover"
+        id="profile-help-card"
+      >
+        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Help</h4>
+        
+        <div className="space-y-1">
+          {helpTopics.map((topic, index) => {
+            const isOpen = activeHelpIndex === index;
+            return (
+              <div key={index} className="border-b border-[#F4F3EF] last:border-0 py-2.5">
+                <button
+                  onClick={() => setActiveHelpIndex(isOpen ? null : index)}
+                  className="w-full flex items-center justify-between text-left text-xs font-bold text-gray-800 hover:text-[#C59B27] transition-colors cursor-pointer"
+                >
+                  <span>{topic.title}</span>
+                  {isOpen ? (
+                    <ChevronUp className="h-4 w-4 text-[#C59B27]" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-400" />
+                  )}
+                </button>
+                {isOpen && (
+                  <div className="mt-2 text-xs text-gray-500 leading-relaxed bg-[#FAF9F6] p-3 rounded-xl border border-gray-100 whitespace-pre-line animate-fade-in">
+                    {topic.content}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 7. Account actions card */}
+      <div 
+        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
+        data-component-version="volunteer-profile-actions-v2-stitch-handover"
+        id="profile-actions-card"
+      >
+        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Account actions</h4>
+        
+        <div className="space-y-1 text-xs">
+          {/* Change password trigger */}
+          <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">
+            <span className="font-bold text-gray-800">Change password</span>
+            <button
+              onClick={handlePasswordReset}
+              disabled={sendingReset || resetSent}
+              className="text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
+            >
+              {sendingReset ? 'Sending...' : resetSent ? 'Sent' : 'Send reset email'}
+            </button>
+          </div>
+          
+          {/* Sign out trigger */}
+          <div className="flex items-center justify-between py-2.5">
+            <span className="font-bold text-gray-800">Sign out</span>
+            <button
+              onClick={onSignOut}
+              className="text-xs font-bold text-rose-600 hover:text-rose-800 cursor-pointer transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Profile Onboarding Form Modal */}
+      {isEditOpen && (
+        <div 
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-4 animate-fade-in"
+          data-view-version="volunteer-edit-profile-v2-parent-style"
         >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center shrink-0 group-hover:bg-rose-100 transition-colors">
-              <LogOut className="h-4 w-4" />
+          <div className="bg-[#FAF9F5] w-full h-full sm:h-auto sm:max-w-lg sm:rounded-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] flex flex-col max-h-screen sm:max-h-[90vh]">
+            {/* Modal Header */}
+            <div 
+              className="p-5 border-b border-[#EAE8E1] flex items-center justify-between bg-white shrink-0"
+              data-component-version="volunteer-edit-profile-header-v2-parent-style"
+            >
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsEditOpen(false)}
+                  className="p-1 text-[#715D3A] hover:text-[#18181B] hover:bg-[#FAF8F4] rounded-full cursor-pointer transition-colors"
+                  disabled={saving}
+                  aria-label="Back"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div>
+                  <h3 className="text-lg font-serif-koinonia font-bold text-gray-900 leading-tight">Edit profile</h3>
+                  <p className="text-xs text-gray-500 font-medium">Update your submitted details</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 cursor-pointer hidden sm:block"
+                disabled={saving}
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <div className="text-left">
-              <h5 className="text-xs font-bold text-rose-600 leading-tight">Sign Out</h5>
-              <p className="text-[10px] text-rose-400">Securely sign out of your Volunteer Access session</p>
+
+            {/* Modal Body / Form */}
+            <form onSubmit={handleSave} className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              <div className="text-center space-y-1 mb-2 bg-[#FAF8F4] border border-[#EAE8E1] p-3 rounded-xl">
+                <p className="text-xs text-[#715D3A] font-semibold leading-relaxed">
+                  Update the details you submitted when you joined the team.
+                </p>
+              </div>
+
+              {/* Photo Section */}
+              <div 
+                className="space-y-3 bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs text-center"
+                data-component-version="volunteer-edit-profile-photo-v2-parent-style"
+              >
+                <span className="text-xs font-bold text-[#3F3F46] tracking-wide block mb-1">Profile photo</span>
+                <div className="flex flex-col items-center">
+                  <div className="relative shrink-0 mb-3.5">
+                    {editPhotoPreview ? (
+                      <img 
+                        src={editPhotoPreview} 
+                        alt="Preview"
+                        className="w-24 h-32 rounded-2xl object-cover border-2 border-[#C59B27] shadow-xs bg-white"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-24 h-32 rounded-2xl bg-[#EFECE4] text-[#715D3A] flex flex-col items-center justify-center text-xs font-bold border-2 border-[#C59B27] gap-1">
+                        <Camera className="w-6 h-6 text-[#715D3A]" />
+                        <span>No photo</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <input 
+                      type="file" 
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setEditPhotoFile(file);
+                          setEditPhotoPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="hidden" 
+                      id="volunteer-photo-input"
+                    />
+                    <label 
+                      htmlFor="volunteer-photo-input"
+                      className="inline-block px-4 py-2 bg-white border border-[#EAE8E1] border-b-2 border-b-[#D9D6CE] hover:border-b-[#C59B27] active:border-b-[#715D3A] rounded-lg font-bold text-xs text-gray-700 hover:text-[#C59B27] cursor-pointer shadow-xs transition-all"
+                    >
+                      Change photo
+                    </label>
+                    <p className="text-[10px] text-gray-400 font-medium leading-normal">JPG, PNG, or WebP. Max 10MB.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Personal Details Section */}
+              <div 
+                className="space-y-4 bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs"
+                data-component-version="volunteer-edit-profile-personal-v2-parent-style"
+              >
+                <h4 className="text-sm font-serif-koinonia font-bold text-gray-900 border-b border-[#FAF8F4] pb-2 mb-1">
+                  Personal details
+                </h4>
+
+                {/* Full name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#3F3F46] tracking-wide block">Full name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    placeholder="Enter your full name"
+                    className="w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-xs text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27] transition-colors shadow-2xs"
+                  />
+                </div>
+
+                {/* Phone number */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#3F3F46] tracking-wide block">Phone number</label>
+                  <input
+                    type="tel"
+                    required
+                    value={editPhone}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditPhone(val);
+                      if (whatsappSameAsPhone) {
+                        setEditWhatsapp(val);
+                      }
+                    }}
+                    placeholder="Enter phone number"
+                    className="w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-xs text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27] transition-colors shadow-2xs"
+                  />
+                </div>
+
+                {/* Sync Checkbox */}
+                <label className="flex items-start space-x-2.5 cursor-pointer mt-1 py-1">
+                  <input
+                    type="checkbox"
+                    checked={whatsappSameAsPhone}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setWhatsappSameAsPhone(checked);
+                      if (checked) {
+                        setEditWhatsapp(editPhone);
+                      }
+                    }}
+                    className="mt-0.5 h-4.5 w-4.5 rounded border-[#D9D6CE] text-[#C59B27] focus:ring-[#C59B27]/30 focus:ring-offset-0 cursor-pointer accent-[#C59B27]"
+                  />
+                  <span className="text-xs font-semibold text-[#52525B] select-none leading-tight">
+                    WhatsApp number is the same as phone number
+                  </span>
+                </label>
+
+                {/* WhatsApp number */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#3F3F46] tracking-wide block">WhatsApp number</label>
+                  <input
+                    type="tel"
+                    required
+                    disabled={whatsappSameAsPhone}
+                    value={editWhatsapp}
+                    onChange={(e) => setEditWhatsapp(e.target.value)}
+                    placeholder="Enter WhatsApp number"
+                    className={`w-full border border-b-2 rounded-lg px-3.5 py-2.5 text-xs transition-all shadow-2xs ${
+                      whatsappSameAsPhone
+                        ? 'bg-[#F4F3EF]/65 border-[#EAE8E1] border-b-[#EAE8E1] text-[#71717A] cursor-not-allowed font-medium'
+                        : 'bg-white border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27] text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Service Details Section */}
+              <div 
+                className="space-y-4 bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs"
+                data-component-version="volunteer-edit-profile-service-v2-parent-style"
+              >
+                <h4 className="text-sm font-serif-koinonia font-bold text-gray-900 border-b border-[#FAF8F4] pb-2 mb-1">
+                  Service details
+                </h4>
+
+                {/* Koinonia worker segmented control */}
+                <div className="space-y-2.5">
+                  <span className="text-xs font-bold text-[#3F3F46] tracking-wide block">Koinonia worker</span>
+                  <p className="text-[11px] text-[#715D3A] font-semibold -mt-1 leading-snug">
+                    Select this if you already serve in a Koinonia department.
+                  </p>
+                  <div className="bg-[#FAF8F4] border border-[#EAE8E1] p-1 rounded-xl grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditIsKoinoniaWorker(true)}
+                      className={`py-2 rounded-lg text-xs font-bold transition-all focus:outline-none cursor-pointer ${
+                        editIsKoinoniaWorker
+                          ? 'bg-white text-[#715D3A] shadow-2xs border border-[#E5D5AE]/60'
+                          : 'text-gray-500 hover:text-[#18181B] font-semibold'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditIsKoinoniaWorker(false);
+                        setEditDepartment('');
+                      }}
+                      className={`py-2 rounded-lg text-xs font-bold transition-all focus:outline-none cursor-pointer ${
+                        !editIsKoinoniaWorker
+                          ? 'bg-white text-[#715D3A] shadow-2xs border border-[#E5D5AE]/60'
+                          : 'text-gray-500 hover:text-[#18181B] font-semibold'
+                      }`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+
+                {/* Koinonia Department */}
+                {editIsKoinoniaWorker && (
+                  <div className="space-y-1.5 animate-fade-in">
+                    <label className="text-xs font-bold text-[#3F3F46] tracking-wide block">Koinonia Department</label>
+                    <input
+                      type="text"
+                      required={editIsKoinoniaWorker}
+                      value={editDepartment}
+                      onChange={(e) => setEditDepartment(e.target.value)}
+                      placeholder="e.g. Media, Protocol, Ushering"
+                      className="w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-xs text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27] transition-colors shadow-2xs"
+                    />
+                  </div>
+                )}
+
+                {/* Preferred team */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#3F3F46] tracking-wide block">Preferred team</label>
+                  <div className="relative">
+                    <select
+                      value={editPreferredTeam}
+                      onChange={(e) => setEditPreferredTeam(e.target.value)}
+                      className="w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-xs text-[#18181B] focus:outline-none border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27] transition-colors appearance-none cursor-pointer shadow-2xs"
+                    >
+                      <option value="Check-In Team">Check-In Team</option>
+                      <option value="Pickup Team">Pickup Team</option>
+                      <option value="General Team">General Team</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-[#715D3A]">
+                      <ChevronDown className="h-4 w-4" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Experience and Notes Section */}
+              <div 
+                className="space-y-4 bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs"
+                data-component-version="volunteer-edit-profile-notes-v2-parent-style"
+              >
+                <h4 className="text-sm font-serif-koinonia font-bold text-gray-900 border-b border-[#FAF8F4] pb-2 mb-1">
+                  Experience and notes
+                </h4>
+
+                {/* Serving experience segmented toggle */}
+                <div className="space-y-2.5">
+                  <span className="text-xs font-bold text-[#3F3F46] tracking-wide block">Serving experience</span>
+                  <p className="text-[11px] text-[#715D3A] font-semibold -mt-1 leading-snug">
+                    Do you have experience teaching or managing children?
+                  </p>
+                  <div className="bg-[#FAF8F4] border border-[#EAE8E1] p-1 rounded-xl grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditServingExperience(true)}
+                      className={`py-2 rounded-lg text-xs font-bold transition-all focus:outline-none cursor-pointer ${
+                        editServingExperience
+                          ? 'bg-white text-[#715D3A] shadow-2xs border border-[#E5D5AE]/60'
+                          : 'text-gray-500 hover:text-[#18181B] font-semibold'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditServingExperience(false)}
+                      className={`py-2 rounded-lg text-xs font-bold transition-all focus:outline-none cursor-pointer ${
+                        !editServingExperience
+                          ? 'bg-white text-[#715D3A] shadow-2xs border border-[#E5D5AE]/60'
+                          : 'text-gray-500 hover:text-[#18181B] font-semibold'
+                      }`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+
+                {/* Additional note */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#3F3F46] tracking-wide block">Additional note</label>
+                  <textarea
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    placeholder="Add anything the event team should know."
+                    rows={3}
+                    className="w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-xs text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27] transition-colors shadow-2xs resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Redesigned Event Assignment Section */}
+              <div 
+                className="bg-[#FAF8F4] border border-[#E5D5AE]/60 border-b-2 border-b-[#D9D6CE] rounded-2xl p-5 shadow-2xs space-y-4 text-left"
+                data-component-version="volunteer-edit-assignment-card-v2-parent-style"
+              >
+                <div className="flex items-start justify-between border-b border-[#EAE8E1] pb-3">
+                  <div>
+                    <h4 className="text-sm font-serif-koinonia font-bold text-gray-900 leading-tight">
+                      Event assignment
+                    </h4>
+                    <p className="text-[11px] text-gray-500 font-medium">
+                      Set by the admin team
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center space-x-1 px-2.5 py-1 bg-[#EFECE4] border border-[#E5D5AE]/40 rounded-full text-[10px] font-bold text-[#715D3A]">
+                    <Lock className="w-3 h-3 text-[#715D3A]" />
+                    <span>Admin managed</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1">
+                    <span className="text-[#715D3A] font-bold tracking-wide uppercase text-[10px] block">Approval</span>
+                    <span className="font-medium text-gray-800 leading-relaxed">
+                      {finalProfile.status 
+                        ? finalProfile.status.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') 
+                        : 'Approved'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[#715D3A] font-bold tracking-wide uppercase text-[10px] block">Team</span>
+                    <span className="font-medium text-gray-800 leading-relaxed">
+                      {finalProfile.assignedTeam || finalProfile.assigned_team 
+                        ? (finalProfile.assignedTeam || finalProfile.assigned_team).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') 
+                        : 'Not assigned'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[#715D3A] font-bold tracking-wide uppercase text-[10px] block">Area</span>
+                    <span className="font-medium text-gray-800 leading-relaxed">
+                      {finalProfile.assignedArea || finalProfile.assigned_area 
+                        ? (finalProfile.assignedArea || finalProfile.assigned_area).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') 
+                        : 'Not assigned'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[#715D3A] font-bold tracking-wide uppercase text-[10px] block">Access</span>
+                    <span className="font-medium text-gray-800 leading-relaxed">
+                      {finalProfile.accessScope || finalProfile.access_scope || finalProfile.permissions
+                        ? (finalProfile.accessScope || finalProfile.access_scope || finalProfile.permissions).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') 
+                        : 'Not assigned'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-gray-400 font-medium leading-relaxed italic border-t border-[#FAF8F4] pt-2">
+                  These details are managed by the admin team.
+                </p>
+              </div>
+            </form>
+
+            {/* Sticky Actions Footer */}
+            <div 
+              className="p-5 border-t border-[#EAE8E1] bg-white flex space-x-3 shrink-0 shadow-lg"
+              data-component-version="volunteer-edit-profile-actions-v2-parent-style"
+            >
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(false)}
+                disabled={saving}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs tracking-wide rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                onClick={handleSave}
+                className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wide rounded-xl transition-colors cursor-pointer flex items-center justify-center space-x-1.5 shadow-xs disabled:opacity-75"
+              >
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>Saving changes...</span>
+                  </>
+                ) : (
+                  <span>Save changes</span>
+                )}
+              </button>
             </div>
           </div>
-          <AlertTriangle className="h-4 w-4 text-rose-300 group-hover:text-rose-500 transition-colors" />
-        </button>
-      </div>
+        </div>
+      )}
+
     </div>
   );
 };

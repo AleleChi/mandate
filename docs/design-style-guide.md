@@ -97,6 +97,18 @@ This is the official Koinonia Children and Teens event access product. It must f
 - Bottom navigation is fixed on parent/staff mobile screens and must not cover content
 - Admin tables must be readable and not raw spreadsheet-like
 
+### Brand Logo Rules
+- **Shared Component**: Always render the Koinonia Children & Teens logo via the unified `<BrandLogo />` component. Do not hardcode image paths or combine raw "K" icons with separate typed "KOINONIA" text blocks.
+- **Contextual Sizing Guidelines**:
+  - `landing`: Spacious top-level landing header (height 44px–48px, max-width 260px).
+  - `admin`: Sidebar navigation brand area (height 48px, max-width 220px).
+  - `parent`: Header layout (height 40px, max-width 160px).
+  - `volunteer`: Volunteer checking and event screens (height 36px, max-width 150px).
+  - `auth`: Centered authentication layouts (height 64px, max-width 240px).
+  - `compact`: App footers, mobile app headers, or utility navigation bars (height 32px, max-width 120px).
+- **Fallback Integrity**: In the absence of a configured `site_logo` in landing media settings, the component gracefully renders a premium gold-gradient letter "K" badge alongside refined brand typography.
+- **Presentation Controls**: All logo images must use `object-contain` to preserve their native aspect ratios without any vertical stretching or clipping.
+
 ### Soft Content Surface Pattern
 To ensure a warm, premium, branded experience (avoiding generic SaaS layouts or raw, un-framed inputs sitting directly on the background), all Parent and Volunteer auth/account setup views must be contained within `AuthScreenShell`.
 - **Dimensions**: Centered, max-width `640px` (or `maxWidth="md"` wrapper).

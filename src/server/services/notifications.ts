@@ -77,8 +77,13 @@ export async function sendWhatsApp(to: string, message: string): Promise<{ succe
     const resJson = await response.json() as any;
 
     if (!response.ok) {
-      console.error('[WhatsApp Twilio API Error]:', JSON.stringify(resJson));
       let errMsg = resJson.message || 'Twilio WhatsApp dispatch failed';
+      if (response.status === 401 || resJson.code === 20003) {
+        errMsg = 'Twilio Authentication failed. Please verify that TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are correctly configured in your environment settings.';
+        console.warn(`[WhatsApp Twilio API Warning]: ${errMsg}`);
+      } else {
+        console.error('[WhatsApp Twilio API Error]:', JSON.stringify(resJson));
+      }
       if (resJson.code === 21610 || errMsg.toLowerCase().includes('sandbox') || errMsg.toLowerCase().includes('opt-in') || errMsg.toLowerCase().includes('not a valid whatsapp subscriber')) {
         errMsg = `Recipient (${to}) has not joined the Twilio WhatsApp Sandbox yet. Please ask them to send the sandbox join keyword first.`;
       } else if (resJson.code === 21211 || errMsg.toLowerCase().includes('invalid')) {

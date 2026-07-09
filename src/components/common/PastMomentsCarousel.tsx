@@ -56,10 +56,67 @@ const MOMENTS: MomentCard[] = [
 
 interface PastMomentsCarouselProps {
   loaded?: boolean;
+  customAssets?: {
+    arrival?: string;
+    checkIn?: string;
+    activities?: string;
+    teaching?: string;
+    careTeam?: string;
+    pickup?: string;
+    parentUpdates?: string;
+    eventMoments?: string;
+    eventVideo?: string;
+  };
 }
 
-export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded = true }) => {
+export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded = true, customAssets }) => {
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const moments = React.useMemo(() => {
+    return [
+      {
+        id: 'arrival',
+        title: 'Arrival',
+        image: customAssets?.arrival || REAL_ASSETS.gallery.arrival,
+      },
+      {
+        id: 'check-in',
+        title: 'Check-in',
+        image: customAssets?.checkIn || REAL_ASSETS.gallery.checkIn,
+      },
+      {
+        id: 'activities',
+        title: 'Activities',
+        image: customAssets?.activities || REAL_ASSETS.gallery.activities,
+      },
+      {
+        id: 'teaching',
+        title: 'Teaching',
+        image: customAssets?.teaching || REAL_ASSETS.gallery.teaching,
+      },
+      {
+        id: 'care-team',
+        title: 'Care team',
+        image: customAssets?.careTeam || REAL_ASSETS.gallery.careTeam,
+      },
+      {
+        id: 'pickup',
+        title: 'Pickup',
+        image: customAssets?.pickup || REAL_ASSETS.gallery.pickup,
+      },
+      {
+        id: 'parent-updates',
+        title: 'Parent updates',
+        image: customAssets?.parentUpdates || REAL_ASSETS.gallery.parentUpdates,
+      },
+      {
+        id: 'event-moments',
+        title: 'Event moments',
+        image: customAssets?.eventMoments || REAL_ASSETS.gallery.eventMoments,
+        videoUrl: customAssets?.eventVideo || REAL_ASSETS.gallery.eventVideo,
+      },
+    ];
+  }, [customAssets]);
   const [isMobile, setIsMobile] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
@@ -86,11 +143,11 @@ export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded
   }, []);
 
   const handlePrev = () => {
-    setActiveIndex((prev) => (prev === 0 ? MOMENTS.length - 1 : prev - 1));
+    setActiveIndex((prev) => (prev === 0 ? moments.length - 1 : prev - 1));
   };
 
   const handleNext = () => {
-    setActiveIndex((prev) => (prev === MOMENTS.length - 1 ? 0 : prev + 1));
+    setActiveIndex((prev) => (prev === moments.length - 1 ? 0 : prev + 1));
   };
 
   // Touch / Mouse Drag handlers
@@ -120,7 +177,7 @@ export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded
 
   // Helper to compute shortest circular offset from activeIndex
   const getRelativeOffset = (index: number) => {
-    const total = MOMENTS.length;
+    const total = moments.length;
     let offset = (index - activeIndex) % total;
     if (offset > Math.floor(total / 2)) {
       offset -= total;
@@ -180,7 +237,7 @@ export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded
           style={{ transformStyle: 'preserve-3d' }}
           className="relative w-full h-full flex items-center justify-center"
         >
-          {MOMENTS.map((moment, index) => {
+          {moments.map((moment, index) => {
             const offset = getRelativeOffset(index);
             const isCenter = offset === 0;
             const isLeft = offset === -1;
@@ -302,7 +359,7 @@ export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded
 
       {/* Pagination indicators */}
       <div className="flex items-center justify-center space-x-2 pt-2">
-        {MOMENTS.map((moment, idx) => (
+        {moments.map((moment, idx) => (
           <button
             key={moment.id}
             onClick={() => setActiveIndex(idx)}

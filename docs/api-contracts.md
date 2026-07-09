@@ -124,13 +124,24 @@ Retrieves read-model event pass containing secure tokenized QR code payload (`ko
 ## Media Upload (`/api/media`)
 
 ### POST `/api/media/upload`
-Accepts multipart form uploads (`file` and `purpose`) or base64 data URLs for parent avatars, child profile photos, pickup person photos, landing images, and gallery media.
+Accepts multipart form uploads (`file`, `purpose`, and optional `slotKey`) or base64 data URLs for parent avatars, child profile photos, pickup person photos, landing images, and gallery media.
 - **Provider**: Uploads directly to Cloudinary server-side using environment credentials (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_UPLOAD_FOLDER`).
+- **Image Optimization & Processing (Sharp)**:
+  - If the upload is an image, it is parsed and optimized using the server-side `sharp` engine.
+  - **Dimenson Presets** (mapped from optional `slotKey` field):
+    - `site_logo`: Resized to `150x150` pixels with transparent background preservation.
+    - `heroMain`: Optimized to `1000x1250` pixels (4:5 ratio).
+    - `heroUpper`: Optimized to `800x1066` pixels (3:4 ratio).
+    - `heroRight`: Optimized to `600x600` pixels (1:1 aspect ratio).
+    - Other Slots/Images: Uniformly normalized to fit inside `1200x1200` bounding box.
+- **Strict Processing & Zero-Fallback Policy**:
+  - Raw, unprocessed images are **never** used as fallbacks if processing fails.
+  - If image processing fails or is invalid, the operation throws a clean `422 Unprocessable Entity` response, and no data is written to the database or stored in active configurations.
 - **Validation Rules**:
-  - **Photos (`parent_profile_photo`, `child_photo`, `pickup_person_photo`, `volunteer_profile_photo`)**: Max 5MB. Allowed types: `image/jpeg`, `image/png`, `image/webp`.
+  - **Photos (`parent_profile_photo`, `child_photo`, `pickup_person_photo`, `volunteer_profile_photo`)**: Max 10MB. Allowed types: `image/jpeg`, `image/png`, `image/webp`.
   - **Landing & Gallery Images (`landing_image`, `gallery_media`)**: Max 10MB. Allowed types: `image/jpeg`, `image/png`, `image/webp`.
-  - **Videos (`event_video`)**: Max 50MB. Allowed types: `video/mp4`, `video/webm`.
-- **Response** (`201 Created`):
+  - **Videos (`event_video`)**: Max 50MB. Allowed types: `video/mp4`, `video/webm`. Videos are strictly kept away from image-processing services.
+- **Success Response** (`201 Created`):
   ```json
   {
     "id": "uuid",
@@ -140,6 +151,14 @@ Accepts multipart form uploads (`file` and `purpose`) or base64 data URLs for pa
     "resourceType": "image",
     "fileType": "parent_profile_photo",
     "url": "https://res.cloudinary.com/.../image/upload/v1/.../uuid.jpg"
+  }
+  ```
+- **Error Response** (`422 Unprocessable Entity` for processing failures):
+  ```json
+  {
+    "success": false,
+    "error": "We could not process this image. Please try another JPG, PNG, or WebP file.",
+    "message": "We could not process this image. Please try another JPG, PNG, or WebP file."
   }
   ```
 
@@ -346,6 +365,48 @@ Validates the reset token hash, confirms volunteer status, hashes the new passwo
   - `400 Bad Request` (`INVALID_OR_EXPIRED_TOKEN`): Token is invalid, expired, or already used.
   - `403 Forbidden` (`NO_VOLUNTEER_ACCESS`): Token belongs to a user who has no volunteer profile.
   - `400 Bad Request` (`INVALID_PASSWORD`): Password does not meet length/content criteria.
+
+### PATCH `/api/volunteer/me/profile`
+Updates the authenticated volunteer's own submitted onboarding/registration details securely.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Format**: `multipart/form-data` or `application/json`
+- **Fields (Onboarding fields only)**:
+  - `photo`: Binary file (optional, image/jpeg, image/png, image/webp, max 10MB)
+  - `fullName`: string (optional, 1-100 chars, validated)
+  - `phone`: string (optional, normalized/validated Nigeria phone format)
+  - `whatsapp`: string (optional, normalized/validated Nigeria phone format)
+  - `isKoinoniaWorker`: boolean or "true"/"false" (optional)
+  - `department`: string (optional, 1-100 chars)
+  - `preferredTeam`: string (optional, Check-In Team | Pickup Team | General Team)
+  - `servingExperience`: boolean or "true"/"false" (optional)
+  - `note`: string (optional, 1-500 chars)
+- **Security Rule**: Any attempt to update admin-controlled fields (e.g. `email`, `role`, `status`, `assignedTeam`, `assignedArea`, `permissions`, `reviewedBy`, `reviewedAt`, `adminNotes`, `userId`, `id`) is strictly rejected or ignored.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "profile": {
+      "id": "uuid",
+      "fullName": "John Doe",
+      "phone": "+2348031234567",
+      "whatsapp": "+2348031234567",
+      "isKoinoniaWorker": true,
+      "department": "Protocol",
+      "preferredTeam": "Check-In Team",
+      "servingExperience": true,
+      "note": "Excited to serve",
+      "photoUrl": "/api/media/files/uuid-photo",
+      "status": "approved",
+      "assignedTeam": "Check-in Team",
+      "assignedArea": "Main Entrance",
+      "accessScope": "Check-in only"
+    }
+  }
+  ```
+- **Error Responses**:
+  - `401 Unauthorized`: Token is missing or invalid.
+  - `400 Bad Request`: Validation constraint breached (e.g., phone format invalid, name empty).
+  - `404 Not Found`: Volunteer profile record not found.
 
 ---
 

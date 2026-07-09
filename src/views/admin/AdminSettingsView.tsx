@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
+import { AdminLandingView } from './AdminLandingView';
 
 interface AdminSettingsViewProps {
   onBackToOverview?: () => void;
@@ -40,7 +41,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [savingRole, setSavingRole] = useState(false);
   
   // Tab/Active Panel State inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels'>('parent-access');
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'landing-page'>('parent-access');
 
   // General Settings State
   const [parentRegistrationEnabled, setParentRegistrationEnabled] = useState(true);
@@ -395,7 +396,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         {[
           { id: 'parent-access', label: 'Parent access & details', icon: Users },
           { id: 'team-access', label: 'Event team access', icon: ShieldCheck },
-          { id: 'message-channels', label: 'Message channels', icon: MessageSquare }
+          { id: 'message-channels', label: 'Message channels', icon: MessageSquare },
+          { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -429,7 +431,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* MAIN SETTINGS LEFT COLUMN (7 or 12 columns depending on selection) */}
-          <div className={`${activeSubTab === 'team-access' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
+          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
             
             {/* SUB-TAB 1: PARENT ACCESS */}
             {activeSubTab === 'parent-access' && (
@@ -1065,10 +1067,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               </div>
             )}
 
+            {/* SUB-TAB 4: LANDING PAGE MANAGER */}
+            {activeSubTab === 'landing-page' && (
+              <AdminLandingView isSuperAdmin={isSuperAdmin} />
+            )}
+
           </div>
 
           {/* MAIN SETTINGS RIGHT COLUMN: PROFILE SECURITY CARD (Only visible for Parent Access and Message Channels) */}
-          {activeSubTab !== 'team-access' && (
+          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && (
             <div className="lg:col-span-5 space-y-6">
               
               {/* Profile Security Update Password */}

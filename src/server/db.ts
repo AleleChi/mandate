@@ -442,6 +442,13 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS admin_landing_settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value TEXT,
+      value_type TEXT NOT NULL DEFAULT 'text',
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -1023,6 +1030,13 @@ async function initPostgresSchema(pool: any) {
         admin_name VARCHAR(255),
         note TEXT NOT NULL,
         created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_landing_settings (
+        setting_key VARCHAR(255) PRIMARY KEY,
+        setting_value TEXT,
+        value_type VARCHAR(64) NOT NULL DEFAULT 'text',
         updated_at TIMESTAMP NOT NULL
       );
     `);

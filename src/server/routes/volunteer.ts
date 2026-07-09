@@ -1444,6 +1444,240 @@ router.put('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Re
   }
 });
 
+// 4a. PATCH/POST ME PROFILE (Secure onboarding edit)
+const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    const userId = req.user.id;
+    const profile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Volunteer profile not found' });
+    }
+
+    // Explicitly reject/ignore admin fields if they were attempted to be sent from clients
+    const bodyKeys = Object.keys(req.body);
+    const forbiddenKeys = [
+      'email', 'role', 'status', 'assignedTeam', 'assignedArea', 'assigned_team', 'assigned_area',
+      'permissions', 'accessScope', 'reviewedBy', 'reviewedAt', 'adminNotes', 'admin_notes',
+      'password', 'token', 'userId', 'user_id', 'id'
+    ];
+    for (const key of forbiddenKeys) {
+      if (bodyKeys.includes(key)) {
+        delete req.body[key];
+      }
+    }
+
+    const {
+      fullName,
+      phone,
+      whatsapp,
+      isKoinoniaWorker,
+      department,
+      preferredTeam,
+      servingExperience,
+      note
+    } = req.body;
+
+    let resolvedPhotoId: string | null = profile.photo_file_id || null;
+
+    if (req.file) {
+      const buffer = req.file.buffer;
+      const mimeType = req.file.mimetype;
+
+      const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (!allowedImageTypes.includes(mimeType)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_IMAGE_TYPE',
+          message: 'Please upload a JPG, PNG, or WebP image.'
+        });
+      }
+
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (buffer.length > maxSize) {
+        return res.status(400).json({
+          success: false,
+          code: 'IMAGE_TOO_LARGE',
+          message: 'This photo is too large. Maximum image size is 10MB.'
+        });
+      }
+
+      // Upload to Cloudinary using existing helper
+      const uploadResult = await uploadMedia(buffer, {
+        purpose: 'volunteer_profile_photo',
+        mimeType
+      });
+
+      resolvedPhotoId = crypto.randomUUID();
+      const folder = uploadResult.publicId.includes('/')
+        ? uploadResult.publicId.substring(0, uploadResult.publicId.lastIndexOf('/'))
+        : 'koinonia-children-teens';
+
+      await execute(`
+        INSERT INTO media_files (
+          id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
+          mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        resolvedPhotoId,
+        userId,
+        uploadResult.provider,
+        'volunteer_profile_photo',
+        uploadResult.publicId,
+        uploadResult.secureUrl,
+        uploadResult.resourceType || 'image',
+        mimeType,
+        buffer.length,
+        uploadResult.width || null,
+        uploadResult.height || null,
+        uploadResult.duration || null,
+        folder,
+        uploadResult.secureUrl,
+        uploadResult.publicId,
+        new Date().toISOString()
+      ]);
+    }
+
+    let updatedFullName = profile.full_name;
+    if (fullName !== undefined) {
+      const nameVal = validateName(fullName, 'fullName');
+      if (!nameVal.valid) {
+        return res.status(400).json({ success: false, message: nameVal.message });
+      }
+      updatedFullName = fullName.trim().slice(0, 100);
+    }
+
+    let updatedPhone = profile.phone;
+    if (phone !== undefined && phone !== null && phone !== '') {
+      const phoneVal = validatePhoneNumber(phone, 'NG');
+      if (!phoneVal.valid) {
+        return res.status(400).json({ success: false, message: phoneVal.message || 'Invalid phone number' });
+      }
+      updatedPhone = phoneVal.normalizedPhone!;
+    }
+
+    let updatedWhatsapp = profile.whatsapp;
+    if (whatsapp !== undefined && whatsapp !== null && whatsapp !== '') {
+      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+      if (!whatsappVal.valid) {
+        return res.status(400).json({ success: false, message: whatsappVal.message || 'Invalid WhatsApp number' });
+      }
+      updatedWhatsapp = whatsappVal.normalizedPhone!;
+    }
+
+    let updatedIsKoinoniaWorker = profile.is_koinonia_worker;
+    if (isKoinoniaWorker !== undefined) {
+      updatedIsKoinoniaWorker = (isKoinoniaWorker === true || isKoinoniaWorker === 'true' || isKoinoniaWorker === 1 || isKoinoniaWorker === '1') ? 1 : 0;
+    }
+
+    let updatedDepartment = profile.department;
+    if (department !== undefined) {
+      updatedDepartment = department ? department.trim().slice(0, 100) : null;
+    }
+
+    let updatedPreferredTeam = profile.preferred_team;
+    if (preferredTeam !== undefined) {
+      updatedPreferredTeam = preferredTeam ? preferredTeam.trim().slice(0, 100) : null;
+    }
+
+    let updatedServingExperience = profile.serving_experience;
+    if (servingExperience !== undefined) {
+      updatedServingExperience = (servingExperience === true || servingExperience === 'true' || servingExperience === 1 || servingExperience === '1') ? 1 : 0;
+    }
+
+    let updatedNote = profile.note;
+    if (note !== undefined) {
+      updatedNote = note ? note.trim().slice(0, 500) : null;
+    }
+
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE volunteer_profiles
+      SET photo_file_id = ?,
+          full_name = ?,
+          phone = ?,
+          whatsapp = ?,
+          is_koinonia_worker = ?,
+          department = ?,
+          preferred_team = ?,
+          serving_experience = ?,
+          note = ?,
+          updated_at = ?
+      WHERE user_id = ?
+    `, [
+      resolvedPhotoId,
+      updatedFullName,
+      updatedPhone,
+      updatedWhatsapp,
+      updatedIsKoinoniaWorker,
+      updatedDepartment,
+      updatedPreferredTeam,
+      updatedServingExperience,
+      updatedNote,
+      now,
+      userId
+    ]);
+
+    // Query fresh volunteer profile
+    const freshProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+    const photoUrl = freshProfile.photo_file_id ? `/api/media/files/${freshProfile.photo_file_id}` : null;
+
+    // Resolve assigned details for compatibility
+    let assignedTeam = 'General Team';
+    let assignedArea = 'General Hall';
+    let accessScope = 'General Access';
+    const pTeam = (freshProfile.preferred_team || '').toLowerCase();
+    if (pTeam.includes('check-in') || pTeam.includes('entry') || pTeam.includes('gate') || pTeam.includes('event-day')) {
+      assignedTeam = 'Check-in Team';
+      assignedArea = 'Main Entrance';
+      accessScope = 'Check-in only';
+    } else if (pTeam.includes('pickup') || pTeam.includes('release') || pTeam.includes('checkout')) {
+      assignedTeam = 'Pickup Team';
+      assignedArea = 'Pickup Zone';
+      accessScope = 'Pickup only';
+    } else if (freshProfile.preferred_team) {
+      assignedTeam = freshProfile.preferred_team;
+    }
+
+    const updatedProfileObj = {
+      id: freshProfile.id,
+      fullName: freshProfile.full_name,
+      full_name: freshProfile.full_name,
+      phone: freshProfile.phone,
+      whatsapp: freshProfile.whatsapp,
+      isKoinoniaWorker: freshProfile.is_koinonia_worker === 1,
+      is_koinonia_worker: freshProfile.is_koinonia_worker,
+      department: freshProfile.department,
+      preferredTeam: freshProfile.preferred_team,
+      preferred_team: freshProfile.preferred_team,
+      servingExperience: freshProfile.serving_experience === 1,
+      serving_experience: freshProfile.serving_experience,
+      note: freshProfile.note,
+      photoUrl,
+      photo_file_id: freshProfile.photo_file_id,
+      status: freshProfile.status,
+      assignedTeam,
+      assignedArea,
+      accessScope
+    };
+
+    res.json({
+      success: true,
+      profile: updatedProfileObj,
+      volunteerProfile: updatedProfileObj
+    });
+  } catch (err) {
+    console.error('PATCH/POST me profile error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error updating profile' });
+  }
+};
+
+router.patch('/me/profile', authMiddleware, upload.single('photo'), handleMeProfileUpdate);
+router.post('/me/profile', authMiddleware, upload.single('photo'), handleMeProfileUpdate);
+
 // 5. EVENT HOME (DASHBOARD STATS)
 router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -2633,7 +2867,7 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
     if (!req.volunteerProfile) {
       return res.status(403).json({ error: 'Access denied: Volunteer profile required' });
     }
-    if (req.volunteerProfile.status !== 'active') {
+    if (req.volunteerProfile.status !== 'active' && req.volunteerProfile.status !== 'approved') {
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 
@@ -2743,7 +2977,7 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
     if (!req.volunteerProfile) {
       return res.status(403).json({ error: 'Access denied: Volunteer profile required' });
     }
-    if (req.volunteerProfile.status !== 'active') {
+    if (req.volunteerProfile.status !== 'active' && req.volunteerProfile.status !== 'approved') {
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 
@@ -2898,7 +3132,7 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
     if (!req.volunteerProfile) {
       return res.status(403).json({ error: 'Access denied: Volunteer profile required' });
     }
-    if (req.volunteerProfile.status !== 'active') {
+    if (req.volunteerProfile.status !== 'active' && req.volunteerProfile.status !== 'approved') {
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 
@@ -3005,7 +3239,7 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
     if (!req.volunteerProfile) {
       return res.status(403).json({ error: 'Access denied: Volunteer profile required' });
     }
-    if (req.volunteerProfile.status !== 'active') {
+    if (req.volunteerProfile.status !== 'active' && req.volunteerProfile.status !== 'approved') {
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active to view reports' });
     }
 
@@ -3166,7 +3400,7 @@ router.post('/reports/submit', authMiddleware, async (req: AuthenticatedRequest,
     if (!req.volunteerProfile) {
       return res.status(403).json({ error: 'Access denied: Volunteer profile required' });
     }
-    if (req.volunteerProfile.status !== 'active') {
+    if (req.volunteerProfile.status !== 'active' && req.volunteerProfile.status !== 'approved') {
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 

@@ -15,7 +15,11 @@ const CHECKLIST_ITEMS: ChecklistItem[] = [
   { id: 'record', label: 'Pickup record' },
 ];
 
-export const SafetySection: React.FC = () => {
+interface SafetySectionProps {
+  customImage?: string;
+}
+
+export const SafetySection: React.FC<SafetySectionProps> = ({ customImage }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -140,7 +144,7 @@ export const SafetySection: React.FC = () => {
             <div className="relative group rounded-3xl overflow-hidden border border-[#C59B27]/30 hover:border-[#C59B27]/60 shadow-2xl bg-[#222228] aspect-[16/10] sm:aspect-[4/3] transition-all duration-500">
               {/* Event care image placeholder */}
               <AssetImage
-                src={REAL_ASSETS.safetySection}
+                src={customImage || REAL_ASSETS.safetySection}
                 alt="Clear checks before entry and pickup"
                 iconType="shield"
                 label="Safety & Check-in Station"

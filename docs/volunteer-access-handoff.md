@@ -415,4 +415,156 @@ The child-found review/lookup screen has been completely redesigned following Sc
    - `data-component-version="volunteer-child-entry-status-v1-stitch"`
    - `data-component-version="volunteer-child-authorized-pickup-v1-stitch"`
 
+## 13. Refined Stitch Volunteer Pickup Screen Interface (`#/volunteer/pickup`)
+
+The Volunteer Pickup screen has been completely redesigned following the high-fidelity Stitch design (Screenshot A) to provide a premium, mobile-app feel:
+
+1. **Aesthetic Enhancements**:
+   - **Top Header**: A custom sticky header (`data-component-version="volunteer-pickup-header-v1-stitch"`) featuring a back arrow routing to the dashboard, "Pickup" title in serif, event sub-label, and a warm gold "Ready to scan" badge with no green dot or ONLINE labels.
+   - **Scan Viewfinder Card**: A tall 3:4 aspect ratio scanning viewport (`data-component-version="volunteer-pickup-scan-card-v1-stitch"`) displaying custom gold framing corners. Contains a centered serif "Scan child pass" pill button when inactive, and streams live camera scans with an active sweep line when clicked.
+   - **Manual Entry Input**: A collapsible drawer card (`data-component-version="volunteer-pickup-manual-pass-v1-stitch"`) facilitating alphanumeric lookup queries for 6-character passes.
+   - **OR Divider**: Minimalist divider (`data-component-version="volunteer-pickup-divider-v1-stitch"`) centering a clean "OR" label.
+   - **Search Field**: Full-width persistent search bar (`data-component-version="volunteer-pickup-search-v1-stitch"`) with a magnifying glass icon, routing to the Children directory on enter.
+   - **Confirm Before Release Alert**: A warning notice (`data-component-version="volunteer-pickup-warning-v1-stitch"`) reminding workers to verify photos of children and guardians before release.
+   - **Stitch Metrics**: A highly readable 3-column stats panel (`data-component-version="volunteer-pickup-metrics-v1-stitch"`) showcasing Inside, Picked up, and Attention counts.
+   - **Last Picked Up Card**: Dedicated recent activity logger (`data-component-version="volunteer-pickup-last-v1-stitch"`) tracking released children with photos, age, release time, and a green check mark.
+
+2. **Attributes and Verifications**:
+   - `data-view-version="volunteer-pickup-v1-stitch"`
+   - `data-component-version="volunteer-pickup-header-v1-stitch"`
+   - `data-component-version="volunteer-pickup-scan-card-v1-stitch"`
+   - `data-component-version="volunteer-pickup-manual-pass-v1-stitch"`
+   - `data-component-version="volunteer-pickup-divider-v1-stitch"`
+   - `data-component-version="volunteer-pickup-search-v1-stitch"`
+   - `data-component-version="volunteer-pickup-warning-v1-stitch"`
+   - `data-component-version="volunteer-pickup-metrics-v1-stitch"`
+   - `data-component-version="volunteer-pickup-last-v1-stitch"`
+
+## 14. Refined Stitch Volunteer Pickup Success Screen Interface (`#/volunteer/pickup` on success)
+
+The Volunteer Pickup Success screen replaces any previous success state with a premium mobile layout based strictly on the Stitch design system (Screenshot A & B):
+
+1. **Aesthetic and Functional Enhancements**:
+   - **Sticky Top Header**: Custom header with back button, "Pickup" serif title, event sub-label, and "Ready to scan" gold badge with no ONLINE or green dot indicators (`data-component-version="volunteer-pickup-success-header-v1-stitch"`).
+   - **Success Icon and Message**: Centered green check icon block in a rounded container with the "Picked up" serif heading, and the confirmation message with the child's dynamic first name or fallback (`data-component-version="volunteer-pickup-success-title-v1-stitch"`).
+   - **Child Summary Card**: Compact card showing child photo, full name, age label, and class group badge (`data-component-version="volunteer-pickup-success-child-card-v1-stitch"`).
+   - **Pickup Details Card**: Shows a grid with Picked up at, Picked up by, Relationship, Confirmed by, and Pickup point, dynamically populated from the API response with optional chaining and smart fallbacks (`data-component-version="volunteer-pickup-success-details-v1-stitch"`).
+   - **Checked Before Release Card**: Features side-by-side compact image panels for the Child and Pickup Person, each overlayed with high-contrast text labels. Includes verification checkmarks for "Child photo matched" and "Pickup person confirmed" (`data-component-version="volunteer-pickup-success-verification-v1-stitch"`).
+   - **Action Buttons**: Custom gold-styled "Scan another pass" button, white bordered "View child record" button, and elegant serif link "Back to Event Home" (`data-component-version="volunteer-pickup-success-actions-v1-stitch"`).
+   - **Stitch Metrics Card**: A 3-column stats panel featuring dynamic event metrics for Children inside, Picked up, and Needs attention (`data-component-version="volunteer-pickup-success-metrics-v1-stitch"`).
+
+2. **Attributes and Verifications**:
+   - `data-view-version="volunteer-pickup-success-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-header-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-title-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-child-card-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-details-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-verification-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-actions-v1-stitch"`
+   - `data-component-version="volunteer-pickup-success-metrics-v1-stitch"`
+
+## 15. Refined Stitch Volunteer Children Screen Interface (`#/volunteer/children`)
+
+The Volunteer Children screen has been completely redesigned following the high-fidelity Stitch design (Screenshot A) to provide a premium, mobile-first, and highly intuitive experience:
+
+1. **Aesthetic and Functional Enhancements**:
+   - **Sticky Top Header**: A custom sticky header (`data-component-version="volunteer-children-header-v1-stitch"`) featuring a back arrow routing to the event home, "Children" title in elegant serif font, current class group sub-label, and a warm gold "Ready to search" status badge with no ONLINE or blinking green dot indicators.
+   - **Search Field**: Full-width persistent search bar (`data-component-version="volunteer-children-search-v1-stitch"`) with a magnifying glass icon, allowing instantaneous find query by child name or parent phone number. Clearing search returns immediately to the active list.
+   - **Filter Chips**: Horizontal pill filters (`data-component-version="volunteer-children-filters-v1-stitch"`) for All, Inside, Not arrived, and Picked up. Clicking filters triggers live database query refreshing instantly.
+   - **Metrics Strip**: A 4-column balanced stats panel (`data-component-version="volunteer-children-metrics-v1-stitch"`) displaying Expected, Inside, Picked Up, and Attention registration counts based on current event metrics.
+   - **Child List Cards**: Highly responsive list cards (`data-component-version="volunteer-children-list-v1-stitch"`) with right-side status vertical color stripes (Emerald for Inside, Slate for Picked Up, Grey for Not Arrived, Orange for Attention). Includes child's image thumbnail or fallback, name, status badge, age detail, class group, and contact parent/guardian details.
+   - **Helper Note**: Minimalist note at the bottom (`data-component-version="volunteer-children-helper-v1-stitch"`) advising "Use search if a parent cannot open the pass."
+
+2. **Attributes and Verifications**:
+   - `data-view-version="volunteer-children-v1-stitch"`
+   - `data-component-version="volunteer-children-header-v1-stitch"`
+   - `data-component-version="volunteer-children-search-v1-stitch"`
+   - `data-component-version="volunteer-children-filters-v1-stitch"`
+   - `data-component-version="volunteer-children-metrics-v1-stitch"`
+   - `data-component-version="volunteer-children-list-v1-stitch"`
+   - `data-component-version="volunteer-children-helper-v1-stitch"`
+
+## 16. Refined Stitch Volunteer Child Profile Screen Interface (`#/volunteer/children` with selected child)
+
+The Volunteer Child Profile screen has been completely redesigned following the high-fidelity Stitch design (Screenshot A & B) to provide an immersive, mobile-app feel:
+
+1. **Aesthetic and Functional Enhancements**:
+   - **Sticky Top Header**: A custom sticky header (`data-component-version="volunteer-child-profile-header-v1-stitch"`) featuring a back arrow navigating to `/volunteer/children`, bold "Child profile" title, and section sub-label ("The General Assembly") (no ONLINE/Online/green dot indicators).
+   - **Child Identity Card**: Centered card (`data-component-version="volunteer-child-profile-identity-v1-stitch"`) showing child's photo (using real `child.photoUrl` if available or branded fallback), overlapping child status badge ("Inside", "Not arrived", "Picked up"), full name in refined serif typography, age label, and class/age group badge.
+   - **Quick Facts Row**: 3-column row (`data-component-version="volunteer-child-profile-facts-v1-stitch"`) displaying Gender, Parent name, and Contact number, mapping to real values or "Not provided".
+   - **Primary Action Buttons**: Displays "Start pickup" button (triggers checkout release flow) and "Scan another pass" button (routes to `/volunteer/scan`) (`data-component-version="volunteer-child-profile-actions-v1-stitch"`).
+   - **Today Status Card**: Grid row (`data-component-version="volunteer-child-profile-today-v1-stitch"`) detailing Checked in at {time} / Not checked in yet, and Picked up at {time} / Not picked up yet.
+   - **Care Notes Card**: Sections for Medical note, Allergy, and Extra support (`data-component-version="volunteer-child-profile-care-notes-v1-stitch"`) with honest empty fallback text ("No medical note added", "No allergy added", "No extra support added").
+   - **Parent Card**: Displays primary parent photo (`data-component-version="volunteer-child-profile-parent-v1-stitch"`), name, relationship, contact phone number, and click-to-call or click-to-WhatsApp actions.
+   - **Pickup Person Card**: Displays authorized pickup person details (`data-component-version="volunteer-child-profile-pickup-person-v1-stitch"`), photo, name, relationship, phone number, and phone action link.
+   - **Event Details Card**: Highlights Session, Event, Date, and Time details (`data-component-version="volunteer-child-profile-event-details-v1-stitch"`) safely mapped from dynamic event data.
+   - **Today’s Activity Card**: Live timeline checking entry check-in status (Checked in at {time} by {volunteer name}) and pickup status (Picked up at {time} by {volunteer name} or Pickup waiting) (`data-component-version="volunteer-child-profile-activity-v1-stitch"`).
+
+2. **Attributes and Verifications**:
+   - `data-view-version="volunteer-child-profile-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-header-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-identity-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-facts-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-actions-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-today-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-care-notes-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-parent-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-pickup-person-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-event-details-v1-stitch"`
+   - `data-component-version="volunteer-child-profile-activity-v1-stitch"`
+
+## 17. Refined Stitch Volunteer Reports Screen Interface (`#/volunteer/reports`)
+
+The Volunteer Reports screen has been completely redesigned following the high-fidelity Stitch design to provide an immersive, mobile-app feel:
+
+1. **Aesthetic and Functional Enhancements**:
+   - **Sticky Top Header**: A custom sticky header (`data-component-version="volunteer-reports-header-v1-stitch"`) featuring a back arrow navigating to `/volunteer/event`, "Children's Ministry" header title, large bold serif "Reports" title, and event subtitle (no ONLINE or green dot indicators).
+   - **Today Summary Cards Grid**: Four columns (`data-component-version="volunteer-reports-summary-v1-stitch"`) displaying "Expected", "Checked in", "Picked up", and a warm-accented "Inside" stats count mapped from dynamic backend fields.
+   - **Needs Attention Widget**: A list (`data-component-version="volunteer-reports-activity-v1-stitch"`) showcasing counts of "Medical note pending", "Missing pickup photo", and "Manual review required", plus an interactive button opening a rich detail modal.
+   - **Age Groups section**: Cards listing Age Groups with columns for Boys, Girls, and dynamic Inside counts.
+   - **Action Buttons**: Highlights "View children inside" (pre-filters directory to 'inside' status) and "View needs attention" (triggers attention list modal).
+   - **Final Event Report Card**: Rich textarea (`data-component-version="volunteer-reports-notes-v1-stitch"`) for submitting audit observations/reviews, with last submitted report notes displayed below if active.
+
+2. **Attributes and Verifications**:
+   - `data-view-version="volunteer-reports-v1-stitch"`
+   - `data-component-version="volunteer-reports-header-v1-stitch"`
+   - `data-component-version="volunteer-reports-summary-v1-stitch"`
+   - `data-component-version="volunteer-reports-activity-v1-stitch"`
+   - `data-component-version="volunteer-reports-notes-v1-stitch"`
+   - `data-component-version="volunteer-bottom-nav-v2-stitch"`
+
+---
+
+## 18. Self-Service Onboarding Profile Updates & Aesthetic Rectangular Photo
+To allow volunteers to securely update their own onboarding/registration details directly from the Profile screen and implement the Stitch-approved portrait frame style, the following capabilities have been added:
+
+### A. Aesthetic Rectangular Portrait Photo Frame
+- **Visual Enhancement**: Replaced the previous circular photo with a high-fidelity rectangular portrait frame with rounded corners (`rounded-2xl`) and a warm gold border (`border-[#C59B27]`) to strictly conform to approved Stitch designs.
+- **Attributes**: Identified via `data-component-version="volunteer-profile-photo-rect-v1"`.
+
+### B. High-Fidelity Parent-Style Edit Profile Interface (Redesigned)
+- **Visual Overhaul**: Redesigned the "Edit Onboarding Details" dialog to match the parent form and onboarding standards used in the parent setup screens (`ProfileSetupView.tsx`). Uses a gorgeous warm ivory background (`#FAF9F5`), consistent labels, elegant spacing, and removes all legacy outdated labels (e.g., "UPDATE SUBMITTED REGISTRATION INFO").
+- **Header Structure**: Custom title "Edit profile" with subtitle "Update your submitted details" and integrated back/close controls.
+- **Service & Experience Sections**: Leverages parent-style segmented controls (Yes/No buttons) for "Koinonia worker" and "Serving experience" state choices. Stacks phone, WhatsApp, and department input fields cleanly with custom focus colors to prevent cramped multi-column forms on mobile screens.
+- **Proof Attributes Implemented**:
+  - Root container: `data-view-version="volunteer-edit-profile-v2-parent-style"`
+  - Header block: `data-component-version="volunteer-edit-profile-header-v2-parent-style"`
+  - Portrait photo block: `data-component-version="volunteer-edit-profile-photo-v2-parent-style"`
+  - Personal details section: `data-component-version="volunteer-edit-profile-personal-v2-parent-style"`
+  - Service details section: `data-component-version="volunteer-edit-profile-service-v2-parent-style"`
+  - Experience and notes section: `data-component-version="volunteer-edit-profile-notes-v2-parent-style"`
+  - Actions footer: `data-component-version="volunteer-edit-profile-actions-v2-parent-style"`
+  - Event assignment card: `data-component-version="volunteer-edit-assignment-card-v2-parent-style"`
+
+### C. Redesigned Event Assignment Read-Only Card
+- **Aesthetic Uplift**: The technical-feeling "Official Assignment (Read-only)" card has been replaced with a user-friendly, high-fidelity card titled "Event assignment" and subtitled "Set by the admin team."
+- **Visual styling**: Styled with an ivory background card, thin gold border accents (`border-[#E5D5AE]/60` / `border-b-[#D9D6CE]`), and a clean, subtle lock badge labeled "Admin managed" paired with a lock icon.
+- **Copy Formatting**: Rigid labels are replaced with clean, human-centric text ("Approval", "Team", "Area", "Access"). Missing values fallback gently to "Not assigned", and active states are cleanly formatted (e.g. replacing technical strings like `pending_review` with "Pending review").
+- **Proof Attributes Implemented**: Verified via `data-component-version="volunteer-edit-assignment-card-v2-parent-style"`.
+
+### D. Secure Backend Endpoint & State Protection
+- **Route**: `PATCH /api/volunteer/me/profile`
+- **Security Rule**: The endpoint parses form variables, updates the user's `fullName` and the volunteer's onboarding attributes inside a secure database transaction, and strictly ignores or rejects any admin-controlled status fields (such as `status`, `assignedTeam`, `assignedArea`, `accessScope`, `permissions`, `adminNotes`, etc.) to prevent volunteer privilege escalation.
+- **Validation**: Enforces strict text constraints and phone number format normalization.
+
 

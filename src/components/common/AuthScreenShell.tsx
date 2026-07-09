@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronLeft } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 
 interface AuthScreenShellProps {
   onBack?: () => void;
@@ -44,9 +45,11 @@ export const AuthScreenShell: React.FC<AuthScreenShellProps> = ({
                 <ChevronLeft className="w-6 h-6" />
               </button>
             )}
-            <span className="font-serif-koinonia font-bold text-lg text-[#B89047] tracking-wider uppercase select-none">
-              Koinonia
-            </span>
+            <BrandLogo
+              context="compact"
+              data-component-version="auth-brand-logo-v1-configured"
+              className="select-none"
+            />
             {headerRight && (
               <div className="absolute right-4 flex items-center">
                 {headerRight}

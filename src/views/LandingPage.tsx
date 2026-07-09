@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Calendar, Clock, Key, QrCode, Smartphone, Monitor, ArrowRight, Check, Mail, BookOpen, Sparkles } from 'lucide-react';
+import { ShieldCheck, Calendar, Clock, Key, QrCode, Smartphone, Monitor, ArrowRight, Check, Mail, BookOpen, Sparkles, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppRoute } from '../types';
 import { PastMomentsCarousel } from '../components/common/PastMomentsCarousel';
 import { ParentProcessSection } from '../components/common/ParentProcessSection';
 import { SafetySection } from '../components/common/SafetySection';
+import { BrandLogo } from '../components/common/BrandLogo';
 import { REAL_ASSETS } from '../config/assets';
 import { AssetImage } from '../components/common/AssetImage';
+import { api } from '../services/api';
 
 interface LandingPageProps {
   onNavigate: (route: AppRoute) => void;
@@ -19,9 +21,10 @@ interface LandingPageProps {
 interface HeroPassPreviewProps {
   className?: string;
   isMobile?: boolean;
+  avatarUrl?: string;
 }
 
-const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({ className = "", isMobile = false }) => {
+const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({ className = "", isMobile = false, avatarUrl }) => {
   const [phase, setPhase] = useState<'pass' | 'scanning' | 'details'>('pass');
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
@@ -88,7 +91,7 @@ const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({ className = "", isMob
             {/* Child Header */}
             <div className="flex items-center space-x-3.5">
               <AssetImage
-                src={REAL_ASSETS.passAvatar}
+                src={avatarUrl || REAL_ASSETS.passAvatar}
                 alt="Mary Omikunle"
                 iconType="users"
                 className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border border-[#EAE8E1] shrink-0 shadow-2xs"
@@ -132,7 +135,7 @@ const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({ className = "", isMob
             {/* Child Profile Info */}
             <div className="flex items-center space-x-3.5">
               <AssetImage
-                src={REAL_ASSETS.passAvatar}
+                src={avatarUrl || REAL_ASSETS.passAvatar}
                 alt="Mary Omikunle"
                 iconType="users"
                 className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border border-[#EAE8E1] shrink-0 shadow-2xs"
@@ -187,6 +190,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 }) => {
   const [loaded, setLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [simMobileMenuOpen, setSimMobileMenuOpen] = useState(false);
+  const [assets, setAssets] = useState<any>({
+    ...REAL_ASSETS,
+    site_logo: (window as any)._site_logo || ''
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -197,6 +206,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     setPrefersReducedMotion(mediaQuery.matches);
     const listener = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
     mediaQuery.addEventListener('change', listener);
+
+    // Fetch dynamic assets override
+    const fetchLandingData = async () => {
+      try {
+        const res = await api.landing.getPublicPage();
+        if (res.success && res.settings) {
+          const s = res.settings;
+          setAssets({
+            site_logo: s.site_logo || (window as any)._site_logo || '',
+            heroMain: s.heroMain || REAL_ASSETS.heroMain,
+            heroUpper: s.heroUpper || REAL_ASSETS.heroUpper,
+            heroRight: s.heroRight || REAL_ASSETS.heroRight,
+            heroVideo: s.heroVideo || REAL_ASSETS.heroVideo,
+            passAvatar: s.passAvatar || REAL_ASSETS.passAvatar,
+            workerAvatar: s.workerAvatar || REAL_ASSETS.workerAvatar,
+            safetySection: s.safetySection || REAL_ASSETS.safetySection,
+            gallery: {
+              arrival: s.galleryArrival || REAL_ASSETS.gallery.arrival,
+              checkIn: s.galleryCheckIn || REAL_ASSETS.gallery.checkIn,
+              activities: s.galleryActivities || REAL_ASSETS.gallery.activities,
+              teaching: s.galleryTeaching || REAL_ASSETS.gallery.teaching,
+              careTeam: s.galleryCareTeam || REAL_ASSETS.gallery.careTeam,
+              pickup: s.galleryPickup || REAL_ASSETS.gallery.pickup,
+              parentUpdates: s.galleryParentUpdates || REAL_ASSETS.gallery.parentUpdates,
+              eventMoments: s.galleryEventMoments || REAL_ASSETS.gallery.eventMoments,
+              eventVideo: s.galleryEventVideo || REAL_ASSETS.gallery.eventVideo,
+            }
+          });
+          if (s.site_logo) {
+            (window as any)._site_logo = s.site_logo;
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching landing page assets:', err);
+      }
+    };
+    fetchLandingData();
 
     return () => {
       clearTimeout(timer);
@@ -217,23 +263,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   if (isMobileLandingView) {
     return (
       <div className="min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans pb-24 flex flex-col justify-between selection:bg-[#C59B27]/30">
-        {/* Top View Switcher Banner */}
-        <div className="bg-[#FAF6EB] border-b border-[#E5D5AE] py-2 px-4 text-center">
-          <div className="max-w-md mx-auto flex items-center justify-center space-x-2 text-xs text-[#9A7326] font-medium">
-            <Monitor className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
-            <span>Viewing Mobile Design Mode •</span>
-            <button
-              onClick={() => onToggleMobileView(false)}
-              className="font-bold underline hover:text-[#18181B]"
-            >
-              Switch to Desktop Layout
-            </button>
-          </div>
-        </div>
-
         {/* Minimal Mobile Header */}
-        <header className="sticky top-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1] px-5 py-4 flex items-center justify-between">
-          <div
+        <header className="sticky top-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1] px-5 py-4 flex items-center justify-between relative" data-component-version="landing-header-v2-responsive-menu">
+          <BrandLogo
+            context="compact"
+            data-component-version="landing-header-logo-image-v2-full-brand"
             onDoubleClick={() => onNavigate('/admin/sign-in')}
             onTouchStart={(e) => {
               const now = Date.now();
@@ -244,22 +278,96 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               (window as any)._lastLogoTap = now;
             }}
             onClick={() => onNavigate('/')}
-            className="flex items-center space-x-2.5 cursor-pointer select-none"
             title="Double-click to access Administration"
-          >
-            <div className="w-8 h-8 rounded-lg bg-[#C59B27] flex items-center justify-center text-white font-serif-koinonia font-bold text-base shadow-sm">
-              K
-            </div>
-            <span className="font-serif-koinonia text-lg tracking-wider font-bold text-[#18181B]">
-              KOINONIA
-            </span>
-          </div>
+            className="group"
+          />
+
           <button
-            onClick={() => onNavigate('/parent/sign-in')}
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#D9D6CE] text-[#262626]"
+            onClick={() => setSimMobileMenuOpen(!simMobileMenuOpen)}
+            data-component-version="landing-header-menu-button-v2"
+            aria-label="Open menu"
+            className="p-2 rounded-xl text-[#6B7280] hover:text-[#18181B] hover:bg-[#FAF6EB] transition-all cursor-pointer focus:outline-none"
           >
-            Sign In
+            {simMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
+
+          {/* Simulated Mobile Dropdown Menu Panel */}
+          <AnimatePresence>
+            {simMobileMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                className="absolute top-full left-0 right-0 border-b border-[#EAE8E1] bg-[#FAF9F6] shadow-lg overflow-hidden z-50"
+                data-component-version="landing-header-mobile-menu-v2"
+              >
+                <div className="px-5 py-6 space-y-4 flex flex-col">
+                  {/* Navigation links inside dropdown */}
+                  <div className="grid grid-cols-2 gap-3 pb-4 border-b border-[#EAE8E1] text-[11px] font-semibold tracking-wider text-[#6B7280] uppercase">
+                    <button
+                      onClick={() => {
+                        scrollToSection('about');
+                        setSimMobileMenuOpen(false);
+                      }}
+                      className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    >
+                      About
+                    </button>
+                    <button
+                      onClick={() => {
+                        scrollToSection('process');
+                        setSimMobileMenuOpen(false);
+                      }}
+                      className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    >
+                      The Process
+                    </button>
+                    <button
+                      onClick={() => {
+                        scrollToSection('safety');
+                        setSimMobileMenuOpen(false);
+                      }}
+                      className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    >
+                      Safety
+                    </button>
+                    <button
+                      onClick={() => {
+                        scrollToSection('moments');
+                        setSimMobileMenuOpen(false);
+                      }}
+                      className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    >
+                      Past Moments
+                    </button>
+                  </div>
+
+                  {/* Auth actions only: stacked */}
+                  <div className="flex flex-col space-y-3 pt-2">
+                    <button
+                      onClick={() => {
+                        onNavigate('/parent/sign-in');
+                        setSimMobileMenuOpen(false);
+                      }}
+                      className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                    >
+                      Parent Sign In
+                    </button>
+                    <button
+                      onClick={() => {
+                        onNavigate('/volunteer/sign-in');
+                        setSimMobileMenuOpen(false);
+                      }}
+                      className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                    >
+                      Volunteer Sign In
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </header>
 
         <main className="max-w-md mx-auto w-full px-5 pt-6 space-y-10">
@@ -267,21 +375,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <section className={`relative rounded-3xl overflow-hidden p-5 -mx-1 sm:p-6 bg-[#FAF8F3] border border-[#E5D5AE]/60 shadow-xs transition-all duration-1000 ease-out ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             {/* Layer 1 & 2: Background Video & Warm Off-White Overlay */}
             <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none rounded-3xl">
-              {REAL_ASSETS.heroVideo && REAL_ASSETS.heroVideo.trim() !== '' && !prefersReducedMotion ? (
+              {assets.heroVideo && assets.heroVideo.trim() !== '' && !prefersReducedMotion ? (
                 <video
+                  key={assets.heroVideo}
                   autoPlay
                   loop
                   muted
                   playsInline
                   preload="auto"
-                  poster={REAL_ASSETS.heroUpper}
+                  poster={assets.heroUpper}
                   className="w-full h-full object-cover transition-opacity duration-1000"
                   style={{
                     opacity: 0.20,
                     filter: 'brightness(0.65) contrast(1.08)',
                   }}
                 >
-                  <source src={REAL_ASSETS.heroVideo} type="video/mp4" />
+                  <source src={assets.heroVideo} type="video/mp4" />
                 </video>
               ) : (
                 <div className="w-full h-full bg-gradient-to-br from-[#EAE8E1]/30 to-[#FAF8F3]" />
@@ -304,35 +413,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </p>
 
             {/* Stacked Action Buttons */}
-            <div className="space-y-3 pt-1">
+            <div className="space-y-3 pt-1" data-component-version="landing-hero-cta-v2-clean">
               <button
                 onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-                className="w-full bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3.5 px-6 rounded-xl text-sm shadow-sm transition-all text-center block uppercase tracking-wider cursor-pointer"
+                className="w-full h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-bold rounded-xl text-sm shadow-sm transition-all flex items-center justify-center space-x-2 uppercase tracking-wider cursor-pointer"
               >
-                Begin Parent Access
+                <span>Begin Parent Access</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-                className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3.5 px-6 rounded-xl text-sm transition-all text-center block uppercase tracking-wider cursor-pointer"
+                className="w-full h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold rounded-xl text-sm transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
               >
-                Volunteer Access
-              </button>
-            </div>
-
-            {/* Small sign-in links */}
-            <div className="flex items-center justify-center space-x-4 text-xs text-[#6B7280] pt-1">
-              <button
-                onClick={() => onNavigate('/parent/sign-in')}
-                className="hover:text-[#18181B] underline font-medium cursor-pointer"
-              >
-                Parent sign in
-              </button>
-              <span className="text-[#D9D6CE]">•</span>
-              <button
-                onClick={() => onNavigate('/volunteer/sign-in')}
-                className="hover:text-[#18181B] underline font-medium cursor-pointer"
-              >
-                Volunteer sign in
+                <span>Volunteer Access</span>
               </button>
             </div>
 
@@ -346,7 +439,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="pt-2">
               <div className="rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] bg-white h-72">
                 <AssetImage
-                  src={REAL_ASSETS.heroMain}
+                  src={assets.heroMain}
                   alt="Koinonia General Assembly Children and Teens"
                   iconType="sparkles"
                   label="General Assembly Gathering"
@@ -397,10 +490,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </section>
 
           {/* Pass Preview Card Block - Subtle Scan-to-Details Animation */}
-          <HeroPassPreview className="!rounded-3xl !p-5 shadow-xl" isMobile={true} />
+          <HeroPassPreview className="!rounded-3xl !p-5 shadow-xl" isMobile={true} avatarUrl={assets.passAvatar} />
 
           {/* Past Moments Section (3D Carousel Reel) */}
-          <PastMomentsCarousel loaded={true} />
+          <PastMomentsCarousel loaded={true} customAssets={assets.gallery} />
 
           {/* How it works Section */}
           <section className="space-y-6 pt-4 border-t border-[#EAE8E1]">
@@ -457,7 +550,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </section>
 
           {/* Safety Section (Mobile View) */}
-          <SafetySection />
+          <SafetySection customImage={assets.safetySection} />
 
           {/* Volunteer Section (Mobile) */}
           <section className="bg-[#FAF8F3] rounded-3xl border border-[#E5D5AE]/60 p-5 shadow-2xs space-y-4 text-center">
@@ -530,25 +623,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   // ==========================================
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans flex flex-col selection:bg-[#C59B27]/30">
-      {/* Top View Switcher Banner */}
-      <div className="bg-[#FAF6EB] border-b border-[#E5D5AE] py-2 px-4 text-center">
-        <div className="max-w-7xl mx-auto flex items-center justify-center space-x-3 text-xs text-[#9A7326] font-medium">
-          <Smartphone className="w-4 h-4 text-[#C59B27] shrink-0" />
-          <span>Experiencing on a mobile phone? Switch to the approved mobile layout.</span>
-          <button
-            onClick={() => onToggleMobileView(true)}
-            className="font-bold underline hover:text-[#18181B]"
-          >
-            Switch to Mobile View
-          </button>
-        </div>
-      </div>
-
       {/* 1. Header (Stitch Light Header) */}
-      <header className="sticky top-0 z-40 w-full bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <header className="sticky top-0 z-40 w-full bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1]" data-component-version="landing-header-v2-responsive-menu">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between relative">
           {/* Koinonia Wordmark on the left */}
-          <div
+          <BrandLogo
+            context="landing"
+            data-component-version="landing-header-logo-image-v2-full-brand"
             onDoubleClick={() => onNavigate('/admin/sign-in')}
             onTouchStart={(e) => {
               const now = Date.now();
@@ -559,16 +640,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               (window as any)._lastLogoTap = now;
             }}
             onClick={() => onNavigate('/')}
-            className="flex items-center space-x-3 cursor-pointer group select-none"
             title="Double-click to access Administration"
-          >
-            <div className="w-9 h-9 rounded-xl bg-[#C59B27] flex items-center justify-center text-white font-serif-koinonia font-bold text-lg shadow-sm group-hover:scale-105 transition-transform">
-              K
-            </div>
-            <span className="font-serif-koinonia text-xl tracking-wider font-bold text-[#18181B] leading-none">
-              KOINONIA
-            </span>
-          </div>
+            className="group"
+          />
 
           {/* Navigation */}
           <nav className="hidden lg:flex items-center space-x-8 text-xs font-semibold tracking-wider text-[#6B7280] uppercase">
@@ -589,8 +663,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </button>
           </nav>
 
-          {/* Sign In & Parent Access Buttons */}
-          <div className="flex items-center space-x-3">
+          {/* Sign In & Parent Access Buttons - Visible on md and up */}
+          <div className="hidden md:flex items-center space-x-3">
             <button
               onClick={() => onNavigate('/parent/sign-in')}
               className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer"
@@ -604,28 +678,119 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Parent Access
             </button>
           </div>
+
+          {/* Hamburger Menu Button - Hidden on md and up */}
+          <div className="flex md:hidden items-center">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              data-component-version="landing-header-menu-button-v2"
+              aria-label="Open menu"
+              className="p-2 rounded-xl text-[#6B7280] hover:text-[#18181B] hover:bg-[#FAF6EB] transition-all cursor-pointer focus:outline-none"
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Dropdown Menu Panel */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="md:hidden border-t border-[#EAE8E1] bg-[#FAF9F6] shadow-lg overflow-hidden absolute top-20 left-0 right-0 z-45"
+              data-component-version="landing-header-mobile-menu-v2"
+            >
+              <div className="px-4 py-6 space-y-4 flex flex-col">
+                {/* Navigation links inside dropdown */}
+                <div className="grid grid-cols-2 gap-3 pb-4 border-b border-[#EAE8E1] text-[11px] font-semibold tracking-wider text-[#6B7280] uppercase">
+                  <button
+                    onClick={() => {
+                      scrollToSection('about');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                  >
+                    About
+                  </button>
+                  <button
+                    onClick={() => {
+                      scrollToSection('process');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                  >
+                    The Process
+                  </button>
+                  <button
+                    onClick={() => {
+                      scrollToSection('safety');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                  >
+                    Safety
+                  </button>
+                  <button
+                    onClick={() => {
+                      scrollToSection('moments');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                  >
+                    Past Moments
+                  </button>
+                </div>
+
+                {/* Auth actions only: stacked */}
+                <div className="flex flex-col space-y-3 pt-2">
+                  <button
+                    onClick={() => {
+                      onNavigate('/parent/sign-in');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                  >
+                    Parent Sign In
+                  </button>
+                  <button
+                    onClick={() => {
+                      onNavigate('/volunteer/sign-in');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                  >
+                    Volunteer Sign In
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       {/* 2. Hero Section */}
       <section id="about" className="relative py-16 sm:py-24 px-6 sm:px-10 lg:px-12 max-w-7xl mx-auto w-full overflow-hidden rounded-[36px] my-6 border border-[#EAE8E1]/70 shadow-xs">
         {/* Layer 1: Background Video Atmosphere */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none rounded-[36px]">
-          {REAL_ASSETS.heroVideo && REAL_ASSETS.heroVideo.trim() !== '' && !prefersReducedMotion ? (
+          {assets.heroVideo && assets.heroVideo.trim() !== '' && !prefersReducedMotion ? (
             <video
+              key={assets.heroVideo}
               autoPlay
               loop
               muted
               playsInline
               preload="auto"
-              poster={REAL_ASSETS.heroUpper}
+              poster={assets.heroUpper}
               className="w-full h-full object-cover transition-opacity duration-1000"
               style={{
                 opacity: 0.23,
                 filter: 'brightness(0.62) contrast(1.08)',
               }}
             >
-              <source src={REAL_ASSETS.heroVideo} type="video/mp4" />
+              <source src={assets.heroVideo} type="video/mp4" />
             </video>
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-[#EAE8E1]/40 via-[#FAF9F6] to-[#EAE8E1]/20" />
@@ -652,36 +817,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </p>
 
             {/* Buttons */}
-            <div className="flex flex-wrap items-center gap-4 pt-2">
+            <div className="flex flex-wrap items-center gap-4 pt-2" data-component-version="landing-hero-cta-v2-clean">
               <button
                 onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-                className="bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold px-7 py-3.5 rounded-xl text-sm shadow-sm transition-all inline-flex items-center space-x-2 cursor-pointer"
+                className="w-full sm:w-64 h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
               >
                 <span>Begin Parent Access</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-                className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold px-7 py-3.5 rounded-xl text-sm transition-all cursor-pointer"
+                className="w-full sm:w-64 h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
               >
-                Volunteer Access
-              </button>
-            </div>
-
-            {/* Small sign-in links */}
-            <div className="flex items-center space-x-4 text-xs text-[#6B7280] pt-1">
-              <button
-                onClick={() => onNavigate('/parent/sign-in')}
-                className="hover:text-[#18181B] underline font-medium cursor-pointer"
-              >
-                Parent sign in
-              </button>
-              <span className="text-[#D9D6CE]">•</span>
-              <button
-                onClick={() => onNavigate('/volunteer/sign-in')}
-                className="hover:text-[#18181B] underline font-medium cursor-pointer"
-              >
-                Volunteer sign in
+                <span>Volunteer Access</span>
               </button>
             </div>
 
@@ -699,7 +847,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             {/* Back layer (smaller image layer behind or slightly above) */}
             <div className={`absolute -top-4 left-0 sm:left-6 w-60 sm:w-72 h-80 rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] z-0 transition-all duration-700 delay-150 ease-out ${loaded ? 'opacity-90 translate-y-0 -rotate-3' : 'opacity-0 -translate-y-6 -rotate-6'} group-hover/hero:-translate-y-2 group-hover/hero:shadow-2xl`}>
               <AssetImage
-                src={REAL_ASSETS.heroUpper}
+                src={assets.heroUpper}
                 alt="Families arriving at event"
                 iconType="users"
                 label="Back Layer Visual"
@@ -710,7 +858,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             {/* Main image (large main image with curved/rounded top shape) */}
             <div className={`relative z-10 rounded-t-[140px] sm:rounded-t-[180px] rounded-b-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] bg-white aspect-[4/5] max-w-md mx-auto lg:ml-auto transition-all duration-700 delay-300 ease-out ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} group-hover/hero:scale-[1.02] group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.22)]`}>
               <AssetImage
-                src={REAL_ASSETS.heroMain}
+                src={assets.heroMain}
                 alt="Koinonia General Assembly Welcome Reception"
                 iconType="sparkles"
                 label="Main Hero Gathering"
@@ -721,7 +869,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             {/* Front/right layer (smaller image layer in front/right side) */}
             <div className={`absolute -right-2 sm:-right-6 bottom-12 sm:bottom-16 z-20 w-44 sm:w-52 aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-white transition-all duration-700 delay-500 ease-out ${loaded ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95'} group-hover/hero:translate-x-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.24)]`}>
               <AssetImage
-                src={REAL_ASSETS.heroRight}
+                src={assets.heroRight}
                 alt="Welcoming care team member check-in"
                 iconType="heart"
                 label="Front Right Layer"
@@ -731,7 +879,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Floating pass preview card (subtle scan-to-details animation - overlapping lower-left area of main image) */}
             <div className={`absolute left-0 sm:left-2 -bottom-8 sm:-bottom-10 z-30 w-[300px] sm:w-[350px] transition-all duration-700 delay-700 ease-out ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'} group-hover/hero:-translate-y-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.2)]`}>
-              <HeroPassPreview />
+              <HeroPassPreview avatarUrl={assets.passAvatar} />
             </div>
           </div>
         </div>
@@ -782,13 +930,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       </section>
 
       {/* 4. Past Moments Section (3D Editorial Reel) */}
-      <PastMomentsCarousel loaded={loaded} />
+      <PastMomentsCarousel loaded={loaded} customAssets={assets.gallery} />
 
       {/* 5. Parent Process Section */}
       <ParentProcessSection />
 
       {/* 6. Safety Section */}
-      <SafetySection />
+      <SafetySection customImage={assets.safetySection} />
 
       {/* Volunteer Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center border-t border-[#EAE8E1]">
@@ -845,14 +993,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <footer id="footer" className="bg-[#FAF9F6] border-t border-[#EAE8E1] py-14 px-4 sm:px-6 lg:px-8 mt-auto">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-xs text-[#6B7280]">
           {/* Brand */}
-          <div
+          <BrandLogo
+            context="compact"
             onClick={() => onNavigate('/')}
             className="flex items-center space-x-3 cursor-pointer"
-          >
-            <span className="font-serif-koinonia font-bold text-lg text-[#18181B] tracking-wider">
-              KOINONIA
-            </span>
-          </div>
+          />
 
           {/* Links */}
           <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8 font-medium">

@@ -6,6 +6,7 @@ import multer from 'multer';
 import { execute, queryOne } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { uploadMedia, MediaPurpose } from '../services/media/cloudinary';
+import { processImage } from '../services/media/imageProcessor';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -36,11 +37,19 @@ router.get('/files/:fileId', async (req: Request, res: Response) => {
     // Check local disk fallbacks during local dev
     const subDirs = ['', 'parents', 'volunteers', 'children', 'pickup-people', 'events', 'videos', 'gallery', 'general'];
     for (const sub of subDirs) {
-      const filename = path.basename(media.storage_key || media.public_id || `${fileId}.jpg`);
-      const filePath = path.join(MEDIA_DIR, sub, filename);
-      if (fs.existsSync(filePath)) {
-        res.setHeader('Content-Type', media.mime_type || 'image/jpeg');
-        return fs.createReadStream(filePath).pipe(res);
+      const searchDir = path.join(MEDIA_DIR, sub);
+      if (fs.existsSync(searchDir)) {
+        try {
+          const files = fs.readdirSync(searchDir);
+          const matchedFile = files.find(f => f === fileId || f.startsWith(`${fileId}.`));
+          if (matchedFile) {
+            const filePath = path.join(searchDir, matchedFile);
+            res.setHeader('Content-Type', media.mime_type || 'image/jpeg');
+            return fs.createReadStream(filePath).pipe(res);
+          }
+        } catch (e) {
+          console.error(`Error reading media directory ${searchDir}:`, e);
+        }
       }
     }
 
@@ -60,6 +69,12 @@ router.post('/public-upload', upload.single('file'), async (req: Request, res: R
     if (req.file) {
       buffer = req.file.buffer;
       mimeType = req.file.mimetype;
+      if (!mimeType || mimeType === 'application/octet-stream') {
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+        else if (ext === '.png') mimeType = 'image/png';
+        else if (ext === '.webp') mimeType = 'image/webp';
+      }
     } else if (req.body && req.body.fileDataUrl) {
       const { fileDataUrl } = req.body;
       const matches = fileDataUrl.match(/^data:([a-zA-Z0-9.\/+-]+);base64,(.+)$/);
@@ -85,6 +100,15 @@ router.post('/public-upload', upload.single('file'), async (req: Request, res: R
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (buffer.length > maxSize) {
       return res.status(400).json({ error: 'This photo is too large. Maximum image size is 10MB.' });
+    }
+
+    // Process and optimize the image using sharp via processImage
+    try {
+      const processed = await processImage(buffer, undefined, mimeType);
+      buffer = processed.buffer;
+      mimeType = processed.mimeType;
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || 'Image processing failed' });
     }
 
     const uploadResult = await uploadMedia(buffer, {
@@ -145,6 +169,14 @@ router.post('/public-upload', upload.single('file'), async (req: Request, res: R
 router.use(authMiddleware);
 
 router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  const logPath = path.join(process.cwd(), 'data', 'upload_debug.log');
+  try {
+    const startLog = `[${new Date().toISOString()}] Upload starting. File: ${req.file ? req.file.originalname : 'none'}, purpose: ${req.body?.purpose || req.body?.fileType || 'none'}, slotKey: ${req.body?.slotKey || 'none'}\n`;
+    fs.appendFileSync(logPath, startLog);
+  } catch (logErr) {
+    console.error('Failed to write start log:', logErr);
+  }
+
   try {
     let buffer: Buffer;
     let mimeType: string;
@@ -152,6 +184,15 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     if (req.file) {
       buffer = req.file.buffer;
       mimeType = req.file.mimetype;
+      if (!mimeType || mimeType === 'application/octet-stream') {
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        if (ext === '.mp4') mimeType = 'video/mp4';
+        else if (ext === '.webm') mimeType = 'video/webm';
+        else if (ext === '.mov') mimeType = 'video/quicktime';
+        else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+        else if (ext === '.png') mimeType = 'image/png';
+        else if (ext === '.webp') mimeType = 'image/webp';
+      }
     } else if (req.body && req.body.fileDataUrl) {
       const { fileDataUrl } = req.body;
       const matches = fileDataUrl.match(/^data:([a-zA-Z0-9.\/+-]+);base64,(.+)$/);
@@ -165,10 +206,11 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     }
 
     const purpose: string = req.body.purpose || req.body.fileType || 'parent_profile_photo';
+    const slotKey: string | undefined = req.body.slotKey;
     const isVideo = purpose === 'event_video' || mimeType.startsWith('video/');
 
     if (isVideo) {
-      const allowedVideoTypes = ['video/mp4', 'video/webm'];
+      const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
       if (!allowedVideoTypes.includes(mimeType)) {
         return res.status(400).json({ error: 'Please upload an MP4 or WebM video.' });
       }
@@ -194,6 +236,23 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
           return res.status(400).json({ error: 'This photo is too large. Maximum image size is 10MB.' });
         }
         return res.status(400).json({ error: 'This file is too large. Maximum size is 10MB.' });
+      }
+
+      // Process and optimize images via processImage
+      try {
+        const processed = await processImage(buffer, slotKey, mimeType);
+        buffer = processed.buffer;
+        mimeType = processed.mimeType;
+      } catch (err: any) {
+        console.error('Image processing failed:', err);
+        try {
+          fs.appendFileSync(logPath, `[${new Date().toISOString()}] processImage failed: ${err.message}\nStack: ${err.stack}\n`);
+        } catch (le) {}
+        return res.status(422).json({
+          success: false,
+          error: "We could not process this image. Please try another JPG, PNG, or WebP file.",
+          message: "We could not process this image. Please try another JPG, PNG, or WebP file."
+        });
       }
     }
 
@@ -233,6 +292,10 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       now
     ]);
 
+    try {
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload SUCCESS. fileId: ${fileId}, publicId: ${uploadResult.publicId}\n`);
+    } catch (le) {}
+
     res.status(201).json({
       id: fileId,
       provider: uploadResult.provider || 'cloudinary',
@@ -248,6 +311,9 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     });
   } catch (err: any) {
     console.error('Media upload error:', err);
+    try {
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload FAILED: ${err.message}\nStack: ${err.stack}\n`);
+    } catch (le) {}
     res.status(500).json({ error: err.message || 'Failed to process media upload' });
   }
 });

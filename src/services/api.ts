@@ -74,14 +74,21 @@ export const api = {
       apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
     }
 
+    let isDev = false;
+    try {
+      isDev = !!import.meta.env.DEV;
+    } catch {}
+
     // Fallback to relative URLs in development/preview to connect to the local container backend
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname;
       if (
+        isDev ||
         hostname === 'localhost' || 
         hostname === '127.0.0.1' || 
         hostname.endsWith('.run.app') || 
-        hostname.endsWith('.google.com')
+        hostname.endsWith('.google.com') ||
+        hostname.endsWith('.googleusercontent.com')
       ) {
         apiBaseUrl = ''; // Use relative paths for local development and AI Studio preview
       }
@@ -101,7 +108,23 @@ export const api = {
       throw new ParentApiError('Connection problem', 'Please check your internet and try again.');
     }
 
-    const data = await res.json().catch(() => ({}));
+    // Safely parse JSON or handle HTML fallback responses
+    let data: any = {};
+    const contentType = res.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      data = await res.json().catch(() => ({}));
+    } else {
+      const text = await res.text().catch(() => '');
+      if (text.trim().startsWith('<')) {
+        throw new ParentApiError('Connection problem', 'The server returned an invalid response. Please try again.');
+      }
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text || `Request failed (${res.status})` };
+      }
+    }
+
     if (!res.ok) {
       const rawError = data.error || data.message || `Request failed (${res.status})`;
       const errorCode = data.code;
@@ -270,8 +293,14 @@ export const api = {
       return api.request<{ event: any; stats: { expected: number; checkedIn: number; pickedUp: number; attention: number }; attentionItems: any[] }>('/api/volunteer/event-home');
     },
     async updateProfile(profile: any) {
-      return api.request<any>('/api/volunteer/profile', {
-        method: 'PUT',
+      if (profile instanceof FormData) {
+        return api.request<any>('/api/volunteer/me/profile', {
+          method: 'PATCH',
+          body: profile
+        });
+      }
+      return api.request<any>('/api/volunteer/me/profile', {
+        method: 'PATCH',
         body: JSON.stringify(profile)
       });
     },
@@ -372,10 +401,13 @@ export const api = {
         body: JSON.stringify({ fileDataUrl, fileName, purpose: fileType || 'parent_profile_photo', fileType: fileType || 'parent_profile_photo' })
       });
     },
-    async uploadFile(file: File | Blob, purpose: string = 'parent_profile_photo') {
+    async uploadFile(file: File | Blob, purpose: string = 'parent_profile_photo', slotKey?: string) {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('purpose', purpose);
+      if (slotKey) {
+        formData.append('slotKey', slotKey);
+      }
       return api.request<{ id: string; provider: string; publicId: string; secureUrl: string; resourceType: string; fileType: string; url: string }>('/api/media/upload', {
         method: 'POST',
         body: formData
@@ -389,6 +421,12 @@ export const api = {
         method: 'POST',
         body: formData
       });
+    }
+  },
+
+  landing: {
+    async getPublicPage() {
+      return api.request<{ success: boolean; settings: Record<string, string> }>('/api/admin/public-landing-page');
     }
   },
 
@@ -619,6 +657,15 @@ export const api = {
       return api.request<{ success: boolean; message: string }>('/api/admin/general-settings', {
         method: 'POST',
         body: JSON.stringify(payload)
+      });
+    },
+    async getLandingSettings() {
+      return api.request<{ success: boolean; settings: Record<string, string> }>('/api/admin/landing-settings');
+    },
+    async updateLandingSettings(settings: Record<string, string>) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/landing-settings', {
+        method: 'POST',
+        body: JSON.stringify({ settings })
       });
     },
     async updateTeamMemberRole(payload: { userId: string; role: string }) {

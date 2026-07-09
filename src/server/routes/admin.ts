@@ -235,6 +235,21 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res) => {
   });
 });
 
+// Public Landing Page Settings endpoint
+router.get('/public-landing-page', async (req, res) => {
+  try {
+    const rows = await query('SELECT setting_key, setting_value, value_type FROM admin_landing_settings');
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.setting_key] = row.setting_value || '';
+    }
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    console.error('Error fetching public landing settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve landing page settings' });
+  }
+});
+
 // Mount auth middleware for all subsequent admin routes
 router.use(authMiddleware);
 
@@ -1132,7 +1147,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     }
 
     const app = await queryOne(`
-      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone
+      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -1249,7 +1264,7 @@ router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: 
 
     for (const id of applicationIds) {
       const app = await queryOne(`
-        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone
+        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -3022,6 +3037,69 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
   } catch (err: any) {
     console.error('Error updating admin general settings:', err);
     return res.status(500).json({ success: false, error: 'Failed to update general settings.' });
+  }
+});
+
+// GET admin landing settings
+router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rows = await query('SELECT setting_key, setting_value, value_type FROM admin_landing_settings');
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.setting_key] = row.setting_value || '';
+    }
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    console.error('Error fetching admin landing settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve landing settings.' });
+  }
+});
+
+// POST admin landing settings
+router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { settings } = req.body;
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ success: false, error: 'Settings object is required.' });
+    }
+
+    const now = new Date().toISOString();
+    const allowedKeys = [
+      'site_logo', 'heroMain', 'heroUpper', 'heroRight', 'heroVideo',
+      'passAvatar', 'workerAvatar', 'safetySection',
+      'galleryArrival', 'galleryCheckIn', 'galleryActivities', 'galleryTeaching',
+      'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo'
+    ];
+
+    for (const [key, value] of Object.entries(settings)) {
+      if (!allowedKeys.includes(key)) {
+        return res.status(400).json({ success: false, error: `Invalid landing setting key: ${key}` });
+      }
+
+      if (value !== null && typeof value !== 'string') {
+        return res.status(400).json({ success: false, error: `Setting value for ${key} must be a string.` });
+      }
+
+      const valueType = (key === 'heroVideo' || key === 'galleryEventVideo') ? 'video' : 'image';
+
+      const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
+      if (existing) {
+        await execute(
+          'UPDATE admin_landing_settings SET setting_value = ?, value_type = ?, updated_at = ? WHERE setting_key = ?',
+          [value || '', valueType, now, key]
+        );
+      } else {
+        await execute(
+          'INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES (?, ?, ?, ?)',
+          [key, value || '', valueType, now]
+        );
+      }
+    }
+
+    return res.json({ success: true, message: 'Landing settings updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating admin landing settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update landing settings.' });
   }
 });
 

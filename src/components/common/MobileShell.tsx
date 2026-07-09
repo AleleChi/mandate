@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, ShieldCheck, HelpCircle } from 'lucide-react';
 import { BottomNavTab, AppRoute } from '../../types';
 import { BottomNav } from './BottomNav';
+import { BrandLogo } from './BrandLogo';
 
 interface MobileShellProps {
   title?: string;
@@ -41,12 +42,11 @@ export const MobileShell: React.FC<MobileShellProps> = ({
                 <ArrowLeft className="w-5 h-5" />
               </button>
             ) : (
-              <div
+              <BrandLogo
+                context="compact"
                 onClick={() => onNavigate && onNavigate('/')}
-                className="w-8 h-8 rounded-lg bg-[#18181B] text-[#D4AF37] flex items-center justify-center font-serif-koinonia font-bold text-base cursor-pointer shadow-sm"
-              >
-                K
-              </div>
+                className="mr-1"
+              />
             )}
             <div className="flex flex-col">
               <span className="font-serif-koinonia font-bold text-sm text-[#18181B] tracking-wider uppercase">

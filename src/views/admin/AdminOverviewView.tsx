@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { AdminApplicationsView } from './AdminApplicationsView';
 import { AdminReviewBoardView } from './AdminReviewBoardView';
@@ -284,18 +285,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       <div className="flex flex-col">
         {/* Brand block - Light warm design */}
         <div className="h-20 px-6 border-b border-[#EAE8E1] flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-[#C59B27] flex items-center justify-center text-white font-serif font-bold text-base shadow-sm">
-              K
-            </div>
-            <div className="flex flex-col">
-              <span className="font-serif text-sm tracking-widest font-bold text-[#18181B] leading-none">
-                KOINONIA
-              </span>
-              <span className="text-[10px] text-[#C59B27] tracking-wider uppercase font-semibold mt-1">
-                {adminRoleTitle}
-              </span>
-            </div>
+          <div className="flex flex-col justify-center items-start">
+            <BrandLogo
+              context="admin"
+              data-component-version="admin-brand-logo-v1-configured"
+            />
+            <span className="text-[10px] text-[#C59B27] tracking-wider uppercase font-semibold mt-1 pl-1">
+              {adminRoleTitle}
+            </span>
           </div>
           {/* Mobile close button */}
           <button 

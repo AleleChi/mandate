@@ -3,6 +3,7 @@ import { AppRoute, BottomNavTab, ChildItem, ParentProfile } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
+import { BrandLogo } from '../components/common/BrandLogo';
 import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
@@ -1027,12 +1028,12 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 backdrop-blur-md border-b border-[#EAE8E1]">
           <div className="px-5 h-15 flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div
-                onClick={() => onNavigate('/')}
-                className="w-8 h-8 rounded-lg bg-[#18181B] text-[#D4AF37] flex items-center justify-center font-serif-koinonia font-bold text-base shadow-2xs select-none cursor-pointer"
-              >
-                K
-              </div>
+            <BrandLogo
+              context="compact"
+              data-component-version="parent-brand-logo-v1-configured"
+              onClick={() => onNavigate('/')}
+              className="mr-1"
+            />
               <div className="flex flex-col">
                 <span className="font-serif-koinonia font-bold text-sm text-[#18181B] tracking-wider uppercase leading-none">
                   PARENT HOME

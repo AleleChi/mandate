@@ -96,9 +96,16 @@ Every `child_event_entry` transitions through these deterministic review states:
 Every new screen built must consume data shapes conforming strictly to `/docs/backend-architecture.md`. Frontend modules must not invent isolated data structures that cannot cleanly map to relational database schemas and REST APIs.
 
 ## 12. Dual-Audience Landing Page Setup
-The Koinonia Children and Teens landing page serves two distinct audiences:
+The Koinonia Children and Teens landing page serves two distinct audiences with a fully responsive layout and streamlined CTAs:
 1. **Parents/guardians:** This remains the primary, highly-visible call-to-action (CTA) to encourage smooth and secure child check-in registration.
 2. **Volunteers/event team:** Secondary but clearly visible access, styled to avoid visually competing with the main parent CTA.
+- **Responsive Header (v2)**: The landing header is responsive across all viewports. Desktop viewports show standard inline navigation and action buttons. On narrower breakpoints (mobile and tablet), the header collapses cleanly into a hamburger menu button on the right of the logo, keeping the header uncluttered and eliminating horizontal overflow.
+- **Interactive Hamburger Dropdown Menu**: Clicking the hamburger button displays a vertical drop-down panel with a clean ivory background and golden styling containing:
+  1. **Parent Access** (routes to Parent Signup/Home)
+  2. **Parent Sign In**
+  3. **Volunteer Access** (routes to Volunteer Signup)
+  4. **Volunteer Sign In**
+- **Clutter-free Hero Section**: Redundant sign-in text links beneath the main action buttons are removed to elevate visual quality, creating a more professional, balanced, and elegant introduction above the fold.
 - **Unified Account Logic**: Parent accounts and volunteer accounts are bridged seamlessly. Parents can apply to be volunteers and log in to Volunteer Access under the same account once approved.
 
 ## 13. Volunteer Signup & Verification Requirements
@@ -125,6 +132,17 @@ The Koinonia Children and Teens landing page serves two distinct audiences:
 ## 16. Volunteer Status Notification Emails
 - **Under Review Email Notice**: Triggered automatically after a volunteer successfully verifies their email address via the `/verify-email` endpoint. Employs the `sendVolunteerUnderReviewEmail` helper, notifying them that their application is undergoing administrator review.
 - **Approval & Active Access Email Notice**: Triggered immediately when an administrator approves a volunteer profile via `/api/volunteer/admin/volunteers/:volunteerId/approve`. Employs the `sendVolunteerApprovedEmail` helper, including their designated team and a direct sign-in link to access event operations.
+
+## 16a. Hardened Landing Page Media Manager & Upload Safety
+- **Strict Processing Guarantee**: If an image upload fails to process (e.g. sharp processing error, invalid image headers), the upload request must fail immediately with a `422 Unprocessable Entity` status.
+- **No Unprocessed Fallbacks**: Under no circumstances will raw, unprocessed buffers be written to disk, published, or stored inside the public-facing configuration.
+- **Administrative Error Isolation**: If processing fails, the Admin Landing Page Manager displays a friendly, clear message: *"We could not process this image. Please try another JPG, PNG, or WebP file."* Raw system stack traces or internal server error logs are strictly hidden from the administrator.
+- **Configuration Persistence Safety**: No database updates or file records are stored for failed uploads. The active configuration must preserve the previous or default fallback state.
+- **Rigid Slot Type Validation**: Slots are heavily partitioned by expected media type. Attempting to upload a video format (MP4/WebM/MOV) into an image slot, or an image format (JPG/PNG/WebP) into a video slot, is rejected immediately on the frontend and blocked on the backend.
+- **Visual Identity Preservation**:
+  - The header logo uses `object-contain`, ensuring the aspect ratio remains perfectly unaltered without stretching, cropping, or overflowing.
+  - When a custom logo is active, the logo image is rendered exclusively. The separate typed word "KOINONIA" is hidden beside it to elevate visual polish.
+  - Double-click (desktop) and double-tap (mobile) shortcuts on the logo are preserved at all times for easy administrator portal navigation.
 
 ## 17. Two-Step Child Check-In Flow (Lookup & Finalize)
 To prevent accidental and duplicate entries at the event gates, checking in or checking out a child requires a secure, two-step lookup and confirmation process:
@@ -318,6 +336,137 @@ The attendance registry module offers real-time, high-fidelity metrics and track
   - `data-component-version="volunteer-child-care-notes-v1-stitch"`
   - `data-component-version="volunteer-child-entry-status-v1-stitch"`
   - `data-component-version="volunteer-child-authorized-pickup-v1-stitch"`
+
+## 27. Stitch Volunteer Checked-In Success Screen layout (`#/volunteer/scan` after success)
+- **Stitch Design Implementation**: Mobile-first container (`max-w-md mx-auto`) showing the success state after checking in:
+  - **Dynamic Context Header**: Sticky header (`data-component-version="volunteer-checked-in-header-v1-stitch"`) with back-arrow button to dismiss success state, "Check-In Portal" title, and settings button.
+  - **Title Block**: Displays a centered checkmark in gold (`#8F7020`), a serif "Checked in" heading, and descriptive sub-label.
+  - **Child Summary Card**: Horizontal card showing child photo/icon, name, age, and class/age group tag.
+  - **Entry Details Card**: Shows UTC check-in time, volunteer name, and entrance gate / check-in point.
+  - **Care Notes Card**: Highlights Medical, Allergies, and Extra support notes if present with beautiful custom icons.
+  - **Metrics Card**: Interactive card showing current inside child count and remaining expected counts.
+  - **Action Controls**: Gold "SCAN ANOTHER PASS" button, "VIEW CHILD PROFILE" secondary button, and a text button to navigate back to the event home.
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-checked-in-success-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-header-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-title-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-child-card-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-entry-details-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-care-notes-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-metrics-v1-stitch"`
+  - `data-component-version="volunteer-checked-in-actions-v1-stitch"`
+
+## 28. Stitch Volunteer Pickup Screen layout (`#/volunteer/pickup` home)
+- **Stitch Design Implementation**: Mobile-first container (`max-w-md mx-auto`) offering a premium pickup dashboard matching Screenshot A aesthetics:
+  - **Top Header**: Custom-styled header (`data-component-version="volunteer-pickup-header-v1-stitch"`) with back arrow navigating to the dashboard, "Pickup" title, event sub-label, and gold "Ready to scan" pill indicator (no ONLINE/Online/green dot).
+  - **Scan Viewfinder**: A 3:4 aspect-ratio scanning viewport card (`data-component-version="volunteer-pickup-scan-card-v1-stitch"`) showcasing gold accent framing corners. Contains a centered "Scan child pass" pill button when camera is inactive, and streams live camera feeds with a scanning sweep line when activated.
+  - **Manual Entry Trigger**: Compact toggle button and collapsible input sheet (`data-component-version="volunteer-pickup-manual-pass-v1-stitch"`) for typing 6-character alphanumeric pass reference codes.
+  - **OR Divider**: Standard aesthetic spacing divider (`data-component-version="volunteer-pickup-divider-v1-stitch"`) centering a clean "OR" text label.
+  - **Search Field**: Full-width input bar (`data-component-version="volunteer-pickup-search-v1-stitch"`) for looking up children by name or parent phone number, routing smoothly to the Directory on submission.
+  - **Confirm Before Release Alert**: High-visibility attention card (`data-component-version="volunteer-pickup-warning-v1-stitch"`) warning workers to check the child photo and pickup person before marking release.
+  - **Stitch Metrics**: A highly readable 3-column stats panel (`data-component-version="volunteer-pickup-metrics-v1-stitch"`) displaying live counts for INSIDE, PICKED UP, and ATTENTION, bound directly to the database.
+  - **Last Picked Up**: Dedicated log card (`data-component-version="volunteer-pickup-last-v1-stitch"`) displaying details of the most recently released child with photo, name, age, release time, and a green check mark.
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-pickup-v1-stitch"`
+  - `data-component-version="volunteer-pickup-header-v1-stitch"`
+  - `data-component-version="volunteer-pickup-scan-card-v1-stitch"`
+  - `data-component-version="volunteer-pickup-manual-pass-v1-stitch"`
+  - `data-component-version="volunteer-pickup-divider-v1-stitch"`
+  - `data-component-version="volunteer-pickup-search-v1-stitch"`
+  - `data-component-version="volunteer-pickup-warning-v1-stitch"`
+  - `data-component-version="volunteer-pickup-metrics-v1-stitch"`
+  - `data-component-version="volunteer-pickup-last-v1-stitch"`
+
+## 29. Stitch Volunteer Pickup Success Screen layout (`#/volunteer/pickup` on success)
+- **Stitch Design Implementation**: Centered mobile-first container (`max-w-md mx-auto`) showing the success state after confirming pickup release:
+  - **Sticky Top Header**: Features a back button, "Pickup" serif title, event sub-label, and gold "Ready to scan" badge (no ONLINE or green dot).
+  - **Centered Success Block**: Displays a green check icon block inside a rounded container with the serif title "Picked up" and a descriptive, dynamic release confirmation message.
+  - **Child Summary Card**: Compact card detailing the child's photo, full name, age label, and class/age group badge.
+  - **Pickup Details Card**: Shows Picked up at, Picked up by, Relationship, Confirmed by, and Pickup point, dynamically populated from the API response with safe fallbacks.
+  - **Checked Before Release Card**: Features side-by-side photo comparison of Child and Pickup Person, overlaid with labels, and checkmarks verifying identity matches.
+  - **Action Buttons**: Custom gold-styled "Scan another pass", a secondary white "View child record", and "Back to Event Home" link.
+  - **Stitch Metrics Card**: A 3-column stats panel displaying updated counts for Children inside, Picked up, and Needs attention.
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-pickup-success-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-header-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-title-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-child-card-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-details-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-verification-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-actions-v1-stitch"`
+  - `data-component-version="volunteer-pickup-success-metrics-v1-stitch"`
+
+## 30. Stitch Volunteer Child Profile Screen layout (`#/volunteer/children` with child)
+- **Stitch Design Implementation**: Centered mobile-first container (`max-w-md mx-auto`) showing the detailed child profile matching Screenshot A & B aesthetics:
+  - **Dynamic Context Header**: Sticky header (`data-component-version="volunteer-child-profile-header-v1-stitch"`) with a back arrow navigating to `/volunteer/children`, bold "Child profile" title, and section sub-label ("The General Assembly") (no ONLINE/Online/green dot indicators).
+  - **Child Identity Card**: Centered card showing child's photo (using real `child.photoUrl` if available or branded fallback), overlapping child status badge ("Inside", "Not arrived", "Picked up"), full name in refined serif typography, age label, and class/age group badge (`data-component-version="volunteer-child-profile-identity-v1-stitch"`).
+  - **Quick Facts Row**: 3-column row displaying Gender, Parent name, and Contact number, mapping to real values or "Not provided" (`data-component-version="volunteer-child-profile-facts-v1-stitch"`).
+  - **Primary Action Buttons**: Displays "Start pickup" button (triggers checkout release flow) and "Scan another pass" button (routes to `/volunteer/scan`) (`data-component-version="volunteer-child-profile-actions-v1-stitch"`).
+  - **Today Status Card**: Grid row detailing Checked in at {time} / Not checked in yet, and Picked up at {time} / Not picked up yet (`data-component-version="volunteer-child-profile-today-v1-stitch"`).
+  - **Care Notes Card**: Sections for Medical note, Allergy, and Extra support with honest empty fallback text ("No medical note added", "No allergy added", "No extra support added") (`data-component-version="volunteer-child-profile-care-notes-v1-stitch"`).
+  - **Parent Card**: Displays primary parent photo (or branded initials fallback), name, relationship, contact phone number, and click-to-call or click-to-WhatsApp actions (`data-component-version="volunteer-child-profile-parent-v1-stitch"`).
+  - **Pickup Person Card**: Displays authorized pickup person details, photo, name, relationship, phone number, and phone action link (`data-component-version="volunteer-child-profile-pickup-person-v1-stitch"`).
+  - **Event Details Card**: Highlights Session, Event, Date, and Time details safely mapped from dynamic event data (`data-component-version="volunteer-child-profile-event-details-v1-stitch"`).
+  - **Today’s Activity Card**: Live timeline checking entry check-in status (Checked in at {time} by {volunteer name}) and pickup status (Picked up at {time} by {volunteer name} or Pickup waiting) (`data-component-version="volunteer-child-profile-activity-v1-stitch"`).
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-child-profile-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-header-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-identity-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-facts-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-actions-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-today-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-care-notes-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-parent-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-pickup-person-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-event-details-v1-stitch"`
+  - `data-component-version="volunteer-child-profile-activity-v1-stitch"`
+
+## 31. Stitch Volunteer Reports Screen layout (`#/volunteer/reports`)
+- **Stitch Design Implementation**: Mobile-first container showing the premium event reports dashboard matching the Stitch Reports design:
+  - **Header Block**: Custom sticky header (`data-component-version="volunteer-reports-header-v1-stitch"`) with a back arrow navigating to `/volunteer/event`, "Children's Ministry" header title, large bold serif "Reports" title, and subtitle "The General Assembly Children and Teens" (no status indicator / no ONLINE status).
+  - **Today Summary Cards Grid**: Four-column grid (`data-component-version="volunteer-reports-summary-v1-stitch"`) displaying "Expected", "Checked in", "Picked up", and a highlighted warm-accented "Inside" stats count mapped from dynamic backend fields.
+  - **Needs Attention Widget**: Centered container with real-time counters for "Medical note pending", "Missing pickup photo", and "Manual review required" styled beautifully inside a custom border container (`data-component-version="volunteer-reports-activity-v1-stitch"`). Includes an interactive toggle button opening a rich Needs Attention List detail view.
+  - **Age Groups section**: Cards listing Age Groups ("Ages 1-3", "Ages 4-6", "Ages 7-9", "Ages 10-12") with columns for Boys, Girls, and dynamic Inside counts.
+  - **Entry & Pickup summary blocks**: Clean card rows displaying "Checked in" vs "Not arrived" and "Picked up" vs "Still inside".
+  - **Action Button Row**: Highlights "View children inside" (deep gold button routing to `/volunteer/children` with inside filter pre-active) and "View needs attention" (expanding active modal review).
+  - **Final Event Report Card**: Rich textarea (`data-component-version="volunteer-reports-notes-v1-stitch"`) for submitting audit observations/reviews, with last submitted report notes displayed below if active.
+- **Attributes**: Verified via:
+  - `data-view-version="volunteer-reports-v1-stitch"`
+  - `data-component-version="volunteer-reports-header-v1-stitch"`
+  - `data-component-version="volunteer-reports-summary-v1-stitch"`
+  - `data-component-version="volunteer-reports-activity-v1-stitch"`
+  - `data-component-version="volunteer-reports-notes-v1-stitch"`
+  - `data-component-version="volunteer-bottom-nav-v2-stitch"`
+
+## 32. Stitch Volunteer Profile Screen layout (`#/volunteer/profile`)
+- **Stitch Design Implementation**: A mobile-first, high-fidelity profile container designed to match the Stitch design:
+  - **Aesthetic Rectangular Photo**: The profile photo uses a rectangular portrait frame with rounded corners (`rounded-2xl`) and a warm gold border (`border-[#C59B27]`), rather than a circle.
+  - **Self-Service Edit Trigger**: The identity card includes a prominent "Edit profile" action button allowing volunteers to adjust their own submitted onboarding details on demand.
+  - **Redesigned Parent-Style Onboarding Edit Form**: A stunning mobile-first form designed to match the clean ivory standards of the parent setup flow. Includes segmented option buttons for "Koinonia worker" and "Serving experience" status, styled input containers with thick bottom accent borders, proper stacking layout for responsive mobile views, and the complete elimination of legacy outdated titles.
+  - **Secure Boundary**: The edit endpoint and form explicitly reject or make read-only all admin-controlled volunteer status attributes (Approval Status, Assigned Team, Assigned Area, Access Scope, and Admin Notes) to preserve platform integrity.
+  - **Immediate Local Synchronization**: On successful form submission, the UI displays a clean toast and triggers an immediate background data refresh, synchronizing the profile view instantaneously.
+- **Attributes**: Verified via:
+  - Profile View Root: `data-view-version="volunteer-profile-v2-stitch-handover"`
+  - Portrait photo block: `data-component-version="volunteer-profile-photo-rect-v1"`
+  - Edit trigger: `data-component-version="volunteer-profile-edit-entry-v1"`
+  - Edit Modal container: `data-view-version="volunteer-edit-profile-v2-parent-style"`
+  - Edit Header block: `data-component-version="volunteer-edit-profile-header-v2-parent-style"`
+  - Edit Portrait photo block: `data-component-version="volunteer-edit-profile-photo-v2-parent-style"`
+  - Edit Personal details: `data-component-version="volunteer-edit-profile-personal-v2-parent-style"`
+  - Edit Service details: `data-component-version="volunteer-edit-profile-service-v2-parent-style"`
+  - Edit Experience/Notes: `data-component-version="volunteer-edit-profile-notes-v2-parent-style"`
+  - Edit Actions footer: `data-component-version="volunteer-edit-profile-actions-v2-parent-style"`
+  - Event assignment card: `data-component-version="volunteer-edit-assignment-card-v2-parent-style"`
+
+## 33. High-Fidelity Event Assignment Read-Only Card
+- **Branded Design Overhaul**: Replaced the previous technical-looking, harsh dark-bordered "Official Assignment (Read-only)" card inside the Volunteer Edit Profile form with a premium, user-facing card:
+  - **Visual Styling**: Rendered with a soft ivory background (`bg-[#FAF8F4]`), a thin warm gold border (`border-[#E5D5AE]/60`), rounded corners (`rounded-2xl`), and a subtle locked badge labeled "Admin managed" paired with a calm lock icon.
+  - **Human-centric Copy**: Uses polished labels ("Approval", "Team", "Area", "Access") instead of rigid database/technical terms, with user-friendly formatting for status, team, area, and scope (e.g. replacing underscores and formatting as "Pending review", "Check-in only", etc.).
+  - **Secure read-only architecture**: Entirely display-only and secure; fields remain unmodifiable on both frontend and backend.
+- **Attributes**: Verified via:
+  - `data-component-version="volunteer-edit-assignment-card-v2-parent-style"`
+
+
 
 
 

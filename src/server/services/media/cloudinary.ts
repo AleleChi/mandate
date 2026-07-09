@@ -135,7 +135,7 @@ export async function uploadMedia(
     const filePath = path.join(mediaDir, filename);
     fs.writeFileSync(filePath, fileBuffer);
 
-    const publicId = `${fullFolder}/${fileId}`;
+    const publicId = `${fullFolder}/${fileId}.${ext}`;
     const secureUrl = `/api/media/files/${fileId}`;
 
     return {

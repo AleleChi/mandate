@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from './Button';
 import { AppRoute } from '../../types';
+import { BrandLogo } from './BrandLogo';
 
 interface HeaderProps {
   currentRoute: AppRoute;
@@ -12,22 +13,12 @@ export const Header: React.FC<HeaderProps> = ({ currentRoute, onNavigate }) => {
     <header className="sticky top-0 z-40 w-full bg-[#18181B]/95 backdrop-blur-md border-b border-[#C59B27]/30 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         {/* Brand */}
-        <div
+        <BrandLogo
+          context="parent"
+          data-component-version="parent-brand-logo-v1-configured"
           onClick={() => onNavigate('/')}
-          className="flex items-center space-x-3 cursor-pointer group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#C59B27] to-[#A67C2E] flex items-center justify-center text-white font-serif-koinonia font-bold text-xl shadow-md group-hover:scale-105 transition-transform">
-            K
-          </div>
-          <div className="flex flex-col">
-            <span className="font-serif-koinonia text-xl tracking-wider font-bold text-[#FDFBF7] leading-none">
-              KOINONIA
-            </span>
-            <span className="text-[10px] tracking-[0.2em] uppercase text-[#D4AF37] font-semibold mt-1">
-              Children & Teens
-            </span>
-          </div>
-        </div>
+          className="group"
+        />
 
         {/* Desktop Actions */}
         <div className="hidden md:flex items-center space-x-4">
