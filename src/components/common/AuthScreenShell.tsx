@@ -47,7 +47,7 @@ export const AuthScreenShell: React.FC<AuthScreenShellProps> = ({
             )}
             <BrandLogo
               context="compact"
-              data-component-version="auth-brand-logo-v1-configured"
+              data-component-version="auth-brand-logo-v2-production-safe"
               className="select-none"
             />
             {headerRight && (

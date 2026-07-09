@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { sendEmail } from './email';
+import { sendWebPush } from './push';
 
 // Helper to format date/time in Koinonia's timezone (Africa/Lagos)
 export function formatInTimezone(date: Date, timezone: string = 'Africa/Lagos'): string {
@@ -447,6 +448,17 @@ export async function processPendingNotifications(eventId: string): Promise<{ pr
           INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, read_at, created_at)
           VALUES (?, ?, ?, NULL, ?, ?, NULL, ?)
         `, [notifId, job.parent_id, eventId, renderedTitle, renderedMessage, createdNotifStr]);
+        
+        // Dispatch real web push to any active browser subscriptions for this parent
+        const parentUser = await queryOne('SELECT user_id FROM parent_profiles WHERE id = ?', [job.parent_id]);
+        if (parentUser && parentUser.user_id) {
+          await sendWebPush(parentUser.user_id, {
+            title: renderedTitle,
+            body: renderedMessage
+          }).catch(err => {
+            console.error('[Notifications Service] WebPush dispatch failed:', err);
+          });
+        }
         success = true;
       }
 

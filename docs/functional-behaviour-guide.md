@@ -466,11 +466,21 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Attributes**: Verified via:
   - `data-component-version="volunteer-edit-assignment-card-v2-parent-style"`
 
-
-
-
-
-
-
+## 34. Administrative Profile Soft-Delete & Restoration Flow
+- **Strict Archival Rule (No Hard-Delete)**: To maintain audit integrity and keep historical logs, attendance records, pickup logs, and event submissions safe, administrators are strictly prohibited from hard-deleting parent or volunteer profiles from the primary database. Instead, they must perform a **Soft-Delete/Archive** action.
+- **Parent Archiving & Restoration**:
+  - **Tabs View**: The Parents module under Admin settings splits profiles into "Active Parents" and "Removed Parents" sections.
+  - **Archive Action**: An administrator can archive an active parent profile by clicking "Remove parent" and entering a required reason. This triggers `POST /api/admin/parents/:id/remove`, updating `is_deleted = 1` and recording deletion metadata (`deleted_at`, `deleted_by`, `delete_reason`).
+  - **Restoration Action**: An administrator can restore an archived parent profile via the "Removed Parents" tab by clicking "Restore parent". This triggers `POST /api/admin/parents/:id/restore`, reverting `is_deleted = 0` and recording restoration metadata.
+- **Volunteer Archiving & Restoration**:
+  - **Tabs View**: The Volunteers registry splits profiles into "Active Volunteers" and "Removed Volunteers" tabs.
+  - **Archive Action**: Active volunteer applications and approved profiles can be archived by clicking "Remove volunteer" and entering a required reason. This triggers `POST /api/admin/volunteers/:id/remove`, setting `is_deleted = 1` and storing metadata.
+  - **Restoration Action**: Archived volunteer profiles can be restored via the "Removed Volunteers" tab or directly from the details modal, triggering `POST /api/admin/volunteers/:id/restore` and reverting `is_deleted = 0`.
+- **Details Modal Synchronization**:
+  - Opening the details modal of an archived volunteer display a clear red "Archived Profile Warning" detailing who archived the record, when, and the stated reason. All assignment dropdowns and review notes are disabled to prevent edits on archived records.
+  - Action buttons inside the modal transition to "Restore Volunteer" for archived records, and offer a "Remove volunteer" action for active records.
+- **Wording & Styling Compliance**:
+  - The word **Remove** (e.g. "Remove parent", "Remove volunteer") is used exclusively in the UI instead of "Delete" to emphasize that this is a non-destructive archive action.
+  - Standard ivory layouts, backdrop blur confirmations, and warm gold/emerald cues are maintained across all action modals.
 
 

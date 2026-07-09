@@ -270,5 +270,37 @@ The **Admin Settings** screen provides comprehensive parent access toggle contro
 - **Message Channels Card**: `data-component-version="admin-settings-message-channels-v1"`
 - **Profile Security Card**: `data-component-version="admin-settings-profile-security-v2-refined"`
 
+---
+
+## 11. Profile Soft-Delete & Restoration Controls (Parents & Volunteers)
+
+To ensure high audit readiness and prevent accidental data loss (which would violate database safety guidelines), the admin interface contains robust soft-delete/archiving controls for both Parents and Volunteers.
+
+### A. Core Features & UX Patterns
+1. **Separated Navigation Tabs**: Both the Admin Parents and Admin Volunteers screens are divided into separate "Active" and "Removed" directories.
+2. **"Remove" action**:
+   - Instead of a destructive "Delete" action, admins can "Remove" profiles, which marks them as soft-deleted (`is_deleted = 1`).
+   - Requires entering an explicit removal reason before confirmation.
+   - Preserves all nested/related data, children records, attendance registers, and application reviews intact in the database.
+3. **"Restore" action**:
+   - Archived records displayed under the "Removed" tab feature a green "Restore" button.
+   - Click-to-restore triggers backend actions to set `is_deleted = 0`, bringing the profile back into active directories immediately.
+4. **Details Modal Integration**:
+   - Opening an archived volunteer profile inside the application detail review modal displays a red **Archived Profile Warning** banner detailing the date, archiver, and reason.
+   - All editable drop-downs (e.g. Service team assignments, internal review notes) are disabled to prevent edits on archived records.
+   - The footer provides an immediate "Restore Volunteer" primary action and "Close" button.
+
+### B. Render-Proofing Attributes Added
+- **Parents Tab bar container**: `id="parents-directory-tabs"`
+- **Volunteers Tab bar container**: `id="volunteers-directory-tabs"`
+- **Parent Archive Warning banner**: `id="parent-archive-warning"`
+- **Volunteer Archive Warning banner**: `id="volunteer-archive-warning"`
+- **Remove Volunteer Modal overlay**: `id="remove-volunteer-modal"`
+- **Restore Volunteer Modal overlay**: `id="restore-volunteer-modal"`
+- **Action identifier buttons**:
+  - `id="remove-parent-btn-[id]"` / `id="restore-parent-btn-[id]"`
+  - `id="remove-volunteer-btn-[id]"` / `id="restore-volunteer-btn-[id]"`
+  - `id="modal-remove-volunteer-btn"`
+
 
 

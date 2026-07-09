@@ -14,7 +14,9 @@ import {
   Filter,
   Check,
   AlertTriangle,
-  FileText
+  FileText,
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -38,6 +40,15 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   const [assignedTeam, setAssignedTeam] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
 
+  // Soft Delete and Tabs state
+  const [activeTab, setActiveTab] = useState<'active' | 'removed'>('active');
+  const [volToRemove, setVolToRemove] = useState<any | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [submittingRemove, setSubmittingRemove] = useState(false);
+
+  const [volToRestore, setVolToRestore] = useState<any | null>(null);
+  const [submittingRestore, setSubmittingRestore] = useState(false);
+
   const teamOptions = [
     { value: 'Teens leaders', label: 'Teens Leaders' },
     { value: 'Teens support', label: 'Teens Support' },
@@ -56,7 +67,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     try {
       const res = await api.admin.getVolunteers({
         q: searchQuery,
-        status: statusFilter,
+        status: statusFilter || activeTab,
         team: teamFilter
       });
       if (res.success) {
@@ -72,7 +83,51 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
   useEffect(() => {
     fetchVolunteers();
-  }, [searchQuery, statusFilter, teamFilter]);
+  }, [searchQuery, statusFilter, teamFilter, activeTab]);
+
+  const handleRemoveVolSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!volToRemove) return;
+    setSubmittingRemove(true);
+    try {
+      const res = await api.admin.removeVolunteer(volToRemove.id, removeReason);
+      if (res.success) {
+        showSuccess('Volunteer Removed', `The volunteer profile has been archived.`);
+        setVolToRemove(null);
+        setRemoveReason('');
+        await fetchVolunteers();
+        if (selectedVol && selectedVol.id === volToRemove.id) {
+          handleCloseReview();
+        }
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Archiving Failed', parsed.message);
+    } finally {
+      setSubmittingRemove(false);
+    }
+  };
+
+  const handleRestoreVolSubmit = async () => {
+    if (!volToRestore) return;
+    setSubmittingRestore(true);
+    try {
+      const res = await api.admin.restoreVolunteer(volToRestore.id);
+      if (res.success) {
+        showSuccess('Volunteer Restored', `The volunteer profile has been restored.`);
+        setVolToRestore(null);
+        await fetchVolunteers();
+        if (selectedVol && selectedVol.id === volToRestore.id) {
+          handleCloseReview();
+        }
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restoration Failed', parsed.message);
+    } finally {
+      setSubmittingRestore(false);
+    }
+  };
 
   const handleOpenReview = (vol: any) => {
     setSelectedVol(vol);
@@ -120,7 +175,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   return (
     <div 
       className="space-y-6 animate-fade-in" 
-      data-view-version="admin-volunteers-v1"
+      data-view-version="admin-volunteers-v3-remove-restore-visible"
       id="admin-volunteers-module-root"
     >
       {/* 1. Header & Quick stats */}
@@ -164,6 +219,32 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
             {new Set(volunteers.filter(v => v.status === 'approved').map(v => v.preferredTeam)).size}
           </span>
         </div>
+      </div>
+
+      {/* Tabs bar */}
+      <div className="flex border-b border-[#EAE8E1]" id="volunteers-directory-tabs">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'active'
+              ? 'border-[#C59B27] text-[#C59B27]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+          }`}
+          id="tab-active-volunteers"
+        >
+          Active Volunteers
+        </button>
+        <button
+          onClick={() => setActiveTab('removed')}
+          className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'removed'
+              ? 'border-[#C59B27] text-[#C59B27]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+          }`}
+          id="tab-removed-volunteers"
+        >
+          Removed Volunteers
+        </button>
       </div>
 
       {/* 2. Filters & Search */}
@@ -321,13 +402,30 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                         </span>
                       </td>
 
-                      <td className="p-4 pr-6 text-right">
+                      <td className="p-4 pr-6 text-right space-x-2">
                         <button
                           onClick={() => handleOpenReview(vol)}
-                          className="px-3.5 py-1.5 text-xs font-serif text-[#C59B27] font-bold hover:bg-[#C59B27]/5 border border-[#C59B27]/10 hover:border-[#C59B27] rounded-xl transition-all cursor-pointer focus:outline-none"
+                          className="px-3.5 py-1.5 text-xs font-serif text-[#C59B27] font-bold hover:bg-[#C59B27]/5 border border-[#C59B27]/10 hover:border-[#C59B27] rounded-xl transition-all cursor-pointer focus:outline-none inline-block align-middle"
                         >
                           Review Applications
                         </button>
+                        {activeTab === 'active' ? (
+                          <button
+                            onClick={() => setVolToRemove(vol)}
+                            className="px-3.5 py-1.5 text-xs font-semibold text-zinc-500 hover:text-red-600 bg-white hover:bg-red-50 border border-zinc-200 hover:border-red-200 rounded-xl transition-all cursor-pointer focus:outline-none inline-block align-middle"
+                            id={`remove-volunteer-btn-${vol.id}`}
+                          >
+                            Remove volunteer
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setVolToRestore(vol)}
+                            className="px-3.5 py-1.5 text-xs font-serif text-emerald-600 font-bold hover:text-white bg-white hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 rounded-xl transition-all cursor-pointer focus:outline-none inline-flex items-center gap-1 align-middle"
+                            id={`restore-volunteer-btn-${vol.id}`}
+                          >
+                            <RotateCcw className="w-3 h-3" /> Restore volunteer
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -369,6 +467,25 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
             {/* Modal Scroll Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {selectedVol.isDeleted && (
+                <div className="bg-red-50 border border-red-200 text-red-800 rounded-2xl p-4 space-y-2 text-xs" id="volunteer-archive-warning">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                    <span>Archived Profile Warning</span>
+                  </div>
+                  <p>
+                    This volunteer profile was soft-deleted/archived on{' '}
+                    <strong>{selectedVol.deletedAt ? new Date(selectedVol.deletedAt).toLocaleDateString() : 'N/A'}</strong>
+                    {selectedVol.deletedByEmail && <> by <strong>{selectedVol.deletedByEmail}</strong></>}.
+                  </p>
+                  {selectedVol.deleteReason && (
+                    <p className="bg-white/80 border border-red-100/50 p-2 rounded-xl italic text-red-900">
+                      Reason: "{selectedVol.deleteReason}"
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Profile Headshot and Name summary */}
               <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start bg-[#FAF9F6] border border-[#EAE8E1] p-4.5 rounded-2xl">
                 {selectedVol.photoUrl ? (
@@ -457,7 +574,8 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     <select
                       value={assignedTeam}
                       onChange={(e) => setAssignedTeam(e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] text-zinc-800"
+                      disabled={selectedVol.isDeleted}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] text-zinc-800 disabled:opacity-60"
                     >
                       {teamOptions.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -473,8 +591,9 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                       placeholder="Add an internal review note regarding this volunteer application..."
                       value={reviewNote}
                       onChange={(e) => setReviewNote(e.target.value)}
+                      disabled={selectedVol.isDeleted}
                       rows={2}
-                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all bg-zinc-50/50 resize-none text-zinc-700"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all bg-zinc-50/50 resize-none text-zinc-700 disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -483,33 +602,167 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
             {/* Modal Footer Decisions */}
             <div className="h-20 border-t border-[#EAE8E1] bg-[#FAF9F6] px-6 rounded-b-3xl flex items-center justify-between">
-              <Button
-                onClick={() => submitDecision('rejected')}
-                loading={submittingReview}
-                disabled={submittingReview}
-                className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 text-xs font-semibold rounded-xl focus:outline-none"
-              >
-                Reject Application
-              </Button>
+              {selectedVol.isDeleted ? (
+                <>
+                  <span className="text-xs text-red-600 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" /> Archived profile
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleCloseReview}
+                      variant="secondary"
+                      className="px-4 py-2 text-xs"
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      onClick={() => setVolToRestore(selectedVol)}
+                      variant="primary"
+                      className="px-5 py-2 text-xs flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" /> Restore Volunteer
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => submitDecision('rejected')}
+                      loading={submittingReview}
+                      disabled={submittingReview}
+                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+                    >
+                      Reject Application
+                    </Button>
+                    <Button
+                      onClick={() => setVolToRemove(selectedVol)}
+                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+                      id="modal-remove-volunteer-btn"
+                    >
+                      Remove volunteer
+                    </Button>
+                  </div>
 
-              <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleCloseReview}
+                      variant="secondary"
+                      className="px-4 py-2 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => submitDecision('approved')}
+                      loading={submittingReview}
+                      disabled={submittingReview}
+                      variant="primary"
+                      className="px-5 py-2 text-xs flex items-center gap-1 bg-[#C59B27] hover:bg-[#B89047] text-white rounded-xl"
+                    >
+                      <Check className="w-3.5 h-3.5 shrink-0" /> Approve Application
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Remove Confirmation Modal */}
+      {volToRemove && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+          id="remove-volunteer-modal"
+        >
+          <div 
+            onClick={() => setVolToRemove(null)}
+            className="fixed inset-0 bg-black/45 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h4 className="font-serif font-bold text-lg text-[#18181B]">Remove Volunteer Profile?</h4>
+            </div>
+            
+            <p className="text-xs text-zinc-600 mb-4">
+              This will archive the volunteer profile for <strong>{volToRemove.fullName}</strong>. They will no longer be assigned to service teams, but their historical audit record will be preserved.
+            </p>
+
+            <form onSubmit={handleRemoveVolSubmit} className="space-y-4">
+              <div>
+                <label className="text-zinc-500 text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
+                  Reason for Removal (Required)
+                </label>
+                <textarea
+                  placeholder="Please state the reason for archiving this volunteer profile..."
+                  required
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 transition-all bg-zinc-50/50 resize-none text-zinc-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
                 <Button
-                  onClick={handleCloseReview}
+                  type="button"
+                  onClick={() => setVolToRemove(null)}
                   variant="secondary"
                   className="px-4 py-2 text-xs"
                 >
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => submitDecision('approved')}
-                  loading={submittingReview}
-                  disabled={submittingReview}
-                  variant="primary"
-                  className="px-5 py-2 text-xs flex items-center gap-1 bg-[#C59B27] hover:bg-[#B89047] text-white rounded-xl"
+                  type="submit"
+                  loading={submittingRemove}
+                  disabled={submittingRemove || !removeReason.trim()}
+                  className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
                 >
-                  <Check className="w-3.5 h-3.5 shrink-0" /> Approve Application
+                  Remove Volunteer
                 </Button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Restore Confirmation Modal */}
+      {volToRestore && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+          id="restore-volunteer-modal"
+        >
+          <div 
+            onClick={() => setVolToRestore(null)}
+            className="fixed inset-0 bg-black/45 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+            <div className="flex items-center gap-3 text-emerald-600 mb-4">
+              <RotateCcw className="w-6 h-6 shrink-0" />
+              <h4 className="font-serif font-bold text-lg text-[#18181B]">Restore Volunteer Profile?</h4>
+            </div>
+            
+            <p className="text-xs text-zinc-600 mb-6">
+              Are you sure you want to restore the volunteer profile for <strong>{volToRestore.fullName}</strong>? This will make them active and available for ministry team assignments again.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+              <Button
+                onClick={() => setVolToRestore(null)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleRestoreVolSubmit}
+                loading={submittingRestore}
+                disabled={submittingRestore}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+              >
+                Restore Volunteer
+              </Button>
             </div>
           </div>
         </div>

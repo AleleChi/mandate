@@ -19,7 +19,9 @@ import {
   ShieldAlert,
   Loader2,
   Sparkles,
-  Award
+  Award,
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -64,6 +66,14 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Confirmation states
+  const [parentToRemove, setParentToRemove] = useState<any | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [submittingRemove, setSubmittingRemove] = useState(false);
+
+  const [parentToRestore, setParentToRestore] = useState<any | null>(null);
+  const [submittingRestore, setSubmittingRestore] = useState(false);
   
   // Edit Form State
   const [editForm, setEditForm] = useState({
@@ -171,6 +181,44 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
     }
   };
 
+  const handleRemoveParentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parentToRemove) return;
+    setSubmittingRemove(true);
+    try {
+      const res = await api.admin.removeParent(parentId, removeReason);
+      if (res.success) {
+        showSuccess('Parent Removed', `The parent profile has been successfully archived.`);
+        setParentToRemove(null);
+        setRemoveReason('');
+        await fetchParentDetails();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Archiving Failed', parsed.message);
+    } finally {
+      setSubmittingRemove(false);
+    }
+  };
+
+  const handleRestoreParentSubmit = async () => {
+    if (!parentToRestore) return;
+    setSubmittingRestore(true);
+    try {
+      const res = await api.admin.restoreParent(parentId);
+      if (res.success) {
+        showSuccess('Parent Restored', `The parent profile has been successfully restored.`);
+        setParentToRestore(null);
+        await fetchParentDetails();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restoration Failed', parsed.message);
+    } finally {
+      setSubmittingRestore(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -185,9 +233,9 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
       <div className="text-center py-20 bg-white border border-[#EAE8E1] rounded-3xl p-8 max-w-xl mx-auto mt-10">
         <Users className="w-12 h-12 stroke-[1.2] mx-auto text-zinc-300 mb-4" />
         <h3 className="font-serif font-bold text-zinc-800 text-lg">Parent profile not found</h3>
-        <p className="text-xs text-zinc-400 mt-2">The requested family folder could not be found or has been removed from the registry.</p>
+        <p className="text-xs text-zinc-400 mt-2">The requested family folder could not be found or has been removed from parent records.</p>
         <Button onClick={onBack} variant="secondary" className="mt-6 text-xs px-6">
-          Back to Registry
+          Back to Parents
         </Button>
       </div>
     );
@@ -195,6 +243,34 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
   return (
     <div className="space-y-8 animate-fade-in text-zinc-800 pb-12" id="admin-parent-detail-root">
+      
+      {/* Archive Warning Banner */}
+      {parent.isDeleted && (
+        <div className="bg-red-50 border border-red-200 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in text-xs" id="archived-parent-banner">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-serif font-bold text-red-950 text-sm">Archived Parent Profile</h4>
+              <p className="text-red-700 mt-1">
+                This parent record is archived (soft-deleted). It was removed by <strong>{parent.deletedByEmail || 'Admin'}</strong> on <strong>{new Date(parent.deletedAt).toLocaleString()}</strong>.
+              </p>
+              {parent.deleteReason && (
+                <p className="text-red-700 mt-1.5 italic">
+                  Reason: "{parent.deleteReason}"
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            onClick={() => setParentToRestore(parent)}
+            variant="primary"
+            className="text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white px-5 py-2.5 shrink-0 h-fit cursor-pointer"
+            id="restore-parent-detail-banner-btn"
+          >
+            Restore parent
+          </Button>
+        </div>
+      )}
       
       {/* Top Breadcrumb Header Bar */}
       <div className="flex items-center justify-between pb-4 border-b border-[#EAE8E1] gap-4">
@@ -207,7 +283,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono text-[#C59B27] font-bold uppercase tracking-wider">Registry Profile</span>
+              <span className="text-[10px] font-mono text-[#C59B27] font-bold uppercase tracking-wider">Parent profile</span>
               <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
               <span className="text-[10px] font-mono text-zinc-400">ID: {parent.id}</span>
             </div>
@@ -216,6 +292,16 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {!parent.isDeleted && (
+            <Button
+              onClick={() => setParentToRemove(parent)}
+              variant="secondary"
+              className="text-xs px-4 py-2 text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-zinc-200 hover:border-red-200"
+              id="remove-parent-detail-btn"
+            >
+              Remove parent
+            </Button>
+          )}
           <Button 
             onClick={() => setIsEditing(!isEditing)} 
             variant="secondary" 
@@ -722,6 +808,101 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
           </div>
 
+        </div>
+      )}
+
+      {/* 5. Parent Archiving Confirmation Dialog Modal */}
+      {parentToRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" id="confirm-remove-parent-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setParentToRemove(null)} />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex items-center space-x-2 text-amber-600">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Remove parent profile</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to remove/archive the profile of <strong>{parentToRemove.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              This is a soft-delete (archive) action. The parent account will be archived, but all linked children records, attendance logs, and pickup history files will remain safe for audit.
+            </p>
+
+            <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-zinc-400 font-bold uppercase tracking-wider block">Reason for archiving (optional)</label>
+                <textarea
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                  placeholder="e.g., Parent requested removal, family relocated, duplicate entry..."
+                  className="w-full h-20 px-3 py-2 text-xs border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all resize-none placeholder-zinc-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => setParentToRemove(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={submittingRemove}
+                  disabled={submittingRemove}
+                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                  id="confirm-remove-parent-btn"
+                >
+                  Remove parent
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Parent Restoration Confirmation Dialog Modal */}
+      {parentToRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" id="confirm-restore-parent-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setParentToRestore(null)} />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600">
+              <RotateCcw className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Restore parent profile</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to restore the profile of <strong>{parentToRestore.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              This will return the parent account and linked children profiles to active status.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setParentToRestore(null)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRestoreParentSubmit}
+                variant="primary"
+                loading={submittingRestore}
+                disabled={submittingRestore}
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                id="confirm-restore-parent-btn"
+              >
+                Restore parent
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

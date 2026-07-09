@@ -388,6 +388,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
     const cleanEmail = emailVal.normalizedEmail!;
 
     const user = await queryOne('SELECT id, email, password_hash, role, email_verified FROM users WHERE email = ?', [cleanEmail]);
+    console.log(`[SIGN_IN] user lookup { email: "${cleanEmail}", userFound: ${!!user}, role: "${user?.role}" }`);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -396,7 +397,9 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
+    const passwordMatches = user.password_hash ? verifyPassword(password, user.password_hash) : false;
+    console.log(`[SIGN_IN] checking password { has_hash: ${!!user.password_hash}, matches: ${passwordMatches} }`);
+    if (!user.password_hash || !passwordMatches) {
       return res.status(401).json({
         success: false,
         code: 'INVALID_CREDENTIALS',
@@ -427,6 +430,88 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
   } catch (err: any) {
     console.error('Sign in error:', err);
     res.status(500).json({ error: 'Internal server error during sign in' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'Token is required.'
+      });
+    }
+
+    const hasLetter = /[a-zA-Z]/.test(password || '');
+    const hasNumber = /[0-9]/.test(password || '');
+    if (!password || password.length < 8 || !hasLetter || !hasNumber) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PASSWORD',
+        field: 'password',
+        message: 'Use at least 8 characters with a letter and a number.',
+        error: 'Use at least 8 characters with a letter and a number.'
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = new Date().toISOString();
+
+    const tokenRow = await queryOne(`
+      SELECT * FROM auth_tokens 
+      WHERE token_hash = ? AND token_type = 'password_reset' AND used_at IS NULL AND expires_at > ?
+    `, [tokenHash, now]);
+
+    if (!tokenRow) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'This reset link has expired. Please request a new one.'
+      });
+    }
+
+    const user = await queryOne('SELECT id, email FROM users WHERE id = ?', [tokenRow.user_id]);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'This reset link has expired. Please request a new one.'
+      });
+    }
+
+    const profile = await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (!profile) {
+      return res.status(403).json({
+        success: false,
+        code: 'NO_PARENT_ACCESS',
+        message: 'Parent profile has not been found for this account.'
+      });
+    }
+
+    const hashedPwd = hashPassword(password);
+    const updatedAt = new Date().toISOString();
+
+    const updateResult = await execute('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [hashedPwd, updatedAt, user.id]);
+    console.log(`[RESET_PASSWORD] DB update users table password_hash result: ${JSON.stringify(updateResult)} for userId: "${user.id}"`);
+
+    await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [now, tokenRow.id]);
+    await execute(`
+      UPDATE auth_tokens
+      SET expires_at = ?
+      WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+    `, [now, user.id]);
+
+    console.log(`Parent password updated { userId: "${user.id}", changes: ${updateResult.changes} }`);
+
+    return res.json({
+      success: true,
+      message: 'Your password has been updated. You can now sign in.'
+    });
+  } catch (err: any) {
+    console.error('Parent reset password error:', err);
+    res.status(500).json({ error: 'An unexpected error occurred during password reset.' });
   }
 });
 

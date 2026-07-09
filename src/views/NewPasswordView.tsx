@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button';
 import { Lock, ShieldCheck } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
+import { api, extractApiError } from '../services/api';
 
 const generateStrongPassword = (): string => {
   const lowercase = 'abcdefghijkmnopqrstuvwxyz'; // avoided confusing 'l'
@@ -53,12 +54,23 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const [showPasswordNotice, setShowPasswordNotice] = useState(false);
   const [passwordType, setPasswordType] = useState<'password' | 'text'>('password');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [confirmPasswordError, setConfirmPasswordError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+
+  const getQueryParams = () => {
+    const hash = window.location.hash;
+    const queryIndex = hash.indexOf('?');
+    const queryString = queryIndex !== -1 ? hash.substring(queryIndex) : window.location.search;
+    return new URLSearchParams(queryString);
+  };
+
+  const queryParams = getQueryParams();
+  const token = queryParams.get('token') || '';
 
   const validatePass = (val: string) => {
     if (!val) {
@@ -130,7 +142,7 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
 
   const isFormValid = validatePass(newPassword) === null && validateConfirmPass(confirmPassword, newPassword) === null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
     const passErr = validatePass(newPassword);
@@ -142,12 +154,26 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
       return;
     }
 
+    if (!token) {
+      setError('Reset token is missing. Please request a new link.');
+      return;
+    }
+
     setError(null);
-    setSuccess(true);
-    showSuccess('Password changed', 'Your new password is ready.');
-    setTimeout(() => {
-      onNavigate('/parent/sign-in');
-    }, 1500);
+    setLoading(true);
+    try {
+      await api.auth.resetPassword(token, newPassword);
+      setSuccess(true);
+      showSuccess('Password changed', 'Your new password is ready.');
+      setTimeout(() => {
+        onNavigate('/parent/sign-in');
+      }, 1500);
+    } catch (err: any) {
+      const { message } = extractApiError(err);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -235,11 +261,18 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
               <Button
                 type="submit"
                 variant="primary"
-                disabled={!isFormValid}
+                disabled={!isFormValid || loading}
                 fullWidth
                 size="lg"
               >
-                Continue
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                    <span>Saving...</span>
+                  </span>
+                ) : (
+                  <span>Continue</span>
+                )}
               </Button>
             </div>
           </form>

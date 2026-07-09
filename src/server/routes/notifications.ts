@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { query, queryOne, execute } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
+import { getVapidPublicKey } from '../services/push';
 
 const router = Router();
 router.use(authMiddleware);
@@ -145,6 +146,18 @@ router.post('/:id/read', async (req: AuthenticatedRequest, res: Response) => {
   } catch (err: any) {
     console.error('Error marking notification as read:', err);
     return res.status(500).json({ error: 'Failed to mark notification as read' });
+  }
+});
+
+// GET /api/notifications/push/vapid-key
+router.get('/push/vapid-key', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const key = getVapidPublicKey();
+    return res.json({ publicKey: key });
+  } catch (err) {
+    console.error('Error fetching VAPID public key:', err);
+    return res.status(500).json({ error: 'Failed to retrieve VAPID key' });
   }
 });
 

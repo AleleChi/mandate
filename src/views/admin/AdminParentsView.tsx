@@ -13,7 +13,9 @@ import {
   Check, 
   ChevronRight,
   Filter,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -32,6 +34,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Navigation active tab
+  const [activeTab, setActiveTab] = useState<'active' | 'removed'>('active');
+
+  // Confirmation modal states
+  const [parentToRemove, setParentToRemove] = useState<any | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [submittingRemove, setSubmittingRemove] = useState(false);
+
+  const [parentToRestore, setParentToRestore] = useState<any | null>(null);
+  const [submittingRestore, setSubmittingRestore] = useState(false);
+
   // Selected parent for detail drawer/modal
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [parentDetails, setParentDetails] = useState<any | null>(null);
@@ -56,7 +69,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
   const fetchParents = async () => {
     setLoading(true);
     try {
-      const res = await api.admin.getParents({ q: searchQuery });
+      const res = await api.admin.getParents({ q: searchQuery, status: activeTab });
       if (res.success) {
         setParents(res.parents || []);
       }
@@ -70,7 +83,51 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
 
   useEffect(() => {
     fetchParents();
-  }, [searchQuery]);
+  }, [searchQuery, activeTab]);
+
+  const handleRemoveParentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parentToRemove) return;
+    setSubmittingRemove(true);
+    try {
+      const res = await api.admin.removeParent(parentToRemove.id, removeReason);
+      if (res.success) {
+        showSuccess('Parent Removed', `The parent profile for ${parentToRemove.fullName} has been archived.`);
+        setParentToRemove(null);
+        setRemoveReason('');
+        if (selectedParentId === parentToRemove.id) {
+          handleCloseParent();
+        }
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Archiving Failed', parsed.message);
+    } finally {
+      setSubmittingRemove(false);
+    }
+  };
+
+  const handleRestoreParentSubmit = async () => {
+    if (!parentToRestore) return;
+    setSubmittingRestore(true);
+    try {
+      const res = await api.admin.restoreParent(parentToRestore.id);
+      if (res.success) {
+        showSuccess('Parent Restored', `The parent profile for ${parentToRestore.fullName} has been successfully restored.`);
+        setParentToRestore(null);
+        if (selectedParentId === parentToRestore.id) {
+          handleOpenParent(parentToRestore.id);
+        }
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restoration Failed', parsed.message);
+    } finally {
+      setSubmittingRestore(false);
+    }
+  };
 
   const handleOpenParent = async (id: string) => {
     setSelectedParentId(id);
@@ -135,7 +192,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
   return (
     <div 
       className="space-y-6 animate-fade-in" 
-      data-view-version="admin-parents-v1"
+      data-view-version="admin-parents-v3-remove-restore-visible"
       id="admin-parents-module-root"
     >
       {/* Header Panel */}
@@ -183,6 +240,32 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
             {parents.filter(p => p.whatsapp).length}
           </span>
         </div>
+      </div>
+
+      {/* Tabs bar */}
+      <div className="flex border-b border-[#EAE8E1]" id="parents-directory-tabs">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'active'
+              ? 'border-[#C59B27] text-[#C59B27]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+          }`}
+          id="tab-active-parents"
+        >
+          Active Parents
+        </button>
+        <button
+          onClick={() => setActiveTab('removed')}
+          className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'removed'
+              ? 'border-[#C59B27] text-[#C59B27]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+          }`}
+          id="tab-removed-parents"
+        >
+          Removed Parents
+        </button>
       </div>
 
       {/* Search Filter Strip */}
@@ -281,13 +364,30 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
                       {p.city ? `${p.city}, ${p.stateRegion || ''}` : 'Not Specified'}
                     </td>
 
-                    <td className="p-4 pr-6 text-right">
+                    <td className="p-4 pr-6 text-right space-x-2">
                       <button
                         onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
-                        className="px-3.5 py-1.5 text-xs font-serif text-[#C59B27] font-bold hover:bg-[#C59B27]/5 border border-[#C59B27]/10 hover:border-[#C59B27] rounded-xl transition-all cursor-pointer focus:outline-none"
+                        className="px-3.5 py-1.5 text-xs font-serif text-[#C59B27] font-bold hover:bg-[#C59B27]/5 border border-[#C59B27]/10 hover:border-[#C59B27] rounded-xl transition-all cursor-pointer focus:outline-none inline-block align-middle"
                       >
                         View Profile
                       </button>
+                      {activeTab === 'active' ? (
+                        <button
+                          onClick={() => setParentToRemove(p)}
+                          className="px-3.5 py-1.5 text-xs font-semibold text-zinc-500 hover:text-red-600 bg-white hover:bg-red-50 border border-zinc-200 hover:border-red-200 rounded-xl transition-all cursor-pointer focus:outline-none inline-block align-middle"
+                          id={`remove-parent-btn-${p.id}`}
+                        >
+                          Remove parent
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setParentToRestore(p)}
+                          className="px-3.5 py-1.5 text-xs font-serif text-emerald-600 font-bold hover:text-white bg-white hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 rounded-xl transition-all cursor-pointer focus:outline-none inline-flex items-center gap-1 align-middle"
+                          id={`restore-parent-btn-${p.id}`}
+                        >
+                          <RotateCcw className="w-3 h-3" /> Restore parent
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -618,6 +718,101 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Parent Archiving Confirmation Dialog Modal */}
+      {parentToRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" id="confirm-remove-parent-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setParentToRemove(null)} />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex items-center space-x-2 text-amber-600">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Remove parent profile</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to remove/archive the profile of <strong>{parentToRemove.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              This is a soft-delete (archive) action. The parent account will be archived, but all linked children records, attendance logs, and pickup history files will remain safe for audit.
+            </p>
+
+            <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-zinc-400 font-bold uppercase tracking-wider block">Reason for archiving (optional)</label>
+                <textarea
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                  placeholder="e.g., Parent requested removal, family relocated, duplicate entry..."
+                  className="w-full h-20 px-3 py-2 text-xs border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all resize-none placeholder-zinc-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => setParentToRemove(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={submittingRemove}
+                  disabled={submittingRemove}
+                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                  id="confirm-remove-parent-btn"
+                >
+                  Remove parent
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Parent Restoration Confirmation Dialog Modal */}
+      {parentToRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" id="confirm-restore-parent-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setParentToRestore(null)} />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600">
+              <RotateCcw className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Restore parent profile</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to restore the profile of <strong>{parentToRestore.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              This will return the parent account and linked children profiles to active status.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setParentToRestore(null)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRestoreParentSubmit}
+                variant="primary"
+                loading={submittingRestore}
+                disabled={submittingRestore}
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                id="confirm-restore-parent-btn"
+              >
+                Restore parent
+              </Button>
+            </div>
           </div>
         </div>
       )}

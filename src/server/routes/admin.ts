@@ -3475,7 +3475,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-    const status = typeof req.query.status === 'string' ? req.query.status : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
     const team = typeof req.query.team === 'string' ? req.query.team : '';
 
     let queryStr = `
@@ -3484,7 +3484,9 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
         u.email,
         u.role,
         u.email_verified,
-        m.secure_url as photo_url
+        m.secure_url as photo_url,
+        (SELECT email FROM users WHERE id = v.deleted_by) as deleted_by_email,
+        (SELECT email FROM users WHERE id = v.restored_by) as restored_by_email
       FROM volunteer_profiles v
       JOIN users u ON u.id = v.user_id
       LEFT JOIN media_files m ON m.id = v.photo_file_id
@@ -3498,9 +3500,14 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       queryParams.push(searchPattern, searchPattern, searchPattern);
     }
 
-    if (status) {
-      queryStr += ` AND v.status = ?`;
-      queryParams.push(status);
+    if (status === 'removed') {
+      queryStr += ` AND v.is_deleted = 1`;
+    } else {
+      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL)`;
+      if (status) {
+        queryStr += ` AND v.status = ?`;
+        queryParams.push(status);
+      }
     }
 
     if (team) {
@@ -3529,13 +3536,76 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       updatedAt: v.updated_at,
       email: v.email,
       role: v.role,
-      emailVerified: v.email_verified === 1 || v.email_verified === true || v.email_verified === '1'
+      emailVerified: v.email_verified === 1 || v.email_verified === true || v.email_verified === '1',
+      isDeleted: v.is_deleted === 1,
+      deletedAt: v.deleted_at,
+      deletedBy: v.deleted_by,
+      deletedByEmail: v.deleted_by_email,
+      deleteReason: v.delete_reason,
+      restoredAt: v.restored_at,
+      restoredBy: v.restored_by,
+      restoredByEmail: v.restored_by_email
     }));
 
     return res.json({ success: true, volunteers: formatted });
   } catch (err: any) {
     console.error('Error fetching admin volunteers:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch volunteers' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/remove - Soft-delete/archive a volunteer profile
+router.post('/volunteers/:id/remove', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const volunteerId = req.params.id;
+    const { reason } = req.body;
+    const now = new Date().toISOString();
+
+    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    if (!volunteer) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    await execute(`
+      UPDATE volunteer_profiles 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+      WHERE id = ?
+    `, [now, req.user.id, reason || 'No reason specified', volunteerId]);
+
+    return res.json({ success: true, message: 'Volunteer archived successfully' });
+  } catch (err: any) {
+    console.error('Error removing volunteer:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove volunteer' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/restore - Restore an archived volunteer profile
+router.post('/volunteers/:id/restore', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const volunteerId = req.params.id;
+    const now = new Date().toISOString();
+
+    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    if (!volunteer) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    await execute(`
+      UPDATE volunteer_profiles 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?
+      WHERE id = ?
+    `, [now, req.user.id, volunteerId]);
+
+    return res.json({ success: true, message: 'Volunteer restored successfully' });
+  } catch (err: any) {
+    console.error('Error restoring volunteer:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore volunteer' });
   }
 });
 
@@ -3666,6 +3736,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : 'active';
 
     let queryStr = `
       SELECT 
@@ -3673,13 +3744,24 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
         u.email as user_email,
         u.role as user_role,
         m.secure_url as photo_url,
-        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id) as children_count
+        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id) as children_count,
+        (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
+        (SELECT email FROM users WHERE id = p.restored_by) as restored_by_email
       FROM parent_profiles p
       JOIN users u ON u.id = p.user_id
       LEFT JOIN media_files m ON m.id = p.photo_file_id
       WHERE 1=1
     `;
     const queryParams: any[] = [];
+
+    if (status === 'removed') {
+      queryStr += ` AND p.is_deleted = 1`;
+    } else if (status === 'all') {
+      // Show all
+    } else {
+      // Default to 'active'
+      queryStr += ` AND (p.is_deleted = 0 OR p.is_deleted IS NULL)`;
+    }
 
     if (q) {
       queryStr += ` AND (p.full_name LIKE ? OR u.email LIKE ? OR p.phone_number LIKE ? OR p.city LIKE ?)`;
@@ -3709,13 +3791,76 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       createdAt: p.created_at,
       updatedAt: p.updated_at,
       userRole: p.user_role,
-      childrenCount: Number(p.children_count || 0)
+      childrenCount: Number(p.children_count || 0),
+      isDeleted: p.is_deleted === 1,
+      deletedAt: p.deleted_at,
+      deletedBy: p.deleted_by,
+      deletedByEmail: p.deleted_by_email,
+      deleteReason: p.delete_reason,
+      restoredAt: p.restored_at,
+      restoredBy: p.restored_by,
+      restoredByEmail: p.restored_by_email
     }));
 
     return res.json({ success: true, parents: formatted });
   } catch (err: any) {
     console.error('Error fetching admin parents list:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch parents list' });
+  }
+});
+
+// POST /api/admin/parents/:id/remove - Soft-delete/archive a parent profile
+router.post('/parents/:id/remove', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const parentId = req.params.id;
+    const { reason } = req.body;
+    const now = new Date().toISOString();
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    await execute(`
+      UPDATE parent_profiles 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+      WHERE id = ?
+    `, [now, req.user.id, reason || 'No reason specified', parentId]);
+
+    return res.json({ success: true, message: 'Parent archived successfully' });
+  } catch (err: any) {
+    console.error('Error removing parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove parent' });
+  }
+});
+
+// POST /api/admin/parents/:id/restore - Restore an archived parent profile
+router.post('/parents/:id/restore', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const parentId = req.params.id;
+    const now = new Date().toISOString();
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    await execute(`
+      UPDATE parent_profiles 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?
+      WHERE id = ?
+    `, [now, req.user.id, parentId]);
+
+    return res.json({ success: true, message: 'Parent restored successfully' });
+  } catch (err: any) {
+    console.error('Error restoring parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore parent' });
   }
 });
 
@@ -3732,7 +3877,9 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
         u.email as user_email,
         u.role as user_role,
         u.email_verified as user_email_verified,
-        m.secure_url as photo_url
+        m.secure_url as photo_url,
+        (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
+        (SELECT email FROM users WHERE id = p.restored_by) as restored_by_email
       FROM parent_profiles p
       JOIN users u ON u.id = p.user_id
       LEFT JOIN media_files m ON m.id = p.photo_file_id
@@ -3871,7 +4018,15 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       photoFileId: p.photo_file_id || null,
       emailVerified: p.user_email_verified === 1,
       accountStatus: p.user_email_verified === 1 ? 'verified' : 'pending',
-      createdAt: p.created_at
+      createdAt: p.created_at,
+      isDeleted: p.is_deleted === 1,
+      deletedAt: p.deleted_at,
+      deletedBy: p.deleted_by,
+      deletedByEmail: p.deleted_by_email,
+      deleteReason: p.delete_reason,
+      restoredAt: p.restored_at,
+      restoredBy: p.restored_by,
+      restoredByEmail: p.restored_by_email
     };
 
     return res.json({

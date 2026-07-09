@@ -543,6 +543,36 @@ function initSqliteSchema(db: Database.Database) {
     db.exec(`ALTER TABLE child_event_entries ADD COLUMN pickup_person_id TEXT;`);
   } catch (e) {}
 
+  // Soft delete columns for parent_profiles in SQLite
+  const sqliteParentSoftDeleteCols = [
+    "is_deleted INTEGER DEFAULT 0",
+    "deleted_at TEXT",
+    "deleted_by TEXT",
+    "delete_reason TEXT",
+    "restored_at TEXT",
+    "restored_by TEXT"
+  ];
+  for (const col of sqliteParentSoftDeleteCols) {
+    try {
+      db.exec(`ALTER TABLE parent_profiles ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  // Soft delete columns for volunteer_profiles in SQLite
+  const sqliteVolSoftDeleteCols = [
+    "is_deleted INTEGER DEFAULT 0",
+    "deleted_at TEXT",
+    "deleted_by TEXT",
+    "delete_reason TEXT",
+    "restored_at TEXT",
+    "restored_by TEXT"
+  ];
+  for (const col of sqliteVolSoftDeleteCols) {
+    try {
+      db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
   // Seed real approved event
   const now = new Date().toISOString();
   db.prepare(`
@@ -1125,6 +1155,42 @@ async function initPostgresSchema(pool: any) {
     try {
       await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS pickup_person_id VARCHAR(255);`);
     } catch (e) {}
+
+    // Soft delete columns for parent_profiles in Postgres
+    const pgParentSoftDeleteCols = [
+      "is_deleted INTEGER DEFAULT 0",
+      "deleted_at TIMESTAMP",
+      "deleted_by VARCHAR(64)",
+      "delete_reason TEXT",
+      "restored_at TIMESTAMP",
+      "restored_by VARCHAR(64)"
+    ];
+    for (const col of pgParentSoftDeleteCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE parent_profiles ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    // Soft delete columns for volunteer_profiles in Postgres
+    const pgVolSoftDeleteCols = [
+      "is_deleted INTEGER DEFAULT 0",
+      "deleted_at TIMESTAMP",
+      "deleted_by VARCHAR(64)",
+      "delete_reason TEXT",
+      "restored_at TIMESTAMP",
+      "restored_by VARCHAR(64)"
+    ];
+    for (const col of pgVolSoftDeleteCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE volunteer_profiles ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
 
     const now = new Date().toISOString();
     await pool.query(`

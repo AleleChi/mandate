@@ -76,6 +76,21 @@ Dispatches a password reset notification email if the email exists.
   ```json
   { "success": true, "message": "If an account exists with that email, recovery steps have been sent." }
   ```
+
+### POST `/api/auth/reset-password`
+Validates the parent reset token, hashes the new password, updates the users table password_hash, and marks the token used.
+- **Request Body**:
+  ```json
+  {
+    "token": "<reset-token>",
+    "password": "NewSecurePassword123"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  { "success": true, "message": "Your password has been updated. You can now sign in." }
+  ```
+
 - **Note on Email Notifications**:
   Resend is configured as the active transactional email provider over a verified sending subdomain (`EMAIL_PROVIDER=resend`), replacing legacy Gmail SMTP. The frontend must never call Resend directly or store API keys.
 
@@ -1213,8 +1228,64 @@ Updates system-wide configurations, toggles, and mandatory form fields.
   }
   ```
 
+---
 
+## Administrative Profile Soft-Delete Operations (`/api/admin`)
 
+The following endpoints manage the secure soft-delete (archiving) and restoration of parent and volunteer profiles. Access is restricted to `admin` and `super_admin` users.
 
+### 15.1 POST `/api/admin/parents/:id/remove`
+Archives (soft-deletes) an active parent profile. Does NOT hard-delete child registrations, pickup records, or attendance logs.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "reason": "Relocated out of town"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Parent profile removed successfully."
+  }
+  ```
 
+### 15.2 POST `/api/admin/parents/:id/restore`
+Restores an archived parent profile back to active status.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Parent profile restored successfully."
+  }
+  ```
 
+### 15.3 POST `/api/admin/volunteers/:id/remove`
+Archives (soft-deletes) an active volunteer profile. Disables their active schedule assignments but preserves historical audit ledgers.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "reason": "Requested temporary hiatus from ministry serving"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Volunteer profile removed successfully."
+  }
+  ```
+
+### 15.4 POST `/api/admin/volunteers/:id/restore`
+Restores an archived volunteer profile back to active status, making them available for service team assignment.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Volunteer profile restored successfully."
+  }
+  ```

@@ -14,6 +14,48 @@ interface BrandLogoProps {
 let globalSiteLogo: string | null = (typeof window !== 'undefined' && (window as any)._site_logo) || null;
 let globalPromise: Promise<string | null> | null = null;
 
+export function getSafePublicAssetUrl(url: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+    return url;
+  }
+  
+  // Resolve API Base URL
+  let apiBaseUrl = '';
+  try {
+    apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+  } catch {
+    apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
+  }
+
+  let isDev = false;
+  try {
+    isDev = !!import.meta.env.DEV;
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (
+      isDev ||
+      hostname === 'localhost' || 
+      hostname === '127.0.0.1' || 
+      hostname.endsWith('.run.app') || 
+      hostname.endsWith('.google.com') ||
+      hostname.endsWith('.googleusercontent.com')
+    ) {
+      apiBaseUrl = ''; // Use relative paths for local development and AI Studio preview
+    }
+  }
+
+  if (apiBaseUrl) {
+    const base = apiBaseUrl.replace(/\/+$/, '');
+    const path = url.replace(/^\/+/, '');
+    return `${base}/${path}`;
+  }
+  
+  return url;
+}
+
 const fetchLogoUrl = async (): Promise<string | null> => {
   if (globalSiteLogo) return globalSiteLogo;
   if (globalPromise) return globalPromise;
@@ -47,6 +89,11 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   'data-component-version': dataComponentVersion
 }) => {
   const [logoUrl, setLogoUrl] = useState<string | null>(globalSiteLogo);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [logoUrl]);
 
   useEffect(() => {
     // If we already have the logoUrl from state or global cache, do nothing
@@ -118,12 +165,19 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       className={`inline-flex items-center select-none cursor-pointer ${className}`}
       title={title}
     >
-      {logoUrl ? (
+      {logoUrl && 
+       !hasError && 
+       (logoUrl.startsWith('http://') || 
+        logoUrl.startsWith('https://') || 
+        logoUrl.startsWith('data:') || 
+        logoUrl.includes('/api/media/') || 
+        logoUrl.includes('/media/')) ? (
         <img
-          src={logoUrl}
+          src={getSafePublicAssetUrl(logoUrl) || ''}
           alt="Koinonia"
           className={`${sizeClasses} object-contain`}
           referrerPolicy="no-referrer"
+          onError={() => setHasError(true)}
         />
       ) : (
         renderFallback()

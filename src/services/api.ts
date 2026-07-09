@@ -171,6 +171,12 @@ export const api = {
         body: JSON.stringify({ email })
       });
     },
+    async resetPassword(token: string, password: string) {
+      return api.request<any>('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password })
+      });
+    },
     async verifyEmail(token: string) {
       return api.request<any>('/api/auth/verify-email', {
         method: 'POST',
@@ -246,6 +252,9 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(subscription)
       });
+    },
+    async getVapidPublicKey() {
+      return api.request<{ publicKey: string }>('/api/notifications/push/vapid-key');
     }
   },
 
@@ -691,14 +700,37 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
-    async getParents(params?: { q?: string }) {
+    async removeVolunteer(id: string, reason?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async restoreVolunteer(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/restore`, {
+        method: 'POST'
+      });
+    },
+    async getParents(params?: { q?: string; status?: string }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
       const queryString = queryParams.toString();
       return api.request<{ success: boolean; parents: any[] }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
     },
     async getParentDetails(id: string) {
       return api.request<{ success: boolean; parent: any; linkedChildren: any[]; eventSummary: any; attention: any; adminNotes: any[] }>(`/api/admin/parents/${id}`);
+    },
+    async removeParent(id: string, reason?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async restoreParent(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/restore`, {
+        method: 'POST'
+      });
     },
     async saveParentNote(id: string, note: string) {
       return api.request<{ success: boolean; message: string; note: any }>(`/api/admin/parents/${id}/notes`, {

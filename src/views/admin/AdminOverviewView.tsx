@@ -290,9 +290,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               context="admin"
               data-component-version="admin-brand-logo-v1-configured"
             />
-            <span className="text-[10px] text-[#C59B27] tracking-wider uppercase font-semibold mt-1 pl-1">
-              {adminRoleTitle}
-            </span>
           </div>
           {/* Mobile close button */}
           <button 
@@ -356,9 +353,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           <div className="flex flex-col min-w-0">
             <span className="text-xs font-semibold text-[#18181B] truncate">
               {adminFullName}
-            </span>
-            <span className="text-[10px] text-zinc-500 truncate">
-              {adminRoleTitle}
             </span>
           </div>
         </div>

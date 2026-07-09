@@ -326,7 +326,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 <h3 className="text-lg font-serif font-medium text-stone-900">
                   Age group summary
                 </h3>
-                <span className="text-stone-400 text-xs font-mono">Registry Demographics</span>
+                <span className="text-stone-400 text-xs font-mono">Parents Demographics</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -1129,7 +1129,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   onClick={() => onNavigate && onNavigate('/admin/parents')}
                   className="w-full flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/50 hover:border-stone-200 text-left text-xs font-medium text-stone-700 transition-all group cursor-pointer"
                 >
-                  <span>Open Parents Directory</span>
+                  <span>Open Parents</span>
                   <ArrowRight className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
                 </button>
               </div>

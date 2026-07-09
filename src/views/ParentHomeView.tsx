@@ -9,6 +9,7 @@ import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { soundUtility } from '../utils/sound';
+import { subscribeUserToPush } from '../utils/pushSubscription';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -1368,27 +1369,12 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 ) : (
                   <button
                     onClick={async () => {
-                      if (typeof Notification === 'undefined') {
-                        showInfo('Browser Limit', 'Push notifications are not supported on this browser.');
-                        return;
-                      }
-                      const permission = await Notification.requestPermission();
-                      if (permission === 'granted') {
+                      const res = await subscribeUserToPush();
+                      if (res.success) {
                         setIsPushEnabled(true);
-                        showInfo('Push notifications enabled!', 'You will now receive alerts.');
-                        try {
-                          await api.parent.savePushSubscription({
-                            endpoint: 'https://fcm.googleapis.com/fcm/send/mock-token',
-                            keys: {
-                              p256dh: 'mock-p256dh-key',
-                              auth: 'mock-auth-key'
-                            }
-                          });
-                        } catch (err) {
-                          console.warn('Subscription save failed:', err);
-                        }
+                        showInfo('Push notifications enabled!', 'You will now receive alerts directly on your device.');
                       } else {
-                        showInfo('Permission denied', 'Device blocked. Please update your browser settings.');
+                        showInfo('Setup Alert', res.error || 'Failed to register push subscription.');
                       }
                     }}
                     className="px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-white border border-[#D9D6CE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all"
