@@ -531,4 +531,14 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Cache Control**: The static configuration on Netlify redirects all spa traffic via `/public/_redirects` and serves optimal CDN cache-control headers via `/public/_headers` (re-validating `index.html` immediately while storing static assets), preventing browser-side metadata stale-cache errors.
 
 
+## 37. Unified Notifications & Secure Update Center
+- **Scoping & Access Governance**: To ensure data privacy and prevent security leaks, parents can only see notifications linked explicitly to their parent profile ID or to children belonging to their household. Technical error terms (like "database", "system", "operational", "logs") are strictly prohibited.
+- **Resilient Merging & Deduplication**: The Parent Home dashboard pulls a merged feed of generic announcements and individual-specific reminders. If duplicate alerts exist in both tables, the portal automatically filters out duplicates and displays the richer individual-specific copy.
+- **Composite ID Schema**: The API serves composite IDs in the format `notifications:id` or `parent_notifications:id`. The read handlers parse these prefixes to execute targeted database updates atomically.
+- **Polite & Calm Error Handling**: If a connection or API error occurs, technical errors (such as "Connection problem") are masked. Instead, a clean, human-friendly, polite error banner is displayed: `"We could not load your updates. Please try again."`
+- **Atomic Read-All Action**: The "Mark all read" action dispatches a single atomic `POST /api/notifications/read-all` request to update all records in one fast database transaction, rather than looping individual requests.
+- **Empty State Presentation**: When no notifications are active, the center displays the heading `"No updates yet"`.
+
+
+
 

@@ -248,7 +248,9 @@ export const api = {
       return res.notifications || [];
     },
     async markAllNotificationsAsRead() {
-      return { success: true };
+      return api.request<any>('/api/notifications/read-all', {
+        method: 'POST'
+      });
     },
     async markNotificationAsRead(id: string) {
       return api.request<any>(`/api/notifications/${id}/read`, {

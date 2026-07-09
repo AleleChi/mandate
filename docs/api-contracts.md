@@ -1443,3 +1443,66 @@ Promotes a gathering to the single active `current` event, demoting other events
     "message": "Event is now set as the active current event."
   }
   ```
+
+---
+
+## 17. Notification Operations (`/api/notifications`)
+
+The following endpoints manage the secure, unified notifications center for all roles (parents, volunteers, staff, and admins).
+
+### 17.1 GET `/api/notifications`
+Retrieves a sorted list of active notifications tailored specifically for the user's active role.
+- **Role Scoping & Merging Rules**:
+  - **Parents**: Merges broad system announcements, specific parent-directed notifications, child-specific updates, and personalized items from the `parent_notifications` table. Includes automatic content deduplication (preferring the richer `parent_notifications` copy).
+  - **Staff & Volunteers**: Filters announcements matching staff or volunteer target audiences, or administrative team alerts.
+  - **Admins**: Retrieves all notification types.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "notifications": [
+      {
+        "id": "notifications:notif-uuid",
+        "title": "Koinonia Application Selected!",
+        "message": "Hello Tochukwu,\n\nBaby Livina has been selected...",
+        "type": "info",
+        "audienceRole": "parent",
+        "audienceScope": "individual",
+        "eventId": "event-ga-2026",
+        "childId": "child-12345",
+        "parentId": null,
+        "createdByUserId": null,
+        "visibleToEventTeam": false,
+        "createdAt": "2026-07-09T00:19:05.593Z",
+        "expiresAt": null,
+        "priority": "normal",
+        "channel": "in-app",
+        "metadata": null,
+        "isRead": true,
+        "readAt": "2026-07-09T00:19:05.593Z"
+      }
+    ]
+  }
+  ```
+
+### 17.2 POST `/api/notifications/:id/read`
+Marks a specific notification as read.
+- **Composite ID Processing**: Parses the composite format `<source_table>:<id>` (e.g., `parent_notifications:pnotif-123` or `notifications:notif-456`) to target the appropriate database table atomically.
+- **Security Check**: Restricts access to ensure that parents can only mark notifications that belong to them or their registered children.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Notification marked as read"
+  }
+  ```
+
+### 17.3 POST `/api/notifications/read-all`
+Marks all active, unread notifications matching the user's role and scoping parameters as read in a single atomic transaction.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "All notifications marked as read"
+  }
+  ```
+

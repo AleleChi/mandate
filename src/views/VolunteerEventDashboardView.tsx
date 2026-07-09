@@ -90,6 +90,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const codeReaderRef = useRef<BrowserQRCodeReader | null>(null);
   const controlsRef = useRef<any>(null);
+  const isLookupInFlight = useRef<boolean>(false);
+  const lastScannedCode = useRef<string>('');
 
   // Reports states
   const [reportsData, setReportsData] = useState<any | null>(null);
@@ -430,22 +432,38 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Process QR Scans or Manual Input
   const handlePassScanned = async (text: string) => {
-    if (scanLoading) return;
+    const trimmedText = text.trim();
+    if (!trimmedText) return;
+
+    if (isLookupInFlight.current) {
+      return;
+    }
+
+    if (lastScannedCode.current === trimmedText) {
+      return;
+    }
+
+    isLookupInFlight.current = true;
+    lastScannedCode.current = trimmedText;
     setScanLoading(true);
     
-    // Stop scanning temporarily on success to prevent multi-scans
+    // Stop scanning immediately on success to prevent multi-scans
     stopScanning();
+    setCameraActive(false);
 
     try {
       if (cleanRoute === '/volunteer/pickup') {
-        let passCode = text;
-        if (text.includes('/pass/')) {
-          passCode = text.split('/pass/')[1]?.split('?')[0] || text;
-        } else if (text.includes('code=')) {
-          passCode = text.split('code=')[1]?.split('&')[0] || text;
+        let passCode = trimmedText;
+        if (trimmedText.includes('/pass/')) {
+          passCode = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+        } else if (trimmedText.includes('code=')) {
+          passCode = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.startsWith('KCT:')) {
+          passCode = trimmedText.substring(4);
         }
+        passCode = passCode.trim().toUpperCase();
         
-        const res = await api.volunteer.lookupPickup({ passCode: passCode.trim().toUpperCase() });
+        const res = await api.volunteer.lookupPickup({ passCode });
         if (res && res.success && res.child) {
           const childWithPickup = {
             ...res.child,
@@ -459,19 +477,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           }
         } else {
           showError('Not Found', 'No active checked-in child found for this pass.');
-          if (cameraActive) {
-            startScanning();
-          }
+          isLookupInFlight.current = false;
+          lastScannedCode.current = '';
+          setCameraActive(true);
         }
       } else {
-        const res = await api.volunteer.lookupPass({ passReference: text });
+        let passCode = trimmedText;
+        if (trimmedText.includes('/pass/')) {
+          passCode = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+        } else if (trimmedText.includes('code=')) {
+          passCode = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.startsWith('KCT:')) {
+          passCode = trimmedText.substring(4);
+        }
+        passCode = passCode.trim().toUpperCase();
+
+        const res = await api.volunteer.lookupPass({ passReference: passCode });
         
         if (res.success && res.child) {
           setLookedUpChild(res.child);
-          showSuccess(
-            'Child Found',
-            `Pass verified for ${res.child.fullName}. Please confirm below.`
-          );
           
           // Haptic feedback if available
           if (navigator.vibrate) {
@@ -481,19 +505,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           // Reset inputs
           setManualCode('');
         } else {
-          showError('Not Found', 'Could not retrieve child details for this pass.');
-          if (cameraActive) {
-            startScanning();
-          }
+          showError('Not Found', 'We could not find this pass. Please contact the event desk.');
+          isLookupInFlight.current = false;
+          lastScannedCode.current = '';
+          setCameraActive(true);
         }
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Pass Error', apiErr.message || 'Pass verification failed.');
-      // Restart scanning if error
-      if (cameraActive) {
-        startScanning();
-      }
+      showError('Pass Error', apiErr.message || 'We could not find this pass. Please contact the event desk.');
+      isLookupInFlight.current = false;
+      lastScannedCode.current = '';
+      setCameraActive(true);
     } finally {
       setScanLoading(false);
     }
@@ -737,9 +760,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   onClick={() => {
                     setCheckedInSuccessChild(null);
                     setCheckedInSuccessEntry(null);
-                    if (cameraActive) {
-                      startScanning();
-                    }
+                    isLookupInFlight.current = false;
+                    lastScannedCode.current = '';
+                    setCameraActive(true);
                   }} 
                   className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                   id="btn-volunteer-success-back"
@@ -749,7 +772,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <div>
                   <h1 className="text-sm font-serif font-bold text-gray-950 leading-tight">Check-In Portal</h1>
                   <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
-                    The General Assembly Children and Teens
+                    {eventDetails?.title || 'The General Assembly Children and Teens'}
                   </p>
                 </div>
               </div>
@@ -769,9 +792,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button 
                   onClick={() => {
                     setLookedUpChild(null);
-                    if (cameraActive) {
-                      startScanning();
-                    }
+                    isLookupInFlight.current = false;
+                    lastScannedCode.current = '';
+                    setCameraActive(true);
                   }} 
                   className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                   id="btn-volunteer-scan-back"
@@ -781,14 +804,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <div>
                   <h1 className="text-sm font-serif font-bold text-gray-950 leading-tight">Check-in Portal</h1>
                   <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
-                    The General Assembly Children and Teens
+                    {eventDetails?.title || 'The General Assembly Children and Teens'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
                 <span className="w-1.5 h-1.5 bg-[#C59B27] rounded-full"></span>
-                <span>Ready to scan</span>
+                <span>Ready</span>
               </div>
             </div>
           </header>
@@ -1187,66 +1210,68 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               const hasCareNotes = medicalNote || (allergies && allergies.toLowerCase() !== 'no') || (extraSupport && extraSupport.toLowerCase() !== 'no');
 
               return (
-                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v1-stitch">
+                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v3">
                   {/* Event label */}
                   <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
-                    THE GENERAL ASSEMBLY CHILDREN AND TEENS
+                    {eventDetails?.title?.toUpperCase() || 'THE GENERAL ASSEMBLY CHILDREN AND TEENS'}
                   </div>
 
                   {/* Success Title Block */}
-                  <div className="text-center space-y-3" data-component-version="volunteer-checked-in-title-v1-stitch">
+                  <div className="text-center space-y-3">
                     <div className="flex justify-center">
-                      <div className="w-16 h-16 bg-[#8F7020] text-white rounded-full flex items-center justify-center shadow-md">
-                        <Check className="h-8 w-8 stroke-[3.5]" />
+                      <div className="w-16 h-16 bg-[#10B981] text-white rounded-full flex items-center justify-center shadow-md animate-scale-in">
+                        <ShieldCheck className="h-9 w-9 stroke-[2.5]" />
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <h2 className="text-3xl font-serif font-black text-gray-900 leading-tight">Checked in</h2>
-                      <p className="text-sm text-gray-600 font-medium font-sans">
-                        {firstName ? `${firstName} has been marked present.` : 'This child has been marked present.'}
-                      </p>
+                      <span className="text-[10px] font-mono font-bold text-[#10B981] uppercase tracking-widest block">Check-in successful</span>
+                      <h2 className="text-3xl font-serif font-black text-gray-900 leading-tight">Ready for class!</h2>
                     </div>
+                  </div>
+
+                  {/* Success badge card */}
+                  <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-3xl p-5 shadow-xs text-center space-y-1" data-component-version="volunteer-checked-in-success-badge-v1-stitch">
+                    <span className="text-sm font-bold text-[#047857] block">Checked In</span>
+                    <p className="text-xs text-[#065F46] font-medium leading-relaxed">
+                      Child can now safely enter the event hall.
+                    </p>
                   </div>
 
                   {/* Child summary card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-4 flex items-center space-x-4 shadow-sm" data-component-version="volunteer-checked-in-child-card-v1-stitch">
-                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 shrink-0 shadow-inner flex items-center justify-center">
-                      {checkedInSuccessChild.photoUrl ? (
-                        <img
-                          src={checkedInSuccessChild.photoUrl}
-                          alt={checkedInSuccessChild.fullName}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <User className="h-8 w-8 text-gray-300 stroke-[1.5]" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-lg font-serif font-bold text-gray-950 leading-snug truncate">
-                        {checkedInSuccessChild.fullName || 'Registered Child'}
-                      </h3>
-                      <div className="flex items-center space-x-1.5 mt-1 text-xs text-gray-500 font-semibold">
-                        <span>{ageLabel}</span>
-                        {ageLabel && ageGroup && <span className="text-gray-300">&bull;</span>}
-                        {ageGroup && (
-                          <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md tracking-wider">
-                            {ageGroup}
-                          </span>
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-child-card-v1-stitch">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 shadow-inner flex items-center justify-center">
+                        {checkedInSuccessChild.photoUrl ? (
+                          <img
+                            src={checkedInSuccessChild.photoUrl}
+                            alt={checkedInSuccessChild.fullName}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <User className="h-8 w-8 text-gray-300 stroke-[1.5]" />
                         )}
                       </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg font-serif font-bold text-gray-950 leading-snug truncate">
+                          {checkedInSuccessChild.fullName || 'Registered Child'}
+                        </h3>
+                        <div className="flex items-center space-x-1.5 mt-1 text-xs text-gray-500 font-semibold">
+                          <span>{ageLabel}</span>
+                          {ageLabel && ageGroup && <span className="text-gray-300">&bull;</span>}
+                          {ageGroup && (
+                            <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md tracking-wider">
+                              {ageGroup}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Entry details card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-entry-details-v1-stitch">
-                    <h4 className="text-[10px] font-mono font-bold text-[#8F7020] uppercase tracking-[0.15em] border-b border-gray-100 pb-2">
-                      ENTRY DETAILS
-                    </h4>
-                    <div className="space-y-3.5 text-xs pt-1">
+                    <div className="border-t border-gray-100 pt-3.5 space-y-2.5 text-xs">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">TIME</span>
-                        <span className="font-semibold text-gray-800">{checkInTime}</span>
+                        <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">ENTRY TIME</span>
+                        <span className="font-semibold text-gray-850">{checkInTime}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">BY</span>
@@ -1325,10 +1350,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       onClick={() => {
                         setCheckedInSuccessChild(null);
                         setCheckedInSuccessEntry(null);
-                        if (cameraActive) {
-                          startScanning();
-                        }
+                        isLookupInFlight.current = false;
+                        lastScannedCode.current = '';
+                        setCameraActive(true);
                       }}
+                      data-component-version="volunteer-scan-another-action-v3"
                       className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 stroke-[2.5]" />
@@ -1340,8 +1366,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setSelectedChildId(checkedInSuccessChild.id);
                         setCheckedInSuccessChild(null);
                         setCheckedInSuccessEntry(null);
+                        isLookupInFlight.current = false;
+                        lastScannedCode.current = '';
                         onNavigate('/volunteer/children');
                       }}
+                      data-component-version="volunteer-view-profile-action-v3"
                       className="w-full border border-gray-300 hover:border-gray-400 text-gray-850 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
                     >
                       <User className="h-4 w-4 text-gray-600 stroke-[2]" />
@@ -1353,6 +1382,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         onClick={() => {
                           setCheckedInSuccessChild(null);
                           setCheckedInSuccessEntry(null);
+                          isLookupInFlight.current = false;
+                          lastScannedCode.current = '';
                           onNavigate('/volunteer/event');
                         }}
                         className="text-xs font-serif font-bold text-[#C59B27] hover:text-[#A47E1F] transition-colors underline underline-offset-4 cursor-pointer uppercase tracking-wider"
@@ -1371,7 +1402,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
             return (
-              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v2-pass-scan">
+              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v4-stitch-checkin">
                 {/* Scan successful & Child found title */}
                 <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
                   <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
@@ -1384,7 +1415,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Child Identity Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-identity-card-v1-stitch">
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-card-v3">
                   {/* Photo area */}
                   <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 relative">
                     {lookedUpChild.photoUrl ? (
@@ -1435,7 +1466,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Care Notes Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-care-notes-v1-stitch">
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-care-notes-v3">
                   <div className="flex items-center space-x-2 text-gray-900 pb-1 border-b border-gray-50">
                     <ShieldCheck className="h-4.5 w-4.5 text-gray-500" />
                     <h4 className="text-sm font-serif font-bold">Care Notes</h4>
@@ -1443,66 +1474,48 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   
                   <div className="space-y-3 text-xs">
                     {/* Medical Note Row */}
-                    {medicalNoteText ? (
-                      <div className="bg-[#FFF8F2] border border-[#FFEADA] rounded-2xl p-3 flex items-start space-x-2.5">
-                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
-                        <div>
-                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Medical Note</span>
-                          <p className="text-gray-800 font-medium mt-0.5 leading-relaxed">{medicalNoteText}</p>
-                        </div>
+                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
+                      <span className={`${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400'} font-bold text-[10px] mt-0.5`}>
+                        {medicalNoteText ? '⚠️' : '✓'}
+                      </span>
+                      <div>
+                        <span className={`text-[9px] font-bold ${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400'} uppercase tracking-wider block font-mono`}>Medical Note</span>
+                        <p className={`${medicalNoteText ? 'text-gray-850 font-semibold' : 'text-gray-500 font-medium'} mt-0.5 leading-relaxed`}>
+                          {medicalNoteText || 'None required.'}
+                        </p>
                       </div>
-                    ) : (
-                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
-                        <span className="text-gray-400 font-bold text-[10px] mt-0.5">✓</span>
-                        <div>
-                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Medical Note</span>
-                          <p className="text-gray-500 mt-0.5 font-medium">No medical note added.</p>
-                        </div>
-                      </div>
-                    )}
+                    </div>
 
                     {/* Allergies Row */}
-                    {allergiesText ? (
-                      <div className="bg-[#FFF8F2] border border-[#FFEADA] rounded-2xl p-3 flex items-start space-x-2.5">
-                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
-                        <div>
-                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Allergies</span>
-                          <p className="text-gray-800 font-medium mt-0.5 leading-relaxed">{allergiesText}</p>
-                        </div>
+                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
+                      <span className={`${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400'} font-bold text-[10px] mt-0.5`}>
+                        {allergiesText ? '⚠️' : '✓'}
+                      </span>
+                      <div>
+                        <span className={`text-[9px] font-bold ${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400'} uppercase tracking-wider block font-mono`}>Allergies</span>
+                        <p className={`${allergiesText ? 'text-gray-850 font-semibold' : 'text-gray-500 font-medium'} mt-0.5 leading-relaxed`}>
+                          {allergiesText || 'No allergy added.'}
+                        </p>
                       </div>
-                    ) : (
-                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
-                        <span className="text-gray-400 font-bold text-[10px] mt-0.5">✓</span>
-                        <div>
-                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Allergies</span>
-                          <p className="text-gray-500 mt-0.5 font-medium">No allergy added.</p>
-                        </div>
-                      </div>
-                    )}
+                    </div>
 
                     {/* Extra Support Row */}
-                    {extraSupportText ? (
-                      <div className="bg-[#FFF8F2] border border-[#FFEADA] rounded-2xl p-3 flex items-start space-x-2.5">
-                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
-                        <div>
-                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Extra Support</span>
-                          <p className="text-gray-800 font-medium mt-0.5 leading-relaxed">{extraSupportText}</p>
-                        </div>
+                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
+                      <span className={`${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400'} font-bold text-[10px] mt-0.5`}>
+                        {extraSupportText ? '⚠️' : '✓'}
+                      </span>
+                      <div>
+                        <span className={`text-[9px] font-bold ${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400'} uppercase tracking-wider block font-mono`}>Extra Support</span>
+                        <p className={`${extraSupportText ? 'text-gray-850 font-semibold' : 'text-gray-500 font-medium'} mt-0.5 leading-relaxed`}>
+                          {extraSupportText || 'None required.'}
+                        </p>
                       </div>
-                    ) : (
-                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
-                        <span className="text-gray-400 font-bold text-[10px] mt-0.5">✓</span>
-                        <div>
-                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Extra Support</span>
-                          <p className="text-gray-500 mt-0.5 font-medium">None required.</p>
-                        </div>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Entry Status Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-entry-status-v1-stitch">
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-entry-status-v3">
                   <h4 className="text-lg font-serif font-bold text-gray-950">Entry Status</h4>
                   
                   {/* Status Info Box */}
@@ -1533,7 +1546,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         }
                       }}
                       disabled={scanLoading}
-                      data-component-version="volunteer-child-found-checkin-action-v2"
+                      data-component-version="volunteer-child-checkin-action-v4"
                       className={`w-full text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
                         isAlreadyCheckedIn 
                           ? 'bg-gray-400 hover:bg-gray-500' 
@@ -1553,10 +1566,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       onClick={() => {
                         setLookedUpChild(null);
-                        if (cameraActive) {
-                          startScanning();
-                        }
+                        isLookupInFlight.current = false;
+                        lastScannedCode.current = '';
+                        setCameraActive(true);
                       }}
+                      data-component-version="volunteer-scan-another-action-v3"
                       className="w-full border border-gray-300 hover:border-gray-400 text-gray-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 text-gray-600 stroke-[2]" />
@@ -1573,7 +1587,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 {/* Authorized Pickup Card */}
                 {lookedUpChild.pickup ? (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-authorized-pickup-v1-stitch">
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-authorized-pickup-v3">
                     <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
                       Authorized Pickup
                     </h4>
@@ -1604,7 +1618,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v1-stitch">
+                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
                     <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
                       Authorized Pickup
                     </h4>
@@ -1617,12 +1631,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             );
           })() : (
             /* ==================== 2. SCANNER VIEW (Stitch Design) ==================== */
-            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-scanner-v2-camera-flip">
+            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-scanner-v3-single-scan-safe">
               
               {/* Tall Portrait Scan Card */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs relative" 
-                data-component-version="volunteer-check-in-scan-card-v2-stitch"
+                data-component-version="volunteer-scan-dedupe-guard-v1"
               >
                 <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
                   {/* Blurred warm background when camera is inactive */}

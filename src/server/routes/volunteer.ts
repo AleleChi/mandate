@@ -2020,6 +2020,9 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
     if (!entryId) {
       if (passReference) {
         let cleanRef = passReference.toString().trim().toUpperCase();
+        if (cleanRef.startsWith('KCT:')) {
+          cleanRef = cleanRef.substring(4);
+        }
         if (cleanRef.startsWith('PASS-')) {
           cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
         } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
@@ -2148,6 +2151,9 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       if (passReference) {
         // Normalize passReference (e.g., KOI-2026-6E80A7 or just 6E80A7)
         let cleanRef = passReference.toString().trim().toUpperCase();
+        if (cleanRef.startsWith('KCT:')) {
+          cleanRef = cleanRef.substring(4);
+        }
         if (cleanRef.startsWith('PASS-')) {
           cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
         } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {

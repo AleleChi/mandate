@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -92,6 +92,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [isRemoving, setIsRemoving] = useState(false);
 
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
@@ -109,6 +110,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   const fetchNotifications = async () => {
     try {
+      setNotificationsError(null);
       const data = await api.parent.getNotifications(false, 'parent');
       const currentNotifications = data || [];
       const newUnreadCount = currentNotifications.filter((n: any) => !n.readAt && !n.isRead).length;
@@ -119,6 +121,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       setNotifications(currentNotifications);
     } catch (err) {
       console.error('Error fetching parent notifications:', err);
+      setNotificationsError('We could not load your updates. Please try again.');
     }
   };
 
@@ -1475,12 +1478,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   <button
                     onClick={async () => {
                       try {
-                        for (const notif of notifications) {
-                          const isUnread = !notif.readAt && !notif.isRead;
-                          if (isUnread) {
-                            await api.parent.markNotificationAsRead(notif.id);
-                          }
-                        }
+                        await api.parent.markAllNotificationsAsRead();
                         fetchNotifications();
                       } catch (e) {
                         console.error(e);
@@ -1584,10 +1582,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             ) : (
               /* Notification List View */
               <div className="flex-1 overflow-y-auto p-5 space-y-3.5 min-h-[280px]">
-                {notifications.length === 0 ? (
+                 {notificationsError ? (
+                  <div className="text-center py-16 space-y-3">
+                    <AlertCircle className="w-10 h-10 text-[#E07A5F] mx-auto stroke-[1.5]" />
+                    <p className="text-sm font-medium text-[#3F3F46]">{notificationsError}</p>
+                  </div>
+                ) : notifications.length === 0 ? (
                   <div className="text-center py-16 space-y-3">
                     <Bell className="w-10 h-10 text-[#D9D6CE] mx-auto stroke-[1.5]" />
-                    <p className="text-sm font-medium text-[#3F3F46]">No reminders yet</p>
+                    <p className="text-sm font-medium text-[#3F3F46]">No updates yet</p>
                     <p className="text-xs text-[#6B7280] max-w-[240px] mx-auto leading-relaxed">
                       Personalized event schedules, check-in details, and pickup reminders will appear here.
                     </p>
