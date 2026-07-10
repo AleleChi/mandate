@@ -999,7 +999,17 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
   }
 
   // STEP 2: School and Care
-  const schoolClassVal = draft.schoolAndAgeGroup?.schoolClass || draft.schoolClass;
+  const schoolClassVal = (
+    draft.schoolAndAgeGroup?.schoolClass ||
+    draft.schoolAndAgeGroup?.classGrade ||
+    draft.schoolAndAgeGroup?.class_grade ||
+    draft.schoolAndAgeGroup?.grade ||
+    draft.schoolClass ||
+    draft.classGrade ||
+    draft.class_grade ||
+    draft.grade ||
+    ''
+  );
   if (!schoolClassVal || !schoolClassVal.trim()) {
     errors.schoolClass = {
       valid: false,
@@ -1009,13 +1019,41 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
     };
   }
 
-  const schoolNameVal = draft.schoolAndAgeGroup?.schoolName || draft.schoolName;
+  const schoolNameVal = (
+    draft.schoolAndAgeGroup?.schoolName ||
+    draft.schoolAndAgeGroup?.school_name ||
+    draft.schoolName ||
+    draft.school_name ||
+    ''
+  );
   const schoolNameRes = validateSchoolName(schoolNameVal, 'schoolName');
   if (!schoolNameRes.valid) {
     errors.schoolName = schoolNameRes;
   }
 
-  const attendedBeforeVal = draft.schoolAndAgeGroup?.previousChildrenProgramme || draft.attendedBefore;
+  const rawAttendedVal =
+    draft.schoolAndAgeGroup?.previousChildrenProgramme ||
+    draft.schoolAndAgeGroup?.previous_children_programme ||
+    draft.schoolAndAgeGroup?.previousAttendance ||
+    draft.schoolAndAgeGroup?.previous_attendance ||
+    draft.schoolAndAgeGroup?.hasAttendedBefore ||
+    draft.schoolAndAgeGroup?.attendedBefore ||
+    draft.attendedBefore ||
+    draft.previousChildrenProgramme ||
+    draft.previous_children_programme ||
+    draft.previousAttendance ||
+    draft.previous_attendance ||
+    draft.hasAttendedBefore;
+
+  let attendedBeforeVal = undefined;
+  if (rawAttendedVal !== null && rawAttendedVal !== undefined && rawAttendedVal !== '') {
+    if (rawAttendedVal === true || rawAttendedVal === 'true' || String(rawAttendedVal).toLowerCase() === 'yes' || String(rawAttendedVal).toLowerCase() === 'y') {
+      attendedBeforeVal = 'Yes';
+    } else if (rawAttendedVal === false || rawAttendedVal === 'false' || String(rawAttendedVal).toLowerCase() === 'no' || String(rawAttendedVal).toLowerCase() === 'n') {
+      attendedBeforeVal = 'No';
+    }
+  }
+
   if (!attendedBeforeVal || !['Yes', 'No'].includes(attendedBeforeVal)) {
     errors.previousAttendance = {
       valid: false,

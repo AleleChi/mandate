@@ -454,16 +454,109 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     const existingEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
     const actualEntryId = existingEntry ? existingEntry.id : entryId;
 
-    const schoolClass = draft.schoolAndAgeGroup?.schoolClass || draft.schoolClass || '';
-    const schoolName = draft.schoolAndAgeGroup?.schoolName || draft.schoolName || '';
-    const prevProg = draft.schoolAndAgeGroup?.previousChildrenProgramme || draft.attendedBefore || 'No';
-    const noteTeam = draft.schoolAndAgeGroup?.noteToTeam || draft.careNote || '';
+    const schoolClass = (
+      draft.schoolAndAgeGroup?.schoolClass ||
+      draft.schoolAndAgeGroup?.classGrade ||
+      draft.schoolAndAgeGroup?.class_grade ||
+      draft.schoolAndAgeGroup?.grade ||
+      draft.schoolClass ||
+      draft.classGrade ||
+      draft.class_grade ||
+      draft.grade ||
+      ''
+    ).trim();
 
-    const hasMed = (draft.healthAndSupport?.hasMedicalNotes || draft.hasAllergies) === 'Yes' ? 1 : 0;
-    const medNotes = draft.healthAndSupport?.medicalNotes || draft.medicalNote || '';
-    const needsSup = (draft.healthAndSupport?.needsExtraSupport || draft.needsExtraSupport) === 'Yes' ? 1 : 0;
-    const supNotes = draft.healthAndSupport?.supportNotes || draft.supportNote || '';
-    const infoConf = draft.healthAndSupport?.informationConfirmed || draft.infoConfirmed ? 1 : 0;
+    const schoolName = (
+      draft.schoolAndAgeGroup?.schoolName ||
+      draft.schoolAndAgeGroup?.school_name ||
+      draft.schoolName ||
+      draft.school_name ||
+      ''
+    ).trim();
+
+    const rawAttended =
+      draft.schoolAndAgeGroup?.previousChildrenProgramme ||
+      draft.schoolAndAgeGroup?.previous_children_programme ||
+      draft.schoolAndAgeGroup?.previousAttendance ||
+      draft.schoolAndAgeGroup?.previous_attendance ||
+      draft.schoolAndAgeGroup?.hasAttendedBefore ||
+      draft.schoolAndAgeGroup?.attendedBefore ||
+      draft.attendedBefore ||
+      draft.previousChildrenProgramme ||
+      draft.previous_children_programme ||
+      draft.previousAttendance ||
+      draft.previous_attendance ||
+      draft.hasAttendedBefore;
+
+    let prevProg = 'No';
+    if (rawAttended === true || rawAttended === 'true' || (rawAttended && String(rawAttended).toLowerCase() === 'yes') || (rawAttended && String(rawAttended).toLowerCase() === 'y')) {
+      prevProg = 'Yes';
+    } else if (rawAttended === false || rawAttended === 'false' || (rawAttended && String(rawAttended).toLowerCase() === 'no') || (rawAttended && String(rawAttended).toLowerCase() === 'n')) {
+      prevProg = 'No';
+    }
+
+    const noteTeam = (
+      draft.schoolAndAgeGroup?.noteToTeam ||
+      draft.schoolAndAgeGroup?.note_to_team ||
+      draft.schoolAndAgeGroup?.teamNote ||
+      draft.schoolAndAgeGroup?.additionalNote ||
+      draft.schoolAndAgeGroup?.note ||
+      draft.careNote ||
+      draft.teamNote ||
+      draft.additionalNote ||
+      draft.note ||
+      ''
+    ).trim();
+
+    const rawAllergies =
+      draft.healthAndSupport?.hasMedicalNotes ||
+      draft.healthAndSupport?.has_medical_notes ||
+      draft.healthAndSupport?.hasAllergies ||
+      draft.hasAllergies ||
+      draft.hasMedicalNotes ||
+      draft.has_medical_notes;
+
+    let hasMedStr = 'No';
+    if (rawAllergies === true || rawAllergies === 'true' || (rawAllergies && String(rawAllergies).toLowerCase() === 'yes') || (rawAllergies && String(rawAllergies).toLowerCase() === 'y')) {
+      hasMedStr = 'Yes';
+    } else if (rawAllergies === false || rawAllergies === 'false' || (rawAllergies && String(rawAllergies).toLowerCase() === 'no') || (rawAllergies && String(rawAllergies).toLowerCase() === 'n')) {
+      hasMedStr = 'No';
+    }
+    const hasMed = hasMedStr === 'Yes' ? 1 : 0;
+
+    const medNotes = (
+      draft.healthAndSupport?.medicalNotes ||
+      draft.healthAndSupport?.medical_notes ||
+      draft.medicalNote ||
+      draft.medicalNotes ||
+      draft.medical_notes ||
+      ''
+    ).trim();
+
+    const rawSupport =
+      draft.healthAndSupport?.needsExtraSupport ||
+      draft.healthAndSupport?.needs_extra_support ||
+      draft.needsExtraSupport ||
+      draft.needs_extra_support;
+
+    let needsSupStr = 'No';
+    if (rawSupport === true || rawSupport === 'true' || (rawSupport && String(rawSupport).toLowerCase() === 'yes') || (rawSupport && String(rawSupport).toLowerCase() === 'y')) {
+      needsSupStr = 'Yes';
+    } else if (rawSupport === false || rawSupport === 'false' || (rawSupport && String(rawSupport).toLowerCase() === 'no') || (rawSupport && String(rawSupport).toLowerCase() === 'n')) {
+      needsSupStr = 'No';
+    }
+    const needsSup = needsSupStr === 'Yes' ? 1 : 0;
+
+    const supNotes = (
+      draft.healthAndSupport?.supportNotes ||
+      draft.healthAndSupport?.support_notes ||
+      draft.supportNote ||
+      draft.supportNotes ||
+      draft.support_notes ||
+      ''
+    ).trim();
+
+    const infoConf = draft.healthAndSupport?.informationConfirmed || draft.healthAndSupport?.information_confirmed || draft.infoConfirmed || draft.informationConfirmed || draft.information_confirmed ? 1 : 0;
 
     if (existingEntry) {
       await execute(`
@@ -480,13 +573,13 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
       `, [actualEntryId, childId, REAL_EVENT_ID, schoolClass, schoolName, prevProg, noteTeam, hasMed, medNotes, needsSup, supNotes, infoConf, now, now]);
     }
 
-    const pickupType = draft.pickup?.pickupType || draft.pickupType || 'parent';
-    const pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickupPersonPhotoUrl || '';
-    const pickupName = draft.pickup?.pickupPersonFullName || draft.pickupPersonFullName || '';
-    const pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickupPersonRelationship || '';
-    const pickupPhone = draft.pickup?.pickupPersonPhone || draft.pickupPersonPhone || '';
-    const pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickupPersonWhatsapp || '';
-    const pickupAppr = draft.pickup?.approvedByParent || draft.pickupPersonApproved ? 1 : 0;
+    const pickupType = draft.pickup?.pickupType || draft.pickup?.mode || draft.pickupType || 'parent';
+    const pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.photo_url || draft.pickupPersonPhotoUrl || '';
+    const pickupName = draft.pickup?.pickupPersonFullName || draft.pickup?.full_name || draft.pickupPersonFullName || '';
+    const pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickup?.relationship_to_child || draft.pickupPersonRelationship || '';
+    const pickupPhone = draft.pickup?.pickupPersonPhone || draft.pickup?.phone_number || draft.pickupPersonPhone || '';
+    const pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickup?.whatsapp_number || draft.pickupPersonWhatsapp || '';
+    const pickupAppr = draft.pickup?.approvedByParent || draft.pickup?.approved_by_parent || draft.pickupPersonApproved ? 1 : 0;
 
     const pickupPhotoId = await resolveToMediaFileId(pickupPhoto);
 

@@ -5,6 +5,285 @@ import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { extractApiError } from '../services/api';
 
+export function normalizeChildDraftForReview(rawDraft: any): AddChildDraft {
+  if (!rawDraft) return {} as AddChildDraft;
+
+  // 1. School Class / Grade
+  const schoolClass = (
+    rawDraft.schoolAndAgeGroup?.schoolClass ||
+    rawDraft.schoolAndAgeGroup?.classGrade ||
+    rawDraft.schoolAndAgeGroup?.class_grade ||
+    rawDraft.schoolAndAgeGroup?.grade ||
+    rawDraft.schoolClass ||
+    rawDraft.classGrade ||
+    rawDraft.class_grade ||
+    rawDraft.grade ||
+    ''
+  ).trim();
+
+  // 2. School Name
+  const schoolName = (
+    rawDraft.schoolAndAgeGroup?.schoolName ||
+    rawDraft.schoolAndAgeGroup?.school_name ||
+    rawDraft.schoolName ||
+    rawDraft.school_name ||
+    ''
+  ).trim();
+
+  // 3. Previous Attendance
+  const rawAttended =
+    rawDraft.schoolAndAgeGroup?.previousChildrenProgramme ||
+    rawDraft.schoolAndAgeGroup?.previous_children_programme ||
+    rawDraft.schoolAndAgeGroup?.previousAttendance ||
+    rawDraft.schoolAndAgeGroup?.previous_attendance ||
+    rawDraft.schoolAndAgeGroup?.hasAttendedBefore ||
+    rawDraft.schoolAndAgeGroup?.attendedBefore ||
+    rawDraft.attendedBefore ||
+    rawDraft.previousChildrenProgramme ||
+    rawDraft.previous_children_programme ||
+    rawDraft.previousAttendance ||
+    rawDraft.previous_attendance ||
+    rawDraft.hasAttendedBefore;
+
+  let attendedBefore: 'Yes' | 'No' | undefined = undefined;
+  if (rawAttended !== null && rawAttended !== undefined && rawAttended !== '') {
+    if (rawAttended === true || rawAttended === 'true' || String(rawAttended).toLowerCase() === 'yes' || String(rawAttended).toLowerCase() === 'y') {
+      attendedBefore = 'Yes';
+    } else if (rawAttended === false || rawAttended === 'false' || String(rawAttended).toLowerCase() === 'no' || String(rawAttended).toLowerCase() === 'n') {
+      attendedBefore = 'No';
+    }
+  }
+
+  // 4. Team Note / Care Note / Note to Team
+  const careNote = (
+    rawDraft.schoolAndAgeGroup?.noteToTeam ||
+    rawDraft.schoolAndAgeGroup?.note_to_team ||
+    rawDraft.schoolAndAgeGroup?.teamNote ||
+    rawDraft.schoolAndAgeGroup?.additionalNote ||
+    rawDraft.schoolAndAgeGroup?.note ||
+    rawDraft.careNote ||
+    rawDraft.teamNote ||
+    rawDraft.additionalNote ||
+    rawDraft.note ||
+    ''
+  ).trim();
+
+  // 5. Health & Support: Medical / Allergy Notes
+  const rawAllergies =
+    rawDraft.healthAndSupport?.hasMedicalNotes ||
+    rawDraft.healthAndSupport?.has_medical_notes ||
+    rawDraft.healthAndSupport?.hasAllergies ||
+    rawDraft.hasAllergies ||
+    rawDraft.hasMedicalNotes ||
+    rawDraft.has_medical_notes;
+
+  let hasAllergies: 'Yes' | 'No' | undefined = undefined;
+  if (rawAllergies !== null && rawAllergies !== undefined && rawAllergies !== '') {
+    if (rawAllergies === true || rawAllergies === 'true' || String(rawAllergies).toLowerCase() === 'yes' || String(rawAllergies).toLowerCase() === 'y') {
+      hasAllergies = 'Yes';
+    } else if (rawAllergies === false || rawAllergies === 'false' || String(rawAllergies).toLowerCase() === 'no' || String(rawAllergies).toLowerCase() === 'n') {
+      hasAllergies = 'No';
+    }
+  }
+
+  const medicalNote = (
+    rawDraft.healthAndSupport?.medicalNotes ||
+    rawDraft.healthAndSupport?.medical_notes ||
+    rawDraft.medicalNote ||
+    rawDraft.medicalNotes ||
+    rawDraft.medical_notes ||
+    ''
+  ).trim();
+
+  // 6. Health & Support: Extra Support Notes
+  const rawSupport =
+    rawDraft.healthAndSupport?.needsExtraSupport ||
+    rawDraft.healthAndSupport?.needs_extra_support ||
+    rawDraft.needsExtraSupport ||
+    rawDraft.needs_extra_support;
+
+  let needsExtraSupport: 'Yes' | 'No' | undefined = undefined;
+  if (rawSupport !== null && rawSupport !== undefined && rawSupport !== '') {
+    if (rawSupport === true || rawSupport === 'true' || String(rawSupport).toLowerCase() === 'yes' || String(rawSupport).toLowerCase() === 'y') {
+      needsExtraSupport = 'Yes';
+    } else if (rawSupport === false || rawSupport === 'false' || String(rawSupport).toLowerCase() === 'no' || String(rawSupport).toLowerCase() === 'n') {
+      needsExtraSupport = 'No';
+    }
+  }
+
+  const supportNote = (
+    rawDraft.healthAndSupport?.supportNotes ||
+    rawDraft.healthAndSupport?.support_notes ||
+    rawDraft.supportNote ||
+    rawDraft.supportNotes ||
+    rawDraft.support_notes ||
+    ''
+  ).trim();
+
+  // 7. Health & Support: Information Confirmed
+  const infoConfirmed = Boolean(
+    rawDraft.healthAndSupport?.informationConfirmed ||
+    rawDraft.healthAndSupport?.information_confirmed ||
+    rawDraft.infoConfirmed ||
+    rawDraft.informationConfirmed ||
+    rawDraft.information_confirmed
+  );
+
+  // 8. Child Details (for flat compatibility)
+  const fullName = (
+    rawDraft.childDetails?.fullName ||
+    rawDraft.childDetails?.full_name ||
+    rawDraft.fullName ||
+    rawDraft.full_name ||
+    ''
+  ).trim();
+
+  const gender = (
+    rawDraft.childDetails?.gender ||
+    rawDraft.gender ||
+    ''
+  ).trim();
+
+  const dob = (
+    rawDraft.childDetails?.dateOfBirth ||
+    rawDraft.childDetails?.date_of_birth ||
+    rawDraft.dob ||
+    rawDraft.dateOfBirth ||
+    rawDraft.date_of_birth ||
+    ''
+  ).trim();
+
+  const relationship = (
+    rawDraft.childDetails?.relationshipToChild ||
+    rawDraft.childDetails?.relationship_to_child ||
+    rawDraft.relationship ||
+    rawDraft.relationshipToChild ||
+    rawDraft.relationship_to_child ||
+    ''
+  ).trim();
+
+  const photoUrl = (
+    rawDraft.childDetails?.photo ||
+    rawDraft.childDetails?.photoUrl ||
+    rawDraft.childDetails?.photo_url ||
+    rawDraft.photoUrl ||
+    rawDraft.photo_url ||
+    ''
+  ).trim();
+
+  // 9. Pickup details
+  const pickupType = (
+    rawDraft.pickup?.pickupType ||
+    rawDraft.pickup?.mode ||
+    rawDraft.pickupType ||
+    'parent'
+  );
+
+  const pickupPersonFullName = (
+    rawDraft.pickup?.pickupPersonFullName ||
+    rawDraft.pickup?.full_name ||
+    rawDraft.pickupPersonFullName ||
+    ''
+  ).trim();
+
+  const pickupPersonRelationship = (
+    rawDraft.pickup?.pickupPersonRelationship ||
+    rawDraft.pickup?.relationship_to_child ||
+    rawDraft.pickupPersonRelationship ||
+    ''
+  ).trim();
+
+  const pickupPersonPhone = (
+    rawDraft.pickup?.pickupPersonPhone ||
+    rawDraft.pickup?.phone_number ||
+    rawDraft.pickupPersonPhone ||
+    ''
+  ).trim();
+
+  const pickupPersonWhatsapp = (
+    rawDraft.pickup?.pickupPersonWhatsApp ||
+    rawDraft.pickup?.whatsapp_number ||
+    rawDraft.pickupPersonWhatsapp ||
+    ''
+  ).trim();
+
+  const pickupPersonPhotoUrl = (
+    rawDraft.pickup?.pickupPersonPhoto ||
+    rawDraft.pickup?.pickupPersonPhotoUrl ||
+    rawDraft.pickup?.photo_url ||
+    rawDraft.pickupPersonPhotoUrl ||
+    ''
+  ).trim();
+
+  const pickupPersonApproved = Boolean(
+    rawDraft.pickup?.approvedByParent ||
+    rawDraft.pickup?.approved_by_parent ||
+    rawDraft.pickupPersonApproved
+  );
+
+  return {
+    ...rawDraft,
+    fullName,
+    gender,
+    dob,
+    relationship,
+    photoUrl,
+    schoolClass,
+    schoolName,
+    attendedBefore: (attendedBefore || 'No') as 'Yes' | 'No',
+    careNote,
+    hasAllergies: (hasAllergies || 'No') as 'Yes' | 'No',
+    medicalNote,
+    needsExtraSupport: (needsExtraSupport || 'No') as 'Yes' | 'No',
+    supportNote,
+    infoConfirmed,
+    pickupType,
+    pickupPersonFullName,
+    pickupPersonRelationship,
+    pickupPersonPhone,
+    pickupPersonWhatsapp,
+    pickupPersonPhotoUrl,
+    pickupPersonApproved,
+    childDetails: {
+      photo: photoUrl,
+      photoFileId: rawDraft.childDetails?.photoFileId || rawDraft.photoFileId || '',
+      photoUrl,
+      fullName,
+      gender,
+      dateOfBirth: dob,
+      calculatedAge: rawDraft.childDetails?.calculatedAge || rawDraft.age || null,
+      ageGroup: rawDraft.childDetails?.ageGroup || rawDraft.ageGroup || '',
+      relationshipToChild: relationship,
+      needsAgeReview: Boolean(rawDraft.childDetails?.needsAgeReview || rawDraft.needsReview)
+    },
+    schoolAndAgeGroup: {
+      schoolClass,
+      schoolName,
+      previousChildrenProgramme: (attendedBefore || 'No') as 'Yes' | 'No',
+      noteToTeam: careNote
+    },
+    healthAndSupport: {
+      hasMedicalNotes: (hasAllergies || 'No') as 'Yes' | 'No',
+      medicalNotes: medicalNote,
+      needsExtraSupport: (needsExtraSupport || 'No') as 'Yes' | 'No',
+      supportNotes: supportNote,
+      informationConfirmed: infoConfirmed
+    },
+    pickup: {
+      pickupType,
+      mode: pickupType,
+      pickupPersonPhoto: pickupPersonPhotoUrl,
+      pickupPersonPhotoFileId: rawDraft.pickup?.pickupPersonPhotoFileId || rawDraft.pickupPhotoFileId || '',
+      pickupPersonPhotoUrl,
+      pickupPersonFullName,
+      pickupPersonRelationship,
+      pickupPersonPhone,
+      pickupPersonWhatsApp: pickupPersonWhatsapp,
+      approvedByParent: pickupPersonApproved
+    }
+  };
+}
+
 interface AddChildStep5ViewProps {
   onNavigate: (route: AppRoute) => void;
   draft?: AddChildDraft | null;
@@ -15,7 +294,7 @@ interface AddChildStep5ViewProps {
 
 export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   onNavigate,
-  draft,
+  draft: rawDraft,
   parentProfile,
   onSubmitReview,
   onSaveDraft
@@ -26,13 +305,19 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showValidationErrors, setShowValidationErrors] = useState<boolean>(false);
 
+  // Normalize the draft object to ensure both nested and flat fields are fully populated
+  // and compatible, protecting legacy/current keys (Phase 2 & Phase 7).
+  const draft: AddChildDraft = React.useMemo(() => {
+    return normalizeChildDraftForReview(rawDraft);
+  }, [rawDraft]);
+
   useEffect(() => {
-    if (!draft || !draft.fullName) {
+    if (!rawDraft || !rawDraft.fullName) {
       onNavigate('/parent/children/new');
     }
-  }, [draft, onNavigate]);
+  }, [rawDraft, onNavigate]);
 
-  if (!draft || !draft.fullName) {
+  if (!rawDraft || !rawDraft.fullName) {
     return null;
   }
 
@@ -81,7 +366,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   };
 
   const getResolvedPickupDetails = () => {
-    const isParent = draft.pickupType === 'parent' || draft.pickup?.pickupType === 'parent' || draft.pickup?.mode === 'parent' || draft.pickupPersonMode === 'parent';
+    const isParent = draft.pickupType === 'parent' || draft.pickup?.pickupType === 'parent' || (draft.pickup as any)?.mode === 'parent' || (draft as any).pickupPersonMode === 'parent';
     
     if (isParent) {
       const parentRel = draft.relationship || draft.childDetails?.relationshipToChild || 'Parent';
@@ -102,7 +387,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       const relationshipVal = draft.pickupPersonRelationship || draft.pickup?.pickupPersonRelationship || '';
       const phoneVal = draft.pickupPersonPhone || draft.pickup?.pickupPersonPhone || '';
       const whatsappVal = draft.pickupPersonWhatsapp || draft.pickup?.pickupPersonWhatsApp || '';
-      const photoUrlVal = draft.pickupPersonPhotoUrl || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.pickupPersonPhoto || '';
+      const photoUrlVal = draft.pickupPersonPhotoUrl || (draft.pickup as any)?.pickupPersonPhotoUrl || draft.pickup?.pickupPersonPhoto || '';
       return {
         isParent: false,
         fullName: fullNameVal,
@@ -110,7 +395,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
         phone: phoneVal,
         whatsapp: whatsappVal,
         photoUrl: photoUrlVal,
-        photoFileId: draft.pickupPersonPhotoFileId || draft.pickup?.pickupPersonPhotoFileId || '',
+        photoFileId: (draft as any).pickupPersonPhotoFileId || (draft.pickup as any)?.pickupPersonPhotoFileId || '',
         initials: fullNameVal ? fullNameVal.charAt(0).toUpperCase() : 'U'
       };
     }
@@ -332,7 +617,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   const isStep4Complete = !missingGroups.some(g => g.section === 'Pickup Person');
   const isPickupIncomplete = !isStep4Complete;
 
-  const needsAgeReview = draft.needsAgeReview || draft.childDetails?.needsAgeReview || draft.needsReview || (draft.dob && new Date().getFullYear() - new Date(draft.dob).getFullYear() < 4);
+  const needsAgeReview = (draft as any).needsAgeReview || (draft as any).childDetails?.needsAgeReview || draft.needsReview || (draft.dob && new Date().getFullYear() - new Date(draft.dob).getFullYear() < 4);
 
   // Helper to render card-level status badges and inline error lists
   const renderCardStatus = (sectionName: string, hasOptionalEmpty = false, isOptionalEmpty = false) => {
@@ -340,8 +625,11 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
     const hasErrors = group && group.fields.length > 0;
 
     return (
-      <div className="flex flex-col space-y-1.5" data-component-version="parent-review-section-status-v1">
-        <div className="flex items-center gap-1.5">
+      <div 
+        className="flex flex-col space-y-1.5" 
+        data-component-version="parent-review-section-status-v2-consistent"
+      >
+        <div className="flex items-center gap-1.5" data-component-version="parent-review-validation-normalized-v2">
           {hasErrors ? (
             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 tracking-wide">
               Needs update
@@ -593,8 +881,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
         {/* Review Cards Stack */}
         <div className="space-y-4">
-          
-          {/* 1. CHILD DETAILS CARD */}
+                   {/* 1. CHILD DETAILS CARD */}
           <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
@@ -611,45 +898,48 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             {renderCardStatus('Child Details')}
 
-            <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs sm:text-sm">
+            <div className="grid grid-cols-2 gap-y-3.5 gap-x-4 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Full Name
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.fullName || <span className="text-rose-600 font-medium">Required</span>}
+                  {draft.fullName || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Gender
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.gender || <span className="text-rose-600 font-medium">Required</span>}
+                  {draft.gender || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Date of Birth
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.dob ? formatDobToWords(draft.dob) : <span className="text-rose-600 font-medium">Required</span>}
+                  {draft.dob ? formatDobToWords(draft.dob) : <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Relationship
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.relationship || <span className="text-rose-600 font-medium">Required</span>}
+                  {draft.relationship || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
             </div>
           </div>
 
           {/* 2. SCHOOL & AGE GROUP CARD */}
-          <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
-            <div className="flex items-center justify-between">
+          <div 
+            data-component-version="parent-review-school-age-card-v2-mapped"
+            className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5"
+          >
+            <div data-component-version="parent-child-school-field-mapping-v1" className="flex items-center justify-between">
               <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
                 SCHOOL & AGE GROUP
               </span>
@@ -664,17 +954,17 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             {renderCardStatus('School & Age Group', true, isSchoolNameEmpty)}
 
-            <div className="space-y-3 text-xs sm:text-sm">
+            <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Class / Grade
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.schoolClass || <span className="text-rose-600 font-medium">Required</span>}
+                  {draft.schoolClass || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   School Name
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
@@ -682,13 +972,23 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Previous Attendance
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.attendedBefore ? (draft.attendedBefore === 'Yes' ? 'Yes' : 'No, first time') : <span className="text-rose-600 font-medium">Required</span>}
+                  {draft.attendedBefore ? (draft.attendedBefore === 'Yes' ? 'Yes' : 'No, first time') : <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
+              {draft.careNote ? (
+                <div data-component-version="parent-review-team-note-v1">
+                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                    Additional note for team
+                  </span>
+                  <span className="font-normal text-[#18181B] block mt-1 leading-relaxed whitespace-pre-line">
+                    {draft.careNote}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -709,25 +1009,25 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             {renderCardStatus('Health & Support')}
 
-            <div className="space-y-3 text-xs sm:text-sm">
+            <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Allergies / Medical Notes
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1 leading-relaxed">
-                  {draft.hasAllergies === 'Yes' ? (draft.medicalNote || <span className="text-rose-600 font-medium">Required details empty</span>) : 'None'}
+                  {draft.hasAllergies === 'Yes' ? (draft.medicalNote || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required details empty</span>) : 'None'}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Extra Support Needed
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1 leading-relaxed">
-                  {draft.needsExtraSupport === 'Yes' ? (draft.supportNote || <span className="text-rose-600 font-medium">Required details empty</span>) : 'None'}
+                  {draft.needsExtraSupport === 'Yes' ? (draft.supportNote || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required details empty</span>) : 'None'}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Emergency Care Consent
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
@@ -775,7 +1075,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
                 <div className="grid grid-cols-1 min-[560px]:grid-cols-2 gap-y-3.5 gap-x-8 min-w-0 text-xs sm:text-sm">
                   <div className="min-w-0">
-                    <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                       Name
                     </span>
                     <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
@@ -783,7 +1083,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                     </span>
                   </div>
                   <div className="min-w-0">
-                    <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                       Relation
                     </span>
                     <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
@@ -791,7 +1091,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                     </span>
                   </div>
                   <div className="min-w-0 min-[560px]:col-span-2">
-                    <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                       Phone
                     </span>
                     <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
@@ -820,9 +1120,9 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             {renderCardStatus('Parent Details', true, isWhatsappEmpty)}
 
-            <div className="space-y-3 text-xs sm:text-sm">
+            <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Primary Contact
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
@@ -831,15 +1131,15 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                     Phone
                   </span>
                   <span className="font-normal text-[#18181B] block mt-1">
-                    {parentProfile?.phone || parentProfile?.phoneNumber || <span className="text-rose-600 font-medium">Required</span>}
+                    {parentProfile?.phone || parentProfile?.phoneNumber || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                     WhatsApp
                   </span>
                   <span className="font-normal text-[#18181B] block mt-1">
@@ -850,11 +1150,11 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 </div>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
                   Email
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1 break-all">
-                  {parentProfile?.email || <span className="text-rose-600 font-medium">Required</span>}
+                  {parentProfile?.email || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
                 </span>
               </div>
             </div>
