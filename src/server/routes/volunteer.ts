@@ -3413,7 +3413,11 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
     const missingPhotos = await query(`
       SELECT 
         child_event_entries.id,
+        children.id as child_id,
         children.full_name as "childName",
+        children.photo_file_id as child_photo_file_id,
+        children.calculated_age as child_age,
+        children.age_group as child_age_group,
         'Missing pickup photo' as "issueType",
         'RESOLVE' as "actionText"
       FROM child_event_entries
@@ -3427,7 +3431,11 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
     const medicalReviews = await query(`
       SELECT 
         child_event_entries.id,
+        children.id as child_id,
         children.full_name as "childName",
+        children.photo_file_id as child_photo_file_id,
+        children.calculated_age as child_age,
+        children.age_group as child_age_group,
         'Medical alert' as "issueType",
         'REVIEW' as "actionText"
       FROM child_event_entries
@@ -3442,7 +3450,11 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
     const ageReviews = await query(`
       SELECT 
         child_event_entries.id,
+        children.id as child_id,
         children.full_name as "childName",
+        children.photo_file_id as child_photo_file_id,
+        children.calculated_age as child_age,
+        children.age_group as child_age_group,
         'Needs age group review' as "issueType",
         'RECLASSIFY' as "actionText"
       FROM children

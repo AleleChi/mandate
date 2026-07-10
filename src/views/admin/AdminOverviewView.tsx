@@ -136,24 +136,28 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const list = await api.parent.getNotifications(false, 'admin');
       const unreadList = list.filter((n: any) => !n.isRead);
       
-      setNotifications(list);
-      
-      // If we got a new notification, play appropriate sound
-      setUnreadNotifCount((prevCount) => {
-        if (unreadList.length > prevCount && prevCount > 0 && soundEnabled) {
-          const hasNewEscalation = unreadList.some(
-            (n: any) => n.type === 'escalation' && !notifications.some((oldN) => oldN.id === n.id)
+      setNotifications((prevNotifications) => {
+        // Compare with prevNotifications to find genuinely new unread notifications
+        // Avoid sound on initial load (when prevNotifications is empty)
+        if (prevNotifications.length > 0 && soundEnabled) {
+          const newUnread = unreadList.filter(
+            (n: any) => !prevNotifications.some((oldN) => oldN.id === n.id)
           );
-          if (hasNewEscalation) {
-            playSound('alert');
-          } else {
-            playSound('notification');
+          if (newUnread.length > 0) {
+            const hasNewEscalation = newUnread.some((n: any) => n.type === 'escalation');
+            if (hasNewEscalation) {
+              playSound('alert');
+            } else {
+              playSound('notification');
+            }
           }
         } else if (playFeedback) {
           playSound('success');
         }
-        return unreadList.length;
+        return list;
       });
+      
+      setUnreadNotifCount(unreadList.length);
     } catch (err) {
       console.error('Error fetching admin notifications:', err);
     }
@@ -659,7 +663,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
             </button>
 
-            <div className="relative" data-component-version="notification-sound-manager-v1">
+            <div className="relative" data-component-version="notification-sound-manager-v2">
               <button
                 onClick={() => {
                   setShowNotifPanel(!showNotifPanel);
@@ -683,7 +687,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#EAE8E1] rounded-3xl shadow-2xl overflow-hidden z-50 animate-fade-in"
                   data-component-version="admin-notification-panel-v2-live"
                 >
-                  <div className="p-4 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v1">
+                  <div className="p-4 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v1" data-sound-rule-version="admin-message-alert-sound-rule-v1">
                     <div>
                       <h4 className="font-serif font-bold text-sm text-[#18181B]">Updates & Care Alerts</h4>
                       <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Stay connected to ongoing check-ins</p>
@@ -692,7 +696,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={toggleSound}
-                        data-component-version="admin-sound-notification-toggle-v1"
+                        data-component-version="admin-sound-notification-toggle-v2"
                         className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
                           soundEnabled 
                             ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 

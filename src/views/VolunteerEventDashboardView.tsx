@@ -462,7 +462,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
         age--;
       }
-      return age > 0 ? `${age} years old` : '';
+      return age >= 0 ? (age === 0 ? 'Under 1 year old' : `${age} ${age === 1 ? 'year' : 'years'} old`) : '';
     } catch {
       return '';
     }
@@ -1570,7 +1570,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid grid-cols-2 gap-4" data-component-version="volunteer-dashboard-summary-v5-mobile">
+            <div className="grid grid-cols-2 gap-4" data-component-version="volunteer-dashboard-summary-v5-mobile" data-counts-version="under-one-child-counts-v1">
               <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
                 <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   EXPECTED
@@ -1624,34 +1624,67 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {attentionItems.length > 0 && (
                 <div className="divide-y divide-gray-100" data-component-version="volunteer-attention-list-v2">
-                  {attentionItems.map((item, index) => (
-                    <div
-                      key={item.id || index}
-                      className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
-                    >
-                      <div className="flex items-start space-x-3">
-                        <span className="text-sm font-serif font-bold text-[#C59B27] mt-0.5">
-                          {index + 1}
-                        </span>
-                        <div>
-                          <p className="text-xs font-bold text-gray-900 leading-tight">
-                            {item.issue_type || 'Unresolved issue'}
-                          </p>
-                          <p className="text-[11px] text-gray-500 mt-0.5">
-                            {item.child_name} {item.child_id ? `(ID: ${item.child_id})` : ''}
-                          </p>
-                        </div>
-                      </div>
+                  {attentionItems.map((item, index) => {
+                    const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
+                    const cName = item.child_name || item.childName || 'Child';
+                    const cleaned = formatChildNameAndRef(cName);
+                    
+                    const resolvedPhotoUrl = childPhoto ? (
+                      childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                        ? childPhoto 
+                        : `/api/media/files/${childPhoto}`
+                    ) : '';
 
-                      <button
-                        onClick={() => handleResolveAction(item)}
-                        data-component-version="volunteer-attention-action-v2"
-                        className="text-[11px] font-bold text-[#C59B27] hover:text-[#A47E1F] tracking-wider uppercase shrink-0 transition-colors cursor-pointer"
+                    return (
+                      <div
+                        key={item.id || index}
+                        className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
+                        data-component-version="volunteer-attention-list-item-v2"
                       >
-                        {item.action_text === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' ? 'Verify' : 'Review'}
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center space-x-3 min-w-0 flex-1">
+                          {/* Photo area */}
+                          <div 
+                            className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs"
+                            data-component-version="volunteer-attention-child-photo-v2"
+                          >
+                            {resolvedPhotoUrl ? (
+                              <SafeImage
+                                src={resolvedPhotoUrl}
+                                alt={cleaned.name}
+                                className="w-full h-full object-cover"
+                                fallbackComponent={
+                                  <span className="font-serif font-bold text-xs">
+                                    {cleaned.name.charAt(0).toUpperCase()}
+                                  </span>
+                                }
+                              />
+                            ) : (
+                              <span className="font-serif font-bold text-xs">
+                                {cleaned.name.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-gray-900 leading-tight truncate">
+                              {item.issue_type || item.issueType || 'Unresolved issue'}
+                            </p>
+                            <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                              {cleaned.name} {item.child_id ? `(ID: ${item.child_id})` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleResolveAction(item)}
+                          data-component-version="volunteer-attention-action-v2"
+                          className="text-[11px] font-bold text-[#C59B27] hover:text-[#A47E1F] tracking-wider uppercase shrink-0 transition-colors cursor-pointer"
+                        >
+                          {item.action_text === 'RESOLVE' || item.actionText === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' || item.actionText === 'VERIFY' ? 'Verify' : 'Review'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1716,7 +1749,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             (() => {
               const firstName = checkedInSuccessChild.firstName || (checkedInSuccessChild.fullName || '').split(' ')[0] || '';
               const ageNum = checkedInSuccessChild.age;
-              const ageLabel = ageNum !== undefined && ageNum !== null ? `${ageNum} ${ageNum === 1 ? 'year' : 'years'} old` : 'Age verified';
+              const ageLabel = ageNum !== undefined && ageNum !== null ? (ageNum === 0 ? 'Under 1 year old' : `${ageNum} ${ageNum === 1 ? 'year' : 'years'} old`) : 'Age verified';
               const ageGroup = checkedInSuccessChild.classGroup || checkedInSuccessChild.ageGroup || '';
 
               const medicalNote = checkedInSuccessChild.medicalNote || checkedInSuccessChild.medicalNotes || lookedUpChild?.medicalNotes || '';
@@ -1779,7 +1812,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           {checkedInSuccessChild.fullName || 'Registered Child'}
                         </h3>
                         <div className="flex items-center space-x-1.5 mt-1 text-xs text-gray-500 font-semibold">
-                          <span>{ageLabel}</span>
+                          <span data-component-version="volunteer-child-age-display-v2-under-one">{ageLabel}</span>
                           {ageLabel && ageGroup && <span className="text-gray-300">&bull;</span>}
                           {ageGroup && (
                             <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md tracking-wider">
@@ -1954,7 +1987,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         Pass Ready
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-gray-500 font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
                       {calculateAge(lookedUpChild.dateOfBirth) || 'Age verified'}
                     </p>
                   </div>
@@ -2492,7 +2525,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     {pickupSuccessResult.child?.fullName}
                   </h3>
                   <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
-                    {pickupSuccessResult.child?.age ? `${pickupSuccessResult.child.age} years old` : 'Verified age'} • {pickupSuccessResult.child?.classGroup || 'Class assigned'}
+                    {(pickupSuccessResult.child?.age !== undefined && pickupSuccessResult.child?.age !== null) ? (pickupSuccessResult.child.age === 0 ? 'Under 1 year old' : `${pickupSuccessResult.child.age} years old`) : 'Verified age'} • {pickupSuccessResult.child?.classGroup || 'Class assigned'}
                   </p>
                 </div>
               </div>
@@ -2715,7 +2748,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </h3>
                     
                     <div className="flex items-center justify-center space-x-1.5 text-xs text-gray-500 font-semibold">
-                      <span>{pickupChild.age ? `${pickupChild.age} yrs` : 'Verified age'}</span>
+                      <span>{pickupChild.age !== undefined && pickupChild.age !== null ? (pickupChild.age === 0 ? 'Under 1 year old' : `${pickupChild.age} yrs`) : 'Verified age'}</span>
                       <span className="text-gray-300">&bull;</span>
                       <span>{pickupChild.gender || 'Child'}</span>
                       {pickupChild.classGroup && (
@@ -3189,7 +3222,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           {pickupLastChild.childName || 'Child'}
                         </h5>
                         <p className="text-[10px] text-gray-500 font-semibold mt-0.5">
-                          {pickupLastChild.age ? `${pickupLastChild.age} yrs` : pickupLastChild.schoolClass || 'Class verified'}
+                          {(pickupLastChild.age !== undefined && pickupLastChild.age !== null) ? (pickupLastChild.age === 0 ? 'Under 1 year old' : `${pickupLastChild.age} yrs`) : (pickupLastChild.schoolClass || 'Class verified')}
                         </p>
                       </div>
                     </div>
@@ -3278,7 +3311,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </h2>
                     <div className="flex items-center justify-center space-x-2 mt-2">
                       <span className="px-2.5 py-1 bg-[#FAF9F5] border border-[#EAE8E1] text-gray-700 rounded-lg text-[10px] font-bold uppercase tracking-wide">
-                        {childProfileData.child.age ? `${childProfileData.child.age} years old` : 'Age unknown'}
+                        {childProfileData.child.age !== undefined && childProfileData.child.age !== null ? (childProfileData.child.age === 0 ? 'Under 1 year old' : `${childProfileData.child.age} years old`) : 'Age unknown'}
                       </span>
                       {childProfileData.child.classGroup && (
                         <span className="px-2.5 py-1 bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 rounded-lg text-[10px] font-bold uppercase tracking-wide">
@@ -3745,7 +3778,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     }
 
                     // Format age details if present
-                    const ageText = child.age ? `${child.age} years` : 'Age unknown';
+                    const ageText = child.age !== undefined && child.age !== null ? (child.age === 0 ? 'Under 1 year old' : `${child.age} ${child.age === 1 ? 'year' : 'years'} old`) : 'Age unknown';
                     const ageGroupText = child.ageGroup ? ` • ${child.ageGroup}` : '';
 
                     return (
@@ -3780,7 +3813,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                 {statusLabel}
                               </span>
                             </div>
-                            <p className="text-[11px] text-gray-400 font-medium">
+                            <p className="text-[11px] text-gray-400 font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
                               {ageText}{ageGroupText}
                             </p>
                             <p className="text-[11px] text-gray-500 font-medium leading-tight truncate">
@@ -4269,26 +4302,60 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             <div className="space-y-3">
               {reportsData?.needsAttention && reportsData.needsAttention.length > 0 ? (
-                reportsData.needsAttention.map((item: any, idx: number) => (
-                  <div key={item.id || idx} className="p-4 bg-amber-50/30 border border-amber-100 rounded-2xl flex items-center justify-between space-x-3 text-xs">
-                    <div className="flex items-start space-x-3">
-                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-neutral-800 text-sm">{item.childName}</h4>
-                        <p className="text-xs text-amber-700 font-medium">{item.issueType}</p>
+                reportsData.needsAttention.map((item: any, idx: number) => {
+                  const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
+                  const cName = item.childName || item.child_name || 'Child';
+                  const cleaned = formatChildNameAndRef(cName);
+                  
+                  const resolvedPhotoUrl = childPhoto ? (
+                    childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                      ? childPhoto 
+                      : `/api/media/files/${childPhoto}`
+                  ) : '';
+
+                  return (
+                    <div key={item.id || idx} className="p-4 bg-amber-50/30 border border-amber-100 rounded-2xl flex items-center justify-between gap-4 text-xs">
+                      <div className="flex items-center space-x-3 min-w-0 flex-1">
+                        {/* Photo area */}
+                        <div 
+                          className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs"
+                          data-component-version="volunteer-attention-child-photo-v2"
+                        >
+                          {resolvedPhotoUrl ? (
+                            <SafeImage
+                              src={resolvedPhotoUrl}
+                              alt={cleaned.name}
+                              className="w-full h-full object-cover"
+                              fallbackComponent={
+                                <span className="font-serif font-bold text-xs">
+                                  {cleaned.name.charAt(0).toUpperCase()}
+                                </span>
+                              }
+                            />
+                          ) : (
+                            <span className="font-serif font-bold text-xs">
+                              {cleaned.name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <h4 className="font-bold text-neutral-800 text-sm truncate">{cleaned.name}</h4>
+                          <p className="text-xs text-amber-700 font-medium truncate">{item.issueType || item.issue_type}</p>
+                        </div>
                       </div>
+                      <button
+                        onClick={() => {
+                          setShowAttentionModal(false);
+                          handleResolveAction(item);
+                        }}
+                        className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                      >
+                        {item.actionText || item.action_text || 'RESOLVE'}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => {
-                        setShowAttentionModal(false);
-                        handleResolveAction(item);
-                      }}
-                      className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
-                    >
-                      {item.actionText || 'RESOLVE'}
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="py-8 text-center text-gray-400 text-xs">
                   No active alerts or needs attention items.
@@ -4345,18 +4412,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             {/* Child Summary Block */}
             <div 
               className="bg-[#FAF9F6] border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-4"
-              data-component-version="volunteer-attention-child-summary-v4"
+              data-component-version="volunteer-attention-modal-child-summary-v2"
             >
               {/* Photo or Fallback */}
-              <div className="w-16 h-16 rounded-full bg-[#FAF6EB] border border-[#E5D5AE]/60 overflow-hidden flex-shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-lg">
+              <div 
+                className="w-16 h-16 rounded-2xl bg-[#FAF6EB] border border-[#E5D5AE]/60 overflow-hidden flex-shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-lg"
+                data-component-version="volunteer-attention-child-photo-v2"
+              >
                 {(() => {
                   const childPhoto = selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId;
                   const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
                   const cleaned = formatChildNameAndRef(cName);
-                  if (childPhoto) {
+                  
+                  const resolvedPhotoUrl = childPhoto ? (
+                    childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                      ? childPhoto 
+                      : `/api/media/files/${childPhoto}`
+                  ) : '';
+
+                  if (resolvedPhotoUrl) {
                     return (
                        <SafeImage 
-                        src={`/api/media/${childPhoto}`} 
+                        src={resolvedPhotoUrl} 
                         alt={cleaned.name} 
                         className="w-full h-full object-cover"
                         fallbackComponent={
@@ -4367,7 +4444,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       />
                     );
                   }
-                  return cleaned.name.charAt(0).toUpperCase();
+                  return (
+                    <span className="font-serif font-bold text-lg">
+                      {cleaned.name.charAt(0).toUpperCase()}
+                    </span>
+                  );
                 })()}
               </div>
               
@@ -4399,8 +4480,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     return null;
                   })()}
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Age: {selectedAttentionItem.child_age ? `${selectedAttentionItem.child_age} yrs` : 'Not verified'} | Group: {selectedAttentionItem.child_age_group || 'Unassigned'}
+                <p className="text-xs text-gray-500 mt-0.5" data-component-version="volunteer-child-age-display-v2-under-one">
+                  Age: {selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? (selectedAttentionItem.child_age === 0 ? 'Under 1 year old' : `${selectedAttentionItem.child_age} yrs`) : 'Not verified'} | Group: {selectedAttentionItem.child_age_group || 'Unassigned'}
                 </p>
                 {selectedAttentionItem.parent_name && (
                   <p className="text-[11px] text-gray-600 mt-1">

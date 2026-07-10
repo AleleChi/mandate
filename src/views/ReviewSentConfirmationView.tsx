@@ -107,7 +107,7 @@ export const ReviewSentConfirmationView: React.FC<ReviewSentConfirmationViewProp
               {submittedChild.name}
             </h3>
             <p className="text-xs text-[#6B7280] mt-0.5">
-              {submittedChild.age} years old • {submittedChild.ageGroup}
+              {submittedChild.age === 0 ? 'Under 1 year old' : `${submittedChild.age} years old`} • {submittedChild.ageGroup}
             </p>
             <div className="mt-1.5">
               <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] sm:text-[11px] font-bold tracking-wider uppercase">

@@ -575,7 +575,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 />
                 <div className="flex-1 min-w-0">
                   <h3 className="text-lg font-bold text-[#18181B] truncate">{child.name}</h3>
-                  <p className="text-xs text-[#B89047] font-semibold mt-0.5">{child.ageGroup} • {child.age} years old</p>
+                  <p className="text-xs text-[#B89047] font-semibold mt-0.5">{child.ageGroup} • {child.age === 0 ? 'Under 1 year old' : `${child.age} years old`}</p>
                   <div className="mt-2">
                     <StatusBadge status={child.status} />
                   </div>
