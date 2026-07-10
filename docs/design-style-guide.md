@@ -176,7 +176,28 @@ To ensure the administrative event management pages match Koinonia's premium bra
   - Mobile app header: `data-component-version="volunteer-mobile-app-header-v2-handover"`
   - Header avatar: `data-component-version="volunteer-header-avatar-v3-handover-photo"`
   - Welcome greeting: `data-component-version="volunteer-dashboard-greeting-v6-handover-real-name"`
-  - Hero card: `data-component-version="volunteer-dashboard-hero-v9-handover-mobile-app"`
-  - Hero image SafeImage: `data-component-version="volunteer-dashboard-hero-image-v5-handover-stable"`
+  - Hero card: `data-component-version="volunteer-dashboard-hero-v10-secure-media"`
+  - Hero image SafeImage: `data-component-version="safe-image-v8-secure-production"`
+
+### Parent Passes tab (Stitch Design - Multi-Child Overview)
+- **Overview Layout**: Implements a high-fidelity mobile-first Stitch-style multi-child overview (`data-view-version="parent-passes-v12-stitch-multi-child-overview"`) with summary badges ("Pass ready", "Waiting", "Draft") computed from active children records.
+- **Categorized Cards**: Groups children dynamically by active status. Individual child cards show the child’s photo, name, age, pavilion name, status label, and clear context-specific action triggers:
+  - *"View pass"* (for Approved/Pass ready) -> Opens the secure full pass detail modal.
+  - *"View status"* (for Details sent, Under review, Selected, Waiting list, Not selected) -> Directs the parent to the Status tab.
+  - *"Continue details"* (for Drafts) -> Directs the parent to the Children tab to complete the child profile.
+- **Forbidden Content**: The full pass card, QR code, pickup person details, and "Save/Share" actions are strictly hidden from this overview panel; they are only accessible securely inside the dedicated detail modal.
+- **Mobile Navigation Header**: When the Passes tab is active, the app header displays a specific localized brand design with an elegant menu indicator.
+- **Component Versioning**: Uses attribute `data-component-version="parent-passes-summary-v2-stitch"` for summary cards and `data-component-version="parent-pass-ready-card-v2-stitch"` for pass-ready cards.
+
+### Parent Add Child Step 5 Review Screen Design Specifications
+- **Overview Layout**: Implements a highly polished review screen with `data-view-version="parent-add-child-review-v3-premium-validation"`. Headings and labels use calm typography and appropriate visual margins.
+- **Specific Validation Panel**: Houses the detailed required fields panel under `data-component-version="parent-child-review-validation-v2-specific"`. It lists missing fields grouped cleanly by section.
+- **Section Status Indicators**: Individual cards display their completion states dynamically with `data-component-version="parent-review-section-status-v1"`, supporting "Completed", "Needs update", and "Optional details empty" indicators with inline missing checklists.
+- **Action Triggers**:
+  - *"Fix action"* (`data-component-version="parent-review-fix-action-v1"`) -> Quick-links that direct the parent back to the correct step in the registration process.
+  - *"Save for later"* (`data-component-version="parent-review-save-later-v1"`) -> Allows saving partial or incomplete details and retaining uploaded media.
+  - *"Send for review"* (`data-component-version="parent-review-submit-validation-v1"`) -> Restricts incomplete submissions and initiates focus scroll to the specific missing fields.
+
+
 
 

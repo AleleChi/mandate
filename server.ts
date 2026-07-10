@@ -104,6 +104,58 @@ async function startServer() {
   app.use('/api/webhooks', webhooksRoutes);
   app.use('/api/volunteer', volunteerRoutes);
 
+  // GET secure /uploads/:filename
+  app.get('/uploads/:filename', (req, res) => {
+    // data-component-version="backend-upload-serving-v2-secure"
+    try {
+      const { filename } = req.params;
+
+      // Prevent directory traversal
+      if (filename.includes('..') || filename.includes('/') || filename.includes('\\') || filename.includes('%2e%2e')) {
+        return res.status(400).send('Invalid filename.');
+      }
+
+      // Allowed extensions
+      const ext = path.extname(filename).toLowerCase();
+      const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+      if (!allowedExts.includes(ext)) {
+        return res.status(400).send('File type not supported.');
+      }
+
+      // Map extension to mime type
+      let mimeType = 'image/jpeg';
+      if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.webp') mimeType = 'image/webp';
+
+      // Look for file in data/media and subdirs
+      const baseDir = path.join(process.cwd(), 'data', 'media');
+      const subDirs = ['', 'parents', 'volunteers', 'children', 'pickup-people', 'events', 'videos', 'gallery', 'general'];
+      
+      let filePath = '';
+      for (const sub of subDirs) {
+        const searchPath = path.join(baseDir, sub, filename);
+        if (fs.existsSync(searchPath) && fs.statSync(searchPath).isFile()) {
+          filePath = searchPath;
+          break;
+        }
+      }
+
+      if (!filePath) {
+        return res.status(404).send('File not found.');
+      }
+
+      // Set headers
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('X-Component-Version', 'backend-upload-serving-v2-secure');
+
+      return fs.createReadStream(filePath).pipe(res);
+    } catch (err) {
+      console.error('Error serving upload:', err);
+      return res.status(500).send('Internal server error.');
+    }
+  });
+
   // GET public app media
   app.get('/api/public/app-media', async (req, res) => {
     try {

@@ -24,6 +24,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   const [isConfirmed, setIsConfirmed] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showValidationErrors, setShowValidationErrors] = useState<boolean>(false);
 
   useEffect(() => {
     if (!draft || !draft.fullName) {
@@ -116,27 +117,257 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   };
 
   const pickupDetails = getResolvedPickupDetails();
-  const hasMissingPickupData = !draft.pickupType && !draft.pickup?.pickupType;
-  
-  const isPickupIncomplete = hasMissingPickupData || (
-    pickupDetails.isParent
-      ? !pickupDetails.fullName || !pickupDetails.fullName.trim() || !pickupDetails.phone || !pickupDetails.phone.trim() || !pickupDetails.photoUrl
-      : !pickupDetails.fullName || !pickupDetails.fullName.trim() || !pickupDetails.relationship || !pickupDetails.relationship.trim() || !pickupDetails.phone || !pickupDetails.phone.trim() || !pickupDetails.photoUrl
-  );
+
+  // Robust, dynamic missing fields validator
+  const getMissingFields = () => {
+    const groups = [];
+
+    // 1. Child Details
+    const childFields = [];
+    const cName = (draft.childDetails?.fullName || draft.fullName || '').trim();
+    if (!cName) {
+      childFields.push({ field: 'fullName', message: 'Child full name is missing.' });
+    } else if (cName.length < 2) {
+      childFields.push({ field: 'fullName', message: 'Child name must be at least 2 characters.' });
+    } else if (/\d/.test(cName)) {
+      childFields.push({ field: 'fullName', message: 'Child name cannot contain digits.' });
+    }
+
+    const cGender = draft.childDetails?.gender || draft.gender;
+    if (!cGender || !['Male', 'Female'].includes(cGender)) {
+      childFields.push({ field: 'gender', message: 'Child gender is missing.' });
+    }
+
+    const cDob = draft.childDetails?.dateOfBirth || draft.dob;
+    if (!cDob) {
+      childFields.push({ field: 'dob', message: 'Child date of birth is missing.' });
+    } else {
+      const dobDate = new Date(cDob);
+      const now = new Date();
+      if (dobDate > now) {
+        childFields.push({ field: 'dob', message: 'Date of birth cannot be in the future.' });
+      } else {
+        const ageInMs = now.getTime() - dobDate.getTime();
+        const ageInYears = ageInMs / (1000 * 60 * 60 * 24 * 365.25);
+        if (ageInYears > 18) {
+          childFields.push({ field: 'dob', message: 'Child must be under 18 years old.' });
+        }
+      }
+    }
+
+    const cRel = draft.childDetails?.relationshipToChild || draft.relationship || '';
+    if (!cRel.trim()) {
+      childFields.push({ field: 'relationship', message: 'Child relationship to parent/guardian is missing.' });
+    }
+
+    const cPhoto = draft.childDetails?.photo || draft.photoUrl;
+    if (!cPhoto) {
+      childFields.push({ field: 'childPhoto', message: 'Child photo is required.' });
+    }
+
+    if (childFields.length > 0) {
+      groups.push({
+        section: 'Child Details',
+        stepRoute: '/parent/children/new' as AppRoute,
+        editLabel: 'Edit Child details',
+        fields: childFields
+      });
+    }
+
+    // 2. School & Age Group
+    const schoolFields = [];
+    const sClass = (draft.schoolAndAgeGroup?.schoolClass || draft.schoolClass || '').trim();
+    if (!sClass) {
+      schoolFields.push({ field: 'schoolClass', message: 'Class / grade is missing.' });
+    }
+
+    const sAttended = draft.schoolAndAgeGroup?.previousChildrenProgramme || draft.attendedBefore;
+    if (!sAttended || !['Yes', 'No'].includes(sAttended)) {
+      schoolFields.push({ field: 'attendedBefore', message: 'Previous attendance response is required.' });
+    }
+
+    if (schoolFields.length > 0) {
+      groups.push({
+        section: 'School & Age Group',
+        stepRoute: '/parent/children/new/care-details' as AppRoute,
+        editLabel: 'Edit School & age group',
+        fields: schoolFields
+      });
+    }
+
+    // 3. Health & Support
+    const healthFields = [];
+    const hMed = draft.healthAndSupport?.hasMedicalNotes || draft.hasAllergies;
+    if (!hMed || !['Yes', 'No'].includes(hMed)) {
+      healthFields.push({ field: 'hasAllergies', message: 'Medical & allergy response is required.' });
+    } else if (hMed === 'Yes') {
+      const medNotes = (draft.healthAndSupport?.medicalNotes || draft.medicalNote || '').trim();
+      if (!medNotes) {
+        healthFields.push({ field: 'medicalNote', message: 'Please provide allergy & medical details.' });
+      }
+    }
+
+    const hSup = draft.healthAndSupport?.needsExtraSupport || draft.needsExtraSupport;
+    if (!hSup || !['Yes', 'No'].includes(hSup)) {
+      healthFields.push({ field: 'needsExtraSupport', message: 'Extra support response is required.' });
+    } else if (hSup === 'Yes') {
+      const supNotes = (draft.healthAndSupport?.supportNotes || draft.supportNote || '').trim();
+      if (!supNotes) {
+        healthFields.push({ field: 'supportNote', message: 'Please provide extra support details.' });
+      }
+    }
+
+    const hConf = draft.healthAndSupport?.informationConfirmed || draft.infoConfirmed;
+    if (!hConf) {
+      healthFields.push({ field: 'infoConfirmed', message: 'Health & care confirmation is required.' });
+    }
+
+    if (healthFields.length > 0) {
+      groups.push({
+        section: 'Health & Support',
+        stepRoute: '/parent/children/new/health-and-support' as AppRoute,
+        editLabel: 'Edit Health & support',
+        fields: healthFields
+      });
+    }
+
+    // 4. Pickup Person
+    const pickupFields = [];
+    const pType = draft.pickup?.pickupType || draft.pickupType;
+    if (!pType) {
+      pickupFields.push({ field: 'pickupType', message: 'Pickup option must be selected.' });
+    } else if (pType === 'parent') {
+      if (!parentProfile?.fullName || !parentProfile.fullName.trim()) {
+        pickupFields.push({ field: 'pickupParentName', message: 'Parent profile name is missing.' });
+      }
+      const pPhone = parentProfile?.phone || parentProfile?.phoneNumber || '';
+      if (!pPhone || !pPhone.trim()) {
+        pickupFields.push({ field: 'pickupParentPhone', message: 'Parent profile phone number is missing.' });
+      }
+      if (!parentProfile?.photoUrl) {
+        pickupFields.push({ field: 'pickupParentPhoto', message: 'Parent profile photo is required for parent pickup.' });
+      }
+    } else if (pType === 'other_person') {
+      const pName = (draft.pickup?.pickupPersonFullName || draft.pickupPersonFullName || '').trim();
+      if (!pName) {
+        pickupFields.push({ field: 'pickupPersonFullName', message: 'Pickup person full name is missing.' });
+      } else {
+        const parts = pName.split(/\s+/).filter(Boolean);
+        if (parts.length < 2) {
+          pickupFields.push({ field: 'pickupPersonFullName', message: 'Pickup name must include first and last name.' });
+        } else if (/\d/.test(pName)) {
+          pickupFields.push({ field: 'pickupPersonFullName', message: 'Pickup name cannot contain digits.' });
+        }
+      }
+
+      const pRel = (draft.pickup?.pickupPersonRelationship || draft.pickupPersonRelationship || '').trim();
+      if (!pRel) {
+        pickupFields.push({ field: 'pickupPersonRelationship', message: 'Pickup person relationship is missing.' });
+      }
+
+      const pPhone = (draft.pickup?.pickupPersonPhone || draft.pickupPersonPhone || '').trim();
+      if (!pPhone) {
+        pickupFields.push({ field: 'pickupPersonPhone', message: 'Pickup person phone number is missing.' });
+      } else {
+        if (!/^[+\d\s]+$/.test(pPhone)) {
+          pickupFields.push({ field: 'pickupPersonPhone', message: 'Pickup phone can only contain digits, spaces, and +.' });
+        }
+      }
+
+      const pPhoto = draft.pickup?.pickupPersonPhoto || draft.pickupPersonPhotoUrl;
+      if (!pPhoto) {
+        pickupFields.push({ field: 'pickupPersonPhoto', message: 'Pickup person photo is required.' });
+      }
+
+      const pApproved = draft.pickup?.approvedByParent || draft.pickupPersonApproved;
+      if (!pApproved) {
+        pickupFields.push({ field: 'pickupPersonApproved', message: 'Pickup authorization checkbox must be checked.' });
+      }
+    }
+
+    if (pickupFields.length > 0) {
+      groups.push({
+        section: 'Pickup Person',
+        stepRoute: '/parent/children/new/pickup-person' as AppRoute,
+        editLabel: 'Edit Pickup person',
+        fields: pickupFields
+      });
+    }
+
+    // 5. Parent Details
+    const parentFields = [];
+    if (!parentProfile?.fullName || !parentProfile.fullName.trim()) {
+      parentFields.push({ field: 'parentFullName', message: 'Parent full name is missing.' });
+    }
+    const phoneNum = parentProfile?.phone || parentProfile?.phoneNumber || '';
+    if (!phoneNum || !phoneNum.trim()) {
+      parentFields.push({ field: 'parentPhone', message: 'Parent phone number is missing.' });
+    }
+    if (!parentProfile?.email || !parentProfile.email.trim()) {
+      parentFields.push({ field: 'parentEmail', message: 'Parent email address is missing.' });
+    }
+    if (!parentProfile?.photoUrl) {
+      parentFields.push({ field: 'parentPhoto', message: 'Parent profile photo is required.' });
+    }
+
+    if (parentFields.length > 0) {
+      groups.push({
+        section: 'Parent Details',
+        stepRoute: '/parent/profile/edit' as AppRoute,
+        editLabel: 'Edit Parent details',
+        fields: parentFields
+      });
+    }
+
+    return groups;
+  };
+
+  const missingGroups = getMissingFields();
+  const hasMissingSteps = missingGroups.length > 0;
+
+  // Compatibility variables to prevent any parent flow breaks
+  const isStep1Complete = !missingGroups.some(g => g.section === 'Child Details');
+  const isStep2Complete = !missingGroups.some(g => g.section === 'School & Age Group');
+  const isStep3Complete = !missingGroups.some(g => g.section === 'Health & Support');
+  const isStep4Complete = !missingGroups.some(g => g.section === 'Pickup Person');
+  const isPickupIncomplete = !isStep4Complete;
 
   const needsAgeReview = draft.needsAgeReview || draft.childDetails?.needsAgeReview || draft.needsReview || (draft.dob && new Date().getFullYear() - new Date(draft.dob).getFullYear() < 4);
 
-  // Check required data across steps
-  const isStep1Complete = Boolean(draft.fullName && draft.photoUrl && draft.dob);
-  const isStep2Complete = Boolean(draft.ageGroup);
-  const isStep3Complete = Boolean(draft.hasAllergies && draft.needsExtraSupport);
-  const isStep4Complete = !hasMissingPickupData && (
-    pickupDetails.isParent
-      ? Boolean(pickupDetails.fullName && pickupDetails.phone && pickupDetails.photoUrl)
-      : Boolean(pickupDetails.fullName && pickupDetails.relationship && pickupDetails.phone && pickupDetails.photoUrl)
-  );
+  // Helper to render card-level status badges and inline error lists
+  const renderCardStatus = (sectionName: string, hasOptionalEmpty = false, isOptionalEmpty = false) => {
+    const group = missingGroups.find(g => g.section === sectionName);
+    const hasErrors = group && group.fields.length > 0;
 
-  const hasMissingSteps = !isStep1Complete || !isStep2Complete || !isStep3Complete || !isStep4Complete;
+    return (
+      <div className="flex flex-col space-y-1.5" data-component-version="parent-review-section-status-v1">
+        <div className="flex items-center gap-1.5">
+          {hasErrors ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 tracking-wide">
+              Needs update
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 tracking-wide">
+              Completed
+            </span>
+          )}
+          {(!hasErrors && hasOptionalEmpty && isOptionalEmpty) && (
+            <span className="text-[10px] text-zinc-400 italic">Optional details empty</span>
+          )}
+        </div>
+        {hasErrors && (
+          <div className="space-y-1 mt-1 pl-1">
+            {group.fields.map((f, idx) => (
+              <p key={idx} className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-rose-500 shrink-0" />
+                {f.message}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const handleSendForReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,61 +378,29 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       return;
     }
 
-    const newErrors: Record<string, string> = {};
-
-    // 1. Child validations
-    if (!draft.fullName || !draft.fullName.trim()) {
-      newErrors.fullName = 'Child full name is missing.';
-    }
-    if (!draft.photoUrl) {
-      newErrors.childPhoto = 'Child photo is missing.';
-    }
-    if (!draft.dob) {
-      newErrors.dob = 'Child date of birth is missing.';
-    }
-    if (!draft.ageGroup) {
-      newErrors.ageGroup = 'Suggested age group is missing.';
-    }
-
-    // 2. Pickup person validations
-    if (isPickupIncomplete) {
-      newErrors.pickup = 'Pickup person details are incomplete.';
-    } else {
-      if (pickupDetails.isParent) {
-        if (!pickupDetails.fullName.trim()) {
-          newErrors.pickupName = 'Parent full name is missing.';
-        }
-        if (!pickupDetails.phone.trim()) {
-          newErrors.pickupPhone = 'Parent phone number is missing.';
-        }
-        if (!pickupDetails.photoUrl) {
-          newErrors.pickupPhoto = 'Parent profile photo is missing. Please add a profile photo in your profile before sending for review.';
-        }
-      } else {
-        if (!pickupDetails.fullName.trim()) {
-          newErrors.pickupName = 'Pickup person full name is missing.';
-        }
-        if (!pickupDetails.relationship.trim()) {
-          newErrors.pickupRelationship = 'Pickup person relationship is missing.';
-        }
-        if (!pickupDetails.phone.trim()) {
-          newErrors.pickupPhone = 'Pickup person phone number is missing.';
-        }
-        if (!pickupDetails.photoUrl) {
-          newErrors.pickupPhoto = 'Pickup person photo is missing. Please go back and upload a photo.';
-        }
+    const freshMissing = getMissingFields();
+    if (freshMissing.length > 0 || !isConfirmed) {
+      const fieldErrors: Record<string, string> = {};
+      freshMissing.forEach(g => {
+        g.fields.forEach(f => {
+          fieldErrors[f.field] = f.message;
+        });
+      });
+      if (!isConfirmed) {
+        fieldErrors.confirmed = 'Please confirm that these details are correct.';
       }
-    }
+      setErrors(fieldErrors);
+      setShowValidationErrors(true);
 
-    if (!isConfirmed) {
-      newErrors.confirmed = 'Please confirm the details before sending.';
-    }
+      // Smooth scroll to top validation panel
+      const panel = document.getElementById('validation-summary-panel');
+      if (panel) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      // Highlight the first error
-      const errorMsg = Object.values(newErrors)[0];
-      showError('Details could not be sent', errorMsg);
+      showError('Review Checklist Incomplete', 'Please check and complete all required fields listed at the top.');
       return;
     }
 
@@ -219,7 +418,6 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
     try {
       const success = await onSubmitReview(submittedDraft);
       if (success) {
-        // Keep button disabled briefly then navigate
         setTimeout(() => {
           onNavigate('/parent/children/review-sent');
         }, 1000);
@@ -230,8 +428,24 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
     } catch (err: any) {
       console.error('Submit review error:', err);
       setIsSubmitting(false);
-      const apiErr = extractApiError(err);
-      showError('Submission failed', apiErr.message || 'We could not send the details right now. Please try again.');
+      const apiErr = extractApiError(err) as any;
+      
+      if (apiErr.errors && Array.isArray(apiErr.errors)) {
+        const backendErrors: Record<string, string> = {};
+        apiErr.errors.forEach((e: any) => {
+          backendErrors[e.field || 'backend'] = e.message;
+        });
+        setErrors(backendErrors);
+        setShowValidationErrors(true);
+        showError('Cannot Send for Review', apiErr.message || 'Required details are missing. Please review and try again.');
+        
+        const panel = document.getElementById('validation-summary-panel');
+        if (panel) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        showError('Submission failed', apiErr.message || 'We could not send the details right now. Please try again.');
+      }
     }
   };
 
@@ -249,8 +463,15 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
   const childFirstName = draft.fullName ? draft.fullName.split(' ')[0] : 'your child';
 
+  // Check optional fields emptiness for badges
+  const isSchoolNameEmpty = !draft.schoolName || !draft.schoolName.trim();
+  const isWhatsappEmpty = !parentProfile?.whatsapp || parentProfile.whatsapp === parentProfile.phone;
+
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-5 pb-10">
+    <div 
+      data-view-version="parent-add-child-review-v3-premium-validation"
+      className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-5 pb-10"
+    >
       <div className="space-y-6">
         {/* Top bar */}
         <div className="pt-5 pb-1 flex items-center justify-between relative">
@@ -287,18 +508,55 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B]">
             Review details
           </h1>
-          <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed">
+          <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed font-normal">
             Please check the information before sending it to the team.
           </p>
         </div>
 
-        {/* Missing steps calm message */}
+        {/* Specific Missing Details Panel (Phase 2 & Phase 7) */}
         {hasMissingSteps && (
-          <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-3.5 flex items-start space-x-3 text-xs text-[#92400E]">
-            <AlertCircle className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold">Some details are missing.</p>
-              <p className="mt-0.5">Please review the previous steps before sending for review.</p>
+          <div 
+            id="validation-summary-panel"
+            data-component-version="parent-child-review-validation-v2-specific"
+            className="bg-[#FEF2F2] border border-red-200/80 rounded-2xl p-4 space-y-3.5 transition-all duration-300"
+          >
+            <div className="flex items-start space-x-2.5">
+              <AlertCircle className="w-4.5 h-4.5 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <h3 className="font-serif-koinonia text-base font-bold text-red-950">
+                  Please complete these details
+                </h3>
+                <p className="text-xs text-red-700 leading-relaxed font-normal">
+                  Review the items below before sending this child for review.
+                </p>
+              </div>
+            </div>
+
+            <div className="divide-y divide-red-100 pt-1">
+              {missingGroups.map((group, groupIdx) => (
+                <div key={groupIdx} className="py-2.5 first:pt-0 last:pb-0 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold tracking-wider uppercase text-red-800">
+                      {group.section}
+                    </span>
+                    <button
+                      type="button"
+                      data-component-version="parent-review-fix-action-v1"
+                      onClick={() => onNavigate(group.stepRoute)}
+                      className="text-[11px] font-bold text-red-700 hover:text-red-900 transition-colors cursor-pointer hover:underline focus:outline-none"
+                    >
+                      {group.editLabel}
+                    </button>
+                  </div>
+                  <ul className="space-y-1 pl-3.5 list-disc list-outside text-xs text-red-700">
+                    {group.fields.map((field, fieldIdx) => (
+                      <li key={fieldIdx} className="font-normal">
+                        {field.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -313,12 +571,12 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 className="w-full h-full rounded-[20px] object-cover object-center block"
               />
             ) : (
-              <div className="w-full h-full rounded-[20px] bg-[#FAF8F4] text-[#715D3A] flex items-center justify-center font-bold text-3xl">
+              <div className="w-full h-full rounded-[20px] bg-[#FAF8F4] text-[#715D3A] flex items-center justify-center font-serif-koinonia font-bold text-3xl">
                 {draft.fullName.charAt(0).toUpperCase()}
               </div>
             )}
           </div>
-          <h2 className="text-[#18181B] font-serif-koinonia text-2xl font-medium tracking-tight mt-4 text-center">
+          <h2 className="text-[#18181B] font-serif-koinonia text-xl font-bold tracking-tight mt-4 text-center">
             {draft.fullName}
           </h2>
           <p className="text-xs text-[#3F3F46] mt-1 font-normal text-center flex items-center justify-center gap-1.5 flex-wrap">
@@ -335,135 +593,142 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
         {/* Review Cards Stack */}
         <div className="space-y-4">
-          {/* 1. CHILD DETAILS */}
+          
+          {/* 1. CHILD DETAILS CARD */}
           <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-widest uppercase text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
                 CHILD DETAILS
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new')}
-                className="text-xs font-bold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-y-3.5 gap-x-2 text-xs sm:text-sm">
+            {renderCardStatus('Child Details')}
+
+            <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  FULL NAME
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Full Name
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.fullName || 'Not specified'}
+                  {draft.fullName || <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  GENDER
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Gender
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.gender || 'Not specified'}
+                  {draft.gender || <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  DATE OF BIRTH
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Date of Birth
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {formatDobToWords(draft.dob)}
+                  {draft.dob ? formatDobToWords(draft.dob) : <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  RELATIONSHIP
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Relationship
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.relationship || 'Not specified'}
+                  {draft.relationship || <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 2. SCHOOL & AGE GROUP */}
+          {/* 2. SCHOOL & AGE GROUP CARD */}
           <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-widest uppercase text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
                 SCHOOL & AGE GROUP
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new/care-details')}
-                className="text-xs font-bold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
             </div>
 
+            {renderCardStatus('School & Age Group', true, isSchoolNameEmpty)}
+
             <div className="space-y-3 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  CLASS / GRADE
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Class / Grade
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.schoolClass || 'Not specified'}
+                  {draft.schoolClass || <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  SUGGESTED AGE GROUP
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  School Name
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.ageGroup || 'Not specified'}
+                  {draft.schoolName || <span className="text-zinc-400 italic">Not added</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  PREVIOUS ATTENDANCE
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Previous Attendance
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.attendedBefore === 'Yes' ? 'Yes' : 'No, first time'}
+                  {draft.attendedBefore ? (draft.attendedBefore === 'Yes' ? 'Yes' : 'No, first time') : <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 3. HEALTH & SUPPORT */}
+          {/* 3. HEALTH & SUPPORT CARD */}
           <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-widest uppercase text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
                 HEALTH & SUPPORT
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new/health-and-support')}
-                className="text-xs font-bold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
             </div>
 
+            {renderCardStatus('Health & Support')}
+
             <div className="space-y-3 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  ALLERGIES / MEDICAL NOTES
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Allergies / Medical Notes
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1 leading-relaxed">
-                  {draft.hasAllergies === 'Yes' && draft.medicalNote ? draft.medicalNote : 'None'}
+                  {draft.hasAllergies === 'Yes' ? (draft.medicalNote || <span className="text-rose-600 font-medium">Required details empty</span>) : 'None'}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  EXTRA SUPPORT NEEDED
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Extra Support Needed
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1 leading-relaxed">
-                  {draft.needsExtraSupport === 'Yes' && draft.supportNote ? draft.supportNote : 'None'}
+                  {draft.needsExtraSupport === 'Yes' ? (draft.supportNote || <span className="text-rose-600 font-medium">Required details empty</span>) : 'None'}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  EMERGENCY CARE CONSENT
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Emergency Care Consent
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
                   Granted
@@ -472,45 +737,31 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
             </div>
           </div>
 
-          {/* 4. PICKUP PERSON */}
+          {/* 4. PICKUP PERSON CARD */}
           <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-[22px] font-serif-koinonia text-[#18181B] font-medium leading-tight">
-                Pickup person
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
+                PICKUP PERSON
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new/pickup-person')}
-                className="text-xs font-bold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
             </div>
 
-            {isPickupIncomplete ? (
-              <div className="space-y-3 pt-1">
-                <div className="text-xs text-red-600 font-medium bg-red-50/50 border border-red-200/60 rounded-xl p-3.5 flex items-start space-x-2.5">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <p className="leading-relaxed font-normal">Pickup person details are incomplete.</p>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('/parent/children/new/pickup-person')}
-                      className="font-bold underline text-red-700 hover:text-red-800 mt-1 cursor-pointer focus:outline-none inline-block"
-                    >
-                      Complete pickup details
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
+            {renderCardStatus('Pickup Person')}
+
+            {!isPickupIncomplete && (
               <div className="space-y-4 pt-1">
                 <div className="flex items-center space-x-3.5">
                   <div className="w-14 h-14 rounded-xl bg-[#FAF8F4] border border-[#EAE8E1] flex items-center justify-center overflow-hidden shrink-0">
                     {pickupDetails.photoUrl ? (
                       <img src={pickupDetails.photoUrl} alt={pickupDetails.fullName} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="font-bold text-lg text-[#715D3A]">
+                      <span className="font-serif-koinonia font-bold text-lg text-[#715D3A]">
                         {pickupDetails.initials}
                       </span>
                     )}
@@ -522,64 +773,57 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 min-[560px]:grid-cols-2 gap-y-4 gap-x-8 min-w-0">
+                <div className="grid grid-cols-1 min-[560px]:grid-cols-2 gap-y-3.5 gap-x-8 min-w-0 text-xs sm:text-sm">
                   <div className="min-w-0">
-                    <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
-                      NAME
+                    <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                      Name
                     </span>
-                    <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
+                    <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
                       {pickupDetails.fullName || 'Not specified'}
                     </span>
                   </div>
                   <div className="min-w-0">
-                    <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
-                      RELATION
+                    <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                      Relation
                     </span>
-                    <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
+                    <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
                       {pickupDetails.relationship || 'Not specified'}
                     </span>
                   </div>
                   <div className="min-w-0 min-[560px]:col-span-2">
-                    <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#71717A] block">
-                      PHONE
+                    <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                      Phone
                     </span>
-                    <span className="font-normal text-[16px] text-[#18181B] block mt-1.5 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
+                    <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
                       {pickupDetails.phone || 'Not specified'}
                     </span>
                   </div>
                 </div>
-
-                {pickupDetails.isParent && !pickupDetails.photoUrl && (
-                  <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl p-3 flex items-start space-x-2.5 text-xs text-[#92400E] mt-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <p className="leading-relaxed font-normal">
-                      Your profile photo is missing. Please <button type="button" onClick={() => onNavigate('/parent/profile/edit')} className="font-bold underline text-[#9A7326] hover:text-[#715D3A]">add a profile photo</button> before sending for review.
-                    </p>
-                  </div>
-                )}
               </div>
             )}
           </div>
 
-          {/* 5. PARENT DETAILS */}
+          {/* 5. PARENT DETAILS CARD */}
           <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-widest uppercase text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
                 PARENT DETAILS
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/profile/edit')}
-                className="text-xs font-bold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
             </div>
 
+            {renderCardStatus('Parent Details', true, isWhatsappEmpty)}
+
             <div className="space-y-3 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  PRIMARY CONTACT
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Primary Contact
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
                   {parentProfile?.fullName || 'Parent'}
@@ -587,16 +831,16 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                    PHONE
+                  <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                    Phone
                   </span>
                   <span className="font-normal text-[#18181B] block mt-1">
-                    {parentProfile?.phone || 'Not specified'}
+                    {parentProfile?.phone || parentProfile?.phoneNumber || <span className="text-rose-600 font-medium">Required</span>}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                    WHATSAPP
+                  <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                    WhatsApp
                   </span>
                   <span className="font-normal text-[#18181B] block mt-1">
                     {parentProfile?.whatsapp && parentProfile.whatsapp !== parentProfile.phone
@@ -606,11 +850,11 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 </div>
               </div>
               <div>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-[#71717A] block">
-                  EMAIL
+                <span className="text-[10px] font-medium tracking-wide uppercase text-[#71717A] block">
+                  Email
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1 break-all">
-                  {parentProfile?.email || 'Not specified'}
+                  {parentProfile?.email || <span className="text-rose-600 font-medium">Required</span>}
                 </span>
               </div>
             </div>
@@ -621,7 +865,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
         <form onSubmit={handleSendForReview} className="space-y-5 pt-2" noValidate>
           <label 
             className={`block p-4 rounded-xl border transition-all duration-200 cursor-pointer select-none ${
-              errors.confirmed ? 'bg-red-50/40 border-red-500' : 'bg-[#FAF8F4] border-[#EAE8E1] hover:border-[#C59B27]'
+              errors.confirmed && showValidationErrors ? 'bg-red-50/40 border-red-500' : 'bg-[#FAF8F4] border-[#EAE8E1] hover:border-[#C59B27]'
             }`}
           >
             <div className="flex items-start space-x-3">
@@ -641,16 +885,16 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 I confirm that these details are correct and up to date.
               </span>
             </div>
-            {errors.confirmed && (
+            {errors.confirmed && showValidationErrors && (
               <p className="text-xs text-red-600 font-medium mt-2 pl-7" onClick={(e) => e.stopPropagation()}>{errors.confirmed}</p>
             )}
           </label>
 
           {/* Action buttons */}
-          <div className="space-y-3 pt-1">
+          <div className="space-y-3 pt-1" data-component-version="parent-review-submit-validation-v1">
             <Button
               type="submit"
-              disabled={isSubmitting || isPickupIncomplete || hasMissingSteps || !isConfirmed}
+              disabled={isSubmitting}
               aria-busy={isSubmitting ? "true" : "false"}
               fullWidth
               size="lg"
@@ -670,16 +914,22 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 </span>
               )}
             </Button>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleSaveAndFinishLater}
-              className={`w-full py-3.5 px-4 bg-white hover:bg-[#FAF8F4] active:bg-[#F3EFE6] active:scale-[0.99] border border-[#D9D6CE] hover:border-[#C59B27] text-[#18181B] hover:text-[#9A7326] font-semibold text-sm rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27] text-center block ${
-                isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              Save and finish later
-            </button>
+            
+            <div data-component-version="parent-review-save-later-v1" className="space-y-1.5">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleSaveAndFinishLater}
+                className={`w-full py-3.5 px-4 bg-white hover:bg-[#FAF8F4] active:bg-[#F3EFE6] active:scale-[0.99] border border-[#D9D6CE] hover:border-[#C59B27] text-[#18181B] hover:text-[#9A7326] font-semibold text-sm rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27] text-center block ${
+                  isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                Save for later
+              </button>
+              <p className="text-center text-[11px] text-zinc-500 font-normal leading-relaxed">
+                You can finish this child’s details later.
+              </p>
+            </div>
           </div>
 
           {/* Small note */}

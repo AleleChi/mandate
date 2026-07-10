@@ -1446,6 +1446,23 @@ Public unauthenticated endpoint to retrieve all configured media assets. This is
   }
   ```
 
+### GET `/uploads/:filename`
+Secure, public unauthenticated endpoint to resolve and stream uploaded images stored on the local/persistent file system.
+
+* **Method:** `GET`
+* **Protection:** Public (None)
+* **Path Parameters:**
+  - `filename`: Standard safe filename (e.g., `some-uuid.jpg`, `another-uuid.webp`).
+* **Security Controls:**
+  - Strictly prevents directory traversal (rejects `..`, `/`, `\`).
+  - Limits file serving to allowed image extensions (`.jpg`, `.jpeg`, `.png`, `.webp`).
+  - Serves files only from the designated media storage subfolders (`data/media`).
+  - Automatically sends correct content types (e.g., `image/jpeg`, `image/png`, `image/webp`).
+  - Attaches robust HTTP caching headers (`Cache-Control: public, max-age=31536000, immutable`).
+* **Success Response (200 OK):** Binary image stream.
+* **Error Response (400 Bad Request):** Path traversal attempts or invalid/unsupported file types.
+* **Error Response (404 Not Found):** File does not exist on the server.
+
 ---
 
 ## Administrative Profile Soft-Delete Operations (`/api/admin`)

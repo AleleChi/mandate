@@ -18,84 +18,53 @@ export const SafeImage: React.FC<SafeImageProps> = ({
   containerClassName = '',
   ...props
 }) => {
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<boolean>(false);
-  const [resolvedSrc, setResolvedSrc] = useState<string>('');
-  const [hasTriedFallback, setHasTriedFallback] = useState<boolean>(false);
+  const [currentSrc, setCurrentSrc] = useState<string>('');
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   useEffect(() => {
-    setHasTriedFallback(false);
-  }, [src]);
+    // Determine the resolved primary and fallback URLs
+    const resolvedMain = resolveMediaUrl(src);
+    const resolvedFallback = resolveMediaUrl(fallbackSrc);
 
-  useEffect(() => {
-    if (!src || src.trim() === '') {
-      if (fallbackSrc && fallbackSrc.trim() !== '' && !hasTriedFallback) {
-        const url = resolveMediaUrl(fallbackSrc);
-        setResolvedSrc(url);
-        setHasTriedFallback(true);
-        setError(false);
-        setLoading(true);
-
-        const img = new Image();
-        img.src = url;
-        img.onload = () => {
-          setLoading(false);
-        };
-        img.onerror = () => {
-          console.warn('[media] fallback image also failed to load', { fallbackSrc, resolvedUrl: url });
-          setError(true);
-          setLoading(false);
-        };
+    if (!resolvedMain || resolvedMain.trim() === '') {
+      if (resolvedFallback && resolvedFallback.trim() !== '') {
+        setCurrentSrc(resolvedFallback);
+        setStatus('loading');
       } else {
-        setError(true);
-        setLoading(false);
+        setStatus('error');
       }
-      return;
+    } else {
+      setCurrentSrc(resolvedMain);
+      setStatus('loading');
     }
+  }, [src, fallbackSrc]);
 
-    const url = resolveMediaUrl(src);
-    setResolvedSrc(url);
-    setError(false);
-    setLoading(true);
+  const handleLoad = () => {
+    setStatus('loaded');
+  };
 
-    const img = new Image();
-    img.src = url;
-    img.onload = () => {
-      setLoading(false);
-    };
-    img.onerror = () => {
-      // If the main image fails to load, try fallbackSrc once
-      if (fallbackSrc && fallbackSrc.trim() !== '' && !hasTriedFallback) {
-        console.warn('[media] hero image failed to load, switching to fallback', { src, resolvedUrl: url });
-        const fbUrl = resolveMediaUrl(fallbackSrc);
-        setResolvedSrc(fbUrl);
-        setHasTriedFallback(true);
+  const handleError = () => {
+    const resolvedMain = resolveMediaUrl(src);
+    const resolvedFallback = resolveMediaUrl(fallbackSrc);
 
-        const fbImg = new Image();
-        fbImg.src = fbUrl;
-        fbImg.onload = () => {
-          setLoading(false);
-        };
-        fbImg.onerror = () => {
-          console.warn('[media] fallback image also failed to load', { fallbackSrc, resolvedUrl: fbUrl });
-          setError(true);
-          setLoading(false);
-        };
-      } else {
-        console.warn('[media] hero image failed to load', { src, resolvedUrl: url });
-        setError(true);
-        setLoading(false);
-      }
-    };
-  }, [src, fallbackSrc, hasTriedFallback]);
+    // If we were trying to load the main image and we have a valid fallback, try the fallback
+    if (currentSrc === resolvedMain && resolvedFallback && resolvedFallback.trim() !== '' && resolvedMain !== resolvedFallback) {
+      console.warn('[media] SafeImage main source failed, switching to fallback', { src, fallbackSrc });
+      setCurrentSrc(resolvedFallback);
+      setStatus('loading');
+    } else {
+      console.warn('[media] SafeImage failed to load image/fallback', { src, fallbackSrc });
+      setStatus('error');
+    }
+  };
 
-  if (error) {
+  if (status === 'error') {
     if (fallbackComponent) {
       return <div className={containerClassName}>{fallbackComponent}</div>;
     }
     return (
       <div 
-        data-component-version="safe-image-v7-volunteer-handover" 
+        data-component-version="safe-image-v8-secure-production" 
         className={`flex flex-col items-center justify-center bg-[#FAF6EB] text-[#A1A1AA] border border-[#E5D5AE]/40 ${className} ${containerClassName}`}
       >
         <ImageOff className="w-5 h-5 text-[#9A7326]/50" />
@@ -105,19 +74,21 @@ export const SafeImage: React.FC<SafeImageProps> = ({
 
   return (
     <div className={`relative overflow-hidden ${containerClassName}`}>
-      {loading && (
+      {status === 'loading' && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#FAF8F3] z-10">
           <Loader2 className="w-5 h-5 text-[#C59B27] animate-spin" />
         </div>
       )}
-      {resolvedSrc ? (
+      {currentSrc ? (
         <img
-          data-component-version="safe-image-v7-volunteer-handover"
-          src={resolvedSrc}
+          data-component-version="safe-image-v8-secure-production"
+          src={currentSrc}
           alt={alt}
-          className={`${className} ${loading ? 'opacity-0' : 'opacity-100 transition-opacity duration-300'}`}
+          className={`${className} ${status === 'loading' ? 'opacity-0' : 'opacity-100 transition-opacity duration-300'}`}
           referrerPolicy="no-referrer"
           loading="lazy"
+          onLoad={handleLoad}
+          onError={handleError}
           {...props}
         />
       ) : null}

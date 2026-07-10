@@ -659,7 +659,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
             </button>
 
-            <div className="relative">
+            <div className="relative" data-component-version="notification-sound-manager-v1">
               <button
                 onClick={() => {
                   setShowNotifPanel(!showNotifPanel);
@@ -668,6 +668,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 className="p-2 text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 rounded-full transition-colors relative cursor-pointer"
                 title="Notifications"
                 id="admin-notification-bell"
+                data-component-version="admin-notification-bell-v2-live"
               >
                 <Bell className="w-4 h-4" />
                 {unreadNotifCount > 0 && (
@@ -680,9 +681,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               {showNotifPanel && (
                 <div 
                   className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#EAE8E1] rounded-3xl shadow-2xl overflow-hidden z-50 animate-fade-in"
-                  data-component-version="admin-attention-escalation-notification-v1"
+                  data-component-version="admin-notification-panel-v2-live"
                 >
-                  <div className="p-4 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between">
+                  <div className="p-4 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v1">
                     <div>
                       <h4 className="font-serif font-bold text-sm text-[#18181B]">Updates & Care Alerts</h4>
                       <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Stay connected to ongoing check-ins</p>
@@ -691,6 +692,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={toggleSound}
+                        data-component-version="admin-sound-notification-toggle-v1"
                         className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
                           soundEnabled 
                             ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
@@ -711,6 +713,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                       <button
                         onClick={togglePush}
+                        data-component-version="admin-push-notification-toggle-v1"
                         className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
                           pushEnabled 
                             ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 

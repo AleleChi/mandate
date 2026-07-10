@@ -3677,7 +3677,13 @@ router.get('/settings/media', async (req: AuthenticatedRequest, res: Response) =
 
 // POST upload app media setting
 router.post('/settings/media', upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  // data-component-version="admin-media-upload-validation-v2-secure"
   try {
+    // Strict admin/super_admin role verification
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ success: false, error: 'Access denied. Admin role required.' });
+    }
+
     const { slot } = req.body;
     const file = req.file;
     if (!slot) {
@@ -3691,23 +3697,29 @@ router.post('/settings/media', upload.single('file'), async (req: AuthenticatedR
       return res.status(400).json({ success: false, error: 'File is required.' });
     }
 
-    // Reject oversized files
+    // Reject oversized files (> 5MB)
     if (file.size > 5 * 1024 * 1024) {
       return res.status(400).json({ success: false, error: 'This image is too large. Please upload an image under 5MB.' });
     }
 
-    // Verify MIME type
+    // Verify MIME type explicitly and reject SVG/scripts/executables
     const mimeType = file.mimetype;
     const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!allowedImageTypes.includes(mimeType)) {
-      return res.status(400).json({ success: false, error: 'Please upload a JPG, PNG, or WebP image.' });
+    if (!allowedImageTypes.includes(mimeType) || mimeType.includes('xml') || mimeType.includes('svg')) {
+      return res.status(400).json({ success: false, error: 'This file type is not supported. Please upload JPG, PNG, or WebP.' });
     }
 
-    // Verify file extension matches allowed image extensions to prevent renaming exploits
+    // Verify file extension matches allowed image extensions to prevent renaming exploits or SVG bypasses
     const ext = path.extname(file.originalname).toLowerCase();
     const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
     if (!allowedExts.includes(ext)) {
       return res.status(400).json({ success: false, error: 'This file type is not supported. Please upload JPG, PNG, or WebP.' });
+    }
+
+    // Prevent directory traversal or filename injection
+    const originalName = file.originalname || '';
+    if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\') || originalName.includes('%2e%2e')) {
+      return res.status(400).json({ success: false, error: 'Invalid characters in filename.' });
     }
 
     let buffer = file.buffer;

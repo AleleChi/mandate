@@ -365,19 +365,20 @@ The **App Media** settings tab allows administrators to upload and customize her
   - **Volunteer Hero Image**: Slot `volunteer_dashboard_hero`
   - **Default Event Image**: Slot `default_event_hero`
 - **Interactive Previews**: Displays real-time thumbnail previews of currently saved settings using `SafeImage` with CORS-safe base path prefixing.
-- **Dynamic Previews Proof**: `data-component-version="admin-media-preview-v2-resolved"`
+- **Dynamic Previews Proof**: `data-component-version="admin-media-preview-v3-secure-resolved"`
 
 ### B. Resolution, Priority, and Storage Handoff
 - **Backend Storage**:
   - Saved uploads are written to Cloudinary if configured.
-  - Falls back to local disk persistence inside `data/media/events/` when Cloudinary is absent.
-  - Served publicly via the streaming route `GET /api/media/files/:fileId` without authentication headers.
+  - Falls back to local disk persistence inside `data/media` when Cloudinary is absent.
+  - Served publicly via the secure streaming route `GET /uploads/:filename` and `GET /api/media/files/:fileId` without authentication headers.
 - **Dashboard Resolution**:
   - **Parent Dashboard**: Prioritizes `parent_dashboard_hero` -> `default_event_hero` -> fallback `parentHeroImg` asset.
   - **Volunteer Dashboard**: Prioritizes `volunteer_dashboard_hero` -> `default_event_hero` -> fallback `volunteerHeroImg` asset.
 - **One-Time Fallback System**:
-  - Integrated directly inside `SafeImage` (`data-component-version="safe-image-v5-role-hero-media"`).
-  - If the main uploaded image fails to load (e.g. 404 or bad network), it automatically flips to the fallback image precisely once to avoid endless mounting loops.
+  - Integrated directly inside `SafeImage` (`data-component-version="safe-image-v8-secure-production"`).
+  - Employs native `onLoad`/`onError` event bindings directly on standard JSX `<img>` tags, replacing buggy async state schedules.
+  - If the main uploaded image fails to load (e.g. 404 or bad network), it automatically flips the rendered source (`currentSrc`) to the fallback image precisely once to avoid endless mounting loops.
 
 
 ## 15. Event-Day Attention Oversight and Administration

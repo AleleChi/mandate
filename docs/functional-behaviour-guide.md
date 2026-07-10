@@ -174,8 +174,12 @@ The Koinonia Children and Teens landing page serves two distinct audiences with 
       2. Configured custom `default_event_hero` slot url.
       3. Committed production-safe fallback asset image (`volunteerHeroImg`).
   - **Robust One-Time Fallback System (SafeImage)**:
-    - Custom resolved URLs are processed by `SafeImage` which attempts to resolve and load the image using CORS-safe, backend-prefixed origins (to avoid falling back on CDN/Netlify origins).
-    - If the dynamic/custom image fails to load or resolves with a non-image content-type, `SafeImage` dynamically switches to the designated secondary fallback image (`fallbackSrc`) exactly once. This avoids endless rendering loops while guaranteeing that role dashboards never display blank spaces or broken image placeholders.
+    - Custom resolved URLs are processed by `SafeImage` which attempts to resolve and load the image using CORS-safe, backend-prefixed origins (to avoid falling back on CDN/Netlify origins) via the `resolveMediaUrl` helper.
+    - Utilizes standard browser `onLoad` and `onError` image events directly on the native `<img>` element instead of detached `Image()` constructor states to guarantee thread-safe rendering cycles in React.
+    - If the dynamic/custom image fails to load or resolves with a non-image content-type, `SafeImage` dynamically switches the `currentSrc` to the designated secondary fallback image (`fallbackSrc`) exactly once. This avoids endless rendering loops, prevents layout shifts or flashes of unstyled content, and guarantees that role dashboards never display blank spaces or broken image placeholders.
+- **Secure File System Upload Serving (/uploads/:filename)**:
+  - Local uploaded settings media are securely served from `data/media` through the unauthenticated GET `/uploads/:filename` route.
+  - Strictly prevents directory traversal (rejections of `..`, `%2e%2e`, `/`, `\`), blocks unauthorized file extensions (accepting only `.jpg`, `.jpeg`, `.png`, `.webp`), hides local absolute paths, and sends precise MIME types with secure Cache-Control headers (`public, max-age=31536000, immutable`).
 - **Rigid Slot Type Validation**: Slots are heavily partitioned by expected media type. Attempting to upload a video format (MP4/WebM/MOV) into an image slot, or an image format (JPG/PNG/WebP) into a video slot, is rejected immediately on the frontend and blocked on the backend.
 - **File Integrity and Size Bounds**:
   - Maximum image file size is capped strictly at 5MB for admin media settings.
@@ -613,3 +617,24 @@ The attendance registry module offers real-time, high-fidelity metrics and track
   - When reviewing an attention-required item, volunteers must enter a detailed event note documenting what physical actions were taken.
   - Tapping 'Resolve' or 'Verify' updates the item status and records the note, the volunteer's identity, and the timestamp.
   - Tapping 'Escalate' raises the item status, automatically flagging it for coordinator oversight while keeping the child safe.
+
+
+## 42. Parent Passes Overview & Multi-Child Pass Lifecycle
+- **Unified Overview Panel**: Parents can access the multi-child overview page within the Passes tab. Instead of showing a single full pass immediately, the page summarizes the active state of all household children dynamically:
+  - **Summary Badges**: Real-time status counters calculate totals for each distinct state ("Pass ready", "Waiting", "Draft") directly from the household child list.
+  - **Status-Driven Actions**: Children are categorized and displayed under state-specific cards:
+    - *Pass ready*: Displays child photo, name, event details, a small QR preview, and a prominent "View pass" button. Tapping the button opens the high-fidelity secure digital pass modal containing the large QR code, full parent and pickup details, and "Save/Share" triggers.
+    - *Under review / Waiting*: Displays child name, age, and class, explaining that the pass will be prepared upon selection. Provides a "View status" button to navigate directly to the status page.
+    - *Draft*: Displays child details with a "Continue details" button to finish the profile setup page.
+- **Data Integrity**: All details are pulled dynamically from live backend endpoints. Empty states are rendered beautifully with clean illustrations and clear next-step guides if no children are registered.
+
+## 43. Parent Review Details Screen and Validation Flow
+- **Specific Missing-Details Panel**: If any required field is missing from any section of the child’s application or the parent’s profile, a prominent validation panel (`data-component-version="parent-child-review-validation-v2-specific"`) is shown at the top of the Review details screen.
+- **Grouped Missing Items**: Missing fields are grouped cleanly by section. Each section displays the specific missing fields alongside an "Edit" action button (`data-component-version="parent-review-fix-action-v1"`) that takes the parent directly back to the correct step in the registration form.
+- **Section-Level Badging**: Each section card (`data-component-version="parent-review-section-status-v1"`) shows its own real-time status:
+  - *Completed*: All required fields are filled.
+  - *Needs update*: Required fields in this section are missing, accompanied by an inline bulleted list of the exact items that need fixing.
+  - *Optional details empty*: Shown alongside "Completed" if only optional fields (like school name or optional WhatsApp) are unassigned.
+- **Draft Persistence (Save for Later)**: The "Save for later" action (`data-component-version="parent-review-save-later-v1"`) allows parents to save partial, incomplete child drafts at any time without triggering validation errors. All entered fields and uploaded photos are securely preserved in the database so the parent can return to complete the process later.
+- **Send for Review Controls**: Tapping "Send for review" (`data-component-version="parent-review-submit-validation-v1"`) performs high-fidelity client-side validation that perfectly mirrors server-side validation (`validateChildDraftStep`). If validation fails, submission is blocked, a friendly error notification is displayed, and the page smooth-scrolls to the validation summary panel.
+

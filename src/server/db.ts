@@ -1452,6 +1452,120 @@ async function initPostgresSchema(pool: any) {
       now,
       now
     ]);
+
+    // Check if users table is empty and auto-seed development data
+    const userCountResult = await pool.query('SELECT COUNT(*) as count FROM users');
+    const userCount = parseInt(userCountResult.rows[0].count, 10);
+    if (userCount === 0) {
+      console.log('[PostgreSQL Seeder] Database is empty. Seeding development accounts...');
+      
+      const hash = (p: string) => {
+        const s = crypto.randomBytes(16).toString('hex');
+        const d = crypto.scryptSync(p, s, 64).toString('hex');
+        return `${s}:${d}`;
+      };
+      const hashedPassword = hash('Password123!');
+
+      // 1. Admin Account
+      const adminUserId = 'admin-user-id-2026';
+      const adminProfileId = 'admin-profile-id-2026';
+      await pool.query(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 1, $5, $6)
+      `, [adminUserId, 'admin@koinonia.org', hashedPassword, 'super_admin', now, now]);
+
+      await pool.query(`
+        INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, home_address, preferred_contact, is_koinonia_worker, country, state_region, city, photo_file_id, profile_completed_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, $12, $13, $14, $15)
+      `, [adminProfileId, adminUserId, 'Super Admin', 'admin@koinonia.org', '+2348031234567', '+2348031234567', 'Koinonia Global Headquarters, Abuja', 'WhatsApp', 'Nigeria', 'FCT', 'Abuja', 'photo-parent-default', now, now, now]);
+
+      // 2. Parent Account
+      const parentUserId = 'parent-user-id-2026';
+      const parentProfileId = 'parent-profile-id-2026';
+      await pool.query(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 1, $5, $6)
+      `, [parentUserId, 'parent@koinonia.org', hashedPassword, 'parent', now, now]);
+
+      await pool.query(`
+        INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, home_address, preferred_contact, is_koinonia_worker, country, state_region, city, photo_file_id, profile_completed_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, $12, $13, $14, $15)
+      `, [
+        parentProfileId, 
+        parentUserId, 
+        'Adebayo Omikunle', 
+        'parent@koinonia.org', 
+        '+2348099990001', 
+        '+2348099990001', 
+        '12 Mandate Street, Garki', 
+        'WhatsApp', 
+        'Nigeria', 
+        'FCT', 
+        'Abuja', 
+        'photo-parent-default', 
+        now, 
+        now, 
+        now
+      ]);
+
+      // 3. Children Profiles
+      const child1Id = 'child-1-id-2026';
+      const child2Id = 'child-2-id-2026';
+      await pool.query(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, relationship_to_child, photo_file_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `, [child1Id, parentProfileId, 'Grace Omikunle', 'Female', '2018-06-15', 7, 'Ages 7 to 9', 'Parent', 'photo-child-1', now, now]);
+
+      await pool.query(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, relationship_to_child, photo_file_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `, [child2Id, parentProfileId, 'Samuel Omikunle', 'Male', '2021-04-10', 4, 'Ages 4 to 6', 'Parent', 'photo-child-2', now, now]);
+
+      // 4. Child Event Entries
+      const entry1Id = 'entry-1-id-2026';
+      const entry2Id = 'entry-2-id-2026';
+      await pool.query(`
+        INSERT INTO child_event_entries (id, child_id, event_id, status, school_class, school_name, previous_children_programme, note_to_team, has_medical_notes, medical_notes, needs_extra_support, support_notes, information_confirmed, details_confirmed, submitted_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, 0, $10, 1, 1, $11, $12, $13)
+      `, [entry1Id, child1Id, REAL_EVENT_ID, 'under_review', 'Primary 2', 'Lighthouse Academy', 'No', 'Grace is excited to learn!', '', '', now, now, now]);
+
+      await pool.query(`
+        INSERT INTO child_event_entries (id, child_id, event_id, status, school_class, school_name, previous_children_programme, note_to_team, has_medical_notes, medical_notes, needs_extra_support, support_notes, information_confirmed, details_confirmed, submitted_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, 0, $10, 1, 1, $11, $12, $13)
+      `, [entry2Id, child2Id, REAL_EVENT_ID, 'pass_ready', 'Nursery 2', 'Lighthouse Academy', 'No', 'Samuel can be shy at first.', '', '', now, now, now]);
+
+      // 5. Event Passes (for child 2 since they are pass_ready)
+      await pool.query(`
+        INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, ['pass-2-id-2026', entry2Id, 'K-2026-OMIKUNLE-SAMUEL', 'mock-pass-hash-2026', 'active', now, now, now]);
+
+      // 6. Pickup People
+      await pool.query(`
+        INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, photo_file_id, approved_by_parent, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10)
+      `, ['pickup-1-id-2026', entry1Id, 'designated_pickup', 'Olusola Omikunle', 'Uncle', '+2348039998888', '+2348039998888', 'photo-pickup-1', now, now]);
+
+      await pool.query(`
+        INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, photo_file_id, approved_by_parent, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10)
+      `, ['pickup-2-id-2026', entry2Id, 'designated_pickup', 'Olusola Omikunle', 'Uncle', '+2348039998888', '+2348039998888', 'photo-pickup-1', now, now]);
+
+      // 7. Volunteer Account
+      const volunteerUserId = 'volunteer-user-id-2026';
+      const volunteerProfileId = 'volunteer-profile-id-2026';
+      await pool.query(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 1, $5, $6)
+      `, [volunteerUserId, 'volunteer@koinonia.org', hashedPassword, 'volunteer', now, now]);
+
+      await pool.query(`
+        INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, serving_experience, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [volunteerProfileId, volunteerUserId, 'Sarah Volunteer', '+2348011112222', '+2348011112222', 'Ages 7-9 Team', 2, 'active', now, now]);
+
+      console.log('[PostgreSQL Seeder] Successfully seeded all development accounts.');
+    }
   } catch (err) {
     console.error('PostgreSQL schema initialization error:', err);
   }

@@ -103,6 +103,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
     return true;
   });
+  const [pushEnabled, setPushEnabled] = useState(false);
+
+  // Fetch initial preferences for volunteer
+  const fetchPreferences = async () => {
+    try {
+      const res = await api.request<{ soundEnabled: boolean; pushEnabled: boolean }>('/api/notifications/preferences');
+      if (res) {
+        setSoundEnabled(res.soundEnabled);
+        setPushEnabled(res.pushEnabled);
+        localStorage.setItem('koinonia_sound_enabled', String(res.soundEnabled));
+      }
+    } catch (_) {}
+  };
 
   const formatTimeAgo = (isoString: string) => {
     try {
@@ -138,6 +151,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   useEffect(() => {
+    fetchPreferences();
+  }, []);
+
+  useEffect(() => {
     fetchVolunteerNotifications();
     const interval = setInterval(() => {
       fetchVolunteerNotifications();
@@ -159,6 +176,68 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         playSound('success');
       }
     } catch (_) {}
+  };
+
+  const togglePush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      showError('Unsupported Device', 'Push notifications are not supported on this browser or device.');
+      return;
+    }
+
+    const nextVal = !pushEnabled;
+    try {
+      if (nextVal) {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          showError('Permission Denied', 'Please allow notifications in your browser settings to subscribe.');
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.ready;
+        const keyRes = await api.parent.getVapidPublicKey();
+        const vapidPublicKey = keyRes.publicKey;
+
+        if (!vapidPublicKey) {
+          throw new Error('No VAPID key found');
+        }
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidPublicKey
+        });
+
+        await api.parent.savePushSubscription(subscription);
+        setPushEnabled(true);
+        showSuccess('Subscribed', 'You will now receive instant push alerts.');
+        playSound('success');
+
+        await api.request('/api/notifications/preferences', {
+          method: 'PATCH',
+          body: JSON.stringify({ pushEnabled: true })
+        });
+      } else {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe();
+          await api.request('/api/notifications/push/unsubscribe', {
+            method: 'POST',
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+          });
+        }
+        setPushEnabled(false);
+        showSuccess('Unsubscribed', 'Push alerts disabled.');
+        playSound('success');
+
+        await api.request('/api/notifications/preferences', {
+          method: 'PATCH',
+          body: JSON.stringify({ pushEnabled: false })
+        });
+      }
+    } catch (err: any) {
+      console.error('Push toggle error:', err);
+      showError('Subscription Failed', 'Could not sync push configuration with the service worker.');
+    }
   };
 
   const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(cachedCustomHeroUrl);
@@ -1177,7 +1256,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               {showNotifPanel && (
                 <div 
                   className="absolute right-0 mt-2 w-72 sm:w-80 bg-white border border-[#EAE8E1] rounded-2xl shadow-xl overflow-hidden z-50 animate-fade-in"
-                  data-component-version="volunteer-care-bulletins-panel-v1"
+                  data-component-version="volunteer-care-bulletin-dropdown-v1"
                 >
                   <div className="p-3 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between">
                     <div>
@@ -1185,25 +1264,43 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <p className="text-[9px] text-zinc-500 font-sans">Active group announcements</p>
                     </div>
 
-                    <button
-                      onClick={toggleSound}
-                      className={`p-1 rounded transition-colors cursor-pointer ${
-                        soundEnabled 
-                          ? 'bg-[#FAF6EB] text-[#C59B27]' 
-                          : 'bg-zinc-50 text-zinc-400'
-                      }`}
-                      title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
-                    >
-                      {soundEnabled ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={toggleSound}
+                        data-component-version="volunteer-sound-notification-toggle-v1"
+                        className={`p-1 rounded transition-colors cursor-pointer ${
+                          soundEnabled 
+                            ? 'bg-[#FAF6EB] text-[#C59B27]' 
+                            : 'bg-zinc-50 text-zinc-400'
+                        }`}
+                        title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
+                      >
+                        {soundEnabled ? (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm10.95 3.536l-8.486-8.486" />
+                          </svg>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={togglePush}
+                        data-component-version="volunteer-push-notification-toggle-v1"
+                        className={`p-1 rounded transition-colors cursor-pointer ${
+                          pushEnabled 
+                            ? 'bg-[#FAF6EB] text-[#C59B27]' 
+                            : 'bg-zinc-50 text-zinc-400'
+                        }`}
+                        title={pushEnabled ? 'Disable Push' : 'Enable Push'}
+                      >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                         </svg>
-                      ) : (
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm10.95 3.536l-8.486-8.486" />
-                        </svg>
-                      )}
-                    </button>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="max-h-64 overflow-y-auto divide-y divide-zinc-100">
@@ -1241,6 +1338,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                       fetchVolunteerNotifications();
                                     } catch (_) {}
                                   }}
+                                  data-component-version="volunteer-care-bulletin-acknowledge-v1"
                                   className="text-[9px] font-bold text-[#C59B27] hover:underline cursor-pointer"
                                 >
                                   Acknowledge
@@ -1310,7 +1408,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             {/* 1. Volunteer Dashboard Hero Image Card */}
             <div 
               className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] shadow-xs overflow-hidden" 
-              data-component-version="volunteer-dashboard-hero-v9-handover-mobile-app"
+              data-component-version="volunteer-dashboard-hero-v10-secure-media"
             >
               {/* Top Image area with fixed aspect ratio */}
               <div className="relative aspect-[16/9] w-full bg-[#24221C] overflow-hidden">

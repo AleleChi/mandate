@@ -1208,7 +1208,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                 <div 
                   className="grid grid-cols-1 md:grid-cols-3 gap-6"
-                  data-component-version="admin-media-preview-v2-resolved"
+                  data-component-version="admin-media-preview-v3-secure-resolved"
                 >
                   {/* Parent Dashboard Hero Card */}
                   <div 
