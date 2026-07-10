@@ -11,6 +11,8 @@ import { api } from '../services/api';
 import { soundUtility } from '../utils/sound';
 import { subscribeUserToPush } from '../utils/pushSubscription';
 import { resolveMediaUrl } from '../utils/mediaUrl';
+import { SafeImage } from '../components/common/SafeImage';
+import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -24,6 +26,7 @@ interface ParentHomeViewProps {
   onDeleteChild?: (childId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   selectedChildId?: string;
   volunteerProfile?: any;
+  activeEvent?: any;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -84,7 +87,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   onSignOut,
   onDeleteChild,
   selectedChildId,
-  volunteerProfile
+  volunteerProfile,
+  activeEvent
 }) => {
   const { showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
@@ -99,6 +103,27 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
   const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
+  const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(null);
+  const [defaultEventHeroUrl, setDefaultEventHeroUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCustomHero = async () => {
+      try {
+        const res = await api.getPublicAppMedia();
+        if (res.success) {
+          if (res.media?.parentDashboardHero?.url) {
+            setCustomHeroUrl(res.media.parentDashboardHero.url);
+          }
+          if (res.media?.defaultEventHero?.url) {
+            setDefaultEventHeroUrl(res.media.defaultEventHero.url);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load custom parent hero:', err);
+      }
+    };
+    fetchCustomHero();
+  }, []);
 
   useEffect(() => {
     setIsSoundOn(soundUtility.isEnabled());
@@ -226,35 +251,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     const passReadyCount = childrenList.filter(c => c.status === 'Pass ready').length;
 
     return (
-      <div className="space-y-6 pt-1">
-        {/* 1. Greeting header & 2. Parent profile photo */}
+      <div data-view-version="parent-dashboard-v5-clean-header" className="space-y-6 pt-1">
+        {/* Warm Parent Greeting */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg sm:text-xl font-medium text-[#18181B] leading-snug">
+            <h1 data-component-version="parent-dashboard-greeting-v2" className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-snug">
               {getGreeting()}
             </h1>
-            <p className="text-sm text-[#3F3F46] mt-1">
+            <p className="text-xs sm:text-sm text-[#3F3F46] mt-1">
               Here is where things stand for your children.
             </p>
-          </div>
-          <div className="flex items-center space-x-2.5 shrink-0">
-            <button
-              onClick={() => setShowNotificationsDrawer(true)}
-              className="relative p-2.5 rounded-xl border border-[#D9D6CE] bg-white hover:bg-[#FAF8F4] active:bg-[#FAF6EB] text-[#3F3F46] transition-all cursor-pointer shadow-2xs focus:outline-none"
-              title="Notifications"
-            >
-              <Bell className="w-5 h-5 text-[#3F3F46]" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E07A5F] text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-            <FallbackAvatar
-              src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
-              name={parentProfile.fullName || 'Parent'}
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border border-[#D9D6CE] text-sm font-bold shadow-2xs"
-            />
           </div>
         </div>
 
@@ -280,22 +286,27 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           </div>
         )}
 
-        {/* 3, 4, 5. Event hero card with image, Date/Time row, Continue button */}
-        <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-sm overflow-hidden">
+        {/* Event hero card with image, Date/Time row, Continue button */}
+        <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-sm overflow-hidden" data-component-version="parent-dashboard-hero-v7-uploaded-media">
           <div className="relative h-44 sm:h-48 w-full bg-[#24221C] overflow-hidden flex flex-col justify-end p-4 sm:p-5">
-            {REAL_ASSETS.heroMain && REAL_ASSETS.heroMain.trim() !== '' ? (
-              <img src={REAL_ASSETS.heroMain} alt="" className="absolute inset-0 w-full h-full object-cover" />
-            ) : (
-              <div className="absolute inset-0 bg-gradient-to-br from-[#383226] via-[#242018] to-[#14120D]" />
-            )}
+            <SafeImage 
+              src={customHeroUrl}
+              fallbackSrc={defaultEventHeroUrl || parentHeroImg} 
+              alt={activeEvent?.title || "The General Assembly"} 
+              className="absolute inset-0 w-full h-full object-cover"
+              containerClassName="absolute inset-0 w-full h-full"
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent pointer-events-none" />
 
             <div className="relative z-10">
               <span className="text-[11px] font-semibold tracking-wider text-[#D4AF37] uppercase block mb-1">
-                CHILDREN AND TEENS
+                {activeEvent?.sectionName || activeEvent?.section_name || "CHILDREN AND TEENS"}
               </span>
               <h3 className="text-2xl sm:text-[26px] font-serif-koinonia font-bold text-white tracking-tight leading-tight">
-                The General Assembly
+                {activeEvent?.title || "The General Assembly"}
               </h3>
             </div>
           </div>
@@ -303,7 +314,44 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <div className="p-4 sm:p-5 space-y-4 bg-white">
             <div className="flex items-center text-xs sm:text-sm text-[#3F3F46] font-medium">
               <Calendar className="w-4 h-4 mr-3 text-[#B89047] shrink-0 stroke-[2]" />
-              <span>18th to 22nd November 2026, 9:00 AM to 7:00 PM</span>
+              <span>
+                {(() => {
+                  if (!activeEvent) return '18th to 22nd November 2026, 9:00 AM to 7:00 PM';
+                  const starts = activeEvent.startsAt || activeEvent.starts_at;
+                  const ends = activeEvent.endsAt || activeEvent.ends_at;
+                  const startTime = activeEvent.dailyStartTime || activeEvent.daily_start_time || '9:00 AM';
+                  const endTime = activeEvent.dailyEndTime || activeEvent.daily_end_time || '7:00 PM';
+                  if (!starts || !ends) return `${startTime} to ${endTime}`;
+
+                  const formatDateStr = (dateStr: string) => {
+                    try {
+                      const d = new Date(dateStr);
+                      if (isNaN(d.getTime())) return dateStr;
+                      const day = d.getDate();
+                      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                      const month = months[d.getMonth()];
+                      const year = d.getFullYear();
+                      
+                      const j = day % 10, k = day % 100;
+                      let suffix = "th";
+                      if (j === 1 && k !== 11) suffix = "st";
+                      else if (j === 2 && k !== 12) suffix = "nd";
+                      else if (j === 3 && k !== 13) suffix = "rd";
+                      
+                      return `${day}${suffix} ${month} ${year}`;
+                    } catch (e) {
+                      return dateStr;
+                    }
+                  };
+
+                  const formattedStarts = formatDateStr(starts);
+                  const formattedEnds = formatDateStr(ends);
+                  if (formattedStarts === formattedEnds) {
+                    return `${formattedStarts}, ${startTime} to ${endTime}`;
+                  }
+                  return `${formattedStarts} to ${formattedEnds}, ${startTime} to ${endTime}`;
+                })()}
+              </span>
             </div>
 
             <button
@@ -475,7 +523,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   };
 
   const renderChildrenTab = () => (
-    <div className="space-y-5">
+    <div data-view-version="parent-children-v3-clean-header" className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Children Profiles</h2>
@@ -563,7 +611,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   );
 
   const renderStatusTab = () => (
-    <div className="space-y-4">
+    <div data-view-version="parent-child-status-v10-clean-header" className="space-y-4">
       <div>
         <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Review Status</h2>
         <p className="text-xs text-[#6B7280]">Current progress from initial submission to event pass readiness.</p>
@@ -612,7 +660,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     };
 
     return (
-      <div data-view-version="parent-passes-v7-brand-refined" className="space-y-5">
+      <div data-view-version="parent-passes-v9-clean-header" className="space-y-5">
         <div>
           <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Event Passes</h2>
           <p className="text-xs text-[#5C5A54] font-medium">Present digital pass during child arrival and verified pickup.</p>
@@ -642,9 +690,40 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
               {/* Event title & date */}
               <div className="text-center space-y-0.5">
-                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] tracking-tight">The General Assembly</h3>
+                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] tracking-tight">{activeEvent?.title || "The General Assembly"}</h3>
                 <p className="text-[11px] text-[#8E8B82] font-semibold flex items-center justify-center">
-                  <Calendar className="w-3 h-3 mr-1 text-[#C59B27]" /> 18th to 22nd November 2026
+                  <Calendar className="w-3 h-3 mr-1 text-[#C59B27]" /> {(() => {
+                    if (!activeEvent) return '18th to 22nd November 2026';
+                    const starts = activeEvent.startsAt || activeEvent.starts_at;
+                    const ends = activeEvent.endsAt || activeEvent.ends_at;
+                    if (!starts || !ends) return '';
+                    
+                    const formatDateStr = (dateStr: string) => {
+                      try {
+                        const d = new Date(dateStr);
+                        if (isNaN(d.getTime())) return dateStr;
+                        const day = d.getDate();
+                        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        const month = months[d.getMonth()];
+                        const year = d.getFullYear();
+                        
+                        const j = day % 10, k = day % 100;
+                        let suffix = "th";
+                        if (j === 1 && k !== 11) suffix = "st";
+                        else if (j === 2 && k !== 12) suffix = "nd";
+                        else if (j === 3 && k !== 13) suffix = "rd";
+                        
+                        return `${day}${suffix} ${month} ${year}`;
+                      } catch (e) {
+                        return dateStr;
+                      }
+                    };
+
+                    const formattedStarts = formatDateStr(starts);
+                    const formattedEnds = formatDateStr(ends);
+                    if (formattedStarts === formattedEnds) return formattedStarts;
+                    return `${formattedStarts} to ${formattedEnds}`;
+                  })()}
                 </p>
               </div>
 
@@ -897,14 +976,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   };
 
   const renderProfileTab = () => (
-    <div className="space-y-4 pt-1">
-      {/* 1. Page title */}
-      <div className="pt-2 pb-1">
-        <h1 className="text-2xl sm:text-[26px] font-serif-koinonia font-bold text-[#18181B] tracking-tight">
-          Profile
-        </h1>
-      </div>
-
+    <div data-view-version="parent-profile-v4-clean-header" className="space-y-4 pt-1">
       {/* 2. Parent profile card */}
       <div className="bg-white rounded-2xl border border-[#EAE8E1] p-5 shadow-2xs relative text-center">
         <div className="flex justify-end mb-1">
@@ -1253,48 +1325,58 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   );
 
   return (
-    <div data-view-version="parent-dashboard-v3-default-after-login" className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50">
-      {/* Top Header shown only on non-Home and non-Profile screens */}
-      {activeTab !== 'Home' && activeTab !== 'Profile' && (
-        <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 backdrop-blur-md border-b border-[#EAE8E1]">
-          <div className="px-5 h-15 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+    <div data-view-version={
+      activeTab === 'Home' ? 'parent-dashboard-v5-clean-header' :
+      activeTab === 'Children' ? 'parent-children-v3-clean-header' :
+      activeTab === 'Status' ? 'parent-child-status-v10-clean-header' :
+      activeTab === 'Passes' ? 'parent-passes-v9-clean-header' :
+      activeTab === 'Profile' ? 'parent-profile-v4-clean-header' :
+      'parent-dashboard-v5-clean-header'
+    } className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50">
+      {/* Top Header shown on all screens with calm, minimal, premium design */}
+      <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 backdrop-blur-md border-b border-[#EAE8E1]/50" data-component-version="parent-mobile-header-v2-clean">
+        <div className="px-5 h-14 flex items-center justify-between">
+          <div className="flex items-center">
             <BrandLogo
               context="compact"
               data-component-version="parent-brand-logo-v1-configured"
-              onClick={() => onNavigate('/')}
+              onClick={() => handleTabChange('Home')}
               className="mr-1"
             />
-              <div className="flex flex-col">
-                <span className="font-serif-koinonia font-bold text-sm text-[#18181B] tracking-wider uppercase leading-none">
-                  PARENT HOME
-                </span>
-                <span className="text-[11px] text-[#6B7280] mt-0.5 font-medium">
-                  Children and Teens
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setShowNotificationsDrawer(true)}
-                className="relative p-2 rounded-xl border border-[#D9D6CE] bg-white hover:bg-[#FAF8F4] active:bg-[#FAF6EB] text-[#3F3F46] transition-all cursor-pointer shadow-2xs focus:outline-none"
-                title="Notifications"
-              >
-                <Bell className="w-4 h-4 text-[#3F3F46]" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#E07A5F] text-[9px] font-bold text-white shadow-sm ring-1 ring-white">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-              <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-[#FAF6EB] text-[#9A7326] text-[10px] font-semibold border border-[#E5D5AE]">
-                Official
-              </div>
-            </div>
           </div>
-        </header>
-      )}
+
+          <div className="text-center">
+            <span className="font-serif-koinonia font-bold text-xs sm:text-sm text-[#18181B] tracking-wider uppercase leading-none">
+              {activeTab === 'Home' ? 'Koinonia' : activeTab === 'Children' ? 'Children' : activeTab === 'Status' ? 'Status' : activeTab === 'Passes' ? 'Passes' : 'Profile'}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2.5">
+            <button
+              onClick={() => setShowNotificationsDrawer(true)}
+              className="relative p-2 rounded-xl text-[#3F3F46] hover:text-[#C59B27] active:scale-95 transition-all cursor-pointer focus:outline-none"
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5 text-[#3F3F46]" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-[#E07A5F] text-[9px] font-bold text-white shadow-sm ring-1 ring-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('Profile')}
+              className="focus:outline-none cursor-pointer"
+            >
+              <FallbackAvatar
+                src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
+                name={parentProfile.fullName || 'Parent'}
+                className="w-8 h-8 rounded-full border border-[#D9D6CE] text-xs font-bold shadow-2xs"
+              />
+            </button>
+          </div>
+        </div>
+      </header>
 
       {/* Main Container framed to mobile shell width with 112px bottom padding so bottom nav never overlaps */}
       <main className="flex-1 w-full px-5 pt-5 pb-28">

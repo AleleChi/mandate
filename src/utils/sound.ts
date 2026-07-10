@@ -1,54 +1,105 @@
-/**
- * Koinonia Sound Utility
- * 
- * Provides sound support for in-app notifications.
- * By default, sound is strictly DISABLED (off) for all parents to respect user preferences
- * and comply with browser autoplay policies that prevent automatic audio playback before
- * user interaction.
- */
+// Client-side Web Audio API Sound Effects Engine
+// Generates synthesized tones on the fly, avoiding any static asset load issues.
 
-import { safeStorage } from './storage';
+let audioCtx: AudioContext | null = null;
 
-const SOUND_PREF_KEY = 'koinonia_notification_sound_enabled';
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextClass) {
+      audioCtx = new AudioContextClass();
+    }
+  }
+  return audioCtx;
+}
 
-// Elegant default chime sound (MP3 URL)
-const DEFAULT_CHIME_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-600.wav'; // Light, high-quality digital notification sound
+export function playSound(type: 'success' | 'error' | 'notification' | 'alert') {
+  try {
+    // Check local preference override
+    const stored = localStorage.getItem('koinonia_sound_enabled');
+    if (stored === 'false') return;
+
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    // Autoplay restrictions guard
+    if (ctx.state === 'suspended') {
+      return;
+    }
+
+    const playTone = (freq: number, duration: number, oscType: OscillatorType = 'sine', delay = 0) => {
+      setTimeout(() => {
+        try {
+          if (!ctx || ctx.state === 'suspended') return;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = oscType;
+          osc.frequency.setValueAtTime(freq, ctx.currentTime);
+          
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          
+          osc.start();
+          osc.stop(ctx.currentTime + duration);
+        } catch (e) {
+          console.warn('Tone play error:', e);
+        }
+      }, delay * 1000);
+    };
+
+    switch (type) {
+      case 'success':
+        // Clean chime: rising dual tones
+        playTone(523.25, 0.15, 'sine', 0); // C5
+        playTone(659.25, 0.3, 'sine', 0.08); // E5
+        break;
+      case 'error':
+        // Double low beep
+        playTone(150, 0.12, 'sawtooth', 0);
+        playTone(130, 0.15, 'sawtooth', 0.15);
+        break;
+      case 'notification':
+        // Gentle synth chime
+        playTone(587.33, 0.15, 'triangle', 0); // D5
+        playTone(880, 0.25, 'triangle', 0.08); // A5
+        break;
+      case 'alert':
+        // Urgent high dual-beep for escalation alerts
+        playTone(880, 0.1, 'square', 0);
+        playTone(880, 0.1, 'square', 0.12);
+        playTone(1200, 0.25, 'square', 0.24);
+        break;
+    }
+  } catch (err) {
+    console.warn('Web Audio playback error:', err);
+  }
+}
+
+// Resumes or unlocks the audio context from a user interaction event (tap / click)
+export function resumeAudioContext() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch((err) => console.warn('Failed to resume AudioContext:', err));
+    }
+  } catch (_) {}
+}
 
 export const soundUtility = {
-  /**
-   * Check if sound notifications are enabled by the user.
-   * Defaults to false (off) per system rules.
-   */
-  isEnabled(): boolean {
-    const val = safeStorage.getItem(SOUND_PREF_KEY);
-    return val === 'true'; // Defaults to false if not set
+  isEnabled() {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('koinonia_sound_enabled') !== 'false';
   },
-
-  /**
-   * Enable or disable notification sounds.
-   */
-  setEnabled(enabled: boolean) {
-    safeStorage.setItem(SOUND_PREF_KEY, enabled ? 'true' : 'false');
+  setEnabled(val: boolean) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('koinonia_sound_enabled', String(val));
   },
-
-  /**
-   * Play the elegant notification chime.
-   * Will only play if the user has explicitly turned sound ON and has interacted with the document.
-   */
-  async playChime(force: boolean = false): Promise<boolean> {
-    if (!force && !this.isEnabled()) {
-      return false; // Sound is disabled
-    }
-
-    try {
-      const audio = new Audio(DEFAULT_CHIME_URL);
-      audio.volume = 0.4; // Low, gentle volume
-      await audio.play();
-      return true;
-    } catch (err) {
-      // Autoplay prevented or network failure
-      console.warn('[SoundUtility] Playback was prevented or failed:', err);
-      return false;
-    }
+  playChime(force = false) {
+    resumeAudioContext();
+    playSound('success');
   }
 };

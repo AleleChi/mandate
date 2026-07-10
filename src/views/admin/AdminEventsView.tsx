@@ -430,7 +430,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
   const getFilteredEvents = () => {
     return events.filter(e => {
-      if (activeTab === 'current') return e.status === 'current';
+      if (activeTab === 'current') return e.status === 'current' || e.status === 'open' || e.status === 'active';
       if (activeTab === 'upcoming') return e.status === 'upcoming';
       if (activeTab === 'draft') return e.status === 'draft';
       if (activeTab === 'archived') return e.status === 'archived' || e.status === 'closed';
@@ -451,7 +451,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   return (
     <div 
       className="space-y-6"
-      data-view-version="admin-events-v1-stitch-implemented"
+      data-view-version="admin-events-v3-current-event-visible"
     >
       {currentScreen === 'home' && (
         <div className="space-y-6" data-component-version="admin-events-home-v1">
@@ -500,9 +500,9 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/10 text-[#C59B27] rounded-2xl flex items-center justify-center mx-auto">
                 <Calendar className="w-6 h-6" />
               </div>
-              <h3 className="font-serif text-base font-bold text-[#18181B]">No events found</h3>
+              <h3 className="font-serif text-base font-bold text-[#18181B]">No events yet</h3>
               <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
-                There are no registered events in this list yet. Create a new event to begin setup.
+                Create your first event to begin setup.
               </p>
               <Button
                 type="button"
@@ -517,6 +517,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               {filteredEvents.map(event => (
                 <div 
                   key={event.id}
+                  data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-card-v2" : undefined}
                   className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-3xs flex flex-col lg:flex-row justify-between lg:items-center gap-6 hover:border-[#C59B27]/30 transition-all"
                 >
                   <div className="space-y-3.5 min-w-0 flex-1">
@@ -525,7 +526,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-zinc-50 text-zinc-600 border border-zinc-100">
                         {event.sectionName}
                       </span>
-                      {event.status === 'current' && (
+                      {(event.status === 'current' || event.status === 'open' || event.status === 'active') && (
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center gap-1">
                           <CheckCircle2 className="w-2.5 h-2.5" /> Active Current
                         </span>
@@ -533,17 +534,17 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs text-zinc-500">
-                      <div className="flex items-center space-x-2">
-                        <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span>{event.startsAt}</span>
+                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-date-meta-v1" : undefined}>
+                        <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
+                        <span className={event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-zinc-700 font-semibold' : ''}>{event.startsAt}</span>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span>{event.dailyStartTime} - {event.dailyEndTime}</span>
+                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-time-meta-v1" : undefined}>
+                        <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
+                        <span className={event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-zinc-700 font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span className="truncate">{event.location}</span>
+                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-venue-meta-v1" : undefined}>
+                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
+                        <span className={`truncate ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-zinc-700 font-semibold' : ''}`}>{event.location}</span>
                       </div>
                     </div>
 
@@ -563,13 +564,22 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     <Button
                       type="button"
                       onClick={() => loadEventForEdit(event.id!)}
-                      className="p-2 text-zinc-600 hover:text-[#C59B27] bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
+                      data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-edit-action-v2" : undefined}
+                      className={
+                        event.status === 'current' || event.status === 'open' || event.status === 'active'
+                          ? "p-2.5 text-white bg-[#C59B27] hover:bg-[#A37B1E] rounded-xl border border-[#C59B27] flex items-center justify-center cursor-pointer transition-colors shadow-sm"
+                          : "p-2 text-zinc-600 hover:text-[#C59B27] bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
+                      }
                       title="Edit Event details"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className={
+                        event.status === 'current' || event.status === 'open' || event.status === 'active'
+                          ? "w-4 h-4 stroke-[2.5]"
+                          : "w-3.5 h-3.5"
+                      } />
                     </Button>
 
-                    {event.status !== 'current' && event.status !== 'archived' && (
+                    {event.status !== 'current' && event.status !== 'open' && event.status !== 'active' && event.status !== 'archived' && (
                       <Button
                         type="button"
                         onClick={() => handleSetCurrentActive(event.id!)}
@@ -585,10 +595,19 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       <Button
                         type="button"
                         onClick={() => handleArchiveEvent(event.id!)}
-                        className="p-2 text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
+                        data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-archive-action-v2" : undefined}
+                        className={
+                          event.status === 'current' || event.status === 'open' || event.status === 'active'
+                            ? "p-2.5 text-red-700 bg-red-50 hover:bg-red-100 rounded-xl border border-red-200 flex items-center justify-center cursor-pointer transition-colors"
+                            : "p-2 text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
+                        }
                         title="Archive Event"
                       >
-                        <Archive className="w-3.5 h-3.5" />
+                        <Archive className={
+                          event.status === 'current' || event.status === 'open' || event.status === 'active'
+                            ? "w-4 h-4 stroke-[2.5]"
+                            : "w-3.5 h-3.5"
+                        } />
                       </Button>
                     )}
                   </div>
@@ -602,7 +621,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       {(currentScreen === 'create' || currentScreen === 'edit') && (
         <div 
           className="space-y-6" 
-          data-view-version="admin-create-event-v1-stitch"
+          data-view-version={currentScreen === 'edit' ? "admin-edit-event-v2-current-event" : "admin-create-event-v1-stitch"}
         >
           {/* Back Action Bar */}
           <div className="flex items-center space-x-3">
@@ -634,7 +653,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               {/* Card 1: Event Details */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
-                data-component-version="admin-create-event-details-v1"
+                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-details-v1" : "admin-create-event-details-v1"}
               >
                 <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
                   <h3 className="font-serif text-lg font-bold text-[#18181B]">Event Details</h3>
@@ -728,7 +747,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               {/* Card 2: Parent Access Configuration */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
-                data-component-version="admin-create-event-parent-access-v1"
+                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-parent-access-v1" : "admin-create-event-parent-access-v1"}
               >
                 <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
                   <h3 className="font-serif text-lg font-bold text-[#18181B]">Parent Access Configuration</h3>
@@ -793,7 +812,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               {/* Card 3: Age Groups & Capacity */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
-                data-component-version="admin-create-event-age-capacity-v1"
+                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-age-groups-v1" : "admin-create-event-age-capacity-v1"}
               >
                 <div className="flex justify-between items-center border-b border-[#EAE8E1]/60 pb-4">
                   <div className="space-y-1">

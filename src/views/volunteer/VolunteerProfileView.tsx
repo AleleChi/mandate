@@ -187,7 +187,7 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   const helpTopics = [
     {
       title: 'How to check in a child',
-      content: '1. Open the "Scan" tab from the bottom navigation.\n2. Position the parent’s Event Pass QR code in the camera frame (or tap manual input to enter the child’s security reference code).\n3. Match the child’s physical face with their system profile photo.\n4. Tap "Confirm Check-In" to record gate admission. Guide the child to their designated age-group department.'
+      content: '1. Open the "Scan" tab from the bottom navigation.\n2. Position the parent’s Event Pass QR code in the camera frame (or tap manual input to enter the child’s security reference code).\n3. Match the child’s physical face with their profile photo.\n4. Tap "Confirm Check-In" to record gate admission. Guide the child to their designated age-group department.'
     },
     {
       title: 'How pickup works',
@@ -220,19 +220,9 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   return (
     <div 
       className="max-w-md mx-auto w-full space-y-6 pb-24 px-4 animate-fade-in font-sans" 
-      data-view-version="volunteer-profile-v2-stitch-handover"
+      data-view-version="volunteer-profile-v5-mobile-app-header"
       id="volunteer-profile-view-container"
     >
-      {/* 1. Header */}
-      <div 
-        className="space-y-1"
-        data-component-version="volunteer-profile-header-v2-stitch-handover"
-        id="profile-header-section"
-      >
-        <h2 className="text-3xl font-extrabold text-neutral-900 tracking-tight font-serif-koinonia font-serif">Profile</h2>
-        <p className="text-xs text-gray-500 font-medium">The General Assembly Children and Teens</p>
-      </div>
-
       {/* 2. Profile identity card */}
       <div 
         className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4"

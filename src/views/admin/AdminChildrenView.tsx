@@ -14,7 +14,17 @@ import {
   Calendar,
   Eye,
   CameraOff,
-  SlidersHorizontal
+  SlidersHorizontal,
+  MoreVertical,
+  RotateCcw,
+  Check,
+  Trash2,
+  Lock,
+  Unlock,
+  FileClock,
+  RefreshCw,
+  UserX,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -45,6 +55,35 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [tempFilter, setTempFilter] = useState<string>('all');
+
+  // More actions states
+  const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
+
+  const [childToReopen, setChildToReopen] = useState<any | null>(null);
+  const [reopenReason, setReopenReason] = useState('');
+  const [submittingReopen, setSubmittingReopen] = useState(false);
+
+  const [childToRemove, setChildToRemove] = useState<any | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [submittingRemove, setSubmittingRemove] = useState(false);
+
+  const [childToRevoke, setChildToRevoke] = useState<any | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [submittingRevoke, setSubmittingRevoke] = useState(false);
+
+  const [childToRestore, setChildToRestore] = useState<any | null>(null);
+  const [submittingRestore, setSubmittingRestore] = useState(false);
+
+  const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setActiveDropdownId(null);
+    };
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
 
   // Debounce search query
   useEffect(() => {
@@ -85,6 +124,150 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   const handleClearFilters = () => {
     setSearchQuery('');
     setActiveFilter('all');
+  };
+
+  // List actions implementations
+  const handleSelectChild = async (applicationId: string) => {
+    setSubmittingActionId(applicationId + '-select');
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'selected',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Child Approved', 'The child application has been approved and registered.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not approve child.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleDeclineChild = async (applicationId: string) => {
+    setSubmittingActionId(applicationId + '-decline');
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'not_selected',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Application Declined', 'The child application status has been updated.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not update status.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleWaitlistChild = async (applicationId: string) => {
+    setSubmittingActionId(applicationId + '-waitlist');
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'waiting_list',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Waitlisted', 'The child application has been placed on the waiting list.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not update status.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleGeneratePass = async (childId: string) => {
+    setSubmittingActionId(childId + '-pass');
+    try {
+      const res = await api.admin.generateChildPass(childId);
+      if (res.success) {
+        showSuccess('Pass Issued', 'The digital event pass has been successfully generated.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not generate event pass.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleRestoreChildSubmit = async () => {
+    if (!childToRestore) return;
+    setSubmittingRestore(true);
+    try {
+      const res = await api.admin.restoreChild(childToRestore.applicationId);
+      if (res.success) {
+        showSuccess('Child Restored', 'The child record has been successfully restored.');
+        setChildToRestore(null);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not restore child.');
+    } finally {
+      setSubmittingRestore(false);
+    }
+  };
+
+  const handleReopenReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToReopen) return;
+    setSubmittingReopen(true);
+    try {
+      const res = await api.admin.reopenApplicationReview(childToReopen.applicationId, reopenReason);
+      if (res.success) {
+        showSuccess('Review Reopened', 'The child application review has been reopened.');
+        setChildToReopen(null);
+        setReopenReason('');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not reopen review.');
+    } finally {
+      setSubmittingReopen(false);
+    }
+  };
+
+  const handleRemoveChildSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToRemove) return;
+    setSubmittingRemove(true);
+    try {
+      const res = await api.admin.removeChild(childToRemove.applicationId, removeReason);
+      if (res.success) {
+        showSuccess('Child Removed', 'The child record has been archived/soft-removed.');
+        setChildToRemove(null);
+        setRemoveReason('');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not remove child.');
+    } finally {
+      setSubmittingRemove(false);
+    }
+  };
+
+  const handleRevokePassSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToRevoke) return;
+    setSubmittingRevoke(true);
+    try {
+      const res = await api.admin.revokeChildPass(childToRevoke.childId, revokeReason);
+      if (res.success) {
+        showSuccess('Pass Revoked', 'The digital event pass has been revoked.');
+        setChildToRevoke(null);
+        setRevokeReason('');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not revoke pass.');
+    } finally {
+      setSubmittingRevoke(false);
+    }
   };
 
   if (selectedApplicationId) {
@@ -283,7 +466,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 { id: 'medical_note', label: 'Medical note' },
                 { id: 'missing_pickup_photo', label: 'Missing pickup photo' },
                 { id: 'below_event_age', label: 'Below event age' },
-                { id: 'special_support', label: 'Special support' }
+                { id: 'special_support', label: 'Special support' },
+                { id: 'removed', label: 'Removed' }
               ].map((f) => {
                 const active = activeFilter === f.id;
                 return (
@@ -386,6 +570,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <div 
             className="hidden lg:block bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs"
             data-component-version="admin-children-table-v1"
+            data-component-version-extra="admin-child-list-v3-actions"
           >
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -406,7 +591,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   {children.map((c) => (
                     <tr 
                       key={c.id}
-                      className="hover:bg-[#FAF9F6]/40 transition-colors"
+                      className={`hover:bg-[#FAF9F6]/40 transition-colors ${c.isDeleted ? 'opacity-70 bg-zinc-50/50' : ''}`}
                     >
                       {/* Child info */}
                       <td className="py-3 px-4">
@@ -429,6 +614,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                             </span>
                             {/* Warnings / Badges */}
                             <div className="flex flex-wrap gap-1 mt-1">
+                              {c.isDeleted && (
+                                <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-tight">
+                                  Removed
+                                </span>
+                              )}
                               {c.flags?.includes('medical_notes') && (
                                 <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-bold bg-rose-50 text-rose-600 border border-rose-100 uppercase tracking-tight">
                                   Medical
@@ -511,14 +701,147 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                       </td>
 
                       {/* Action */}
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedApplicationId(c.applicationId)}
-                          className="p-1.5 hover:bg-zinc-50 rounded-lg text-zinc-400 hover:text-[#C59B27] transition-all"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                      <td className="py-3 px-4 text-right relative">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedApplicationId(c.applicationId)}
+                            className="p-1.5 hover:bg-zinc-50 rounded-lg text-zinc-400 hover:text-[#C59B27] transition-all"
+                            title="View Details"
+                            data-component-version="admin-child-view-action-v2"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          <div className="relative inline-block text-left">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDropdownId(activeDropdownId === c.applicationId ? null : c.applicationId);
+                              }}
+                              className="p-1.5 hover:bg-zinc-50 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer focus:outline-none"
+                              title="More Actions"
+                              id={`child-more-actions-trigger-${c.applicationId}`}
+                              data-component-version="admin-child-more-actions-v2"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+
+                            {activeDropdownId === c.applicationId && (
+                              <div 
+                                className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#FFFDF9] border border-[#EAE8E1] shadow-xl z-50 py-1.5 text-left focus:outline-none animate-fade-in"
+                                data-view-version="admin-children-v4-actions-management"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="px-3 py-1 border-b border-zinc-100 mb-1">
+                                  <span className="text-[9px] font-mono font-bold tracking-wider text-zinc-400 uppercase block">Child Management</span>
+                                  <span className="text-xs font-semibold text-zinc-800 truncate block max-w-[200px]">{c.fullName}</span>
+                                </div>
+
+                                {c.isDeleted ? (
+                                  <button
+                                    onClick={() => {
+                                      setChildToRestore(c);
+                                      setActiveDropdownId(null);
+                                    }}
+                                    className="w-full text-left px-3.5 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5 shrink-0" /> Restore child
+                                  </button>
+                                ) : (
+                                  <>
+                                    {c.reviewStatus !== 'selected' && c.reviewStatus !== 'pass_ready' && (
+                                      <button
+                                        onClick={() => {
+                                          handleSelectChild(c.applicationId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Check className="w-3.5 h-3.5 shrink-0" /> Select (Approve)
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus !== 'not_selected' && (
+                                      <button
+                                        onClick={() => {
+                                          handleDeclineChild(c.applicationId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <UserX className="w-3.5 h-3.5 shrink-0" /> Not Selected (Decline)
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus !== 'waiting_list' && (
+                                      <button
+                                        onClick={() => {
+                                          handleWaitlistChild(c.applicationId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Clock className="w-3.5 h-3.5 shrink-0" /> Waitlist (Wait)
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus !== 'under_review' && (
+                                      <button
+                                        onClick={() => {
+                                          setChildToReopen(c);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800 transition-all flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <FileClock className="w-3.5 h-3.5 shrink-0" /> Reopen review
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus === 'selected' && (
+                                      <button
+                                        onClick={() => {
+                                          handleGeneratePass(c.childId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Sparkles className="w-3.5 h-3.5 shrink-0" /> Generate pass
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus === 'pass_ready' && (
+                                      <button
+                                        onClick={() => {
+                                          setChildToRevoke(c);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-all flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <Lock className="w-3.5 h-3.5 shrink-0" /> Revoke pass
+                                      </button>
+                                    )}
+
+                                    <div className="h-px bg-zinc-100 my-1" />
+
+                                    <button
+                                      onClick={() => {
+                                        setChildToRemove(c);
+                                        setActiveDropdownId(null);
+                                      }}
+                                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 transition-all flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5 shrink-0" /> Remove child
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -535,7 +858,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
             {children.map((c) => (
               <div 
                 key={c.id}
-                className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 space-y-3.5 shadow-xs"
+                className={`bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 space-y-3.5 shadow-xs ${c.isDeleted ? 'opacity-70 bg-zinc-50/50' : ''}`}
               >
                 {/* Header info */}
                 <div className="flex items-start justify-between gap-2">
@@ -567,25 +890,28 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 </div>
 
                 {/* Tags / Badges if any */}
-                {c.flags && c.flags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {c.flags.includes('medical_notes') && (
-                      <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-rose-50 text-rose-600 border border-rose-100 uppercase tracking-wider">
-                        Medical Note
-                      </span>
-                    )}
-                    {c.flags.includes('special_support') && (
-                      <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider">
-                        Special Support
-                      </span>
-                    )}
-                    {c.flags.includes('needs_age_review') && (
-                      <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20 uppercase tracking-wider">
-                        Below Event Age
-                      </span>
-                    )}
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-1">
+                  {c.isDeleted && (
+                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
+                      Removed
+                    </span>
+                  )}
+                  {c.flags?.includes('medical_notes') && (
+                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-rose-50 text-rose-600 border border-rose-100 uppercase tracking-wider">
+                      Medical Note
+                    </span>
+                  )}
+                  {c.flags?.includes('special_support') && (
+                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider">
+                      Special Support
+                    </span>
+                  )}
+                  {c.flags?.includes('needs_age_review') && (
+                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20 uppercase tracking-wider">
+                      Below Event Age
+                    </span>
+                  )}
+                </div>
 
                 {/* Main Details (Subtle, Human Layout) */}
                 <div className="space-y-2.5 text-xs text-zinc-600">
@@ -695,7 +1021,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                     { id: 'medical_note', label: 'Medical note' },
                     { id: 'missing_pickup_photo', label: 'Missing pickup photo' },
                     { id: 'below_event_age', label: 'Below event age' },
-                    { id: 'special_support', label: 'Special support' }
+                    { id: 'special_support', label: 'Special support' },
+                    { id: 'removed', label: 'Removed' }
                   ].map((f) => {
                     const isSelected = tempFilter === f.id;
                     return (
@@ -740,6 +1067,209 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
               >
                 Apply filters
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Child Reopen Review Confirmation Modal */}
+      {childToReopen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-reopen-child-review-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToReopen(null)} />
+          <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-[#C59B27]">
+              <FileClock className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Reopen review</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to reopen the review process for <strong>{childToReopen.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              The child profile status will be set back to <strong>Under Review</strong>, allowing team members to make a new registration decision.
+            </p>
+
+            <form onSubmit={handleReopenReviewSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason (Optional)</label>
+                <textarea
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                  placeholder="Explain why the review is being reopened..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all resize-none placeholder-zinc-400 text-zinc-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToReopen(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingReopen}
+                  disabled={submittingReopen}
+                  className="px-5 py-2 text-xs bg-[#C59B27] hover:bg-[#B89047] hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                  id="confirm-reopen-child-review-btn"
+                >
+                  Reopen review
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Child Confirmation Modal */}
+      {childToRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-remove-child-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToRemove(null)} />
+          <div className="relative bg-[#FFFDF9] border border-zinc-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-red-600">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Remove child record</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to remove and archive <strong>{childToRemove.fullName}</strong> from active event registration?
+            </p>
+            <div className="text-xs bg-red-50 text-red-700 p-3 rounded-xl border border-red-100 space-y-1">
+              <span className="font-semibold block">⚠️ Important Information:</span>
+              <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-red-600">
+                <li>This child will be soft-removed and excluded from active event rosters.</li>
+                <li>Admins can view and restore this child record anytime from the Removed tab.</li>
+              </ul>
+            </div>
+
+            <form onSubmit={handleRemoveChildSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason for Removal (Required)</label>
+                <textarea
+                  required
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                  placeholder="Explain why this child registration is being removed..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all resize-none placeholder-zinc-400 text-zinc-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToRemove(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingRemove}
+                  disabled={submittingRemove || !removeReason.trim()}
+                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50"
+                  id="confirm-remove-child-btn"
+                >
+                  Remove child
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke Child Pass Confirmation Modal */}
+      {childToRevoke && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-revoke-child-pass-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToRevoke(null)} />
+          <div className="relative bg-[#FFFDF9] border border-zinc-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-rose-700">
+              <Lock className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Revoke event pass</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to revoke the digital event pass for <strong>{childToRevoke.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              The digital pass reference will be disabled. It will no longer scan validly at check-in terminals, and parents will see that the pass has been withdrawn.
+            </p>
+
+            <form onSubmit={handleRevokePassSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason for Revocation (Required)</label>
+                <textarea
+                  required
+                  value={revokeReason}
+                  onChange={(e) => setRevokeReason(e.target.value)}
+                  placeholder="Specify the reason for revoking this digital event pass..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 transition-all resize-none placeholder-zinc-400 text-zinc-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToRevoke(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingRevoke}
+                  disabled={submittingRevoke || !revokeReason.trim()}
+                  className="px-5 py-2 text-xs bg-rose-700 hover:bg-rose-800 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50"
+                  id="confirm-revoke-child-pass-btn"
+                >
+                  Revoke pass
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Child Confirmation Modal */}
+      {childToRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-restore-child-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToRestore(null)} />
+          <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600">
+              <RotateCcw className="w-5 h-5 shrink-0 animate-spin-reverse" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Restore child record</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to restore the child record of <strong>{childToRestore.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              This will return the child registration profile to active review status.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+              <Button
+                type="button"
+                onClick={() => setChildToRestore(null)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRestoreChildSubmit}
+                loading={submittingRestore}
+                disabled={submittingRestore}
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                id="confirm-restore-child-btn"
+              >
+                Restore child
+              </Button>
             </div>
           </div>
         </div>

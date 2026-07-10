@@ -568,3 +568,123 @@ To allow volunteers to securely update their own onboarding/registration details
 - **Validation**: Enforces strict text constraints and phone number format normalization.
 
 
+## 12. Event-Day Attention Resolution Interface
+
+To support active volunteers during check-in and checkout gates, a secure, interactive resolution panel has been implemented:
+
+### A. Active Attention Items Panel (Stitch Design Style)
+- **Visuals**: Styled in a polished, warm cream card with high-contrast amber borders (`border-amber-100`) and the gold theme elements of the ministry.
+- **Proof Attributes**: Located using `data-component-version="volunteer-event-needs-attention-panel-v1"`.
+
+### B. Interactive Detail and Resolution Modal
+- **Visuals**: Renders a comprehensive, single-screen modal with elegant display typography. It displays side-by-side verification photos (when present), parent contact information, and clear, descriptive action buttons.
+- **Security & Authorization**: Volunteers cannot perform admin updates (like deleting records or modifying child details). They can only add an event note and confirm event-day checkmarks (or escalate issues to administration).
+- **Mandatory Notes**: A detailed event note is strictly validated on the client side before allowing Resolve, Verify, or Escalate actions.
+- **Proof Attributes**:
+  - Main modal view: `data-view-version="volunteer-attention-detail-v3-premium"`
+  - Modal Header: `data-component-version="volunteer-attention-detail-header-v3"`
+  - Child profile summary block: `data-component-version="volunteer-attention-child-summary-v3"`
+  - Safe Child Name: `data-component-version="volunteer-attention-safe-child-display-v2"`
+  - Reference Badge: `data-component-version="volunteer-attention-child-reference-v2"`
+  - Attention Reason Card: `data-component-version="volunteer-attention-reason-card-v3"`
+  - Guidance Card: `data-component-version="volunteer-attention-guidance-card-v3"`
+  - Note and text entry form: `data-component-version="volunteer-attention-resolution-form-v3"`
+  - Action Footer Container: `data-component-version="volunteer-attention-detail-footer-v3"`
+  - Escalate action trigger: `data-component-version="volunteer-attention-escalate-action-v3"`
+  - Resolve action trigger: `data-component-version="volunteer-attention-resolve-action-v3"`
+  - Verify action trigger: `data-component-version="volunteer-attention-verify-action-v3"`
+  - Review action trigger: `data-component-version="volunteer-attention-review-action-v3"`
+  - Safe Error Banner: `data-component-version="volunteer-attention-safe-error-v2"`
+
+
+## 13. Phase 4 - Production Attention System End-to-End Integration
+
+To transition the Volunteer Attention System from a draft feature to a highly polished, production-ready, end-to-end flow, we have finalized the integration and resolved critical security and presentation issues:
+
+### A. Non-Destructive Global Modal Access
+- Previously, the attention detail modal was nested inside the Reports route tab, rendering it non-functional and inaccessible from the main Events home dashboard or children list.
+- We have restructured the layout so that both `showAttentionModal` and `showAttentionDetailModal` are declared globally at the parent level of `VolunteerEventDashboardView.tsx`, making them instant, responsive, and fully active regardless of the current active sub-route tab.
+
+### B. Masking Raw Database Keys (Anonymization Policy)
+- To maintain an elegant, production-grade presentation, volunteers are never shown raw, long database UUID strings.
+- Full child UUIDs are replaced in the UI with a short, uppercase reference code (e.g., `Sarah A. (Ref: 8B759D)`) automatically derived from the last 6 characters of the child's database ID.
+
+### C. Active Production Safeguard against Demo Leakage
+- To ensure no "Test Child" seed files or demo profiles clutter the production environment or get exposed to volunteers, we introduced an active filter check.
+- The backend routes (`getEventStats`, `getEventHome`, `syncAttentionItems`) explicitly filter out records starting with `"Test %"` unless the environment variable `ENABLE_DEMO_DATA` is explicitly set to `"true"`. This prevents demo leaks.
+
+### D. New Unified Verification Endpoint
+- We added `POST /api/volunteer/attention-items/:itemId/verify` to both the backend router and client service layer, ensuring that "VERIFY" button actions perform the correct state transition and clear safety flags (e.g., `needs_age_review = 0` on the child profile).
+
+
+## 14. Volunteer Mobile App Redesign Handover Specifications (v9 Handover)
+
+We have successfully refined and completed the Volunteer Event Dashboard redesign, turning it into a polished, high-fidelity mobile-first app experience:
+
+### A. Polished, Mobile-First Header Layout
+- **Brand Consistency**: Compact `<BrandLogo />` component on the left, clear and concise page title (`KOINONIA`) in the center, and the Volunteer Profile Avatar on the right.
+- **Proof Attribute**: `data-component-version="volunteer-mobile-app-header-v2-handover"`
+- **No Clutter**: Completely removed all unrequested system widgets, ready-to-scan buttons, sign-out crowding, and network/online status markers.
+
+### B. High-Fidelity Volunteer Avatar Priority
+- **Avatar Loading Priority**:
+  1. `volunteerProfile.photoUrl`
+  2. `profile.photoUrl`
+  3. `user.photoUrl`
+  4. `profilePhotoUrl`
+  5. Letter Initials (as an elegant fallback only if no valid photo exists).
+- **SafeImage Integration**: Wrapped within `SafeImage` to load CORS-safe uploaded media cleanly with smooth transitions and no flickering or broken frames.
+- **Proof Attribute**: `data-component-version="volunteer-header-avatar-v3-handover-photo"`
+
+### C. Real-Name Greeting & Time-Based Salutation
+- **Greeting Structure**: Resolves the volunteer's first name from multiple nested profile structures securely. It then displays a time-of-day salutation (e.g., "Good morning, Sarah" or "Good afternoon, James").
+- **Graceful Fallback**: If the profile contains no real name (or is the fallback "Volunteer"), it automatically and cleanly displays "Good morning" or "Good afternoon" without any trailing commas or broken placeholders.
+- **Proof Attribute**: `data-component-version="volunteer-dashboard-greeting-v6-handover-real-name"`
+
+### D. CORS-Safe Stable Hero Cover Card
+- **Stable Cover rendering**: Styled on a clean ivory canvas. The cover loads the custom event theme image or default fallback smoothly with optimized decoding and high priority.
+- **Hero Card Proof Attribute**: `data-component-version="volunteer-dashboard-hero-v9-handover-mobile-app"`
+- **Hero Image Proof Attribute**: `data-component-version="volunteer-dashboard-hero-image-v5-handover-stable"`
+
+### E. Forbidden Terminology Compliance
+- Private volunteer dashboards strictly avoid technical jargon and words from the forbidden list:
+  - **Forbidden**: "database", "system", "workflow", "logs", "registry", "directory", "portal", "Ministry Portal".
+  - **Approved Alternatives**: "event", "tools", "children", "check-in", "pickup", "attention items", "event team".
+
+### F. Global Active Wrapper Proofing
+- The root of the active volunteer dashboard view is verified via the global proof attribute:
+  - **Proof Attribute**: `data-view-version="volunteer-dashboard-v9-handover-mobile-app"`
+
+
+## 15. Volunteer Attention Details Modal Redesign (v3 Premium)
+
+We have successfully redesigned and polished the Attention Details modal into a premium, human-centric visual sheet that aligns perfectly with Koinonia's brand identity:
+
+### A. Tonal Design & Aesthetics
+- Styled with a warm, off-white background (`#FAF9F6`), soft borders (`#EAE8E1`), and balanced negative space.
+- Heading titled "Attention item" with subtitle "Review the child’s event-day note before continuing" (`data-component-version="volunteer-attention-detail-header-v3"`).
+- Proofed under `data-view-version="volunteer-attention-detail-v3-premium"`.
+
+### B. Safe Child Display & Reference Separation
+- Uses `formatChildNameAndRef` to detect and strip numeric timestamp suffixes from child names (e.g., turning "Test Child 1783672765449" into "Test Child"), displaying them under `data-component-version="volunteer-attention-safe-child-display-v2"`.
+- Reference identifiers are extracted and displayed separately in a subtle gold reference badge (`data-component-version="volunteer-attention-child-reference-v2"`).
+- Child profile cards are rendered with `SafeImage` fallbacks under `data-component-version="volunteer-attention-child-summary-v3"`.
+
+### C. Calm Reason & Guidance Directives
+- Yellow warning blocks are replaced with a calm, descriptive Attention Reason Card containing proper status indicators and user-friendly explanation texts (`data-component-version="volunteer-attention-reason-card-v3"`).
+- Technical rule descriptions are replaced with warm, brand-safe guidance lists instructing volunteers of physical check steps without jargon (`data-component-version="volunteer-attention-guidance-card-v3"`).
+
+### D. note Validation & Characters Count
+- The resolution form includes character limit counters (max 200 characters) and polite placeholders (`data-component-version="volunteer-attention-resolution-form-v3"`).
+- Safe Error Display is integrated inline to catch backend and permission failures gracefully and present them with beautiful formatting (`data-component-version="volunteer-attention-safe-error-v2"`).
+
+### E. Actions & Endpoints Alignment
+- Features a clean button hierarchy in the footer (`data-component-version="volunteer-attention-detail-footer-v3"`) to trigger specific actions with saving indicators:
+  - **Mark reviewed** (`data-component-version="volunteer-attention-review-action-v3"`) calling the review endpoint.
+  - **Resolve item** (`data-component-version="volunteer-attention-resolve-action-v3"`) calling the resolve endpoint.
+  - **Verify item** (`data-component-version="volunteer-attention-verify-action-v3"`) calling the verify endpoint.
+  - **Escalate to admin** (`data-component-version="volunteer-attention-escalate-action-v3"`) calling the escalate endpoint.
+- All actions remain fully connected and update counts immediately across the application.
+
+
+

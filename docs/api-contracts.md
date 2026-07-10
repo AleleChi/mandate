@@ -317,6 +317,95 @@ Retrieves live event metrics, current active event information, and attention re
   }
   ```
 
+### GET `/api/volunteer/attention-items`
+Retrieves the list of active attention items requiring event-day verification or escalation.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  [
+    {
+      "id": "attention_id",
+      "child_id": "child_id",
+      "child_name": "Sarah Omikunle",
+      "child_photo_file_id": "photo_id",
+      "type": "missing_pickup_photo",
+      "title": "Missing pickup photo",
+      "description": "Uncle Jerry photo is missing.",
+      "status": "open",
+      "priority": "high",
+      "action_text": "RESOLVE"
+    }
+  ]
+  ```
+
+### POST `/api/volunteer/attention-items/:id/resolve`
+Resolves an active attention item. Volunteers must supply a note documenting physical verification.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "note": "Verified identity card at the collection desk."
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Item successfully resolved."
+  }
+  ```
+
+### POST `/api/volunteer/attention-items/:id/review`
+Reviews/acknowledges a medical alert or support note. Volunteers must supply an acknowledgement note.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "note": "Reviewed medical note with parent."
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Item successfully reviewed."
+  }
+  ```
+
+### POST `/api/volunteer/attention-items/:id/verify`
+Verifies an active attention item (specifically used for age-group reviews or manual registrations). Volunteers must supply a note.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "note": "Verified age and confirmed correct group."
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Item successfully verified."
+  }
+  ```
+
+### POST `/api/volunteer/attention-items/:id/escalate`
+Escalates a difficult issue to administrators or leadership. Note is mandatory.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "note": "Guardian does not have physical identification."
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Item successfully escalated to administrative coordinators."
+  }
+  ```
+
 ### POST `/api/volunteer/forgot-password`
 Generates a secure password reset token and sends a volunteer-specific reset email via Resend to verified volunteers.
 - **Request Body**:
@@ -792,6 +881,34 @@ Submits an administrative decision for a child's registration, optionally updati
   }
   ```
 
+### PUT `/api/admin/applications/:id`
+Updates child details, parent profile, and authorized pickup details inside a single unified administrative operation.
+- **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
+- **Request Body**:
+  - `fullName` (optional): string
+  - `gender` (optional): `"Male" | "Female"`
+  - `dateOfBirth` (optional): `"YYYY-MM-DD"`
+  - `schoolClass` (optional): string
+  - `schoolName` (optional): string
+  - `hasMedicalNotes` (optional): boolean
+  - `medicalNotes` (optional): string
+  - `needsExtraSupport` (optional): boolean
+  - `supportNotes` (optional): string
+  - `parentFullName` (optional): string
+  - `parentPhone` (optional): string
+  - `parentWhatsApp` (optional): string
+  - `parentHomeAddress` (optional): string
+  - `pickupPersonName` (optional): string
+  - `pickupPersonRelationship` (optional): string
+  - `pickupPersonPhone` (optional): string
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Child, parent, and pickup details updated successfully."
+  }
+  ```
+
 ### GET `/api/admin/children`
 Retrieves a filtered and searched list of children records along with dynamic event statistics.
 - **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
@@ -1228,6 +1345,107 @@ Updates system-wide configurations, toggles, and mandatory form fields.
   }
   ```
 
+### GET `/api/admin/settings/media`
+Retrieves currently configured custom URLs for Parent Hero, Volunteer Hero, and Default Event Cover slots.
+
+* **Method:** `GET`
+* **Protection:** Admin Token / Super Admin Role
+* **Success Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "media": {
+      "parent_dashboard_hero": "https://res.cloudinary.com/.../image/upload/v1/.../uuid.webp",
+      "volunteer_dashboard_hero": "",
+      "default_event_hero": ""
+    }
+  }
+  ```
+
+### POST `/api/admin/settings/media`
+Uploads and optimizes a custom image for a specified app slot.
+* **Method:** `POST`
+* **Protection:** Admin Token / Super Admin Role
+* **Multipart Field:** `file` (JPG, PNG, or WebP up to 5MB)
+* **Request Body (form-data):**
+  - `slot`: `"parent_dashboard_hero" | "volunteer_dashboard_hero" | "default_event_hero"`
+* **Image Optimization (Sharp & Landings):**
+  - Hero image slots are auto-optimized with Sharp to WebP format, stripped of metadata, scaled to a maximum of 1600px width/height, and compressed at 80–85 quality.
+* **Strict Validation Rules:**
+  - Files over 5MB are strictly rejected.
+  - MIME types must match `image/jpeg`, `image/jpg`, `image/png`, or `image/webp`.
+  - File extension (e.g. `.png`) must match the uploaded file's binary MIME signature to prevent renamed executable exploits.
+  - Image processing failures result in an immediate `422 Unprocessable Entity` error status. Raw/unprocessed fallback files are never stored or published.
+  - Environment-Aware Safe Storage: Silently falling back to ephemeral local storage in production is forbidden. Explicit errors are raised to the admin if Cloudinary is misconfigured or fails, unless persistent local storage is explicitly configured (`LOCAL_MEDIA_PERSISTENT=true`).
+* **Success Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "media": {
+      "slot": "parent_dashboard_hero",
+      "url": "https://res.cloudinary.com/.../image/upload/v1/.../uuid.webp"
+    }
+  }
+  ```
+* **Error Response (422 Unprocessable Entity):**
+  ```json
+  {
+    "success": false,
+    "error": "We could not process this image. Please try another JPG, PNG, or WebP file."
+  }
+  ```
+* **Error Response (500 Internal Server Error / Misconfigured Storage):**
+  ```json
+  {
+    "success": false,
+    "error": "Media storage is not fully configured. Please connect Cloudinary or persistent storage before uploading images."
+  }
+  ```
+
+### POST `/api/admin/settings/media/reset`
+Resets a custom slot config back to its system default illustration or stock image.
+* **Method:** `POST`
+* **Protection:** Admin Token / Super Admin Role
+* **Request Body:**
+  ```json
+  {
+    "slot": "parent_dashboard_hero"
+  }
+  ```
+* **Success Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Media slot reset successfully."
+  }
+  ```
+
+### GET `/api/public/app-media`
+Public unauthenticated endpoint to retrieve all configured media assets. This is accessed directly by Parent and Volunteer dashboards at load-time to obtain dynamic cover images.
+
+* **Method:** `GET`
+* **Protection:** Public (None)
+* **Success Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "media": {
+      "parentDashboardHero": {
+        "url": "/api/media/files/1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+        "thumbnailUrl": "/api/media/files/1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6"
+      },
+      "volunteerDashboardHero": {
+        "url": null,
+        "thumbnailUrl": null
+      },
+      "defaultEventHero": {
+        "url": "/api/media/files/9z8y7x6w-5v4u-3t2s-1r0q-p9o8n7m6l5k4",
+        "thumbnailUrl": "/api/media/files/9z8y7x6w-5v4u-3t2s-1r0q-p9o8n7m6l5k4"
+      }
+    }
+  }
+  ```
+
 ---
 
 ## Administrative Profile Soft-Delete Operations (`/api/admin`)
@@ -1503,6 +1721,34 @@ Marks all active, unread notifications matching the user's role and scoping para
   {
     "success": true,
     "message": "All notifications marked as read"
+  }
+  ```
+
+### 17.4 POST `/api/admin/parents/:id/permanent-delete`
+Permanently deletes and anonymizes a soft-removed parent's profile and disables their user login credentials.
+- **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
+- **Request Body**:
+  - `reason`: string (required)
+  - `confirmation`: string (must be exactly `"DELETE"`)
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Parent profile and login permanently deleted/anonymized successfully."
+  }
+  ```
+
+### 17.5 POST `/api/admin/volunteers/:id/permanent-delete`
+Permanently deletes and anonymizes a soft-removed volunteer's profile and disables their user login credentials.
+- **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
+- **Request Body**:
+  - `reason`: string (required)
+  - `confirmation`: string (must be exactly `"DELETE"`)
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Volunteer profile and login permanently deleted/anonymized successfully."
   }
   ```
 

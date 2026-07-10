@@ -152,12 +152,34 @@ The Koinonia Children and Teens landing page serves two distinct audiences with 
 - **Under Review Email Notice**: Triggered automatically after a volunteer successfully verifies their email address via the `/verify-email` endpoint. Employs the `sendVolunteerUnderReviewEmail` helper, notifying them that their application is undergoing administrator review.
 - **Approval & Active Access Email Notice**: Triggered immediately when an administrator approves a volunteer profile via `/api/volunteer/admin/volunteers/:volunteerId/approve`. Employs the `sendVolunteerApprovedEmail` helper, including their designated team and a direct sign-in link to access event operations.
 
-## 16a. Hardened Landing Page Media Manager & Upload Safety
+## 16a. Hardened Landing Page & App Media Manager & Upload Safety
 - **Strict Processing Guarantee**: If an image upload fails to process (e.g. sharp processing error, invalid image headers), the upload request must fail immediately with a `422 Unprocessable Entity` status.
 - **No Unprocessed Fallbacks**: Under no circumstances will raw, unprocessed buffers be written to disk, published, or stored inside the public-facing configuration.
 - **Administrative Error Isolation**: If processing fails, the Admin Landing Page Manager displays a friendly, clear message: *"We could not process this image. Please try another JPG, PNG, or WebP file."* Raw system stack traces or internal server error logs are strictly hidden from the administrator.
 - **Configuration Persistence Safety**: No database updates or file records are stored for failed uploads. The active configuration must preserve the previous or default fallback state.
+- **Production Ephemeral Storage Boundary**:
+  - Silently falling back to ephemeral disk storage in production environments when Cloudinary fails or is missing is strictly forbidden.
+  - In production, if Cloudinary credentials are unconfigured or fail to respond, the upload fails immediately with a descriptive, actionable message: *"Media storage is not fully configured. Please connect Cloudinary or persistent storage before uploading images."*
+  - Fallbacks to local disk are allowed only in development/staging, or if persistent local disk storage is explicitly declared via env `LOCAL_MEDIA_PERSISTENT=true`.
+- **Dashboard & Event Hero Performance Optimization**:
+  - The three central dashboard and event coverage hero images (`parent_dashboard_hero`, `volunteer_dashboard_hero`, `default_event_hero`) are resized to a maximum width of 1600px with a high-fidelity WebP format to reduce bandwidth consumption.
+  - To prevent Layout Shift (CLS) on the home screens, above-the-fold hero images inside `ParentHomeView` and `VolunteerEventDashboardView` are configured with `loading="eager"`, `decoding="async"`, and `fetchPriority="high"` properties.
+  - **Prioritized Dynamic Cover Resolutions**:
+    - **Parent Dashboard**: Resolves hero media in the following order of priority:
+      1. Configured custom `parent_dashboard_hero` slot url.
+      2. Configured custom `default_event_hero` slot url.
+      3. Committed production-safe fallback asset image (`parentHeroImg`).
+    - **Volunteer Dashboard**: Resolves hero media in the following order of priority:
+      1. Configured custom `volunteer_dashboard_hero` slot url.
+      2. Configured custom `default_event_hero` slot url.
+      3. Committed production-safe fallback asset image (`volunteerHeroImg`).
+  - **Robust One-Time Fallback System (SafeImage)**:
+    - Custom resolved URLs are processed by `SafeImage` which attempts to resolve and load the image using CORS-safe, backend-prefixed origins (to avoid falling back on CDN/Netlify origins).
+    - If the dynamic/custom image fails to load or resolves with a non-image content-type, `SafeImage` dynamically switches to the designated secondary fallback image (`fallbackSrc`) exactly once. This avoids endless rendering loops while guaranteeing that role dashboards never display blank spaces or broken image placeholders.
 - **Rigid Slot Type Validation**: Slots are heavily partitioned by expected media type. Attempting to upload a video format (MP4/WebM/MOV) into an image slot, or an image format (JPG/PNG/WebP) into a video slot, is rejected immediately on the frontend and blocked on the backend.
+- **File Integrity and Size Bounds**:
+  - Maximum image file size is capped strictly at 5MB for admin media settings.
+  - The backend performs dual validation checking both the mime-type header AND the actual file extension matching (`.jpg`, `.jpeg`, `.png`, `.webp`), preventing renaming exploits.
 - **Visual Identity Preservation**:
   - The header logo uses `object-contain`, ensuring the aspect ratio remains perfectly unaltered without stretching, cropping, or overflowing.
   - When a custom logo is active, the logo image is rendered exclusively. The separate typed word "KOINONIA" is hidden beside it to elevate visual polish.
@@ -186,16 +208,26 @@ To prevent accidental and duplicate entries at the event gates, checking in or c
 - **Chronological Logs**: Shows the last 10 entries (check-ins) and last 10 pickups (releases) in real-time, including verifying staff details and authorized pickup persons.
 - **Final Session Report**: Volunteers can enter observations, notes, or incident reviews. Submitting logs the report securely to the audit table (`volunteer_event_reports`) and displays the last submitted author and timestamp for transparent tracking.
 
-## 18a. Volunteer Event Dashboard (Stitch Layout)
-To match the approved high-fidelity Stitch design, the Volunteer Event Dashboard (`/volunteer/event`) employs a premium, highly focused, single-view mobile layout optimized for operational speed:
-- **Top Header**: Custom-styled header (`data-component-version="volunteer-event-header-v2-stitch"`) featuring a circular avatar fallback of the volunteer, the "Event Dashboard" title in serif typography, and a simplified connection status label ("Ready to scan" with a Wi-Fi icon) to indicate real-time operation readiness without noisy indicators.
-- **Hero Greeting**: Centered greeting displaying "Welcome, [First Name]" in warm serif display typography, accompanied by the designated role or team subtitle (e.g. "Check-in Team") to establish personal ownership and event authority.
-- **Stitch Search**: Full-width persistent search bar (`data-component-version="volunteer-event-search-v2-stitch"`) prompting volunteers to "Find child by name or parent phone". Submitting the query seamlessly routes the focus to the Children Directory search list.
-- **Primary Action Cards**: Two prominent side-by-side action cards (`data-component-version="volunteer-event-actions-v2-stitch"`) styled with thin borders, serif headings, and warm off-white backgrounds:
-  1. *Check-in Card*: Guides the user to entry scanning with a prominent gold button.
-  2. *Pickup Card*: Guides the user to verified release confirmation with a clean outlined button.
-- **Stitch Metrics**: A highly readable 2x2 grid (`data-component-version="volunteer-event-metrics-v2-stitch"`) highlighting key live event counts: Expected, Checked In, Picked Up, and Attention (marked with a warm accent badge). All metrics bind directly to real-time backend aggregation counters.
-- **Needs Attention List**: A clean, numbered attention registry (`data-component-version="volunteer-event-attention-v2-stitch"`) pairing real-time issues with explicit "Resolve", "Review", or "Verify" action prompts on the far right.
+## 18a. Volunteer Event Dashboard (v9 Handover)
+To match the approved high-fidelity mobile experience, the Volunteer Event Dashboard (`/volunteer/event`) employs a premium, highly focused, single-view mobile layout optimized for event-day performance:
+- **Top Header Bar**: Custom-styled mobile header (`data-component-version="volunteer-mobile-app-header-v2-handover"`) containing the compact Brand Logo on the left, a concise page title (`KOINONIA`) in the center, and the Volunteer Profile Avatar on the right (`data-component-version="volunteer-header-avatar-v3-handover-photo"`). The avatar resolves the user's photo using the following priority order: `volunteerProfile.photoUrl`, `profile.photoUrl`, `user.photoUrl`, `profilePhotoUrl`, and falls back to letter initials inside `SafeImage` only if no valid photo exists. There are no unrequested telemetry elements, ready-to-scan pills, sign-out buttons, or network statuses.
+- **Hero Image Card**: Styled on a warm ivory canvas (`data-component-version="volunteer-dashboard-hero-v9-handover-mobile-app"`) with an upper image container hosting the SafeImage element (`data-component-version="volunteer-dashboard-hero-image-v5-handover-stable"`). It uses CORS-safe asset caching to completely prevent image flickering or disappearing.
+- **Real Name Greeting**: A greeting header (`data-component-version="volunteer-dashboard-greeting-v6-handover-real-name"`) reading "Good morning / Good afternoon / Good evening, [First Name]". If no real first name is available or if it equals "Volunteer", the greeting gracefully falls back to "Good morning / Good afternoon / Good evening" without trailing commas, trailing spaces, or raw placeholders.
+- **Primary Actions**: Side-by-side action buttons on the hero content card to instantly launch checking tools: "Start check-in" (opens camera and starts scanning entry passes) and "Open pickup" (directs to checked-out verification).
+- **Core Metrics Grid**: A 2x2 soft-bordered bento grid displaying live stats (Expected, Checked In, Picked Up, and Attention Items) synchronized directly from the database event endpoints.
+- **Needs Attention List**: Displays live event-day issues requiring immediate attention (e.g. medical alerts, missing photos) with prominent action buttons to resolve or review.
+- **Strict Terminology Enforcement**: Private volunteer dashboards strictly avoid technical jargon (such as "portal", "system", "database", "logs", etc.) and focus entirely on human-centered language.
+- **Proof Attributes**: Enforces `data-view-version="volunteer-dashboard-v9-handover-mobile-app"` on the root of the active dashboard view.
+
+## 18b. Volunteer Attention details modal (v3 Premium)
+To match Koinonia's premium brand experience, the Volunteer Attention Details modal has been completely overhauled:
+- **Calm, Human Wording**: All rigid, technical language has been replaced. Words like "database", "system", "workflow", "logs", "registry", "directory", "Event-Day Access Control", and "local verification checkmarks" are strictly banned. Instead, natural, human guidance is used.
+- **Child Summary Card**: Formatted cleanly using `formatChildNameAndRef` to strip numeric/timestamp suffixes from generated names, displaying them beautifully (`data-component-version="volunteer-attention-safe-child-display-v2"`). It separates reference numbers into a clean badge (`data-component-version="volunteer-attention-child-reference-v2"`) and renders photos safely via `SafeImage` (`data-component-version="volunteer-attention-child-summary-v3"`).
+- **Attention Reason Card**: Displays clear, calm icons and descriptive texts for specific attention types, such as Missing Pickup Photos, Age Reviews, or Medical Notes (`data-component-version="volunteer-attention-reason-card-v3"`).
+- **Guidance Card**: Instructs volunteers on clear, event-day duties and operational boundaries without technical terms (`data-component-version="volunteer-attention-guidance-card-v3"`).
+- **Interactive Forms & Footer Actions**: Features a note input with length indicators and a clear button hierarchy (Cancel, Escalate, and Mark reviewed/Resolve/Verify) (`data-component-version="volunteer-attention-detail-footer-v3"`).
+- **Durable Endpoints**: Preserves full connectivity to live endpoints, ensuring counts and statuses update correctly for both volunteers and administrators.
+- **Safe Error Display**: Catches and maps raw technical errors or permission failures into user-facing, elegant banners (`data-component-version="volunteer-attention-safe-error-v2"`).
 
 ## 19. Admin Access & Event Command Centre
 - **Shortcut Entry**: Double-clicking (desktop) or double-tapping (mobile) the Koinonia logo on the Landing Page routes users directly to `/admin/sign-in`. This is an exclusive navigation shortcut and does not bypass authentication.
@@ -547,6 +579,37 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **State Restoration**: Centralized scanner state cleanup via `handleResetScannerState` ensuring that all refs (`isLookupInFlightRef`, `hasSuccessfulScanRef`, `lastScannedCodeRef`, `lastScanAtRef`) and active stream instances are completely cleared before resuming scan mode, preventing permanent lockout or frozen screens.
 
 
+## 39. Permanent Deletion & Anonymization Architecture
+- **Two-Stage Deletion Guardrail**: To protect active rosters and prevent accidental data loss, active parents and active volunteers cannot be deleted directly. They must first be soft-removed (archived), which places them in the "Removed" tabs of their respective management sections.
+- **Safety Pre-conditions**: A parent cannot be permanently deleted if they have active children registered on any rosters. The system will block the deletion and return a clear, polite notification.
+- **Anonymization & Token Revocation**: Permanent deletion is executed via secure, one-way anonymization on the backend:
+  - Account email address is replaced with a random, non-identifiable placeholder to prevent key collision.
+  - Password hash and active authentication tokens are completely cleared, logging out any current sessions immediately.
+  - Personal details, profile fields, address, and phone numbers are reset, and the role is changed to a restricted removed role (`removed_parent` or `removed_volunteer`).
+- **Confirmation Modals**: The admin interface features a rigorous multi-step confirmation:
+  - A modal detailing the permanent nature of the deletion.
+  - A mandatory deletion reason text field.
+  - A validation challenge where the administrator must type the exact word `"DELETE"` to proceed.
 
 
+## 40. Admin Children & Care Management
+- **Single-Screen Row Actions**: The main Children management view supports immediate actions from the list table via a responsive, vertically stacked dropdown menu:
+  - **Decisions**: Administrators can change statuses directly to Select, Decline (Not Selected), or Waitlist.
+  - **Reopen Review**: Returns the registration to under-review status for supplementary evaluation.
+  - **Pass Management**: Generate and issue digital event passes or revoke active passes instantly.
+  - **Removal & Restoration**: Soft-remove active children with a specified reason, or restore soft-removed children directly from the Archived filter.
+- **Unified Profile Editor**: Inside the Child Review screen, clicking "Edit Details" opens a high-fidelity modal that allows editing the entire child packet, parent profile, and authorized pickup details inside a single, unified transaction:
+  - **Child Packet**: Updates full name, gender, date of birth (automatically recalculating age and age group), school class, and school name.
+  - **Care Sheets**: Toggles medical conditions / allergies, updates medical details, toggles special support requirements, and saves care notes.
+  - **Parent Profile**: Updates full name, phone number, WhatsApp, and home address.
+  - **Authorized Pickup**: Updates pickup person's name, relationship to child, and phone number.
 
+
+## 41. Volunteer Attention Resolution and Escalation
+- **Event-Day Attention Items**: To support safety-critical situations on event-days, active volunteers can view a list of attention-required items (such as missing pickup photos, medical updates, and age review flags).
+- **Short Reference IDs**: To maintain a production-grade user experience and avoid cluttering the interface with raw database keys, full child UUIDs are hidden from volunteer-facing UI elements. Instead, the UI displays the child's name followed by a short, safe reference (e.g., `(Ref: 123456)` derived from the last 6 characters of their database ID).
+- **Safety Boundaries**: Volunteers do not have full administrative capabilities to modify core child files. Instead, they can verify items locally on event-day by performing physical checks at the check-in or checkout gates.
+- **Resolution Flow**:
+  - When reviewing an attention-required item, volunteers must enter a detailed event note documenting what physical actions were taken.
+  - Tapping 'Resolve' or 'Verify' updates the item status and records the note, the volunteer's identity, and the timestamp.
+  - Tapping 'Escalate' raises the item status, automatically flagging it for coordinator oversight while keeping the child safe.

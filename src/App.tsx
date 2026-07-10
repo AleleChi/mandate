@@ -197,6 +197,7 @@ export default function App() {
   const [parentProfile, setParentProfile] = useState<ParentProfile>(initialParentProfile);
   const [volunteerProfile, setVolunteerProfile] = useState<any>(null);
   const [childrenList, setChildrenList] = useState<ChildItem[]>(initialChildren);
+  const [activeEvent, setActiveEvent] = useState<any>(null);
   const [isMobileLandingView, setIsMobileLandingView] = useState<boolean>(false);
   const [addChildDraft, setAddChildDraft] = useState<AddChildDraft | null>(null);
   const [lastSubmittedChild, setLastSubmittedChild] = useState<ChildItem | null>(null);
@@ -259,6 +260,9 @@ export default function App() {
                 setParentProfile(normalizeParentProfile(homeData.parentProfile));
                 setParentEmail(homeData.parentProfile.email || '');
               }
+              if (homeData.activeEvent) {
+                setActiveEvent(homeData.activeEvent);
+              }
               if (Array.isArray(homeData.childrenList)) {
                 setChildrenList(homeData.childrenList);
                 const activeId = safeStorage.getItem('koinonia_active_draft_id');
@@ -319,6 +323,9 @@ export default function App() {
         if (homeData && homeData.parentProfile) {
           setParentProfile(normalizeParentProfile(homeData.parentProfile));
           setParentEmail(homeData.parentProfile.email || '');
+          if (homeData.activeEvent) {
+            setActiveEvent(homeData.activeEvent);
+          }
           if (Array.isArray(homeData.childrenList)) {
             setChildrenList(homeData.childrenList);
             const activeId = safeStorage.getItem('koinonia_active_draft_id');
@@ -958,6 +965,7 @@ export default function App() {
             initialTab="Passes"
             selectedChildId={childIdParam}
             volunteerProfile={volunteerProfile}
+            activeEvent={activeEvent}
           />
         </ProtectedRoute>
       );
@@ -1083,6 +1091,7 @@ export default function App() {
               onDeleteChild={handleDeleteChild}
               initialTab="Home"
               volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
             />
           </ProtectedRoute>
         );
@@ -1100,6 +1109,7 @@ export default function App() {
               onDeleteChild={handleDeleteChild}
               initialTab="Profile"
               volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
             />
           </ProtectedRoute>
         );
@@ -1117,6 +1127,7 @@ export default function App() {
               onDeleteChild={handleDeleteChild}
               initialTab="Children"
               volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
             />
           </ProtectedRoute>
         );
@@ -1198,6 +1209,7 @@ export default function App() {
               onDeleteChild={handleDeleteChild}
               initialTab="Passes"
               volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
             />
           </ProtectedRoute>
         );

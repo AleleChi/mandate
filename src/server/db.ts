@@ -36,7 +36,7 @@ export function getDb() {
     }
     const dbPath = path.join(dataDir, 'koinonia-dev.sqlite');
     try {
-      sqliteDb = new Database(dbPath);
+      sqliteDb = new Database(dbPath, { timeout: 10000 });
       sqliteDb.pragma('journal_mode = WAL');
       sqliteDb.pragma('foreign_keys = ON');
       initSqliteSchema(sqliteDb);
@@ -69,7 +69,7 @@ export function getDb() {
         }
       }
       // Re-initialize a fresh database
-      sqliteDb = new Database(dbPath);
+      sqliteDb = new Database(dbPath, { timeout: 10000 });
       sqliteDb.pragma('journal_mode = WAL');
       sqliteDb.pragma('foreign_keys = ON');
       initSqliteSchema(sqliteDb);
@@ -373,6 +373,16 @@ function initSqliteSchema(db: Database.Database) {
       revoked_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS notification_preferences (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT,
+      sound_enabled INTEGER DEFAULT 1,
+      push_enabled INTEGER DEFAULT 0,
+      email_enabled INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_jobs_status_sched ON notification_jobs(status, scheduled_for);
     CREATE INDEX IF NOT EXISTS idx_jobs_parent ON notification_jobs(parent_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_event ON notification_jobs(event_id);
@@ -497,6 +507,41 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS app_media_settings (
+      id TEXT PRIMARY KEY,
+      slot TEXT UNIQUE NOT NULL,
+      url TEXT NOT NULL,
+      thumbnail_url TEXT,
+      width INTEGER,
+      height INTEGER,
+      mime_type TEXT,
+      size INTEGER,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS child_attention_items (
+      id TEXT PRIMARY KEY,
+      child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      priority TEXT NOT NULL DEFAULT 'normal',
+      source TEXT,
+      created_by TEXT,
+      assigned_role TEXT,
+      resolved_by TEXT,
+      resolved_at TEXT,
+      resolution_note TEXT,
+      escalated_to_admin INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(child_id, event_id, type)
+    );
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -608,7 +653,11 @@ function initSqliteSchema(db: Database.Database) {
     "deleted_by TEXT",
     "delete_reason TEXT",
     "restored_at TEXT",
-    "restored_by TEXT"
+    "restored_by TEXT",
+    "permanently_deleted_at TEXT",
+    "permanently_deleted_by TEXT",
+    "permanent_delete_reason TEXT",
+    "anonymized_at TEXT"
   ];
   for (const col of sqliteParentSoftDeleteCols) {
     try {
@@ -623,11 +672,33 @@ function initSqliteSchema(db: Database.Database) {
     "deleted_by TEXT",
     "delete_reason TEXT",
     "restored_at TEXT",
-    "restored_by TEXT"
+    "restored_by TEXT",
+    "permanently_deleted_at TEXT",
+    "permanently_deleted_by TEXT",
+    "permanent_delete_reason TEXT",
+    "anonymized_at TEXT"
   ];
   for (const col of sqliteVolSoftDeleteCols) {
     try {
       db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  // Soft delete columns for children and child_event_entries in SQLite
+  const sqliteChildSoftDeleteCols = [
+    "is_deleted INTEGER DEFAULT 0",
+    "deleted_at TEXT",
+    "deleted_by TEXT",
+    "delete_reason TEXT",
+    "restored_at TEXT",
+    "restored_by TEXT"
+  ];
+  for (const col of sqliteChildSoftDeleteCols) {
+    try {
+      db.exec(`ALTER TABLE children ADD COLUMN ${col};`);
+    } catch (e) {}
+    try {
+      db.exec(`ALTER TABLE child_event_entries ADD COLUMN ${col};`);
     } catch (e) {}
   }
 
@@ -640,8 +711,8 @@ function initSqliteSchema(db: Database.Database) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     REAL_EVENT_ID,
-    'Children and Teens',
     'The General Assembly',
+    'Children and Teens',
     'More Than Conquerors',
     'Romans 8:37',
     '2026-11-18',
@@ -649,10 +720,14 @@ function initSqliteSchema(db: Database.Database) {
     '9:00 AM',
     '7:00 PM',
     'Koinonia Global Auditorium & Children Pavilion, Abuja',
-    'open',
+    'current',
     now,
     now
   );
+
+  // Safely migrate existing databases for consistency
+  db.prepare("UPDATE events SET title = 'The General Assembly', section_name = 'Children and Teens' WHERE id = ? AND title = 'Children and Teens'").run(REAL_EVENT_ID);
+  db.prepare("UPDATE events SET status = 'current' WHERE id = ? AND status IN ('open', 'active')").run(REAL_EVENT_ID);
 
   db.prepare(`
     INSERT OR IGNORE INTO admin_general_settings (
@@ -1016,6 +1091,16 @@ async function initPostgresSchema(pool: any) {
         revoked_at TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS notification_preferences (
+        user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        role VARCHAR(64),
+        sound_enabled INTEGER DEFAULT 1,
+        push_enabled INTEGER DEFAULT 0,
+        email_enabled INTEGER DEFAULT 1,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_jobs_status_sched ON notification_jobs(status, scheduled_for);
       CREATE INDEX IF NOT EXISTS idx_jobs_parent ON notification_jobs(parent_id);
       CREATE INDEX IF NOT EXISTS idx_jobs_event ON notification_jobs(event_id);
@@ -1140,7 +1225,49 @@ async function initPostgresSchema(pool: any) {
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS app_media_settings (
+        id VARCHAR(64) PRIMARY KEY,
+        slot VARCHAR(128) UNIQUE NOT NULL,
+        url TEXT NOT NULL,
+        thumbnail_url TEXT,
+        width INTEGER,
+        height INTEGER,
+        mime_type VARCHAR(128),
+        size INTEGER,
+        uploaded_by VARCHAR(64),
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS child_attention_items (
+        id VARCHAR(255) PRIMARY KEY,
+        child_id VARCHAR(64) NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        type VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        status VARCHAR(64) NOT NULL DEFAULT 'open',
+        priority VARCHAR(64) NOT NULL DEFAULT 'normal',
+        source VARCHAR(128),
+        created_by VARCHAR(128),
+        assigned_role VARCHAR(128),
+        resolved_by VARCHAR(128),
+        resolved_at TIMESTAMP,
+        resolution_note TEXT,
+        escalated_to_admin INTEGER DEFAULT 0,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        UNIQUE(child_id, event_id, type)
+      );
     `);
+
+    // Safe migration for column length extension
+    try {
+      await pool.query('ALTER TABLE child_attention_items ALTER COLUMN id TYPE VARCHAR(255)');
+    } catch (err) {
+      // Ignore if column doesn't exist yet or migration is not required
+    }
 
     const pgCols = [
       "provider VARCHAR(64) DEFAULT 'cloudinary'",
@@ -1244,7 +1371,11 @@ async function initPostgresSchema(pool: any) {
       "deleted_by VARCHAR(64)",
       "delete_reason TEXT",
       "restored_at TIMESTAMP",
-      "restored_by VARCHAR(64)"
+      "restored_by VARCHAR(64)",
+      "permanently_deleted_at TIMESTAMP",
+      "permanently_deleted_by VARCHAR(64)",
+      "permanent_delete_reason TEXT",
+      "anonymized_at TIMESTAMP"
     ];
     for (const col of pgParentSoftDeleteCols) {
       try {
@@ -1262,7 +1393,11 @@ async function initPostgresSchema(pool: any) {
       "deleted_by VARCHAR(64)",
       "delete_reason TEXT",
       "restored_at TIMESTAMP",
-      "restored_by VARCHAR(64)"
+      "restored_by VARCHAR(64)",
+      "permanently_deleted_at TIMESTAMP",
+      "permanently_deleted_by VARCHAR(64)",
+      "permanent_delete_reason TEXT",
+      "anonymized_at TIMESTAMP"
     ];
     for (const col of pgVolSoftDeleteCols) {
       try {
@@ -1282,8 +1417,8 @@ async function initPostgresSchema(pool: any) {
       ON CONFLICT (id) DO NOTHING
     `, [
       REAL_EVENT_ID,
-      'Children and Teens',
       'The General Assembly',
+      'Children and Teens',
       'More Than Conquerors',
       'Romans 8:37',
       '2026-11-18',
@@ -1291,10 +1426,14 @@ async function initPostgresSchema(pool: any) {
       '9:00 AM',
       '7:00 PM',
       'Koinonia Global Auditorium & Children Pavilion, Abuja',
-      'open',
+      'current',
       now,
       now
     ]);
+
+    // Safely migrate existing databases for consistency
+    await pool.query("UPDATE events SET title = 'The General Assembly', section_name = 'Children and Teens' WHERE id = $1 AND title = 'Children and Teens'", [REAL_EVENT_ID]);
+    await pool.query("UPDATE events SET status = 'current' WHERE id = $1 AND status IN ('open', 'active')", [REAL_EVENT_ID]);
 
     await pool.query(`
       INSERT INTO admin_general_settings (

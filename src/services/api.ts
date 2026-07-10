@@ -36,6 +36,7 @@ export class ParentApiError extends Error {
 }
 
 export function extractApiError(err: any): { message: string; description: string; code?: string } {
+  console.error('[extractApiError - Caught Source Error]:', err);
   if (err instanceof ParentApiError) {
     return { message: err.message, description: err.description, code: err.code };
   }
@@ -130,6 +131,7 @@ export const api = {
     if (!res.ok) {
       const rawError = data.error || data.message || `Request failed (${res.status})`;
       const errorCode = data.code;
+      console.error('[api.request Error Details]:', { url, status: res.status, rawError, errorCode, data });
       const lower = rawError.toLowerCase();
       const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
       if (containsForbidden || res.status >= 500) {
@@ -138,6 +140,17 @@ export const api = {
       throw new ParentApiError(rawError, 'Please try again.', errorCode, data);
     }
     return data as T;
+  },
+
+  async getPublicAppMedia() {
+    return api.request<{
+      success: boolean;
+      media: {
+        parentDashboardHero: { url: string | null; thumbnailUrl: string | null };
+        volunteerDashboardHero: { url: string | null; thumbnailUrl: string | null };
+        defaultEventHero: { url: string | null; thumbnailUrl: string | null };
+      };
+    }>('/api/public/app-media');
   },
 
   auth: {
@@ -410,6 +423,36 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ notes })
       });
+    },
+    async getAttentionItems() {
+      return api.request<any[]>('/api/volunteer/attention-items');
+    },
+    async getAttentionItem(itemId: string) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}`);
+    },
+    async reviewAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async resolveAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async verifyAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async escalateAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
     }
   },
 
@@ -514,6 +557,24 @@ export const api = {
     },
     async getApplicationDetails(id: string) {
       return api.request<{ success: boolean; application: any }>(`/api/admin/applications/${id}`);
+    },
+    async updateApplicationDetails(id: string, payload: any) {
+      return api.request<any>(`/api/admin/applications/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    },
+    async removeChild(id: string, reason: string) {
+      return api.request<any>(`/api/admin/applications/${id}/remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async restoreChild(id: string, reason?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
     },
     async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean }) {
       return api.request<any>(`/api/admin/applications/${id}/review`, {
@@ -707,6 +768,37 @@ export const api = {
         body: JSON.stringify({ settings })
       });
     },
+    async getSettingsMedia() {
+      return api.request<{
+        success: boolean;
+        media: {
+          parent_dashboard_hero: string;
+          volunteer_dashboard_hero: string;
+          default_event_hero: string;
+        };
+      }>('/api/admin/settings/media');
+    },
+    async uploadSettingsMedia(slot: string, file: File) {
+      const formData = new FormData();
+      formData.append('slot', slot);
+      formData.append('file', file);
+      return api.request<{
+        success: boolean;
+        media: {
+          slot: string;
+          url: string;
+        };
+      }>('/api/admin/settings/media', {
+        method: 'POST',
+        body: formData
+      });
+    },
+    async resetSettingsMedia(slot: string) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/settings/media/reset', {
+        method: 'POST',
+        body: JSON.stringify({ slot })
+      });
+    },
     async updateTeamMemberRole(payload: { userId: string; role: string }) {
       return api.request<{ success: boolean; message: string }>('/api/admin/team/edit-role', {
         method: 'POST',
@@ -719,7 +811,7 @@ export const api = {
       if (params?.status) queryParams.append('status', params.status);
       if (params?.team) queryParams.append('team', params.team);
       const queryString = queryParams.toString();
-      return api.request<{ success: boolean; volunteers: any[] }>(`/api/admin/volunteers${queryString ? `?${queryString}` : ''}`);
+      return api.request<{ success: boolean; volunteers: any[]; stats?: any }>(`/api/admin/volunteers${queryString ? `?${queryString}` : ''}`);
     },
     async getVolunteerDetails(id: string) {
       return api.request<{ success: boolean; volunteer: any }>(`/api/admin/volunteers/${id}`);
@@ -739,6 +831,23 @@ export const api = {
     async restoreVolunteer(id: string) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/restore`, {
         method: 'POST'
+      });
+    },
+    async updateVolunteerAssignment(id: string, assignedTeam: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/assignment`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assignedTeam })
+      });
+    },
+    async resendVolunteerApprovalEmail(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/resend-approval-email`, {
+        method: 'POST'
+      });
+    },
+    async permanentlyDeleteVolunteer(id: string, payload: { reason: string; confirmation: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/permanent-delete`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
       });
     },
     async getParents(params?: { q?: string; status?: string }) {
@@ -771,6 +880,12 @@ export const api = {
     async updateParentProfile(id: string, payload: any) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}`, {
         method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    },
+    async permanentlyDeleteParent(id: string, payload: { reason: string; confirmation: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/permanent-delete`, {
+        method: 'POST',
         body: JSON.stringify(payload)
       });
     },

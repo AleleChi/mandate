@@ -15,7 +15,8 @@ import {
   Filter,
   ArrowLeft,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -45,6 +46,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
 
   const [parentToRestore, setParentToRestore] = useState<any | null>(null);
   const [submittingRestore, setSubmittingRestore] = useState(false);
+
+  // Permanent Delete states
+  const [parentToDelete, setParentToDelete] = useState<any | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [submittingDelete, setSubmittingDelete] = useState(false);
 
   // Selected parent for detail drawer/modal
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
@@ -127,6 +134,41 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
       showError('Restoration Failed', parsed.message);
     } finally {
       setSubmittingRestore(false);
+    }
+  };
+
+  const handlePermanentDeleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parentToDelete) return;
+    if (deleteConfirmationText !== 'DELETE') {
+      showError('Validation Error', 'Please type DELETE to confirm.');
+      return;
+    }
+    if (!deleteReason.trim()) {
+      showError('Validation Error', 'Please specify a reason for deletion.');
+      return;
+    }
+    setSubmittingDelete(true);
+    try {
+      const res = await api.admin.permanentlyDeleteParent(parentToDelete.id, {
+        reason: deleteReason,
+        confirmation: deleteConfirmationText
+      });
+      if (res.success) {
+        showSuccess('Deleted Permanently', `The parent profile has been anonymized, and their user login has been disabled.`);
+        setParentToDelete(null);
+        setDeleteReason('');
+        setDeleteConfirmationText('');
+        if (selectedParentId === parentToDelete.id) {
+          handleCloseParent();
+        }
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Deletion Failed', parsed.message);
+    } finally {
+      setSubmittingDelete(false);
     }
   };
 
@@ -307,7 +349,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
           <div className="text-center py-20 text-zinc-400 space-y-2">
             <Users className="w-8 h-8 stroke-[1.2] mx-auto text-zinc-300" />
             <h3 className="font-serif font-bold text-zinc-700 text-sm">No Parents Found</h3>
-            <p className="text-[11px] text-zinc-400 max-w-sm mx-auto">There are no parent records in the directory matching your query.</p>
+            <p className="text-[11px] text-zinc-400 max-w-sm mx-auto">There are no parent records matching your query.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -385,13 +427,23 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
                           Remove parent
                         </button>
                       ) : (
-                        <button
-                          onClick={() => setParentToRestore(p)}
-                          className="px-3.5 py-1.5 text-xs font-serif text-emerald-600 font-bold hover:text-white bg-white hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 rounded-xl transition-all cursor-pointer focus:outline-none inline-flex items-center gap-1 align-middle"
-                          id={`restore-parent-btn-${p.id}`}
-                        >
-                          <RotateCcw className="w-3 h-3" /> Restore parent
-                        </button>
+                        <div className="inline-flex gap-2 align-middle">
+                          <button
+                            onClick={() => setParentToRestore(p)}
+                            className="px-3.5 py-1.5 text-xs font-serif text-emerald-600 font-bold hover:text-white bg-white hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 rounded-xl transition-all cursor-pointer focus:outline-none inline-flex items-center gap-1"
+                            id={`restore-parent-btn-${p.id}`}
+                          >
+                            <RotateCcw className="w-3 h-3" /> Restore parent
+                          </button>
+                          <button
+                            onClick={() => setParentToDelete(p)}
+                            className="px-3.5 py-1.5 text-xs font-semibold text-red-600 hover:text-white bg-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-xl transition-all cursor-pointer focus:outline-none inline-flex items-center gap-1"
+                            id={`delete-parent-permanent-btn-${p.id}`}
+                            data-component-version="admin-parent-permanent-delete-action-v1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete permanently
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -822,6 +874,83 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
                 Restore parent
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Parent Deletion Confirmation Modal */}
+      {parentToDelete && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4" 
+          id="confirm-delete-parent-modal"
+          data-component-version="admin-parent-permanent-delete-modal-v1"
+        >
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setParentToDelete(null)} />
+          <div className="relative bg-white border border-red-200 rounded-3xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex items-center space-x-2 text-red-600">
+              <Trash2 className="w-5 h-5 shrink-0 animate-pulse" />
+              <h3 className="font-serif font-bold text-lg text-[#18181B]">Delete parent permanently</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              You are about to permanently delete and anonymize the parent account <strong>{parentToDelete.fullName}</strong>.
+            </p>
+            <div className="text-xs bg-red-50 text-red-700 p-3.5 rounded-xl border border-red-100 space-y-1.5">
+              <span className="font-bold block">🚨 Danger: This action is irreversible</span>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-red-600/95">
+                <li>This will permanently remove contact details (email, phone, home address).</li>
+                <li>This will permanently revoke and disable login credentials.</li>
+                <li>Child registration and event check-in/pickup details will be preserved as <em className="font-semibold">Deleted parent</em> for reporting purposes.</li>
+              </ul>
+            </div>
+
+            <form onSubmit={handlePermanentDeleteSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono text-zinc-400 font-bold uppercase tracking-wider block">Delete Reason (Required)</label>
+                <textarea
+                  required
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Explain why this parent profile is being permanently deleted..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-red-100 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all resize-none placeholder-zinc-400"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono text-zinc-400 font-bold uppercase tracking-wider block">
+                  Confirm by typing <span className="text-red-600 font-bold font-mono">DELETE</span>
+                </label>
+                <input
+                  required
+                  type="text"
+                  value={deleteConfirmationText}
+                  onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                  placeholder="DELETE"
+                  className="w-full px-3 py-2 text-xs font-mono border border-red-100 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all placeholder-zinc-300"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => setParentToDelete(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={submittingDelete}
+                  disabled={submittingDelete || deleteConfirmationText !== 'DELETE' || !deleteReason.trim()}
+                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  id="confirm-delete-parent-permanent-btn"
+                >
+                  Confirm Delete
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

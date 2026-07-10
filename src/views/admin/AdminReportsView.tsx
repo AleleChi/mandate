@@ -172,7 +172,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             Event Performance & Reports
           </h1>
           <p className="text-stone-500 text-sm mt-1.5">
-            Reports for <strong className="text-stone-700 font-medium">{event?.name || 'The General Assembly'}</strong> • {event?.dateRangeLabel || 'Oct 12 - Oct 14, 2023'}
+            Reports for <strong className="text-stone-700 font-medium">{event?.name || event?.title || 'The General Assembly'}</strong> • {event?.dateRangeLabel || 'Oct 12 - Oct 14, 2023'}
           </p>
         </div>
 

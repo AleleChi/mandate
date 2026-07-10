@@ -228,7 +228,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
 
   return (
     <div 
-      data-view-version="parent-child-status-v8-brand-refined"
+      data-view-version="parent-child-status-v9-brand-polished"
       className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 pb-24"
     >
       {/* Scrollable Content */}

@@ -173,7 +173,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
         logoUrl.includes('/api/media/') || 
         logoUrl.includes('/media/')) ? (
         <img
-          src={getSafePublicAssetUrl(logoUrl) || ''}
+          src={getSafePublicAssetUrl(logoUrl) || null}
           alt="Koinonia"
           className={`${sizeClasses} object-contain`}
           referrerPolicy="no-referrer"

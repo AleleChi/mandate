@@ -86,65 +86,82 @@ export async function uploadMedia(
 
   const resourceType = options.resourceType || (options.purpose === 'event_video' ? 'video' : 'image');
 
+  const isProd = process.env.NODE_ENV === 'production';
+  const allowLocalFallback = process.env.ALLOW_LOCAL_MEDIA_FALLBACK === 'true';
+  const isLocalPersistent = process.env.LOCAL_MEDIA_PERSISTENT === 'true';
+
   if (isConfigured) {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: fullFolder,
-          resource_type: resourceType,
-          overwrite: false,
-          use_filename: false,
-          unique_filename: true,
-          context: options.ownerUserId ? { owner_user_id: options.ownerUserId, purpose: options.purpose } : { purpose: options.purpose }
-        },
-        (error, result: UploadApiResponse | undefined) => {
-          if (error || !result) {
-            reject(error || new Error('Cloudinary upload failed'));
-            return;
+    try {
+      const result = await new Promise<UploadMediaResult>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: fullFolder,
+            resource_type: resourceType,
+            overwrite: false,
+            use_filename: false,
+            unique_filename: true,
+            context: options.ownerUserId ? { owner_user_id: options.ownerUserId, purpose: options.purpose } : { purpose: options.purpose }
+          },
+          (error, result: UploadApiResponse | undefined) => {
+            if (error || !result) {
+              reject(error || new Error('Cloudinary upload failed'));
+              return;
+            }
+            resolve({
+              provider: 'cloudinary',
+              publicId: result.public_id,
+              secureUrl: result.secure_url,
+              resourceType: result.resource_type,
+              width: result.width,
+              height: result.height,
+              duration: result.duration,
+              format: result.format,
+              bytes: result.bytes
+            });
           }
-          resolve({
-            provider: 'cloudinary',
-            publicId: result.public_id,
-            secureUrl: result.secure_url,
-            resourceType: result.resource_type,
-            width: result.width,
-            height: result.height,
-            duration: result.duration,
-            format: result.format,
-            bytes: result.bytes
-          });
-        }
-      );
+        );
 
-      Readable.from(fileBuffer).pipe(uploadStream);
-    });
-  } else {
-    // Graceful dev/preview fallback if Cloudinary credentials are not provided in environment secrets yet
-    const fs = await import('fs');
-    const path = await import('path');
-    const crypto = await import('crypto');
-
-    const mediaDir = path.join(process.cwd(), 'data', 'media', subFolder);
-    if (!fs.existsSync(mediaDir)) {
-      fs.mkdirSync(mediaDir, { recursive: true });
+        Readable.from(fileBuffer).pipe(uploadStream);
+      });
+      return result;
+    } catch (err) {
+      console.error('Cloudinary upload failed (possibly connection problem):', err);
+      if (isProd && !allowLocalFallback && !isLocalPersistent) {
+        throw new Error('Image upload could not be completed. Please check media storage settings and try again.');
+      }
     }
-
-    const fileId = crypto.randomUUID();
-    const ext = options.mimeType ? options.mimeType.split('/')[1] || 'jpg' : 'jpg';
-    const filename = `${fileId}.${ext}`;
-    const filePath = path.join(mediaDir, filename);
-    fs.writeFileSync(filePath, fileBuffer);
-
-    const publicId = `${fullFolder}/${fileId}.${ext}`;
-    const secureUrl = `/api/media/files/${fileId}`;
-
-    return {
-      provider: 'cloudinary',
-      publicId,
-      secureUrl,
-      resourceType,
-      format: ext,
-      bytes: fileBuffer.length
-    };
   }
+
+  // If Cloudinary is not configured and we are in production, refuse ephemeral fallback
+  if (isProd && !isConfigured && !allowLocalFallback && !isLocalPersistent) {
+    throw new Error('Media storage is not fully configured. Please connect Cloudinary or persistent storage before uploading images.');
+  }
+
+  // Graceful dev/preview fallback if Cloudinary credentials are not provided or connection failed
+  const fs = await import('fs');
+  const path = await import('path');
+  const crypto = await import('crypto');
+
+  const mediaDir = path.join(process.cwd(), 'data', 'media', subFolder);
+  if (!fs.existsSync(mediaDir)) {
+    fs.mkdirSync(mediaDir, { recursive: true });
+  }
+
+  const fileId = crypto.randomUUID();
+  const ext = options.mimeType ? options.mimeType.split('/')[1] || 'jpg' : 'jpg';
+  const filename = `${fileId}.${ext}`;
+  const filePath = path.join(mediaDir, filename);
+  fs.writeFileSync(filePath, fileBuffer);
+
+  const publicId = `${fullFolder}/${fileId}.${ext}`;
+  const secureUrl = `/api/media/files/${fileId}`;
+
+  return {
+    provider: 'local',
+    publicId,
+    secureUrl,
+    resourceType,
+    format: ext,
+    bytes: fileBuffer.length
+  };
 }

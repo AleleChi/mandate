@@ -4,12 +4,14 @@ import { ImageOff, Loader2 } from 'lucide-react';
 
 export interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src?: string | null;
+  fallbackSrc?: string | null;
   fallbackComponent?: React.ReactNode;
   containerClassName?: string;
 }
 
 export const SafeImage: React.FC<SafeImageProps> = ({
   src,
+  fallbackSrc,
   alt = '',
   className = '',
   fallbackComponent,
@@ -19,11 +21,35 @@ export const SafeImage: React.FC<SafeImageProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
   const [resolvedSrc, setResolvedSrc] = useState<string>('');
+  const [hasTriedFallback, setHasTriedFallback] = useState<boolean>(false);
+
+  useEffect(() => {
+    setHasTriedFallback(false);
+  }, [src]);
 
   useEffect(() => {
     if (!src || src.trim() === '') {
-      setError(true);
-      setLoading(false);
+      if (fallbackSrc && fallbackSrc.trim() !== '' && !hasTriedFallback) {
+        const url = resolveMediaUrl(fallbackSrc);
+        setResolvedSrc(url);
+        setHasTriedFallback(true);
+        setError(false);
+        setLoading(true);
+
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+          setLoading(false);
+        };
+        img.onerror = () => {
+          console.warn('[media] fallback image also failed to load', { fallbackSrc, resolvedUrl: url });
+          setError(true);
+          setLoading(false);
+        };
+      } else {
+        setError(true);
+        setLoading(false);
+      }
       return;
     }
 
@@ -38,10 +64,30 @@ export const SafeImage: React.FC<SafeImageProps> = ({
       setLoading(false);
     };
     img.onerror = () => {
-      setError(true);
-      setLoading(false);
+      // If the main image fails to load, try fallbackSrc once
+      if (fallbackSrc && fallbackSrc.trim() !== '' && !hasTriedFallback) {
+        console.warn('[media] hero image failed to load, switching to fallback', { src, resolvedUrl: url });
+        const fbUrl = resolveMediaUrl(fallbackSrc);
+        setResolvedSrc(fbUrl);
+        setHasTriedFallback(true);
+
+        const fbImg = new Image();
+        fbImg.src = fbUrl;
+        fbImg.onload = () => {
+          setLoading(false);
+        };
+        fbImg.onerror = () => {
+          console.warn('[media] fallback image also failed to load', { fallbackSrc, resolvedUrl: fbUrl });
+          setError(true);
+          setLoading(false);
+        };
+      } else {
+        console.warn('[media] hero image failed to load', { src, resolvedUrl: url });
+        setError(true);
+        setLoading(false);
+      }
     };
-  }, [src]);
+  }, [src, fallbackSrc, hasTriedFallback]);
 
   if (error) {
     if (fallbackComponent) {
@@ -49,7 +95,7 @@ export const SafeImage: React.FC<SafeImageProps> = ({
     }
     return (
       <div 
-        data-component-version="safe-image-v2-optimized" 
+        data-component-version="safe-image-v7-volunteer-handover" 
         className={`flex flex-col items-center justify-center bg-[#FAF6EB] text-[#A1A1AA] border border-[#E5D5AE]/40 ${className} ${containerClassName}`}
       >
         <ImageOff className="w-5 h-5 text-[#9A7326]/50" />
@@ -64,15 +110,17 @@ export const SafeImage: React.FC<SafeImageProps> = ({
           <Loader2 className="w-5 h-5 text-[#C59B27] animate-spin" />
         </div>
       )}
-      <img
-        data-component-version="safe-image-v2-optimized"
-        src={resolvedSrc}
-        alt={alt}
-        className={`${className} ${loading ? 'opacity-0' : 'opacity-100 transition-opacity duration-300'}`}
-        referrerPolicy="no-referrer"
-        loading="lazy"
-        {...props}
-      />
+      {resolvedSrc ? (
+        <img
+          data-component-version="safe-image-v7-volunteer-handover"
+          src={resolvedSrc}
+          alt={alt}
+          className={`${className} ${loading ? 'opacity-0' : 'opacity-100 transition-opacity duration-300'}`}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          {...props}
+        />
+      ) : null}
     </div>
   );
 };

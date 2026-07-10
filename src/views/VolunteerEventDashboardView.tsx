@@ -3,7 +3,7 @@ import {
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
-  Settings, ChevronRight, Users, LogIn
+  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -11,6 +11,67 @@ import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { VolunteerProfileView } from './volunteer/VolunteerProfileView';
+import { SafeImage } from '../components/common/SafeImage';
+import { BrandLogo } from '../components/common/BrandLogo';
+import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
+import { playSound, resumeAudioContext } from '../utils/sound';
+
+const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
+  if (!startsAt && !endsAt) return '18th to 22nd November 2026';
+  const parseAndFormat = (dStr?: string) => {
+    if (!dStr) return null;
+    const d = new Date(dStr);
+    if (isNaN(d.getTime())) return null;
+    const day = d.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    
+    let suffix = 'th';
+    if (day % 10 === 1 && day % 100 !== 11) suffix = 'st';
+    else if (day % 10 === 2 && day % 100 !== 12) suffix = 'nd';
+    else if (day % 10 === 3 && day % 100 !== 13) suffix = 'rd';
+    
+    return { day, suffix, month, year };
+  };
+
+  const startObj = parseAndFormat(startsAt);
+  const endObj = parseAndFormat(endsAt);
+
+  if (!startObj && !endObj) return '18th to 22nd November 2026';
+  if (startObj && !endObj) return `${startObj.day}${startObj.suffix} ${startObj.month} ${startObj.year}`;
+  if (!startObj && endObj) return `${endObj.day}${endObj.suffix} ${endObj.month} ${endObj.year}`;
+
+  if (startObj && endObj) {
+    if (startObj.year !== endObj.year) {
+      return `${startObj.day}${startObj.suffix} ${startObj.month} ${startObj.year} to ${endObj.day}${endObj.suffix} ${endObj.month} ${endObj.year}`;
+    }
+    if (startObj.month !== endObj.month) {
+      return `${startObj.day}${startObj.suffix} ${startObj.month} to ${endObj.day}${endObj.suffix} ${endObj.month} ${startObj.year}`;
+    }
+    if (startObj.day !== endObj.day) {
+      return `${startObj.day}${startObj.suffix} to ${endObj.day}${endObj.suffix} ${startObj.month} ${startObj.year}`;
+    }
+    return `${startObj.day}${startObj.suffix} ${startObj.month} ${startObj.year}`;
+  }
+
+  return '18th to 22nd November 2026';
+};
+
+const formatChildNameAndRef = (rawName?: string) => {
+  if (!rawName) return { name: 'Child', ref: '' };
+  const match = rawName.match(/^(.*?)\s*(\d{4,})$/);
+  if (match) {
+    return {
+      name: match[1].trim() || 'Child',
+      ref: match[2].slice(-4)
+    };
+  }
+  return { name: rawName, ref: '' };
+};
+
+let cachedCustomHeroUrl: string | null = null;
+let cachedDefaultEventHeroUrl: string | null = null;
 
 interface VolunteerEventDashboardViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -30,6 +91,99 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   currentRoute = '/volunteer/event'
 }) => {
   const { showSuccess, showWarning, showError } = useNotification();
+
+  // Real-time volunteer notification states
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('koinonia_sound_enabled');
+      return stored !== 'false';
+    }
+    return true;
+  });
+
+  const formatTimeAgo = (isoString: string) => {
+    try {
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ago`;
+    } catch (_) {
+      return 'Recent';
+    }
+  };
+
+  const fetchVolunteerNotifications = async (playFeedback = false) => {
+    try {
+      const list = await api.parent.getNotifications(false, 'volunteer');
+      const unreadList = list.filter((n: any) => !n.isRead);
+      setNotifications(list);
+      setUnreadNotifCount((prev) => {
+        if (unreadList.length > prev && prev > 0 && soundEnabled) {
+          playSound('notification');
+        } else if (playFeedback) {
+          playSound('success');
+        }
+        return unreadList.length;
+      });
+    } catch (err) {
+      console.error('Error fetching volunteer notifications:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchVolunteerNotifications();
+    const interval = setInterval(() => {
+      fetchVolunteerNotifications();
+    }, 25000); // Poll every 25s
+    return () => clearInterval(interval);
+  }, [soundEnabled]);
+
+  const toggleSound = async () => {
+    const nextVal = !soundEnabled;
+    setSoundEnabled(nextVal);
+    localStorage.setItem('koinonia_sound_enabled', String(nextVal));
+    try {
+      await api.request('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ soundEnabled: nextVal })
+      });
+      showSuccess(nextVal ? 'Sound Alerts On' : 'Sound Alerts Off', nextVal ? 'Notification sounds enabled.' : 'Notification sounds disabled.');
+      if (nextVal) {
+        playSound('success');
+      }
+    } catch (_) {}
+  };
+
+  const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(cachedCustomHeroUrl);
+  const [defaultEventHeroUrl, setDefaultEventHeroUrl] = useState<string | null>(cachedDefaultEventHeroUrl);
+
+  useEffect(() => {
+    const fetchCustomHero = async () => {
+      try {
+        const res = await api.getPublicAppMedia();
+        if (res.success) {
+          if (res.media?.volunteerDashboardHero?.url) {
+            cachedCustomHeroUrl = res.media.volunteerDashboardHero.url;
+            setCustomHeroUrl(res.media.volunteerDashboardHero.url);
+          }
+          if (res.media?.defaultEventHero?.url) {
+            cachedDefaultEventHeroUrl = res.media.defaultEventHero.url;
+            setDefaultEventHeroUrl(res.media.defaultEventHero.url);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load custom volunteer hero:', err);
+      }
+    };
+    fetchCustomHero();
+  }, []);
   
   // Dashboard states
   const [loading, setLoading] = useState(true);
@@ -69,11 +223,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [pickupCode, setPickupCode] = useState('');
   const [pickupLoading, setPickupLoading] = useState(false);
   const [pickupChild, setPickupChild] = useState<any | null>(null);
+  const [pickupVerified, setPickupVerified] = useState(false);
   const [pickupSuccessResult, setPickupSuccessResult] = useState<any | null>(null);
   const [pickupStats, setPickupStats] = useState({ inside: 0, pickedUp: 0, attention: 0 });
   const [pickupLastChild, setPickupLastChild] = useState<any | null>(null);
   const [showPickupManualInput, setShowPickupManualInput] = useState(false);
   const [cameraUnavailable, setCameraUnavailable] = useState(false);
+  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
 
   // Children search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,6 +262,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [submittingReport, setSubmittingReport] = useState(false);
   const [reportNotes, setReportNotes] = useState('');
   const [showAttentionModal, setShowAttentionModal] = useState(false);
+
+  // Interactive Resolution Modal States
+  const [selectedAttentionItem, setSelectedAttentionItem] = useState<any | null>(null);
+  const [showAttentionDetailModal, setShowAttentionDetailModal] = useState<boolean>(false);
+  const [attentionNote, setAttentionNote] = useState<string>('');
+  const [resolvingAttention, setResolvingAttention] = useState<boolean>(false);
+  const [attentionError, setAttentionError] = useState<string | null>(null);
 
   const cleanRoute = currentRoute.split('?')[0];
 
@@ -323,7 +486,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         onNavigate('/volunteer/pickup');
         showSuccess('Pickup Prepared', `Successfully verified authorized pickup person for ${res.child.fullName}.`);
       } else {
-        showError('Pickup Action Denied', 'Unable to initiate pickup workflow.');
+        showError('Pickup Action Denied', 'Unable to prepare child for pickup.');
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
@@ -357,6 +520,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const startScanning = async () => {
     try {
       setCameraUnavailable(false);
+      setCameraPermissionDenied(false);
 
       // Attempt to prompt for permission explicitly if mediaDevices API is available
       if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
@@ -366,8 +530,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           });
           // Stop stream tracks immediately as this is just to acquire permissions
           stream.getTracks().forEach(track => track.stop());
-        } catch (permErr) {
+        } catch (permErr: any) {
           console.warn('Explicit getUserMedia permission request was denied or failed:', permErr);
+          const isNotAllowed = permErr instanceof DOMException && permErr.name === 'NotAllowedError';
+          const isPermissionDenied = String(permErr).toLowerCase().includes('permission') || String(permErr).toLowerCase().includes('notallowed');
+          if (isNotAllowed || isPermissionDenied) {
+            setCameraPermissionDenied(true);
+            setCameraUnavailable(true);
+            setCameraActive(false);
+            return;
+          }
         }
       }
 
@@ -422,10 +594,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         setCameraActive(false);
         setCameraUnavailable(true);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('ZXing QR reader initialization error:', err);
       setCameraActive(false);
       setCameraUnavailable(true);
+      const errMsg = String(err).toLowerCase();
+      if (errMsg.includes('permission') || errMsg.includes('notallowed') || (err instanceof DOMException && err.name === 'NotAllowedError')) {
+        setCameraPermissionDenied(true);
+      }
     }
   };
 
@@ -820,265 +996,296 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setRefreshing(true);
     await fetchDashboardData(true);
     await fetchHistory();
-    showSuccess('Refreshed successfully', 'Latest live statistics and logs retrieved.');
+    showSuccess('Refreshed successfully', 'Latest updates and reports loaded.');
   };
 
   const handleResolveAction = (item: any) => {
-    showSuccess(
-      'Action Triggered',
-      `Opening search card for ${item.child_name || 'child'}...`
-    );
-    setSearchQuery(item.child_name || '');
-    onNavigate('/volunteer/children');
+    setSelectedAttentionItem(item);
+    setAttentionNote('');
+    setAttentionError(null);
+    setShowAttentionDetailModal(true);
   };
 
-  const fullName = volunteerProfile?.full_name || 'Volunteer';
+  const handleResolveItem = async (actionType: 'resolve' | 'review' | 'verify' | 'escalate') => {
+    if (!selectedAttentionItem) return;
+    if (!attentionNote || !attentionNote.trim()) {
+      const emptyError = 'Please enter a note to perform this action.';
+      setAttentionError(emptyError);
+      showError('Note Required', emptyError);
+      return;
+    }
+
+    setResolvingAttention(true);
+    setAttentionError(null);
+    try {
+      let res;
+      if (actionType === 'resolve') {
+        res = await api.volunteer.resolveAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      } else if (actionType === 'review') {
+        res = await api.volunteer.reviewAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      } else if (actionType === 'verify') {
+        res = await api.volunteer.verifyAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      } else {
+        res = await api.volunteer.escalateAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      }
+
+      if (res?.success) {
+        showSuccess(
+          actionType === 'escalate' ? 'Item Escalated' : actionType === 'verify' ? 'Item Verified' : 'Item Resolved',
+          actionType === 'escalate' ? 'Successfully escalated the issue to administration.' : 'This item has been successfully updated.'
+        );
+        setShowAttentionDetailModal(false);
+        setSelectedAttentionItem(null);
+        setAttentionNote('');
+        setAttentionError(null);
+        // Refresh dashboard data and counts immediately!
+        await fetchDashboardData(true);
+      } else {
+        const rawErr = res?.error || '';
+        let errorMsg = 'We could not update this item. Please try again.';
+        if (rawErr.toLowerCase().includes('permission') || rawErr.toLowerCase().includes('unauthorized')) {
+          errorMsg = 'This item needs admin review.';
+        } else if (rawErr.toLowerCase().includes('resolved') || rawErr.toLowerCase().includes('already')) {
+          errorMsg = 'This item has already been resolved.';
+        }
+        setAttentionError(errorMsg);
+        showError('Action Failed', errorMsg);
+      }
+    } catch (err: any) {
+      console.error('Error updating attention item:', err);
+      const rawErr = err.message || '';
+      let errorMsg = 'We could not update this item. Please try again.';
+      if (rawErr.toLowerCase().includes('permission') || rawErr.toLowerCase().includes('unauthorized')) {
+        errorMsg = 'This item needs admin review.';
+      } else if (rawErr.toLowerCase().includes('resolved') || rawErr.toLowerCase().includes('already')) {
+        errorMsg = 'This item has already been resolved.';
+      }
+      setAttentionError(errorMsg);
+      showError('Action Failed', errorMsg);
+    } finally {
+      setResolvingAttention(false);
+    }
+  };
+
+  const fullName = volunteerProfile?.full_name || volunteerProfile?.fullName || volunteerProfile?.user?.fullName || volunteerProfile?.user?.full_name || 'Volunteer';
   const teamName = volunteerProfile?.preferred_team || 'General Team';
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24" data-view-version="volunteer-event-dashboard-v2-stitch">
-      {/* Top Header Bar */}
-      {cleanRoute === '/volunteer/scan' ? (
-        checkedInSuccessChild ? (
-          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-checked-in-header-v1-stitch">
-            <div className="max-w-md mx-auto flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <button 
-                  onClick={handleResetScannerState} 
-                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                  id="btn-volunteer-success-back"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-                <div>
-                  <h1 className="text-sm font-serif font-bold text-gray-950 leading-tight">Check-In Portal</h1>
-                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
-                    {eventDetails?.title || 'The General Assembly Children and Teens'}
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => onNavigate('/volunteer/profile')}
-                className="p-1.5 text-gray-500 hover:text-[#C59B27] transition-colors cursor-pointer"
-                id="btn-volunteer-success-settings"
-              >
-                <Settings className="h-5 w-5" />
-              </button>
-            </div>
-          </header>
-        ) : lookedUpChild ? (
-          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-child-found-header-v1-stitch">
-            <div className="max-w-md mx-auto flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <button 
-                  onClick={handleResetScannerState} 
-                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                  id="btn-volunteer-scan-back"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-                <div>
-                  <h1 className="text-sm font-serif font-bold text-gray-950 leading-tight">Check-in Portal</h1>
-                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
-                    {eventDetails?.title || 'The General Assembly Children and Teens'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
-                <span className="w-1.5 h-1.5 bg-[#C59B27] rounded-full"></span>
-                <span>Ready</span>
-              </div>
-            </div>
-          </header>
-        ) : (
-          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-check-in-header-v2-stitch">
-            <div className="max-w-md mx-auto flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <button 
-                  onClick={() => onNavigate('/volunteer/event')} 
-                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                  id="btn-volunteer-scan-back"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-                <div>
-                  <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Check-in</h1>
-                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none">
-                    The General Assembly Children and Teens
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
-                <span className="w-1.5 h-1.5 bg-[#C59B27] rounded-full"></span>
-                <span>Ready to scan</span>
-              </div>
-            </div>
-          </header>
-        )
-      ) : cleanRoute === '/volunteer/pickup' ? (
-          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm animate-fade-in" data-component-version={pickupSuccessResult ? "volunteer-pickup-success-header-v1-stitch" : "volunteer-pickup-header-v1-stitch"}>
-            <div className="max-w-md mx-auto flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <button 
-                  onClick={() => {
+    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
+      {/* Top Header Bar - Calm, Minimal, Premium Mobile Header */}
+      <header 
+        className="bg-[#FAF9F6] border-b border-[#EAE8E1]/60 sticky top-0 z-20 px-4 h-16 flex items-center justify-between"
+        data-component-version="volunteer-mobile-app-header-v2-handover"
+      >
+        <div 
+          className="max-w-4xl w-full mx-auto flex items-center justify-between h-full"
+          data-component-version="volunteer-dashboard-header-v2-clean"
+        >
+          {/* Left: Brand Logo or Back arrow depending on page context */}
+          <div className="flex items-center">
+            {cleanRoute !== '/volunteer/event' ? (
+              <button
+                onClick={() => {
+                  if (cleanRoute === '/volunteer/scan') {
+                    if (checkedInSuccessChild || lookedUpChild) {
+                      handleResetScannerState();
+                    } else {
+                      onNavigate('/volunteer/event');
+                    }
+                  } else if (cleanRoute === '/volunteer/pickup') {
                     if (pickupChild || pickupSuccessResult) {
                       setPickupChild(null);
                       setPickupSuccessResult(null);
                     } else {
                       onNavigate('/volunteer/event');
                     }
-                  }}
-                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                  id="btn-volunteer-pickup-back"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-                <div>
-                  <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Pickup</h1>
-                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none mt-0.5">
-                    The General Assembly Children and Teens
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-1 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
-                <span>Ready to scan</span>
-              </div>
-            </div>
-          </header>
-        ) : cleanRoute === '/volunteer/children' ? (
-          selectedChildId ? (
-            <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-child-profile-header-v1-stitch">
-              <div className="max-w-md mx-auto flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <button 
-                    onClick={() => setSelectedChildId(null)}
-                    className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                    id="btn-volunteer-child-profile-back"
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </button>
-                  <div>
-                    <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Child profile</h1>
-                    <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none mt-0.5">
-                      The General Assembly
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </header>
-          ) : (
-            <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-children-header-v1-stitch">
-              <div className="max-w-md mx-auto flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <button 
-                    onClick={() => {
-                      if (selectedChildId) {
-                        setSelectedChildId(null);
-                      } else {
-                        onNavigate('/volunteer/event');
-                      }
-                    }}
-                    className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                    id="btn-volunteer-children-back"
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </button>
-                  <div>
-                    <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Children</h1>
-                    <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider leading-none mt-0.5">
-                      The General Assembly Children and Teens
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-1 text-[11px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-1 rounded-full shrink-0">
-                  <span>Ready to search</span>
-                </div>
-              </div>
-            </header>
-          )
-        ) : cleanRoute === '/volunteer/reports' ? (
-          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-reports-header-v3-stitch-layout-fixed">
-            <div className="max-w-md mx-auto flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <button 
-                  onClick={() => onNavigate('/volunteer/event')}
-                  className="p-1.5 -ml-1 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
-                  id="btn-volunteer-reports-back"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-                <div>
-                  <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Children’s Ministry</h1>
-                </div>
-              </div>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className={`p-1.5 text-gray-400 hover:text-[#C59B27] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-transform ${refreshing ? 'animate-spin' : ''}`}
-                title="Refresh Stats"
+                  } else if (cleanRoute === '/volunteer/children') {
+                    if (selectedChildId) {
+                      setSelectedChildId(null);
+                    } else {
+                      onNavigate('/volunteer/event');
+                    }
+                  } else {
+                    onNavigate('/volunteer/event');
+                  }
+                }}
+                className="p-1.5 -ml-1.5 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer rounded-full hover:bg-gray-50"
+                id="btn-volunteer-header-back"
               >
-                <RefreshCw className="h-4 w-4" />
+                <ChevronLeft className="h-6 w-6" />
               </button>
-            </div>
-          </header>
-        ) : (
-          <header className="bg-white border-b border-[#EAE8E1] sticky top-0 z-20 px-4 py-3 shadow-sm" data-component-version="volunteer-event-header-v2-stitch">
-          <div className="max-w-4xl mx-auto flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-base overflow-hidden">
-                {volunteerProfile?.photoUrl ? (
-                  <img src={volunteerProfile.photoUrl} alt={fullName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  fullName.charAt(0)
-                )}
-              </div>
-              <div>
-                <h1 className="text-sm font-serif font-bold text-gray-900 leading-tight">Event Dashboard</h1>
-                <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
-                  {eventDetails.title || 'The General Assembly'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
-                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Ready to scan
-              </span>
-              {hasParentProfile && (
-                <button
-                  onClick={() => onNavigate('/parent/home')}
-                  className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-colors"
-                  title="Switch to Parent Access"
-                >
-                  <Home className="h-4 w-4" />
-                </button>
-              )}
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className={`p-1.5 text-gray-400 hover:text-[#C59B27] rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-transform ${refreshing ? 'animate-spin' : ''}`}
-                title="Refresh Stats"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </button>
-              <button
-                onClick={onSignOut}
-                className="p-1.5 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer"
-                title="Sign Out"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
+            ) : (
+              <BrandLogo
+                context="compact"
+                data-component-version="volunteer-brand-logo-v1-configured"
+                onClick={() => onNavigate('/volunteer/event')}
+                className="mr-1"
+              />
+            )}
           </div>
-        </header>
-      )}
+
+          {/* Center: Concise Page Title */}
+          <div className="text-center">
+            <span className="font-serif font-black text-sm text-[#18181B] tracking-widest uppercase leading-none">
+              {(() => {
+                if (cleanRoute === '/volunteer/event') return 'KOINONIA';
+                if (cleanRoute === '/volunteer/scan') {
+                  if (checkedInSuccessChild) return 'CHECKED IN';
+                  if (lookedUpChild) return 'CHILD FOUND';
+                  return 'CHECK-IN';
+                }
+                if (cleanRoute === '/volunteer/pickup') return 'PICKUP';
+                if (cleanRoute === '/volunteer/children') return selectedChildId ? 'PROFILE' : 'CHILDREN';
+                if (cleanRoute === '/volunteer/reports') return 'REPORTS';
+                if (cleanRoute === '/volunteer/profile') return 'PROFILE';
+                return 'VOLUNTEER';
+              })()}
+            </span>
+          </div>
+
+          {/* Right: Profile Avatar */}
+          <div className="flex items-center space-x-2">
+            {hasParentProfile && cleanRoute === '/volunteer/event' && (
+              <button
+                onClick={() => onNavigate('/parent/home')}
+                className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-[#FAF6EB] flex items-center justify-center cursor-pointer transition-colors"
+                title="Switch to Parent Access"
+              >
+                <Home className="h-4.5 w-4.5" />
+              </button>
+            )}
+
+            {/* Live Notification Bell with Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowNotifPanel(!showNotifPanel);
+                  resumeAudioContext();
+                }}
+                className="p-1.5 text-gray-500 hover:text-gray-800 rounded-full transition-colors relative cursor-pointer hover:bg-gray-100"
+                title="Bulletins & Alerts"
+                id="volunteer-notification-bell"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.5 text-[8px] font-sans font-bold leading-none text-white bg-[#C59B27] rounded-full animate-pulse">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifPanel && (
+                <div 
+                  className="absolute right-0 mt-2 w-72 sm:w-80 bg-white border border-[#EAE8E1] rounded-2xl shadow-xl overflow-hidden z-50 animate-fade-in"
+                  data-component-version="volunteer-care-bulletins-panel-v1"
+                >
+                  <div className="p-3 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between">
+                    <div>
+                      <h4 className="font-serif font-bold text-xs text-[#18181B]">Care Bulletins</h4>
+                      <p className="text-[9px] text-zinc-500 font-sans">Active group announcements</p>
+                    </div>
+
+                    <button
+                      onClick={toggleSound}
+                      className={`p-1 rounded transition-colors cursor-pointer ${
+                        soundEnabled 
+                          ? 'bg-[#FAF6EB] text-[#C59B27]' 
+                          : 'bg-zinc-50 text-zinc-400'
+                      }`}
+                      title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
+                    >
+                      {soundEnabled ? (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm10.95 3.536l-8.486-8.486" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto divide-y divide-zinc-100">
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-zinc-400 text-[11px]">
+                        No care bulletins active.
+                      </div>
+                    ) : (
+                      notifications.map((notif: any) => {
+                        const isUnread = !notif.isRead;
+                        return (
+                          <div 
+                            key={notif.id}
+                            className={`p-3 text-left hover:bg-zinc-50 transition-colors ${
+                              isUnread ? 'bg-[#FAF6EB]/20' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-serif font-bold text-xs text-zinc-800 truncate">
+                                {notif.title}
+                              </span>
+                              <span className="text-[8px] text-zinc-400 shrink-0">
+                                {formatTimeAgo(notif.createdAt)}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed break-words whitespace-normal">
+                              {notif.message}
+                            </p>
+                            {isUnread && (
+                              <div className="flex justify-end mt-1.5">
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await api.parent.markNotificationAsRead(notif.id);
+                                      fetchVolunteerNotifications();
+                                    } catch (_) {}
+                                  }}
+                                  className="text-[9px] font-bold text-[#C59B27] hover:underline cursor-pointer"
+                                >
+                                  Acknowledge
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={() => onNavigate('/volunteer/profile')}
+              className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-sm overflow-hidden border border-[#D9D6CE] shadow-xs cursor-pointer transition-transform duration-200 hover:scale-105"
+              data-component-version="volunteer-header-avatar-v3-handover-photo"
+            >
+              {(() => {
+                const avatarPhoto = volunteerProfile?.photoUrl || 
+                                     volunteerProfile?.profile?.photoUrl || 
+                                     volunteerProfile?.profilePhotoUrl || 
+                                     volunteerProfile?.user?.photoUrl;
+                if (avatarPhoto) {
+                  return (
+                    <SafeImage 
+                      src={avatarPhoto} 
+                      alt={fullName} 
+                      className="w-full h-full object-cover" 
+                      fallbackComponent={
+                        <span className="font-serif font-bold text-xs">
+                          {fullName.charAt(0).toUpperCase()}
+                        </span>
+                      }
+                    />
+                  );
+                }
+                return fullName.charAt(0).toUpperCase();
+              })()}
+            </button>
+          </div>
+        </div>
+      </header>
 
       {/* Main Container */}
       <main className="max-w-4xl w-full mx-auto px-4 pt-6 space-y-6 flex-1">
@@ -1099,15 +1306,103 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         {/* Dynamic Route Content Router */}
         {cleanRoute === '/volunteer/event' && (
           /* ==================== 1. EVENT TOOLS / METRICS VIEW ==================== */
-          <div className="space-y-6 animate-fade-in" data-view-version="volunteer-event-dashboard-v2-stitch">
-            {/* Hero Greeting */}
-            <div className="space-y-1">
-              <h2 className="text-3xl font-serif font-medium text-gray-900 tracking-tight">
-                Welcome, {fullName.split(' ')[0]}.
-              </h2>
-              <p className="text-sm text-gray-500">
-                {teamName}
-              </p>
+          <div className="space-y-6 animate-fade-in" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
+            {/* 1. Volunteer Dashboard Hero Image Card */}
+            <div 
+              className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] shadow-xs overflow-hidden" 
+              data-component-version="volunteer-dashboard-hero-v9-handover-mobile-app"
+            >
+              {/* Top Image area with fixed aspect ratio */}
+              <div className="relative aspect-[16/9] w-full bg-[#24221C] overflow-hidden">
+                <SafeImage 
+                  src={customHeroUrl}
+                  fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
+                  alt="Volunteer Dashboard" 
+                  className="absolute inset-0 w-full h-full object-cover"
+                  containerClassName="absolute inset-0 w-full h-full"
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
+                  data-component-version="volunteer-dashboard-hero-image-v5-handover-stable"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+              </div>
+
+              {/* Content area below the image on ivory background */}
+              <div className="p-5 sm:p-6 bg-[#FAF9F6] space-y-4" data-component-version="volunteer-dashboard-current-event-v3-real">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="px-2.5 py-0.5 text-[10px] font-bold text-[#C59B27] bg-[#C59B27]/10 border border-[#C59B27]/20 rounded-full uppercase tracking-wider">
+                    {teamName} • Ready for event support
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <h2 data-component-version="volunteer-dashboard-greeting-v6-handover-real-name" className="text-2xl sm:text-3xl font-serif font-black text-[#18181B] tracking-tight leading-tight">
+                    {(() => {
+                      const hour = new Date().getHours();
+                      const rawName = volunteerProfile?.full_name || 
+                                      volunteerProfile?.fullName || 
+                                      volunteerProfile?.user?.fullName || 
+                                      volunteerProfile?.user?.full_name || 
+                                      '';
+                      const firstName = rawName.trim() && rawName.toLowerCase() !== 'volunteer' 
+                        ? rawName.trim().split(/\s+/)[0] 
+                        : '';
+                      let greetingPrefix = 'Welcome';
+                      if (hour >= 4 && hour < 12) {
+                        greetingPrefix = 'Good morning';
+                      } else if (hour >= 12 && hour < 17) {
+                        greetingPrefix = 'Good afternoon';
+                      } else if (hour >= 17 || hour < 4) {
+                        greetingPrefix = 'Good evening';
+                      }
+                      return firstName ? `${greetingPrefix}, ${firstName}` : greetingPrefix;
+                    })()}
+                  </h2>
+                  <div className="flex flex-col space-y-2 pt-1 text-xs text-gray-600 font-medium">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-serif font-bold text-base text-gray-900">
+                        {eventDetails?.title || 'The General Assembly'}
+                      </span>
+                      <span className="text-gray-300">|</span>
+                      <span className="text-[#C59B27] font-bold uppercase tracking-wider text-[10px]">
+                        {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children and Teens'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 text-gray-500 pt-0.5">
+                      <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
+                      <span>{formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)} • {eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}</span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 text-gray-500">
+                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                      <span className="truncate">{eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraActive(true);
+                      setScanMode('check_in');
+                      onNavigate('/volunteer/scan');
+                    }}
+                    className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-sm text-center"
+                  >
+                    Start check-in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/volunteer/pickup')}
+                    className="flex-1 py-3 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-xs text-center"
+                  >
+                    Open pickup
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Stitch Search Field */}
@@ -1117,7 +1412,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 onNavigate('/volunteer/children');
               }}
               className="relative w-full"
-              data-component-version="volunteer-event-search-v2-stitch"
+              data-component-version="volunteer-dashboard-search-v5-mobile"
             >
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                 <Search className="h-4.5 w-4.5 text-gray-400" />
@@ -1132,7 +1427,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </form>
 
             {/* Primary Action Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-component-version="volunteer-event-actions-v2-stitch">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-component-version="volunteer-dashboard-task-cards-v2">
               {/* Check-in Card */}
               <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col justify-between">
                 <div className="space-y-2 mb-4">
@@ -1177,7 +1472,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid grid-cols-2 gap-4" data-component-version="volunteer-event-metrics-v2-stitch">
+            <div className="grid grid-cols-2 gap-4" data-component-version="volunteer-dashboard-summary-v5-mobile">
               <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
                 <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   EXPECTED
@@ -1205,7 +1500,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </span>
               </div>
 
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
+              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative" data-component-version="volunteer-dashboard-attention-count-v1">
                 <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
                   ATTENTION
                 </span>
@@ -1217,7 +1512,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* Needs Attention Section */}
-            <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-event-attention-v2-stitch">
+            <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-dashboard-attention-v2-stitch">
               <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
                 <AlertTriangle className="h-5 w-5 text-[#C59B27]" />
                 <h3 className="text-lg font-serif font-bold text-gray-900">Needs Attention</h3>
@@ -1230,7 +1525,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
 
               {attentionItems.length > 0 && (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-gray-100" data-component-version="volunteer-attention-list-v2">
                   {attentionItems.map((item, index) => (
                     <div
                       key={item.id || index}
@@ -1252,10 +1547,63 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                       <button
                         onClick={() => handleResolveAction(item)}
+                        data-component-version="volunteer-attention-action-v2"
                         className="text-[11px] font-bold text-[#C59B27] hover:text-[#A47E1F] tracking-wider uppercase shrink-0 transition-colors cursor-pointer"
                       >
                         {item.action_text === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' ? 'Verify' : 'Review'}
                       </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Activity Section */}
+            <div 
+              className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4 font-sans" 
+              data-component-version="volunteer-dashboard-recent-activity-v2"
+            >
+              <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
+                <History className="h-5 w-5 text-[#C59B27]" />
+                <h3 className="text-lg font-serif font-bold text-gray-900">Recent Activity</h3>
+              </div>
+
+              {recentScans.length === 0 && (
+                <div className="py-4 text-center text-xs text-gray-400">
+                  No scan activity recorded yet.
+                </div>
+              )}
+
+              {recentScans.length > 0 && (
+                <div className="divide-y divide-gray-100">
+                  {recentScans.slice(0, 3).map((item, index) => (
+                    <div
+                      key={item.id || index}
+                      className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs shrink-0 font-bold ${
+                          item.status === 'checked_in' || item.status === 'inside'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                        }`}>
+                          {item.status === 'checked_in' || item.status === 'inside' ? 'IN' : 'OUT'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-gray-900 truncate leading-tight">
+                            {item.childName || 'Child'}
+                          </p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">
+                            {item.status === 'checked_in' || item.status === 'inside' ? 'Checked in' : 'Picked up'} • {formatTime(item.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {item.ageGroup && (
+                        <span className="text-[10px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-0.5 rounded-full shrink-0">
+                          {item.ageGroup}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1286,7 +1634,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               const hasCareNotes = medicalNote || (allergies && allergies.toLowerCase() !== 'no') || (extraSupport && extraSupport.toLowerCase() !== 'no');
 
               return (
-                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v5-connected">
+                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v7-clean-header">
                   {/* Event label */}
                   <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
                     {eventDetails?.title?.toUpperCase() || 'THE GENERAL ASSEMBLY CHILDREN AND TEENS'}
@@ -1467,7 +1815,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
             return (
-              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v5-stitch-active">
+              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v7-clean-header">
                 {/* Scan successful & Child found title */}
                 <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
                   <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
@@ -1696,18 +2044,30 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             );
           })() : (
             /* ==================== 2. SCANNER VIEW (Stitch Design) ==================== */
-            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-scanner-v3-single-scan-safe">
+            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-checkin-v5-clean-header">
               
               {cameraUnavailable ? (
                 /* Camera is unavailable: show only the manual entry card */
                 <div className="space-y-6" data-component-version="volunteer-scan-manual-fallback-v1">
                   <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
-                    CAMERA NOT FOUND
+                    {cameraPermissionDenied ? 'CAMERA ACCESS BLOCKED' : 'CAMERA NOT FOUND'}
                   </div>
                   
-                  <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4 leading-relaxed">
-                    Scanner is not available on this device. Please enter the child's entry pass code manually below to continue.
-                  </div>
+                  {cameraPermissionDenied ? (
+                    <div className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-250 rounded-2xl p-5 leading-relaxed space-y-1">
+                      <p className="font-serif font-bold text-sm text-amber-900">Camera Permission Denied</p>
+                      <p>
+                        The camera could not be initialized because access was blocked. Please enable camera access in your browser or device settings to scan passes.
+                      </p>
+                      <p className="text-[10px] text-amber-600 italic">
+                        If running inside a preview iframe, you can open the app in a new tab using the top-right button to allow permission popups.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4 leading-relaxed">
+                      Scanner is not available on this device. Please enter the child's entry pass code manually below to continue.
+                    </div>
+                  )}
 
                   <div className="bg-white border border-[#EAE8E1] p-5 rounded-3xl shadow-sm space-y-4">
                     <div className="flex items-center space-x-2 text-gray-900 pb-2 border-b border-gray-50">
@@ -2000,7 +2360,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           /* ==================== 2.7 CHILD PICKUP & RELEASE VIEW (Request 4) ==================== */
           pickupSuccessResult ? (
             /* ==================== PICKUP SUCCESS SCREEN ==================== */
-            <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-6 pb-12 animate-fade-in" data-view-version="volunteer-pickup-success-v1-stitch">
+            <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-6 pb-12 animate-fade-in" data-view-version="volunteer-pickup-v5-clean-header">
               
               {/* Centered success block */}
               <div className="text-center space-y-4" data-component-version="volunteer-pickup-success-title-v1-stitch">
@@ -2200,19 +2560,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
           ) : pickupChild ? (
             /* ==================== ACTIVE PICKUP CARD / VERIFICATION SCREEN ==================== */
-            <div className="space-y-6 animate-fade-in" data-view-version="volunteer-pickup-verify-v2" data-component-version="pickup-verification">
+            <div className="space-y-6 animate-fade-in pb-12" data-view-version="volunteer-pickup-v5-clean-header" data-component-version="pickup-verification">
               
               {/* Back / Navigation Bar */}
               <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
                 <div className="flex items-center space-x-3">
-                  <h2 className="text-2xl font-bold text-gray-900 leading-tight tracking-tight font-serif">Pickup Release</h2>
-                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-0.5 text-xs font-bold rounded-full">
-                    Verification Needed
+                  <h2 className="text-2xl font-bold text-gray-900 leading-tight tracking-tight font-serif">Pickup Verification</h2>
+                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full">
+                    Verification Required
                   </span>
                 </div>
                 <button
                   onClick={() => {
                     setPickupChild(null);
+                    setPickupVerified(false);
                   }}
                   className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 cursor-pointer transition-colors"
                   title="Cancel release lookup"
@@ -2221,159 +2582,229 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </button>
               </div>
 
-              {/* Child Details Card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col sm:flex-row items-center sm:items-start gap-5">
-                <div className="w-20 h-20 rounded-full overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0 shadow-inner">
-                  {pickupChild.photoUrl ? (
-                    <img
-                      src={pickupChild.photoUrl}
-                      alt={pickupChild.fullName}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User className="h-10 w-10 text-gray-300" />
-                  )}
-                </div>
-                <div className="text-center sm:text-left space-y-3 flex-1 min-w-0">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 leading-tight truncate">
+              {/* Side-by-Side Comparison Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Left Side: Child to Release */}
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
+                  <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
+                    Child to Release
+                  </span>
+                  
+                  {/* Square Image Box with antique gold border corners */}
+                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 shadow-inner flex items-center justify-center">
+                    {/* Antique Gold Corner Accents */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#C59B27] rounded-tl-md"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#C59B27] rounded-tr-md"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#C59B27] rounded-bl-md"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#C59B27] rounded-br-md"></div>
+
+                    {pickupChild.photoUrl ? (
+                      <img
+                        src={pickupChild.photoUrl}
+                        alt={pickupChild.fullName}
+                        className="w-full h-full object-cover p-1.5 rounded-2xl"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User className="h-16 w-16 text-gray-300 stroke-[1.2]" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 w-full">
+                    <h3 className="text-lg font-bold text-gray-950 font-serif leading-snug truncate">
                       {pickupChild.fullName}
                     </h3>
-                    <p className="text-xs text-gray-400 mt-1 font-mono font-bold uppercase tracking-wider">
-                      {pickupChild.ageGroup || 'Creche'} &bull; {pickupChild.gender} &bull; DOB: {pickupChild.dateOfBirth || 'N/A'}
-                    </p>
+                    
+                    <div className="flex items-center justify-center space-x-1.5 text-xs text-gray-500 font-semibold">
+                      <span>{pickupChild.age ? `${pickupChild.age} yrs` : 'Verified age'}</span>
+                      <span className="text-gray-300">&bull;</span>
+                      <span>{pickupChild.gender || 'Child'}</span>
+                      {pickupChild.classGroup && (
+                        <>
+                          <span className="text-gray-300">&bull;</span>
+                          <span className="bg-[#FAF9F5] border border-[#EAE8E1] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md">
+                            {pickupChild.classGroup}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="bg-gray-50/80 rounded-2xl p-4 border border-gray-100 text-xs inline-block text-left w-full max-w-sm">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block leading-none">Primary Parent</span>
-                    <p className="font-bold text-gray-800 mt-2 text-sm">{pickupChild.parentName}</p>
-                    <p className="text-gray-500 mt-1 flex items-center space-x-1.5">
-                      <span>{pickupChild.parentPhone}</span>
+
+                  <div className="w-full pt-3 border-t border-gray-50 text-left text-xs space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 font-mono text-[9px] font-bold uppercase">Pass Ref</span>
+                      <span className="font-mono font-bold text-gray-900 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">
+                        {pickupChild.passReference || '6E80A7'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 font-mono text-[9px] font-bold uppercase">Checked In At</span>
+                      <span className="font-semibold text-gray-800">
+                        {pickupChild.checkedInAt ? new Date(pickupChild.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Side: Approved Pickup Person */}
+                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
+                  <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
+                    Approved Pickup Person
+                  </span>
+                  
+                  {/* Square Image Box with antique gold border corners */}
+                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 shadow-inner flex items-center justify-center">
+                    {/* Antique Gold Corner Accents */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#C59B27] rounded-tl-md"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#C59B27] rounded-tr-md"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#C59B27] rounded-bl-md"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#C59B27] rounded-br-md"></div>
+
+                    {pickupChild.pickup?.photoUrl ? (
+                      <img
+                        src={pickupChild.pickup.photoUrl}
+                        alt={pickupChild.pickup.fullName}
+                        className="w-full h-full object-cover p-1.5 rounded-2xl"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User className="h-16 w-16 text-gray-300 stroke-[1.2]" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 w-full">
+                    <h3 className="text-lg font-bold text-gray-950 font-serif leading-snug truncate">
+                      {pickupChild.pickup?.fullName || pickupChild.parentName || 'Authorized Pickup'}
+                    </h3>
+                    
+                    <div className="flex items-center justify-center">
+                      <span className="bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 px-3 py-0.5 text-[10px] font-bold uppercase rounded-full tracking-wider">
+                        {pickupChild.pickup?.relationship || 'Primary Parent'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="w-full pt-3 border-t border-gray-50 text-left text-xs space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 font-mono text-[9px] font-bold uppercase">Phone Number</span>
+                      <span className="font-semibold text-gray-800">
+                        {pickupChild.pickup?.phone || pickupChild.parentPhone || 'N/A'}
+                      </span>
+                    </div>
+                    {(pickupChild.pickup?.phone || pickupChild.parentPhone) && (
+                      <div className="pt-1">
+                        <a
+                          href={`tel:${pickupChild.pickup?.phone || pickupChild.parentPhone}`}
+                          className="w-full py-2 bg-gray-50 border border-gray-200 hover:border-[#C59B27] hover:text-[#C59B27] rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 text-gray-700 transition-all shadow-xs cursor-pointer"
+                        >
+                          <Phone className="h-3.5 w-3.5 text-gray-400" />
+                          <span>Call Pickup Person</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Care Notes & Support Section */}
+              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-4">
+                <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase border-b border-gray-50 pb-2">
+                  Safety & Care Notes
+                </h4>
+                
+                {(() => {
+                  const medicalNotes = pickupChild.medicalNotes || pickupChild.medicalNote || '';
+                  const supportNotes = pickupChild.supportNotes || pickupChild.supportNote || '';
+                  const hasMedicalNotes = !!medicalNotes || pickupChild.hasMedicalNotes || pickupChild.allergies === 'Yes';
+                  const hasExtraSupport = !!supportNotes || pickupChild.needsExtraSupport || pickupChild.extraSupport === 'Yes';
+                  const hasCareNotes = hasMedicalNotes || hasExtraSupport;
+
+                  if (hasCareNotes) {
+                    return (
+                      <div className="space-y-3">
+                        {medicalNotes && (
+                          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-rose-950">
+                            <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500 mt-0.5" />
+                            <div className="space-y-1">
+                              <h5 className="font-bold text-rose-800 font-mono text-[10px] uppercase tracking-wider">Medical Note / Allergies</h5>
+                              <p className="text-[11px] text-rose-700 leading-relaxed font-semibold">
+                                {medicalNotes}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {supportNotes && (
+                          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-amber-950">
+                            <Info className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
+                            <div className="space-y-1">
+                              <h5 className="font-bold text-amber-800 font-mono text-[10px] uppercase tracking-wider">Extra Support Needs</h5>
+                              <p className="text-[11px] text-amber-700 leading-relaxed font-semibold">
+                                {supportNotes}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500">
+                      <Check className="h-5 w-5 shrink-0 text-emerald-500 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <h5 className="font-bold text-emerald-800 font-mono text-[10px] uppercase tracking-wider">No Care Conditions</h5>
+                        <p className="text-[11px] text-emerald-700 leading-relaxed">
+                          No allergies, medical concerns, or extra support guidelines registered for this child.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Safety Checkpoint / Consent Tickbox */}
+              <div className="bg-amber-50/40 border border-amber-200/50 rounded-3xl p-6 space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="p-1 bg-amber-100 rounded-lg text-[#C59B27] shrink-0 mt-0.5">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-amber-900 font-serif">Security Checkpoint</h4>
+                    <p className="text-[11px] text-amber-700 leading-normal">
+                      Child safety is our utmost priority. You must match the physical person picking up the child against the authorized photo and details above.
                     </p>
                   </div>
                 </div>
-              </div>
 
-              {/* Medical / Allergies Card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-3">
-                <h4 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                  Care Notes & Medical
-                </h4>
-                {pickupChild.hasMedicalNotes || pickupChild.needsExtraSupport ? (
-                  <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-rose-950">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500 mt-0.5" />
-                    <div className="space-y-1">
-                      <h5 className="font-bold text-rose-800">Allergies / Medical / Support Needs</h5>
-                      <p className="text-[11px] text-rose-700 leading-relaxed">
-                        {pickupChild.medicalNotes || pickupChild.supportNotes || 'Requires emergency attention or extra support.'}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500">
-                    <Check className="h-5 w-5 shrink-0 text-emerald-500 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <h5 className="font-bold text-gray-700">No care conditions</h5>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        No allergies, medical needs, or extra physical support alerts registered for this child.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Authorized Pickup Person Card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-4">
-                <h4 className="text-xs font-mono font-bold text-gray-400 tracking-wider uppercase">
-                  Authorized Pickup Person
-                </h4>
-                
-                {pickupChild.pickup ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-50 border border-gray-200 shrink-0 flex items-center justify-center">
-                          {pickupChild.pickup.photoUrl ? (
-                            <img
-                              src={pickupChild.pickup.photoUrl}
-                              alt={pickupChild.pickup.fullName}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <User className="h-6 w-6 text-gray-300" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-bold text-gray-900 leading-tight truncate">
-                            {pickupChild.pickup.fullName}
-                          </h4>
-                          <p className="text-[11px] text-[#C59B27] font-semibold mt-0.5 font-mono uppercase tracking-wider">
-                            {pickupChild.pickup.relationship || 'Authorized Pickup'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 shrink-0">
-                        <a
-                          href={`tel:${pickupChild.pickup.phone}`}
-                          className="p-2 bg-gray-50 border border-gray-200 hover:border-[#C59B27] text-gray-600 hover:text-[#C59B27] rounded-xl transition-all shadow-xs"
-                          title="Call pickup person"
-                        >
-                          <Phone className="h-4 w-4" />
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="bg-amber-50/50 border border-amber-200/60 rounded-2xl p-4 flex items-start space-x-3 text-amber-850">
-                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-amber-850 text-xs">Security Verification Check</h5>
-                        <p className="text-[11px] text-amber-700 leading-relaxed">
-                          Ensure the physical person picking up the child strictly matches the details and face photo listed above.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500">
-                      <User className="h-5 w-5 shrink-0 text-gray-400 mt-0.5" />
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-gray-700">Self Pickup / Primary Parent Only</h5>
-                        <p className="text-[11px] text-gray-500 leading-relaxed">
-                          No secondary pickup person was assigned. The child is authorized to be released strictly to their primary parent ({pickupChild.parentName}).
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="bg-amber-50/50 border border-amber-200/60 rounded-2xl p-4 flex items-start space-x-3 text-amber-850">
-                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-amber-850 text-xs">Security Verification Check</h5>
-                        <p className="text-[11px] text-amber-700 leading-relaxed">
-                          Verify identity against primary parent profile. Do not release to any unlisted individuals.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <label className="flex items-start space-x-3 p-4 bg-white border border-amber-200 rounded-2xl cursor-pointer hover:bg-amber-50/30 transition-all select-none">
+                  <input
+                    type="checkbox"
+                    checked={pickupVerified}
+                    onChange={(e) => setPickupVerified(e.target.checked)}
+                    className="mt-1 h-4.5 w-4.5 rounded-sm border-amber-300 text-[#C59B27] focus:ring-[#C59B27] transition-all cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-gray-800 leading-snug">
+                    I confirm that the physical pickup person's identity and face strictly matches the authorized photo and credentials above.
+                  </span>
+                </label>
               </div>
 
               {/* Action Buttons */}
               <div className="space-y-3 pt-3">
                 <button
                   onClick={() => handleConfirmPickupRelease(pickupChild)}
-                  disabled={pickupLoading}
-                  data-component-version="volunteer-pickup-release-action-v2"
-                  className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold tracking-widest py-4 rounded-2xl text-sm transition-all shadow-md uppercase flex items-center justify-center space-x-2 cursor-pointer disabled:bg-gray-200 disabled:text-gray-400"
+                  disabled={pickupLoading || !pickupVerified}
+                  data-component-version="volunteer-pickup-release-action-v3"
+                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold tracking-widest py-4 rounded-2xl text-xs transition-all shadow-md uppercase flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   {pickupLoading ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                   ) : (
                     <>
                       <Check className="h-4 w-4 stroke-[3]" />
-                      <span>MARK PICKED UP</span>
+                      <span>Mark Picked Up & Release</span>
                     </>
                   )}
                 </button>
@@ -2381,10 +2812,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   onClick={() => {
                     setPickupChild(null);
+                    setPickupVerified(false);
                   }}
-                  className="w-full border-2 border-gray-300 hover:border-gray-400 text-gray-700 font-bold tracking-widest py-3.5 rounded-2xl text-sm transition-all uppercase text-center cursor-pointer block bg-white"
+                  className="w-full border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white shadow-xs"
                 >
-                  CANCEL / RELEASE ANOTHER
+                  Cancel / Scan Another Pass
                 </button>
               </div>
             </div>
@@ -2484,17 +2916,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </div>
                       </div>
 
-                      {/* Pill button at the center */}
-                      <button
-                        onClick={() => {
-                          setScanMode('check_out');
-                          setCameraActive(true);
-                        }}
-                        className="relative z-10 bg-white hover:bg-gray-50 text-gray-950 font-serif font-extrabold text-sm px-6 py-3 rounded-full flex items-center space-x-2 shadow-lg transition-all cursor-pointer border border-[#EAE8E1]"
-                      >
-                        <QrCode className="h-4.5 w-4.5 text-[#C59B27]" />
-                        <span>Scan child pass</span>
-                      </button>
+                      {cameraUnavailable ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 z-10">
+                          <p className="text-white font-serif font-bold text-sm">
+                            {cameraPermissionDenied ? 'Camera Access Blocked' : 'Camera Unavailable'}
+                          </p>
+                          <p className="text-[11px] text-white/60 max-w-[220px] mx-auto leading-relaxed">
+                            {cameraPermissionDenied 
+                              ? 'Camera permissions are blocked. Please enable permissions in your settings or open this app in a new window to scan passes.'
+                              : 'No cameras detected or available on this device.'}
+                          </p>
+                          <p className="text-[9px] text-amber-400 italic max-w-[200px]">
+                            You can enter the reference pass code manually instead.
+                          </p>
+                        </div>
+                      ) : (
+                        /* Pill button at the center */
+                        <button
+                          onClick={() => {
+                            setScanMode('check_out');
+                            setCameraActive(true);
+                          }}
+                          className="relative z-10 bg-white hover:bg-gray-50 text-gray-950 font-serif font-extrabold text-sm px-6 py-3 rounded-full flex items-center space-x-2 shadow-lg transition-all cursor-pointer border border-[#EAE8E1]"
+                        >
+                          <QrCode className="h-4.5 w-4.5 text-[#C59B27]" />
+                          <span>Scan child pass</span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -3704,57 +4152,315 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               })()}
             </>
           )}
+        </div>
+      )}
 
-          {/* Attention Details Modal */}
-          {showAttentionModal && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
-              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl border border-[#EAE8E1]">
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                  <h3 className="text-lg font-serif font-bold text-neutral-900">Needs Attention List</h3>
-                  <button 
-                    onClick={() => setShowAttentionModal(false)}
-                    className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
+      {/* Attention Details Modal */}
+      {showAttentionModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl border border-[#EAE8E1]">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h3 className="text-lg font-serif font-bold text-neutral-900">Needs Attention List</h3>
+              <button 
+                onClick={() => setShowAttentionModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-                <div className="space-y-3">
-                  {reportsData?.needsAttention && reportsData.needsAttention.length > 0 ? (
-                    reportsData.needsAttention.map((item: any, idx: number) => (
-                      <div key={item.id || idx} className="p-4 bg-amber-50/30 border border-amber-100 rounded-2xl flex items-center justify-between space-x-3 text-xs">
-                        <div className="flex items-start space-x-3">
-                          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-                          <div className="space-y-1">
-                            <h4 className="font-bold text-neutral-800 text-sm">{item.childName}</h4>
-                            <p className="text-xs text-amber-700 font-medium">{item.issueType}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setShowAttentionModal(false);
-                            if (item.id) {
-                              setSearchQuery(item.childName);
-                              onNavigate('/volunteer/children');
-                            } else {
-                              onNavigate('/volunteer/event');
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
-                        >
-                          {item.actionText || 'RESOLVE'}
-                        </button>
+            <div className="space-y-3">
+              {reportsData?.needsAttention && reportsData.needsAttention.length > 0 ? (
+                reportsData.needsAttention.map((item: any, idx: number) => (
+                  <div key={item.id || idx} className="p-4 bg-amber-50/30 border border-amber-100 rounded-2xl flex items-center justify-between space-x-3 text-xs">
+                    <div className="flex items-start space-x-3">
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="font-bold text-neutral-800 text-sm">{item.childName}</h4>
+                        <p className="text-xs text-amber-700 font-medium">{item.issueType}</p>
                       </div>
-                    ))
-                  ) : (
-                    <div className="py-8 text-center text-gray-400 text-xs">
-                      No active alerts or needs attention items.
                     </div>
-                  )}
+                    <button
+                      onClick={() => {
+                        setShowAttentionModal(false);
+                        handleResolveAction(item);
+                      }}
+                      className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                    >
+                      {item.actionText || 'RESOLVE'}
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-gray-400 text-xs">
+                  No active alerts or needs attention items.
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detailed Interactive Resolution Modal */}
+      {showAttentionDetailModal && selectedAttentionItem && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in"
+          data-view-version="volunteer-attention-detail-v4-premium"
+        >
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EAE8E1]">
+            {/* Header */}
+            <div 
+              className="flex items-center justify-between pb-3 border-b border-gray-100"
+              data-component-version="volunteer-attention-detail-header-v4"
+            >
+              <div className="space-y-0.5">
+                <h3 className="text-lg font-serif font-bold text-neutral-900 leading-tight">
+                  Needs Supportive Care Review
+                </h3>
+                <p className="text-xs text-gray-500 leading-normal">
+                  Confirm the entry details to ensure the child's absolute comfort and safety.
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowAttentionDetailModal(false);
+                  setSelectedAttentionItem(null);
+                  setAttentionError(null);
+                }}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Inline Error Message */}
+            {attentionError && (
+              <div 
+                className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-1.5 animate-fade-in"
+                data-component-version="volunteer-attention-safe-error-v2"
+              >
+                <span className="shrink-0 font-medium">⚠️</span>
+                <span>{attentionError}</span>
+              </div>
+            )}
+
+            {/* Child Summary Block */}
+            <div 
+              className="bg-[#FAF9F6] border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-4"
+              data-component-version="volunteer-attention-child-summary-v4"
+            >
+              {/* Photo or Fallback */}
+              <div className="w-16 h-16 rounded-full bg-[#FAF6EB] border border-[#E5D5AE]/60 overflow-hidden flex-shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-lg">
+                {(() => {
+                  const childPhoto = selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId;
+                  const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+                  const cleaned = formatChildNameAndRef(cName);
+                  if (childPhoto) {
+                    return (
+                       <SafeImage 
+                        src={`/api/media/${childPhoto}`} 
+                        alt={cleaned.name} 
+                        className="w-full h-full object-cover"
+                        fallbackComponent={
+                          <span className="font-serif font-bold text-lg">
+                            {cleaned.name.charAt(0).toUpperCase()}
+                          </span>
+                        }
+                      />
+                    );
+                  }
+                  return cleaned.name.charAt(0).toUpperCase();
+                })()}
+              </div>
+              
+              {/* Details */}
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h4 
+                    className="text-base font-bold text-neutral-900 font-serif break-words whitespace-normal leading-tight"
+                    data-component-version="volunteer-attention-safe-child-display-v2"
+                  >
+                    {(() => {
+                      const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+                      return formatChildNameAndRef(cName).name;
+                    })()}
+                  </h4>
+                  {(() => {
+                    const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+                    const cleaned = formatChildNameAndRef(cName);
+                    if (cleaned.ref) {
+                      return (
+                        <span 
+                          className="text-[10px] font-mono font-medium px-2 py-0.5 bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE]/30 rounded-md shrink-0"
+                          data-component-version="volunteer-attention-child-reference-v2"
+                        >
+                          Ref: {cleaned.ref}
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Age: {selectedAttentionItem.child_age ? `${selectedAttentionItem.child_age} yrs` : 'Not verified'} | Group: {selectedAttentionItem.child_age_group || 'Unassigned'}
+                </p>
+                {selectedAttentionItem.parent_name && (
+                  <p className="text-[11px] text-gray-600 mt-1">
+                    <span className="font-semibold text-gray-700">Parent:</span> {selectedAttentionItem.parent_name} ({selectedAttentionItem.parent_phone || 'N/A'})
+                  </p>
+                )}
               </div>
             </div>
-          )}
+
+            {/* Attention Reason Card */}
+            <div 
+              className="p-4 bg-[#FAF6EB] border border-[#E5D5AE]/50 rounded-2xl space-y-3"
+              data-component-version="volunteer-attention-reason-card-v4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-[#9A7326]">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-[#C59B27]" />
+                  <span className="text-xs font-serif font-semibold tracking-wide text-[#9A7326]">
+                    {(() => {
+                      const t = selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || 'Attention Required';
+                      if (t.toLowerCase() === 'missing_pickup_photo' || t.toLowerCase() === 'missing pickup photo') {
+                        return 'Needs Pickup Verification';
+                      } else if (t.toLowerCase() === 'age_review' || t.toLowerCase() === 'age review needed') {
+                        return 'Group Verification Review';
+                      } else if (t.toLowerCase() === 'medical_note' || t.toLowerCase() === 'medical note update') {
+                        return 'Care Alert';
+                      }
+                      return t;
+                    })()}
+                  </span>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  (selectedAttentionItem.priority || '').toLowerCase() === 'high' 
+                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                    : 'bg-[#FAF9F6] text-gray-600 border border-[#EAE8E1]'
+                }`}>
+                  {selectedAttentionItem.priority ? selectedAttentionItem.priority.toUpperCase() : 'NORMAL'}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-800 leading-relaxed font-medium">
+                {(() => {
+                  const d = selectedAttentionItem.description || '';
+                  const t = (selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || '').toLowerCase();
+                  if (t === 'missing_pickup_photo' || t === 'missing pickup photo') {
+                    return 'A pickup person photo has not been added yet. Please verify their physical ID or event pass, then add a brief note about who you confirmed. If you need coordination support, tap Escalate.';
+                  } else if (t === 'age_review' || t === 'age review needed') {
+                    return 'Please confirm the child’s correct group with the parent before proceeding to check-in.';
+                  } else if (t === 'medical_note' || t === 'medical note update' || t === 'medical_alerts' || t === 'care note') {
+                    return 'A supportive care note is active for this child. Please read it to ensure all event-day preferences are handled beautifully.';
+                  }
+                  return d || 'No additional details provided.';
+                })()}
+              </p>
+              {(selectedAttentionItem.type === 'medical_note' || selectedAttentionItem.title === 'Medical note update') && (
+                <div className="text-[11px] text-amber-900 font-medium bg-amber-50 p-2.5 rounded-xl border border-amber-200/40 mt-1 flex items-start gap-1.5">
+                  <span className="shrink-0 mt-0.5 text-[#C59B27]">❤️</span>
+                  <span>Special guidelines are active to support the child's health and comfort. Please follow these guidelines.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Guidance Card */}
+            <div 
+              className="p-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl text-xs text-gray-600 space-y-2"
+              data-component-version="volunteer-attention-guidance-card-v4"
+            >
+              <p className="font-bold text-gray-800 font-serif">What you can do</p>
+              <p className="leading-relaxed">
+                Review this item, add a short event note, or ask a coordinator for help if the details need to be modified.
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-gray-500 text-[11px] pl-1">
+                <li>Verify the physical ID or pass at the desk</li>
+                <li>Add a short note of your findings below</li>
+                <li>Escalate if details need coordinator changes</li>
+              </ul>
+            </div>
+
+            {/* Note Form Section */}
+            <div 
+              className="space-y-2"
+              data-component-version="volunteer-attention-resolution-form-v4"
+            >
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-gray-700 font-serif">
+                  Volunteer note <span className="text-red-500">*</span>
+                </label>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {attentionNote.length}/200
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-normal">
+                Add a short note about what was checked or why this needs support.
+              </p>
+              <textarea
+                rows={3}
+                maxLength={200}
+                value={attentionNote}
+                onChange={(e) => setAttentionNote(e.target.value)}
+                placeholder="Share your assessment, care actions, or pickup verification notes..."
+                className="w-full text-xs p-3 bg-white border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none placeholder-gray-400 font-sans leading-relaxed transition-all shadow-2xs"
+              />
+            </div>
+
+            {/* Actions Row */}
+            <div 
+              className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-[#EAE8E1]/60"
+              data-component-version="volunteer-attention-detail-footer-v4"
+            >
+              <button
+                onClick={() => {
+                  setShowAttentionDetailModal(false);
+                  setSelectedAttentionItem(null);
+                  setAttentionError(null);
+                }}
+                className="order-last sm:order-first px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center"
+              >
+                Cancel
+              </button>
+
+              {/* Escalate button */}
+              <button
+                onClick={() => handleResolveItem('escalate')}
+                disabled={resolvingAttention}
+                className="px-4 py-2.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60 font-bold text-xs rounded-xl transition-all cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center gap-1.5"
+                data-component-version="volunteer-attention-escalate-action-v4"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse text-amber-600" />
+                {resolvingAttention ? 'Saving...' : 'Escalate to admin'}
+              </button>
+
+              {/* Resolve/Review/Verify button */}
+              <button
+                onClick={() => {
+                  if (selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo') {
+                    handleResolveItem('resolve');
+                  } else if (selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review') {
+                    handleResolveItem('verify');
+                  } else {
+                    handleResolveItem('review');
+                  }
+                }}
+                disabled={resolvingAttention}
+                className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-300 text-white font-bold text-xs rounded-xl transition-all cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center shadow-xs"
+                data-component-version={
+                  selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo'
+                    ? 'volunteer-attention-resolve-action-v4'
+                    : selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review'
+                    ? 'volunteer-attention-verify-action-v4'
+                    : 'volunteer-attention-review-action-v4'
+                }
+              >
+                {resolvingAttention ? 'Saving...' : (
+                  selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo' ? 'Resolve item' : 
+                  selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review' ? 'Verify item' : 'Mark reviewed'
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

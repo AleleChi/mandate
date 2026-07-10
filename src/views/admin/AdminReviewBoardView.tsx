@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Users, 
   Search, 
@@ -61,8 +61,12 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   const [bulkActionOpen, setBulkActionOpen] = useState(false);
   const [bulkDecision, setBulkDecision] = useState<'selected' | 'waiting_list' | 'not_selected' | 'under_review'>('selected');
   const [bulkNote, setBulkNote] = useState('');
+  const isFetchingRef = useRef(false);
 
   const fetchApplications = async (silent = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     if (!silent) setLoading(true);
     else setRefreshing(true);
 
@@ -72,11 +76,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
         setApplications(res.applications || []);
       }
     } catch (err: any) {
+      console.error('[AdminReviewBoardView - fetchApplications Error]:', err);
       const parsed = extractApiError(err);
       showError('Fetch Failed', parsed.message || 'Could not load review records.');
     } finally {
       setLoading(false);
       setRefreshing(false);
+      isFetchingRef.current = false;
     }
   };
 

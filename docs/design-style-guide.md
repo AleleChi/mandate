@@ -81,6 +81,8 @@ This is the official Koinonia Children and Teens event access product. It must f
 - Avoid awkward face cropping
 - Use fallback initials where profile images are unavailable
 - Do not show broken images or alt text inside image boxes
+- **Dynamic Hero Covers**: Above-the-fold hero cards on parent and volunteer portals must load with `loading="eager"` and use CORS-safe base prefixes to avoid broken layout shifting.
+- **SafeImage One-Time Fallbacks**: If a custom/uploaded background image fails to load (returning a non-image content-type or 404), components must utilize `SafeImage` with `fallbackSrc` to gracefully switch to the default Koinonia illustrations precisely once. Infinite loading and blank states are strictly forbidden.
 
 ## Motion Rules
 - Motion must be premium and calm
@@ -147,4 +149,34 @@ To ensure the administrative event management pages match Koinonia's premium bra
 - **Two-Column Editorial Flow:** Complex form structures should be divided into a primary form area on the left and a secondary review/context panel on the right (containing live setup checkers, real parent-view rendering, and safety banners) to organize density beautifully.
 - **Table density:** Tables listing age capacity buckets must feature soft borders (`#EAE8E1`) over light, warm backgrounds (`#FAF9F6`), with subtle input indicators and elegant delete triggers.
 - **Checklist indicators:** Progress markers use gold-tinted solid check circles (`text-[#C59B27]`) upon completeness to reinforce a sense of warmth and accomplishment.
+
+
+### Event-Day Attention Resolution Modal Design Guide (v3 Premium)
+- **Visuals**: Displays in a spacious modal (`max-w-lg`) with rounded corners (`rounded-3xl`), styled with an ivory background (`#FAF9F6`), thin gold border accents (`#EAE8E1`), and soft drop shadows. Implements proof attribute `data-view-version="volunteer-attention-detail-v3-premium"`.
+- **Header**: Compact titled "Attention item" with subtitle "Review the child’s event-day note before continuing" (`data-component-version="volunteer-attention-detail-header-v3"`).
+- **Child Summary Layout**: Displays a rectangular portrait photo frame with SafeImage or letter fallback, bold serif headers for child names (`data-component-version="volunteer-attention-child-summary-v3"`). Suffix numbers are stripped securely to display clean human-readable names (`data-component-version="volunteer-attention-safe-child-display-v2"`) and references are separated gracefully into a compact badge (`data-component-version="volunteer-attention-child-reference-v2"`).
+- **Attention Reason Card**: Replaced large warning blocks with a calm, descriptive card displaying icon, status pill, and human-friendly reason texts (`data-component-version="volunteer-attention-reason-card-v3"`).
+- **Guidance Card**: Technical rules text replaced with human, brand-safe directives guiding volunteer operational boundaries (`data-component-version="volunteer-attention-guidance-card-v3"`).
+- **Input Spacing & Form**: Generous text area for volunteer note with strict character limit tracking and calm descriptive guides (`data-component-version="volunteer-attention-resolution-form-v3"`).
+- **Action Buttons**: Features clear hierarchical actions. Cancel is quiet, Escalate to admin is outline amber, and Resolve/Verify/Review are primary gold (`data-component-version="volunteer-attention-detail-footer-v3"`). Calls specific live endpoints securely.
+- **Safe Error Display**: Inline error banners are displayed gracefully upon failure, avoiding technical error logs or raw stack traces (`data-component-version="volunteer-attention-safe-error-v2"`).
+
+
+### Volunteer Mobile App Redesign Guidelines (v9 Handover)
+- **Visual Principles**: A minimalist, clean, mobile-first experience designed specifically for hand-held performance during events.
+- **No Clutter**: Eliminate unrequested widgets, telemetry lists, online status indicators, and system logs.
+- **Concise Header**: Features the Koinonia logo on the left, a concise header (such as `KOINONIA` or `CHECK-IN`), and the volunteer profile avatar on the right.
+- **Real Name Support**: Welcome greeting must support real-name greetings without hardcoded "Volunteer" fallback. If a name exists, display `Good morning, [Name]`. If not, fallback gracefully to `Good morning` or `Good afternoon` (without trailing commas or empty spaces).
+- **SafeImage Stability**: Hero backgrounds and profile avatars use `SafeImage` to load CORS-safe assets and fail gracefully without flickering.
+- **Terminology Enforcement**:
+  - **Do NOT use**: database, system, workflow, logs, registry, directory, portal, Ministry Portal.
+  - **DO use**: event, tools, children, check-in, pickup, attention items, event team.
+- **Proof Attributes**:
+  - Root active view: `data-view-version="volunteer-dashboard-v9-handover-mobile-app"`
+  - Mobile app header: `data-component-version="volunteer-mobile-app-header-v2-handover"`
+  - Header avatar: `data-component-version="volunteer-header-avatar-v3-handover-photo"`
+  - Welcome greeting: `data-component-version="volunteer-dashboard-greeting-v6-handover-real-name"`
+  - Hero card: `data-component-version="volunteer-dashboard-hero-v9-handover-mobile-app"`
+  - Hero image SafeImage: `data-component-version="volunteer-dashboard-hero-image-v5-handover-stable"`
+
 

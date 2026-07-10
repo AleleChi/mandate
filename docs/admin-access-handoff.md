@@ -332,4 +332,65 @@ The **Events** view provides comprehensive administrative management of gatherin
 - **Parent Live Preview Card**: `data-component-version="admin-create-event-parent-preview-v1"`
 
 
+---
 
+## 13. Admin Children Management & Permanent Deletion Architecture
+
+Koinonia's administration interface supports deep children care management alongside gdpr-compliant permanent deletion.
+
+### A. Children & Care Management
+- **Centralized Rows & Row Actions**: From Admin > Children list, actions are exposed to view, edit, update status, and manage passes.
+- **Children List Proof**: `data-component-version="admin-child-list-v3-actions"`
+- **Unified Profile Editor**: Inside the Child Review screen, click "Edit Details" to open a unified form updating child, parent, and pickup records.
+- **Reopen Review & Reopen Modal**: Rollback active decisions to re-evaluate registrations.
+
+### B. Permanent Deletion of Parents and Volunteers
+- **Two-Stage Deletion Guardrail**: Restricts permanent delete to already soft-removed (archived) entries.
+- **Safe Cascade Anonymization**: Replaces email and identity fields with placeholders, disables credentials and sessions, and preserves foreign key reference counts for check-in/pickup history.
+- **Verification Proofs**:
+  - `data-component-version="admin-parent-permanent-delete-action-v1"`
+  - `data-component-version="admin-parent-permanent-delete-modal-v1"`
+  - `data-component-version="admin-volunteer-permanent-delete-action-v1"`
+  - `data-component-version="admin-volunteer-permanent-delete-modal-v1"`
+---
+
+## 14. Admin Settings App Media & Dynamic Resolution Handoff (`#/admin/settings`)
+
+The **App Media** settings tab allows administrators to upload and customize hero and default event images across parent and volunteer views.
+
+### A. Key Attributes & Visual Architecture
+- **App Media Tab Container**: `data-view-version="admin-settings-media-v1"`
+- **Media Slots**: Supports uploading specialized high-resolution images for:
+  - **Parent Hero Image**: Slot `parent_dashboard_hero`
+  - **Volunteer Hero Image**: Slot `volunteer_dashboard_hero`
+  - **Default Event Image**: Slot `default_event_hero`
+- **Interactive Previews**: Displays real-time thumbnail previews of currently saved settings using `SafeImage` with CORS-safe base path prefixing.
+- **Dynamic Previews Proof**: `data-component-version="admin-media-preview-v2-resolved"`
+
+### B. Resolution, Priority, and Storage Handoff
+- **Backend Storage**:
+  - Saved uploads are written to Cloudinary if configured.
+  - Falls back to local disk persistence inside `data/media/events/` when Cloudinary is absent.
+  - Served publicly via the streaming route `GET /api/media/files/:fileId` without authentication headers.
+- **Dashboard Resolution**:
+  - **Parent Dashboard**: Prioritizes `parent_dashboard_hero` -> `default_event_hero` -> fallback `parentHeroImg` asset.
+  - **Volunteer Dashboard**: Prioritizes `volunteer_dashboard_hero` -> `default_event_hero` -> fallback `volunteerHeroImg` asset.
+- **One-Time Fallback System**:
+  - Integrated directly inside `SafeImage` (`data-component-version="safe-image-v5-role-hero-media"`).
+  - If the main uploaded image fails to load (e.g. 404 or bad network), it automatically flips to the fallback image precisely once to avoid endless mounting loops.
+
+
+## 15. Event-Day Attention Oversight and Administration
+
+To support coordinators in monitoring event-day physical checkmarks and escalations:
+
+### A. Central Attention Items View
+- **Description**: Displays all active attention items for children checked-in on event day, tracking missing photos, care notes, and age issues.
+- **Proof Identifier**: `data-component-version="admin-needs-attention-approved-v1"`
+
+### B. Core Data Boundaries
+- **Administrator Privileges**: Only administrators have the authority to edit core child fields, manage registration statuses, or delete profiles. 
+- **Feedback Collection**: When a volunteer resolves, verifies, or escalates an item, coordinators can review the notes, resolving the issue or approving next steps. The volunteer's response note is collected securely and shown clearly in the coordinator console.
+- **Short Reference Display**: To match production UI standards and protect data privacy, volunteers only see a short uppercase reference code (derived from the last 4 characters of the child's ID) and stripped name suffixes instead of raw UUIDs or long numeric names, while administrators retain full file visibility.
+- **Demo Filtering**: The administration panel and volunteer systems have a safeguard (`ENABLE_DEMO_DATA` setting) that filters out "Test Child" entries in production to keep the command center clear of clutter.
+- **Interactive Verification Modal Integration**: On the volunteer dashboard, the interactive sheet utilizes modern, user-friendly forms (`data-view-version="volunteer-attention-detail-v3-premium"`) to allow active check-ins, medical note verification, and escalate requests with pristine, brand-safe wording.

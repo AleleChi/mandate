@@ -19,11 +19,15 @@ import {
   ShieldAlert,
   ChevronRight,
   RefreshCw,
-  Phone
+  Phone,
+  Image,
+  Upload,
+  Trash2
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
 import { AdminLandingView } from './AdminLandingView';
+import { SafeImage } from '../../components/common/SafeImage';
 
 interface AdminSettingsViewProps {
   onBackToOverview?: () => void;
@@ -41,7 +45,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [savingRole, setSavingRole] = useState(false);
   
   // Tab/Active Panel State inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'landing-page'>('parent-access');
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'landing-page' | 'app-media'>('parent-access');
+
+  // Cover Media Settings State
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({
+    parent_dashboard_hero: '',
+    volunteer_dashboard_hero: '',
+    default_event_hero: ''
+  });
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+  const [mediaFeedback, setMediaFeedback] = useState<string>('');
+  const [mediaError, setMediaError] = useState<string>('');
 
   // General Settings State
   const [parentRegistrationEnabled, setParentRegistrationEnabled] = useState(true);
@@ -160,6 +175,79 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       setLoadingTeam(false);
     }
   };
+
+  const loadMediaSettings = async () => {
+    setLoadingMedia(true);
+    setMediaError('');
+    try {
+      const res = await api.admin.getSettingsMedia();
+      if (res.success && res.media) {
+        setMediaUrls({
+          parent_dashboard_hero: res.media.parent_dashboard_hero || '',
+          volunteer_dashboard_hero: res.media.volunteer_dashboard_hero || '',
+          default_event_hero: res.media.default_event_hero || ''
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to load media settings:', err);
+      setMediaError('Failed to retrieve cover image configuration.');
+    } finally {
+      setLoadingMedia(false);
+    }
+  };
+
+  const handleUploadMedia = async (slot: string, file: File) => {
+    setUploadingSlot(slot);
+    setMediaError('');
+    setMediaFeedback('');
+    try {
+      const res = await api.admin.uploadSettingsMedia(slot, file);
+      if (res.success && res.media) {
+        setMediaUrls(prev => ({
+          ...prev,
+          [slot]: res.media.url
+        }));
+        setMediaFeedback('Custom image uploaded and saved successfully.');
+        setTimeout(() => setMediaFeedback(''), 4000);
+      }
+    } catch (err: any) {
+      console.error('Failed to upload settings media:', err);
+      setMediaError('Could not process or upload this image file.');
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  const handleResetMedia = async (slot: string) => {
+    if (!window.confirm('Reset this cover image? This will return it to the default view.')) {
+      return;
+    }
+    setUploadingSlot(slot);
+    setMediaError('');
+    setMediaFeedback('');
+    try {
+      const res = await api.admin.resetSettingsMedia(slot);
+      if (res.success) {
+        setMediaUrls(prev => ({
+          ...prev,
+          [slot]: ''
+        }));
+        setMediaFeedback('Custom image removed successfully.');
+        setTimeout(() => setMediaFeedback(''), 4000);
+      }
+    } catch (err: any) {
+      console.error('Failed to reset settings media:', err);
+      setMediaError('Could not clear this custom image.');
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'app-media') {
+      loadMediaSettings();
+    }
+  }, [activeSubTab]);
 
   useEffect(() => {
     loadSettingsData();
@@ -397,7 +485,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           { id: 'parent-access', label: 'Parent access & details', icon: Users },
           { id: 'team-access', label: 'Event team access', icon: ShieldCheck },
           { id: 'message-channels', label: 'Message channels', icon: MessageSquare },
-          { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon }
+          { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon },
+          { id: 'app-media', label: 'App media', icon: Image }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -431,7 +520,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* MAIN SETTINGS LEFT COLUMN (7 or 12 columns depending on selection) */}
-          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
+          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
             
             {/* SUB-TAB 1: PARENT ACCESS */}
             {activeSubTab === 'parent-access' && (
@@ -1072,10 +1161,248 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               <AdminLandingView isSuperAdmin={isSuperAdmin} />
             )}
 
+            {/* SUB-TAB 5: APP MEDIA */}
+            {activeSubTab === 'app-media' && (
+              <div 
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6"
+                data-view-version="admin-settings-media-v1"
+              >
+                <div className="border-b border-[#EAE8E1] pb-4 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                      <Image className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif font-medium text-[#18181B] text-base">App media</h3>
+                      <p className="text-xs text-zinc-500 mt-1">Manage coverages and high-resolution images across parent and volunteer views.</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="secondary" 
+                    size="sm" 
+                    onClick={loadMediaSettings}
+                    disabled={loadingMedia}
+                    className="text-xs flex items-center space-x-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingMedia ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </Button>
+                </div>
+
+                {mediaFeedback && (
+                  <div 
+                    data-feedback="media-saved-success"
+                    className="bg-emerald-50 text-emerald-800 text-xs p-3 rounded-xl border border-emerald-100 font-medium flex items-center space-x-2"
+                  >
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>{mediaFeedback}</span>
+                  </div>
+                )}
+
+                {mediaError && (
+                  <div className="bg-red-50 text-red-800 text-xs p-3 rounded-xl border border-red-100 font-medium flex items-center space-x-2">
+                    <X className="w-4 h-4 text-red-600" />
+                    <span>{mediaError}</span>
+                  </div>
+                )}
+
+                <div 
+                  className="grid grid-cols-1 md:grid-cols-3 gap-6"
+                  data-component-version="admin-media-preview-v2-resolved"
+                >
+                  {/* Parent Dashboard Hero Card */}
+                  <div 
+                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    data-slot-key="parent_dashboard_hero"
+                    data-component-version="admin-media-parent-hero-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
+                      <h4 className="text-xs font-semibold text-[#18181B]">Parent Hero Image</h4>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Shown on parent home screen.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-100 flex items-center justify-center border-b border-[#EAE8E1]">
+                      {mediaUrls.parent_dashboard_hero ? (
+                        <SafeImage 
+                          src={mediaUrls.parent_dashboard_hero} 
+                          alt="Parent Hero" 
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 mb-2" />
+                          <span className="text-[11px] font-medium">Default Illustration</span>
+                        </div>
+                      )}
+                      {uploadingSlot === 'parent_dashboard_hero' && (
+                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-parent-hero"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('parent_dashboard_hero', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-parent-hero"
+                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.parent_dashboard_hero && (
+                        <button
+                          onClick={() => handleResetMedia('parent_dashboard_hero')}
+                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Volunteer Dashboard Hero Card */}
+                  <div 
+                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    data-slot-key="volunteer_dashboard_hero"
+                    data-component-version="admin-media-volunteer-hero-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
+                      <h4 className="text-xs font-semibold text-[#18181B]">Volunteer Hero Image</h4>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Shown on volunteer dashboard screen.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-100 flex items-center justify-center border-b border-[#EAE8E1]">
+                      {mediaUrls.volunteer_dashboard_hero ? (
+                        <SafeImage 
+                          src={mediaUrls.volunteer_dashboard_hero} 
+                          alt="Volunteer Hero" 
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 mb-2" />
+                          <span className="text-[11px] font-medium">Default Illustration</span>
+                        </div>
+                      )}
+                      {uploadingSlot === 'volunteer_dashboard_hero' && (
+                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-volunteer-hero"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('volunteer_dashboard_hero', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-volunteer-hero"
+                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.volunteer_dashboard_hero && (
+                        <button
+                          onClick={() => handleResetMedia('volunteer_dashboard_hero')}
+                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Default Event Cover Card */}
+                  <div 
+                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    data-slot-key="default_event_hero"
+                    data-component-version="admin-media-default-event-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
+                      <h4 className="text-xs font-semibold text-[#18181B]">Default Event Cover</h4>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Used as backup for events.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-100 flex items-center justify-center border-b border-[#EAE8E1]">
+                      {mediaUrls.default_event_hero ? (
+                        <SafeImage 
+                          src={mediaUrls.default_event_hero} 
+                          alt="Default Event Cover" 
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 mb-2" />
+                          <span className="text-[11px] font-medium">Default Cover Image</span>
+                        </div>
+                      )}
+                      {uploadingSlot === 'default_event_hero' && (
+                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-event-cover"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('default_event_hero', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-event-cover"
+                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.default_event_hero && (
+                        <button
+                          onClick={() => handleResetMedia('default_event_hero')}
+                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* MAIN SETTINGS RIGHT COLUMN: PROFILE SECURITY CARD (Only visible for Parent Access and Message Channels) */}
-          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && (
+          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && (
             <div className="lg:col-span-5 space-y-6">
               
               {/* Profile Security Update Password */}

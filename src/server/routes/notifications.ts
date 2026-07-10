@@ -631,4 +631,116 @@ router.post('/admin/notifications/test', async (req: AuthenticatedRequest, res: 
   }
 });
 
+// GET /api/notifications/preferences
+router.get('/preferences', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pref = await queryOne('SELECT * FROM notification_preferences WHERE user_id = ?', [userId]);
+    if (!pref) {
+      return res.json({
+        soundEnabled: true,
+        pushEnabled: false,
+        emailEnabled: true
+      });
+    }
+
+    return res.json({
+      soundEnabled: pref.sound_enabled === 1,
+      pushEnabled: pref.push_enabled === 1,
+      emailEnabled: pref.email_enabled === 1
+    });
+  } catch (err: any) {
+    console.error('Error fetching notification preferences:', err);
+    return res.status(500).json({ error: 'Failed to fetch preferences' });
+  }
+});
+
+// PATCH /api/notifications/preferences
+router.patch('/preferences', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { soundEnabled, pushEnabled, emailEnabled } = req.body;
+    const now = new Date().toISOString();
+
+    const existing = await queryOne('SELECT user_id FROM notification_preferences WHERE user_id = ?', [userId]);
+
+    if (existing) {
+      const updates: string[] = [];
+      const params: any[] = [];
+
+      if (soundEnabled !== undefined) {
+        updates.push('sound_enabled = ?');
+        params.push(soundEnabled ? 1 : 0);
+      }
+      if (pushEnabled !== undefined) {
+        updates.push('push_enabled = ?');
+        params.push(pushEnabled ? 1 : 0);
+      }
+      if (emailEnabled !== undefined) {
+        updates.push('email_enabled = ?');
+        params.push(emailEnabled ? 1 : 0);
+      }
+
+      if (updates.length > 0) {
+        updates.push('updated_at = ?');
+        params.push(now);
+        params.push(userId);
+
+        await execute(`
+          UPDATE notification_preferences
+          SET ${updates.join(', ')}
+          WHERE user_id = ?
+        `, params);
+      }
+    } else {
+      const se = soundEnabled !== undefined ? (soundEnabled ? 1 : 0) : 1;
+      const pe = pushEnabled !== undefined ? (pushEnabled ? 1 : 0) : 0;
+      const ee = emailEnabled !== undefined ? (emailEnabled ? 1 : 0) : 1;
+      const role = req.user?.role || 'parent';
+
+      await execute(`
+        INSERT INTO notification_preferences (user_id, role, sound_enabled, push_enabled, email_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [userId, role, se, pe, ee, now, now]);
+    }
+
+    const updated = await queryOne('SELECT * FROM notification_preferences WHERE user_id = ?', [userId]);
+    return res.json({
+      soundEnabled: updated.sound_enabled === 1,
+      pushEnabled: updated.push_enabled === 1,
+      emailEnabled: updated.email_enabled === 1
+    });
+  } catch (err: any) {
+    console.error('Error updating notification preferences:', err);
+    return res.status(500).json({ error: 'Failed to update preferences' });
+  }
+});
+
+// POST /api/notifications/push/unsubscribe
+router.post('/push/unsubscribe', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { endpoint } = req.body;
+    if (!endpoint) {
+      return res.status(400).json({ error: 'Endpoint is required' });
+    }
+    await execute('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?', [userId, endpoint]);
+    return res.json({ success: true, message: 'Push subscription removed successfully' });
+  } catch (err: any) {
+    console.error('Error unsubscribing from push:', err);
+    return res.status(500).json({ error: 'Failed to unsubscribe' });
+  }
+});
+
 export default router;

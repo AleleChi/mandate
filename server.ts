@@ -104,6 +104,35 @@ async function startServer() {
   app.use('/api/webhooks', webhooksRoutes);
   app.use('/api/volunteer', volunteerRoutes);
 
+  // GET public app media
+  app.get('/api/public/app-media', async (req, res) => {
+    try {
+      const { query } = getDb();
+      const rows = await query('SELECT slot, url, thumbnail_url FROM app_media_settings');
+      const mediaMap: Record<string, any> = {
+        parentDashboardHero: { url: null, thumbnailUrl: null },
+        volunteerDashboardHero: { url: null, thumbnailUrl: null },
+        defaultEventHero: { url: null, thumbnailUrl: null }
+      };
+      for (const row of rows) {
+        if (row.slot === 'parent_dashboard_hero') {
+          mediaMap.parentDashboardHero = { url: row.url || null, thumbnailUrl: row.thumbnail_url || null };
+        } else if (row.slot === 'volunteer_dashboard_hero') {
+          mediaMap.volunteerDashboardHero = { url: row.url || null, thumbnailUrl: row.thumbnail_url || null };
+        } else if (row.slot === 'default_event_hero') {
+          mediaMap.defaultEventHero = { url: row.url || null, thumbnailUrl: row.thumbnail_url || null };
+        }
+      }
+      res.json({
+        success: true,
+        media: mediaMap
+      });
+    } catch (err) {
+      console.error('Error fetching public app media:', err);
+      res.status(500).json({ success: false, error: 'Failed to fetch app media settings' });
+    }
+  });
+
   // Dev seed endpoint (Development only or seed helper)
   app.post('/api/dev/seed', async (req, res) => {
     if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEV_SEED !== 'true') {

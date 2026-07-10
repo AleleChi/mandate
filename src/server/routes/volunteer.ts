@@ -11,36 +11,38 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 async function getEventStats() {
-  const expectedQuery = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE status IN ('pass_ready', 'checked_in', 'inside', 'picked_up')");
-  const checkedInQuery = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE status IN ('checked_in', 'inside')");
-  const pickedUpQuery = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE status IN ('picked_up', 'checked_out')");
-  
-  // Calculate attention
-  const missingPhotos = await query(`
-    SELECT COUNT(*) as count FROM child_event_entries
-    JOIN children ON child_event_entries.child_id = children.id
-    JOIN pickup_people ON pickup_people.child_event_entry_id = child_event_entries.id
-    WHERE child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
-      AND (pickup_people.photo_file_id IS NULL OR pickup_people.photo_file_id = '')
+  const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
+  const demoFilter = !enableDemoData ? "AND child_id NOT IN (SELECT id FROM children WHERE full_name LIKE 'Test %')" : "";
+
+  const expectedQuery = await queryOne(`
+    SELECT COUNT(*) as count FROM child_event_entries 
+    WHERE status IN ('pass_ready', 'checked_in', 'inside', 'picked_up')
+    ${demoFilter}
   `);
-  const medicalReviews = await query(`
-    SELECT COUNT(*) as count FROM child_event_entries
-    WHERE child_event_entries.status IN ('under_review', 'pass_ready')
-      AND child_event_entries.has_medical_notes = 1
-      AND child_event_entries.medical_notes IS NOT NULL
-      AND child_event_entries.medical_notes != ''
+  const checkedInQuery = await queryOne(`
+    SELECT COUNT(*) as count FROM child_event_entries 
+    WHERE status IN ('checked_in', 'inside')
+    ${demoFilter}
   `);
-  const ageReviews = await query(`
-    SELECT COUNT(*) as count FROM children WHERE needs_age_review = 1
+  const pickedUpQuery = await queryOne(`
+    SELECT COUNT(*) as count FROM child_event_entries 
+    WHERE status IN ('picked_up', 'checked_out')
+    ${demoFilter}
   `);
   
-  const attentionCount = (missingPhotos[0]?.count || 0) + (medicalReviews[0]?.count || 0) + (ageReviews[0]?.count || 0);
+  // Calculate active attention items
+  const attentionQuery = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM child_attention_items 
+    WHERE status IN ('open', 'in_review', 'escalated') AND event_id = ?
+    ${demoFilter}
+  `, [REAL_EVENT_ID]);
 
   return {
     expected: expectedQuery ? expectedQuery.count : 0,
     checkedIn: checkedInQuery ? checkedInQuery.count : 0,
     pickedUp: pickedUpQuery ? pickedUpQuery.count : 0,
-    attention: attentionCount || 0
+    attention: attentionQuery ? attentionQuery.count : 0
   };
 }
 
@@ -1073,7 +1075,9 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       preferredTeam: profile.preferred_team,
       assignedTeam,
       assignedArea,
-      accessScope
+      accessScope,
+      full_name: profile.full_name || 'Volunteer',
+      photoUrl: photoUrl
     };
 
     if (!hasAccess) {
@@ -1696,74 +1700,48 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
       return res.status(404).json({ error: 'Active event not found' });
     }
 
-    // Expected count
-    const expectedQuery = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE status IN ('pass_ready', 'checked_in', 'inside', 'picked_up')");
-    const expected = expectedQuery ? expectedQuery.count : 0;
+    await syncAttentionItems(REAL_EVENT_ID);
 
-    // Checked in count
-    const checkedInQuery = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE status IN ('checked_in', 'inside')");
-    const checkedIn = checkedInQuery ? checkedInQuery.count : 0;
+    const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
+    const demoFilter = !enableDemoData ? "AND c.full_name NOT LIKE 'Test %'" : "";
 
-    // Picked up count
-    const pickedUpQuery = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE status IN ('picked_up', 'checked_out')");
-    const pickedUp = pickedUpQuery ? pickedUpQuery.count : 0;
-
-    // Attention items SQL queries
-    // Issue A: Missing pickup photo (for active passes or check-ins)
-    const missingPhotos = await query(`
-      SELECT 'missing_photo_' || child_event_entries.id as id,
-             'Missing pickup photo' as issue_type,
-             children.full_name as child_name,
-             children.id as child_id,
-             'RESOLVE' as action_text
-      FROM child_event_entries
-      JOIN children ON child_event_entries.child_id = children.id
-      JOIN pickup_people ON pickup_people.child_event_entry_id = child_event_entries.id
-      WHERE child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
-        AND (pickup_people.photo_file_id IS NULL OR pickup_people.photo_file_id = '')
+    const dbAttentionItems = await query(`
+      SELECT cai.*, 
+             c.full_name as child_name, 
+             c.photo_file_id as child_photo_file_id, 
+             c.calculated_age as child_age, 
+             c.age_group as child_age_group
+      FROM child_attention_items cai
+      JOIN children c ON cai.child_id = c.id
+      WHERE cai.event_id = ? AND cai.status IN ('open', 'in_review', 'escalated')
+      ${demoFilter}
+      ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
       LIMIT 10
-    `);
+    `, [REAL_EVENT_ID]);
 
-    // Issue B: Medical note review
-    const medicalReviews = await query(`
-      SELECT 'medical_' || child_event_entries.id as id,
-             'Medical note update' as issue_type,
-             children.full_name as child_name,
-             children.id as child_id,
-             'REVIEW' as action_text
-      FROM child_event_entries
-      JOIN children ON child_event_entries.child_id = children.id
-      WHERE child_event_entries.status IN ('under_review', 'pass_ready')
-        AND child_event_entries.has_medical_notes = 1
-        AND child_event_entries.medical_notes IS NOT NULL
-        AND child_event_entries.medical_notes != ''
-      LIMIT 10
-    `);
+    const attentionItems = dbAttentionItems.map((item: any) => {
+      let actionText = 'REVIEW';
+      if (item.type === 'missing_pickup_photo' || item.type === 'missing_child_photo') {
+        actionText = 'RESOLVE';
+      } else if (item.type === 'age_review') {
+        actionText = 'VERIFY';
+      }
+      
+      return {
+        id: item.id,
+        issue_type: item.title,
+        child_name: item.child_name,
+        child_id: item.child_id,
+        action_text: actionText,
+        ...item
+      };
+    });
 
-    // Issue C: Age review required
-    const ageReviews = await query(`
-      SELECT 'age_review_' || children.id as id,
-             'Age review required' as issue_type,
-             children.full_name as child_name,
-             children.id as child_id,
-             'VERIFY' as action_text
-      FROM child_event_entries
-      JOIN children ON child_event_entries.child_id = children.id
-      WHERE children.needs_age_review = 1
-      LIMIT 10
-    `);
-
-    const attentionItems = [...missingPhotos, ...medicalReviews, ...ageReviews];
-    const attentionCount = attentionItems.length;
+    const stats = await getEventStats();
 
     res.json({
       event,
-      stats: {
-        expected: expected || 0,
-        checkedIn: checkedIn || 0,
-        pickedUp: pickedUp || 0,
-        attention: attentionCount || 0
-      },
+      stats,
       attentionItems: attentionItems
     });
   } catch (err) {
@@ -2472,6 +2450,41 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       WHERE id = ?
     `, [now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
 
+    // Create real-time notification in parent_notifications
+    const parentNotificationId = crypto.randomUUID();
+    const childFirstName = child.full_name ? child.full_name.split(' ')[0] : 'Your child';
+    await execute(`
+      INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      parentNotificationId,
+      child.parent_profile_id,
+      REAL_EVENT_ID,
+      child.id,
+      'Picked up',
+      `${childFirstName} has been picked up by an approved pickup person.`,
+      now
+    ]);
+
+    // Create system-wide notifications
+    const systemNotificationId = crypto.randomUUID();
+    await execute(`
+      INSERT INTO notifications (id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      systemNotificationId,
+      'Child Picked Up',
+      `${child.full_name} has been successfully released to an approved pickup person.`,
+      'pickup',
+      'parent',
+      'specific',
+      REAL_EVENT_ID,
+      child.id,
+      child.parent_profile_id,
+      req.user.id,
+      now
+    ]);
+
     const stats = await getEventStats();
     const lastPickedUpVal = await getLastPickedUp();
 
@@ -2780,6 +2793,41 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       SET status = 'picked_up', picked_up_at = ?, picked_up_by = ?, pickup_person_id = ?, updated_at = ?
       WHERE id = ?
     `, [now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
+
+    // Create real-time notification in parent_notifications
+    const parentNotificationId = crypto.randomUUID();
+    const childFirstName = child.full_name ? child.full_name.split(' ')[0] : 'Your child';
+    await execute(`
+      INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      parentNotificationId,
+      child.parent_profile_id,
+      REAL_EVENT_ID,
+      child.id,
+      'Picked up',
+      `${childFirstName} has been picked up by an approved pickup person.`,
+      now
+    ]);
+
+    // Create system-wide notifications
+    const systemNotificationId = crypto.randomUUID();
+    await execute(`
+      INSERT INTO notifications (id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      systemNotificationId,
+      'Child Picked Up',
+      `${child.full_name} has been successfully released to an approved pickup person.`,
+      'pickup',
+      'parent',
+      'specific',
+      REAL_EVENT_ID,
+      child.id,
+      child.parent_profile_id,
+      req.user.id,
+      now
+    ]);
 
     const stats = await getEventStats();
     const lastPickedUpVal = await getLastPickedUp();
@@ -3474,6 +3522,469 @@ router.post('/reports/submit', authMiddleware, async (req: AuthenticatedRequest,
   } catch (err) {
     console.error('Submit report error:', err);
     res.status(500).json({ error: 'Internal server error submitting report' });
+  }
+});
+
+// Helper function to sync active attention items
+async function syncAttentionItems(eventId: string) {
+  try {
+    const now = new Date().toISOString();
+    const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
+    const demoFilter = !enableDemoData ? "AND children.full_name NOT LIKE 'Test %'" : "";
+
+    // 1. Missing pickup photos
+    const missingPhotos = await query(`
+      SELECT child_event_entries.id as entry_id,
+             children.id as child_id,
+             children.full_name as child_name,
+             pickup_people.full_name as pickup_name
+      FROM child_event_entries
+      JOIN children ON child_event_entries.child_id = children.id
+      JOIN pickup_people ON pickup_people.child_event_entry_id = child_event_entries.id
+      WHERE child_event_entries.event_id = ?
+        AND child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
+        AND (pickup_people.photo_file_id IS NULL OR pickup_people.photo_file_id = '')
+        ${demoFilter}
+    `, [eventId]);
+
+    for (const row of missingPhotos) {
+      const id = `missing_photo_${row.child_id}_${eventId}`;
+      const existing = await queryOne('SELECT id FROM child_attention_items WHERE child_id = ? AND event_id = ? AND type = ?', [row.child_id, eventId, 'missing_pickup_photo']);
+      if (!existing) {
+        await execute(`
+          INSERT INTO child_attention_items (
+            id, child_id, event_id, type, title, description, status, priority, source, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          row.child_id,
+          eventId,
+          'missing_pickup_photo',
+          'Missing pickup photo',
+          `Designated pickup person (${row.pickup_name}) photo is missing.`,
+          'open',
+          'high',
+          'system',
+          now,
+          now
+        ]);
+      }
+    }
+
+    // 2. Medical notes
+    const medicalNotes = await query(`
+      SELECT child_event_entries.id as entry_id,
+             children.id as child_id,
+             children.full_name as child_name,
+             child_event_entries.medical_notes
+      FROM child_event_entries
+      JOIN children ON child_event_entries.child_id = children.id
+      WHERE child_event_entries.event_id = ?
+        AND child_event_entries.status IN ('under_review', 'pass_ready', 'checked_in', 'inside')
+        AND child_event_entries.has_medical_notes = 1
+        AND child_event_entries.medical_notes IS NOT NULL
+        AND child_event_entries.medical_notes != ''
+        ${demoFilter}
+    `, [eventId]);
+
+    for (const row of medicalNotes) {
+      const id = `medical_${row.child_id}_${eventId}`;
+      const existing = await queryOne('SELECT id FROM child_attention_items WHERE child_id = ? AND event_id = ? AND type = ?', [row.child_id, eventId, 'medical_note']);
+      if (!existing) {
+        await execute(`
+          INSERT INTO child_attention_items (
+            id, child_id, event_id, type, title, description, status, priority, source, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          row.child_id,
+          eventId,
+          'medical_note',
+          'Medical note update',
+          row.medical_notes,
+          'open',
+          'high',
+          'system',
+          now,
+          now
+        ]);
+      }
+    }
+
+    // 3. Age reviews
+    const ageReviews = await query(`
+      SELECT child_event_entries.id as entry_id,
+             children.id as child_id,
+             children.full_name as child_name,
+             children.calculated_age
+      FROM child_event_entries
+      JOIN children ON child_event_entries.child_id = children.id
+      WHERE child_event_entries.event_id = ?
+        AND children.needs_age_review = 1
+        ${demoFilter}
+    `, [eventId]);
+
+    for (const row of ageReviews) {
+      const id = `age_review_${row.child_id}_${eventId}`;
+      const existing = await queryOne('SELECT id FROM child_attention_items WHERE child_id = ? AND event_id = ? AND type = ?', [row.child_id, eventId, 'age_review']);
+      if (!existing) {
+        await execute(`
+          INSERT INTO child_attention_items (
+            id, child_id, event_id, type, title, description, status, priority, source, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          row.child_id,
+          eventId,
+          'age_review',
+          'Age review required',
+          `Child is ${row.calculated_age} years old and requires age group verification.`,
+          'open',
+          'normal',
+          'system',
+          now,
+          now
+        ]);
+      }
+    }
+
+    // 4. Missing child photos
+    const missingChildPhotos = await query(`
+      SELECT child_event_entries.id as entry_id,
+             children.id as child_id,
+             children.full_name as child_name
+      FROM child_event_entries
+      JOIN children ON child_event_entries.child_id = children.id
+      WHERE child_event_entries.event_id = ?
+        AND child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
+        AND (children.photo_file_id IS NULL OR children.photo_file_id = '')
+        ${demoFilter}
+    `, [eventId]);
+
+    for (const row of missingChildPhotos) {
+      const id = `missing_child_photo_${row.child_id}_${eventId}`;
+      const existing = await queryOne('SELECT id FROM child_attention_items WHERE child_id = ? AND event_id = ? AND type = ?', [row.child_id, eventId, 'missing_child_photo']);
+      if (!existing) {
+        await execute(`
+          INSERT INTO child_attention_items (
+            id, child_id, event_id, type, title, description, status, priority, source, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          row.child_id,
+          eventId,
+          'missing_child_photo',
+          'Missing child photo',
+          'Child profile photo is required for security.',
+          'open',
+          'normal',
+          'system',
+          now,
+          now
+        ]);
+      }
+    }
+
+    // Auto-resolve missing child photo if child now has a photo
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved', resolved_at = ?, resolution_note = 'Auto-resolved: photo uploaded'
+      WHERE type = 'missing_child_photo'
+        AND status = 'open'
+        AND event_id = ?
+        AND child_id IN (SELECT id FROM children WHERE photo_file_id IS NOT NULL AND photo_file_id != '')
+    `, [now, eventId]);
+
+    // Auto-resolve age review if age review flag is now cleared
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved', resolved_at = ?, resolution_note = 'Auto-resolved: age verified'
+      WHERE type = 'age_review'
+        AND status = 'open'
+        AND event_id = ?
+        AND child_id IN (SELECT id FROM children WHERE needs_age_review = 0)
+    `, [now, eventId]);
+
+    // Auto-resolve missing pickup photo if all pickup people now have photos
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved', resolved_at = ?, resolution_note = 'Auto-resolved: pickup photos uploaded'
+      WHERE type = 'missing_pickup_photo'
+        AND status = 'open'
+        AND event_id = ?
+        AND child_id NOT IN (
+          SELECT child_id FROM child_event_entries
+          JOIN pickup_people ON pickup_people.child_event_entry_id = child_event_entries.id
+          WHERE child_event_entries.event_id = ?
+            AND (pickup_people.photo_file_id IS NULL OR pickup_people.photo_file_id = '')
+        )
+    `, [now, eventId, eventId]);
+
+  } catch (err) {
+    console.error('[attention] Error syncing attention items:', err);
+  }
+}
+
+// GET /api/volunteer/attention-items
+router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+    if (req.volunteerProfile && req.volunteerProfile.status === 'pending_review') {
+      return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
+    }
+
+    await syncAttentionItems(REAL_EVENT_ID);
+
+    const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
+    const demoFilter = !enableDemoData ? "AND c.full_name NOT LIKE 'Test %'" : "";
+
+    const items = await query(`
+      SELECT cai.*, 
+             c.full_name as child_name, 
+             c.photo_file_id as child_photo_file_id, 
+             c.calculated_age as child_age, 
+             c.age_group as child_age_group,
+             parent.full_name as parent_name,
+             parent.phone_number as parent_phone
+      FROM child_attention_items cai
+      JOIN children c ON cai.child_id = c.id
+      LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
+      WHERE cai.event_id = ? AND cai.status IN ('open', 'in_review', 'escalated')
+      ${demoFilter}
+      ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
+    `, [REAL_EVENT_ID]);
+
+    res.json(items);
+  } catch (err) {
+    console.error('Get attention items error:', err);
+    res.status(500).json({ error: 'Internal server error fetching attention items' });
+  }
+});
+
+// GET /api/volunteer/attention-items/:itemId
+router.get('/attention-items/:itemId', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+    const { itemId } = req.params;
+
+    const item = await queryOne(`
+      SELECT cai.*, 
+             c.full_name as child_name, 
+             c.photo_file_id as child_photo_file_id, 
+             c.calculated_age as child_age, 
+             c.age_group as child_age_group,
+             parent.full_name as parent_name,
+             parent.phone_number as parent_phone
+      FROM child_attention_items cai
+      JOIN children c ON cai.child_id = c.id
+      LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
+      WHERE cai.id = ? AND cai.event_id = ?
+    `, [itemId, REAL_EVENT_ID]);
+
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    res.json(item);
+  } catch (err) {
+    console.error('Get single attention item error:', err);
+    res.status(500).json({ error: 'Internal server error fetching attention item' });
+  }
+});
+
+// POST /api/volunteer/attention-items/:itemId/review
+router.post('/attention-items/:itemId/review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+    const { itemId } = req.params;
+    const { note } = req.body;
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'A review note is required' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.volunteerProfile.id, now, note.trim(), now, itemId]);
+
+    const stats = await getEventStats();
+    res.json({ success: true, message: 'Item reviewed and acknowledged.', stats });
+  } catch (err) {
+    console.error('Review attention item error:', err);
+    res.status(500).json({ error: 'Internal server error reviewing attention item' });
+  }
+});
+
+// POST /api/volunteer/attention-items/:itemId/resolve
+router.post('/attention-items/:itemId/resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+    const { itemId } = req.params;
+    const { note } = req.body;
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'A resolution note is required' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.volunteerProfile.id, now, note.trim(), now, itemId]);
+
+    const stats = await getEventStats();
+    res.json({ success: true, message: 'Item resolved successfully.', stats });
+  } catch (err) {
+    console.error('Resolve attention item error:', err);
+    res.status(500).json({ error: 'Internal server error resolving attention item' });
+  }
+});
+
+// POST /api/volunteer/attention-items/:itemId/verify
+router.post('/attention-items/:itemId/verify', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+    const { itemId } = req.params;
+    const { note } = req.body;
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'A verification note is required' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.volunteerProfile.id, now, note.trim(), now, itemId]);
+
+    // Also clear needs_age_review flag on child if this is an age review
+    if (item.type === 'age_review') {
+      await execute('UPDATE children SET needs_age_review = 0 WHERE id = ?', [item.child_id]);
+    }
+
+    const stats = await getEventStats();
+    res.json({ success: true, message: 'Item verified successfully.', stats });
+  } catch (err) {
+    console.error('Verify attention item error:', err);
+    res.status(500).json({ error: 'Internal server error verifying attention item' });
+  }
+});
+
+// POST /api/volunteer/attention-items/:itemId/escalate
+router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+    const { itemId } = req.params;
+    const { note } = req.body;
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'An escalation note/reason is required' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [item.child_id]);
+    if (!child) {
+      return res.status(404).json({ error: 'Associated child not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'escalated',
+          escalated_to_admin = 1,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [note.trim(), now, itemId]);
+
+    // Create system-wide admin notification
+    const volName = req.volunteerProfile?.full_name || 'A volunteer';
+    const volFirstName = volName.replace(/\s*\d+$/, '').trim().split(' ')[0] || 'A volunteer';
+    const childName = child?.full_name || '';
+    const childCleanName = childName ? childName.replace(/\s*\d+$/, '').trim() : '';
+    const childFirstName = childCleanName ? childCleanName.split(' ')[0] : '';
+    const notificationMessage = childFirstName 
+      ? `${volFirstName} escalated an item for ${childFirstName}.`
+      : 'A volunteer escalated an attention item.';
+
+    const metadataJson = JSON.stringify({
+      childId: child.id,
+      itemId: itemId,
+      type: 'escalation'
+    });
+
+    const notificationId = crypto.randomUUID();
+    await execute(`
+      INSERT INTO notifications (id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      notificationId,
+      'Attention item escalated',
+      notificationMessage,
+      'escalation',
+      'admin',
+      'all',
+      REAL_EVENT_ID,
+      child.id,
+      child.parent_profile_id,
+      req.user.id,
+      now,
+      metadataJson
+    ]);
+
+    const stats = await getEventStats();
+    res.json({ success: true, message: 'Item escalated to admin/care lead.', stats });
+  } catch (err) {
+    console.error('Escalate attention item error:', err);
+    res.status(500).json({ error: 'Internal server error escalating attention item' });
   }
 });
 

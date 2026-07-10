@@ -114,6 +114,24 @@ export const LANDING_SLOTS: Record<string, SlotSpecification> = {
     fit: 'cover',
     format: 'webp',
   },
+  parent_dashboard_hero: {
+    width: 1600,
+    height: 1200,
+    fit: 'inside',
+    format: 'webp',
+  },
+  volunteer_dashboard_hero: {
+    width: 1600,
+    height: 1200,
+    fit: 'inside',
+    format: 'webp',
+  },
+  default_event_hero: {
+    width: 1600,
+    height: 1200,
+    fit: 'inside',
+    format: 'webp',
+  },
 };
 
 export interface ProcessedImageResult {

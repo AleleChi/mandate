@@ -56,6 +56,41 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
 
+  // Edit child details modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    gender: 'Male',
+    dateOfBirth: '',
+    schoolClass: '',
+    schoolName: '',
+    hasMedicalNotes: false,
+    medicalNotes: '',
+    needsExtraSupport: false,
+    supportNotes: '',
+    parentFullName: '',
+    parentPhone: '',
+    parentWhatsApp: '',
+    parentHomeAddress: '',
+    pickupPersonName: '',
+    pickupPersonRelationship: '',
+    pickupPersonPhone: ''
+  });
+
+  // Remove child state
+  const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
+  const [removeReason, setRemoveReason] = useState('');
+  const [removing, setRemoving] = useState(false);
+
+  // Restore child state
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  // Revoke pass state
+  const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [revoking, setRevoking] = useState(false);
+
   const fetchDetails = async () => {
     setLoading(true);
     try {
@@ -66,6 +101,30 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         
         // Set ageChecked default to true if the child doesn't need age review
         setAgeChecked(!res.application.child.needsAgeReview);
+
+        const firstPickup = res.application.pickupPeople && res.application.pickupPeople.length > 0 
+          ? res.application.pickupPeople[0] 
+          : null;
+
+        // Populate edit form
+        setEditForm({
+          fullName: res.application.child.fullName || '',
+          gender: res.application.child.gender || 'Male',
+          dateOfBirth: res.application.child.dob || '',
+          schoolClass: res.application.schoolClass || '',
+          schoolName: res.application.schoolName || '',
+          hasMedicalNotes: !!res.application.hasMedicalNotes,
+          medicalNotes: res.application.medicalNotes || '',
+          needsExtraSupport: !!res.application.needsExtraSupport,
+          supportNotes: res.application.supportNotes || '',
+          parentFullName: res.application.parent?.fullName || '',
+          parentPhone: res.application.parent?.phone || '',
+          parentWhatsApp: res.application.parent?.whatsapp || '',
+          parentHomeAddress: res.application.parent?.address || '',
+          pickupPersonName: firstPickup?.fullName || '',
+          pickupPersonRelationship: firstPickup?.relationship || '',
+          pickupPersonPhone: firstPickup?.phone || ''
+        });
         
         // Set initial decision based on current status
         const currentStatus = res.application.status;
@@ -125,6 +184,101 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
       showError('Submission Failed', parsed.message || 'Could not commit administrative decision.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await api.admin.updateApplicationDetails(applicationId, {
+        fullName: editForm.fullName,
+        gender: editForm.gender,
+        dateOfBirth: editForm.dateOfBirth,
+        schoolClass: editForm.schoolClass,
+        schoolName: editForm.schoolName,
+        hasMedicalNotes: editForm.hasMedicalNotes,
+        medicalNotes: editForm.medicalNotes,
+        needsExtraSupport: editForm.needsExtraSupport,
+        supportNotes: editForm.supportNotes,
+        parentFullName: editForm.parentFullName,
+        parentPhone: editForm.parentPhone,
+        parentWhatsApp: editForm.parentWhatsApp,
+        parentHomeAddress: editForm.parentHomeAddress,
+        pickupPersonName: editForm.pickupPersonName,
+        pickupPersonRelationship: editForm.pickupPersonRelationship,
+        pickupPersonPhone: editForm.pickupPersonPhone
+      });
+
+      if (res.success) {
+        showSuccess('Details Saved', 'Child details updated successfully.');
+        setIsEditModalOpen(false);
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Save Failed', parsed.message || 'Could not update child details.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!removeReason.trim()) return;
+    setRemoving(true);
+    try {
+      const res = await api.admin.removeChild(applicationId, removeReason);
+      if (res.success) {
+        showSuccess('Child Removed', 'Child registration has been soft-deleted.');
+        setIsRemoveModalOpen(false);
+        setRemoveReason('');
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Removal Failed', parsed.message || 'Could not remove child registration.');
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const handleConfirmRestore = async () => {
+    setRestoring(true);
+    try {
+      const res = await api.admin.restoreChild(applicationId);
+      if (res.success) {
+        showSuccess('Child Restored', 'Child registration has been restored.');
+        setIsRestoreModalOpen(false);
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restore Failed', parsed.message || 'Could not restore child registration.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const handleConfirmRevokePass = async () => {
+    if (!revokeReason.trim()) return;
+    setRevoking(true);
+    try {
+      const res = await api.admin.revokeChildPass(app.childId, revokeReason);
+      if (res.success) {
+        showSuccess('Pass Revoked', 'Digital event pass has been revoked.');
+        setIsRevokeModalOpen(false);
+        setRevokeReason('');
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Revocation Failed', parsed.message || 'Could not revoke event pass.');
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -256,6 +410,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     <div 
       className="space-y-6 pb-24 text-zinc-800 animate-fade-in bg-[#FAF9F6]" 
       data-view-version="admin-review-child-v4-contact-refined"
+      data-view-version-extra="admin-child-profile-v4-management"
     >
       
       {/* HEADER BREADCRUMB ROW */}
@@ -282,6 +437,29 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         </div>
       </div>
 
+      {/* SOFT DELETED/REMOVED WARNING BANNER */}
+      {app.isDeleted && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-start gap-3.5 shadow-2xs">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1.5 flex-1">
+            <h4 className="text-xs font-bold text-amber-800 uppercase tracking-widest">Removed Child Profile</h4>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              This registration has been soft-deleted and archived from active rosters. 
+              {app.deleteReason && <> Reason for removal: <strong>{app.deleteReason}</strong></>}
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setIsRestoreModalOpen(true)}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                Restore child
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TWO COLUMN GRID LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
@@ -292,6 +470,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           <div 
             className="bg-[#FCFBF9] border border-[#EAE8E1] rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row items-center sm:items-start gap-6"
             data-component-version="admin-review-child-identity-v3-refined"
+            data-component-version-extra="admin-child-profile-summary-v3"
           >
             {/* Child Photo with soft gold-tint border frame */}
             <div className="shrink-0">
@@ -346,9 +525,21 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4"
               data-component-version="admin-review-child-details-v2"
             >
-              <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest border-b border-[#EAE8E1]/60 pb-2">
-                CHILD DETAILS
-              </h3>
+              <div className="flex items-center justify-between border-b border-[#EAE8E1]/60 pb-2">
+                <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                  CHILD DETAILS
+                </h3>
+                {!app.isDeleted && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="text-[10px] font-bold text-[#C59B27] hover:text-[#A37E1C] uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Edit className="w-3 h-3" />
+                    <span>Edit Details</span>
+                  </button>
+                )}
+              </div>
               
               <div className="space-y-3.5 text-xs text-zinc-700">
                 <div className="flex justify-between items-center py-0.5">
@@ -407,6 +598,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           <div 
             className="bg-[#FCFBF9] border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4"
             data-component-version="admin-review-health-care-v5-compact"
+            data-component-version-extra="admin-child-care-notes-v3"
           >
             <h3 className="font-serif text-[13px] font-semibold text-zinc-700 pb-1.5 border-b border-[#EAE8E1]/60 uppercase tracking-wider text-xs">
               Health & Care Profile
@@ -472,6 +664,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             <div 
               className="bg-[#FCFBF9] border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs flex flex-col justify-between"
               data-component-version="admin-review-primary-contact-v5-refined"
+              data-component-version-extra="admin-child-parent-details-v3"
             >
               <div className="space-y-3.5">
                 <h3 className="font-serif text-[13px] font-semibold text-zinc-700 pb-1.5 border-b border-[#EAE8E1]/60 uppercase tracking-wider text-xs">
@@ -550,6 +743,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             <div 
               className="bg-[#FCFBF9] border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs flex flex-col justify-between"
               data-component-version="admin-review-authorized-pickup-v5-refined"
+              data-component-version-extra="admin-child-pickup-details-v3"
             >
               <div className="space-y-3.5">
                 <h3 className="font-serif text-[13px] font-semibold text-zinc-700 pb-1.5 border-b border-[#EAE8E1]/60 uppercase tracking-wider text-xs">
@@ -647,6 +841,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         <div 
           className="lg:col-span-5 space-y-6 bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-xs"
           data-component-version="admin-review-decision-panel-v2"
+          data-component-version-extra="admin-child-status-actions-v3"
         >
           <div className="space-y-1.5 pb-4 border-b border-[#EAE8E1]/60">
             <h2 className="text-2xl font-serif text-zinc-800 font-medium">Decision</h2>
@@ -697,7 +892,17 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-emerald-100/50 flex justify-end">
+              <div className="pt-2 border-t border-emerald-100/50 flex justify-end gap-2">
+                {app.status === 'pass_ready' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsRevokeModalOpen(true)}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg text-xs font-bold text-red-700 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>REVOKE PASS</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsReopenModalOpen(true)}
@@ -725,7 +930,14 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             </div>
           )}
 
-          {!['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) ? (
+          {app.isDeleted ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+              <p className="text-xs text-amber-800 font-bold uppercase tracking-wider">Profile Locked</p>
+              <p className="text-xs text-[#715D3A] leading-relaxed mt-1">
+                Decision options and status changes are locked because this child registration is removed. Restore the child profile to enable decision controls.
+              </p>
+            </div>
+          ) : !['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) ? (
             <>
               {/* ATTENTION REQUIRED CHECKBOX IF AGE REVISIONS NEEDED */}
           {app.child.needsAgeReview && (
@@ -861,10 +1073,25 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             </div>
           )}
 
+          {/* REMOVE CHILD ACTION FOR ACTIVE REGISTRATIONS */}
+          {!app.isDeleted && (
+            <div className="pt-4 border-t border-[#EAE8E1]/60 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsRemoveModalOpen(true)}
+                className="text-xs font-bold text-red-600 hover:text-red-700 uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4 text-red-500" />
+                <span>Remove Child</span>
+              </button>
+            </div>
+          )}
+
           {/* REVIEWS HISTORY LOG */}
           <div 
             className="space-y-3 pt-4 border-t border-[#EAE8E1]/60"
             data-component-version="admin-review-history-v2"
+            data-component-version-extra="admin-child-admin-notes-v3"
           >
             <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">
               REVIEW HISTORY
@@ -992,6 +1219,445 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           SAVE DECISION
         </Button>
       </div>
+
+      {/* EDIT CHILD DETAILS MODAL */}
+      {isEditModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/44 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+          data-view-version="admin-child-edit-v3"
+        >
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-lg w-full shadow-xl space-y-5 max-h-[90vh] overflow-y-auto animate-scale-in text-zinc-800">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1]/80 pb-3">
+              <h3 className="text-lg font-serif font-semibold text-zinc-900">Edit Child Details</h3>
+              <button 
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form 
+              onSubmit={handleSaveEdit} 
+              className="space-y-4 text-xs"
+              data-component-version="admin-child-edit-form-v3"
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.fullName}
+                    onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Gender</label>
+                  <select
+                    value={editForm.gender}
+                    onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50 font-medium"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Date of Birth</label>
+                  <input
+                    type="date"
+                    required
+                    value={editForm.dateOfBirth}
+                    onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50 font-medium"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">School Class / Grade</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Primary 2"
+                    value={editForm.schoolClass}
+                    onChange={(e) => setEditForm({ ...editForm, schoolClass: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">School Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Koinonia Academy"
+                    value={editForm.schoolName}
+                    onChange={(e) => setEditForm({ ...editForm, schoolName: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-[#EAE8E1]/60 pt-3 space-y-3">
+                <div className="flex items-center space-x-2.5">
+                  <input
+                    type="checkbox"
+                    id="hasMedicalNotes"
+                    checked={editForm.hasMedicalNotes}
+                    onChange={(e) => setEditForm({ ...editForm, hasMedicalNotes: e.target.checked })}
+                    className="w-4 h-4 rounded text-[#C59B27] border-zinc-300 focus:ring-[#C59B27]"
+                  />
+                  <label htmlFor="hasMedicalNotes" className="font-semibold text-zinc-700 cursor-pointer select-none">
+                    Child has medical conditions / allergies
+                  </label>
+                </div>
+
+                {editForm.hasMedicalNotes && (
+                  <div className="space-y-1 pl-6.5">
+                    <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Medical Details</label>
+                    <textarea
+                      required
+                      rows={2}
+                      placeholder="List details of any allergies, asthma, medication or chronic conditions..."
+                      value={editForm.medicalNotes}
+                      onChange={(e) => setEditForm({ ...editForm, medicalNotes: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-[#EAE8E1]/60 pt-3 space-y-3">
+                <div className="flex items-center space-x-2.5">
+                  <input
+                    type="checkbox"
+                    id="needsExtraSupport"
+                    checked={editForm.needsExtraSupport}
+                    onChange={(e) => setEditForm({ ...editForm, needsExtraSupport: e.target.checked })}
+                    className="w-4 h-4 rounded text-[#C59B27] border-zinc-300 focus:ring-[#C59B27]"
+                  />
+                  <label htmlFor="needsExtraSupport" className="font-semibold text-zinc-700 cursor-pointer select-none">
+                    Child requires special support or assistance
+                  </label>
+                </div>
+
+                {editForm.needsExtraSupport && (
+                  <div className="space-y-1 pl-6.5">
+                    <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Support Details</label>
+                    <textarea
+                      required
+                      rows={2}
+                      placeholder="Specify support, learning, behavioral or developmental accommodations required..."
+                      value={editForm.supportNotes}
+                      onChange={(e) => setEditForm({ ...editForm, supportNotes: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Parent Profile section */}
+              <div className="border-t border-[#EAE8E1]/60 pt-4 space-y-3">
+                <h4 className="text-[10px] font-bold text-[#8C6D23] uppercase tracking-wider">Parent Profile</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Parent Full Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.parentFullName}
+                      onChange={(e) => setEditForm({ ...editForm, parentFullName: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Parent Phone</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.parentPhone}
+                      onChange={(e) => setEditForm({ ...editForm, parentPhone: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50 font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Parent WhatsApp</label>
+                    <input
+                      type="text"
+                      value={editForm.parentWhatsApp}
+                      onChange={(e) => setEditForm({ ...editForm, parentWhatsApp: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50 font-medium"
+                    />
+                  </div>
+
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Parent Home Address</label>
+                    <textarea
+                      rows={2}
+                      value={editForm.parentHomeAddress}
+                      onChange={(e) => setEditForm({ ...editForm, parentHomeAddress: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Authorized Pickup section */}
+              <div className="border-t border-[#EAE8E1]/60 pt-4 space-y-3">
+                <h4 className="text-[10px] font-bold text-[#8C6D23] uppercase tracking-wider">Authorized Pickup</h4>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Pickup Person Full Name</label>
+                    <input
+                      type="text"
+                      value={editForm.pickupPersonName}
+                      onChange={(e) => setEditForm({ ...editForm, pickupPersonName: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Relationship to Child</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Uncle, Aunt, Driver..."
+                      value={editForm.pickupPersonRelationship}
+                      onChange={(e) => setEditForm({ ...editForm, pickupPersonRelationship: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Pickup Phone Number</label>
+                    <input
+                      type="text"
+                      value={editForm.pickupPersonPhone}
+                      onChange={(e) => setEditForm({ ...editForm, pickupPersonPhone: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50 font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-[#EAE8E1]/60">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-[#8C6D23] hover:bg-[#715D3A] text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-xs flex items-center space-x-1.5 cursor-pointer"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Details</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REMOVE CHILD REGISTRATION MODAL */}
+      {isRemoveModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-red-700">
+              <AlertCircle className="w-6 h-6 shrink-0 text-red-600" />
+              <div className="space-y-1">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Remove Child Registration?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to remove and soft-delete the registration for <strong>{app.child.fullName}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-red-50/50 border border-red-100 rounded-xl p-3.5 text-xs text-red-800 leading-relaxed space-y-1.5">
+              <p className="font-semibold">Consequences of Removal:</p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-red-700">
+                <li>The child registration is soft-deleted and archived from event lists.</li>
+                <li>Any generated digital event pass is immediately <strong>revoked</strong>.</li>
+                <li>The child will not be able to scan or check in at the event.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="removeReason" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Reason for Removal (Required for audit trail)
+              </label>
+              <textarea
+                id="removeReason"
+                rows={3}
+                placeholder="Specify the reason for archiving this child registration..."
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                className="w-full p-3 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-all bg-zinc-50 text-zinc-800 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={removing}
+                onClick={() => {
+                  setIsRemoveModalOpen(false);
+                  setRemoveReason('');
+                }}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={removing || !removeReason.trim()}
+                onClick={handleConfirmRemove}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white border border-red-600 rounded-xl text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center space-x-1.5 shadow-xs cursor-pointer"
+              >
+                {removing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Removing...</span>
+                  </>
+                ) : (
+                  <span>Remove Child</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESTORE CHILD REGISTRATION MODAL */}
+      {isRestoreModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-[#8C6D23]">
+              <CheckCircle2 className="w-6 h-6 shrink-0 text-emerald-600" />
+              <div className="space-y-1">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Restore Child Registration?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to restore the child registration for <strong>{app.child.fullName}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 text-xs text-emerald-800 leading-relaxed space-y-1">
+              <p className="font-semibold">Effect of Restoration:</p>
+              <p className="text-[11px] text-emerald-700">
+                The profile is reactivated and restored to rosters. Its status will reset to <strong>Under Review</strong> so you can choose the appropriate event selection and issue passes.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={restoring}
+                onClick={() => setIsRestoreModalOpen(false)}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={restoring}
+                onClick={handleConfirmRestore}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-1.5 shadow-xs cursor-pointer"
+              >
+                {restoring ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Restoring...</span>
+                  </>
+                ) : (
+                  <span>Restore Child</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REVOKE PASS MODAL */}
+      {isRevokeModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-red-700">
+              <AlertCircle className="w-6 h-6 shrink-0 text-red-600" />
+              <div className="space-y-1">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Revoke Event Pass?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to revoke the digital event pass for <strong>{app.child.fullName}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-red-50/50 border border-red-100 rounded-xl p-3.5 text-xs text-red-800 leading-relaxed space-y-1">
+              <p className="font-semibold">Important Warning:</p>
+              <p className="text-[11px] text-red-700">
+                This digital pass reference will be disabled. It will no longer scan validly at check-in terminals, and parents will see that the pass has been withdrawn.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="revokeReason" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Reason for Revocation (Required for parent notice)
+              </label>
+              <textarea
+                id="revokeReason"
+                rows={3}
+                placeholder="Specify the reason for revoking this digital event pass..."
+                value={revokeReason}
+                onChange={(e) => setRevokeReason(e.target.value)}
+                className="w-full p-3 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-all bg-zinc-50 text-zinc-800 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={revoking}
+                onClick={() => {
+                  setIsRevokeModalOpen(false);
+                  setRevokeReason('');
+                }}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={revoking || !revokeReason.trim()}
+                onClick={handleConfirmRevokePass}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white border border-red-600 rounded-xl text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center space-x-1.5 shadow-xs cursor-pointer"
+              >
+                {revoking ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Revoking...</span>
+                  </>
+                ) : (
+                  <span>Revoke Pass</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

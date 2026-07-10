@@ -1,12 +1,17 @@
 import { Router, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { query, queryOne, execute, transaction } from '../db';
+import path from 'path';
+import multer from 'multer';
+import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
+import { uploadMedia } from '../services/media/cloudinary';
+import { processImage } from '../services/media/imageProcessor';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Public Auth Endpoints for Admin Access
 router.post('/sign-in', async (req, res) => {
@@ -544,7 +549,7 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
           email: app.parent_email,
           isWorker: app.is_koinonia_worker === 1,
           department: app.parent_department,
-          photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (app.parent_photo_file_id.startsWith('http') || app.parent_photo_file_id.startsWith('/') ? app.parent_photo_file_id : `/api/media/files/${app.parent_photo_file_id}`) : '')
+          photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (String(app.parent_photo_file_id).startsWith('http') || String(app.parent_photo_file_id).startsWith('/') ? String(app.parent_photo_file_id) : `/api/media/files/${app.parent_photo_file_id}`) : '')
         },
         pickupPeople: entryPickups
       };
@@ -595,12 +600,15 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
         e.needs_extra_support,
         e.support_notes,
         e.submitted_at,
+        e.is_deleted as entry_deleted,
+        e.delete_reason,
         c.full_name as child_name,
         c.gender,
         c.date_of_birth,
         c.calculated_age,
         c.age_group,
         c.needs_age_review,
+        c.is_deleted as child_deleted,
         m.secure_url as child_photo_url,
         p.id as parent_id,
         p.full_name as parent_name,
@@ -614,6 +622,12 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       LEFT JOIN media_files pm ON pm.id = p.photo_file_id
       WHERE e.event_id = ?
     `;
+
+    if (filter === 'removed') {
+      queryStr += ` AND (e.is_deleted = 1 OR c.is_deleted = 1)`;
+    } else {
+      queryStr += ` AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)`;
+    }
 
     const queryParams: any[] = [eventId];
 
@@ -692,6 +706,7 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       return {
         id: app.entry_id,
         applicationId: app.entry_id,
+        childId: app.child_id,
         fullName: app.child_name,
         photoUrl: app.child_photo_url,
         ageLabel: `${app.calculated_age}y`,
@@ -704,6 +719,8 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
         reviewStatus: app.status,
         entryStatus,
         pickupStatus,
+        isDeleted: !!app.entry_deleted || !!app.child_deleted,
+        deleteReason: app.delete_reason || null,
         flags
       };
     });
@@ -1005,6 +1022,10 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         e.id as entry_id,
         e.child_id,
         e.status,
+        e.is_deleted,
+        e.deleted_at,
+        e.deleted_by,
+        e.delete_reason,
         e.school_class,
         e.school_name,
         e.previous_children_programme,
@@ -1094,6 +1115,10 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       childId: app.child_id,
       status: app.status,
       passReference,
+      isDeleted: app.is_deleted === 1,
+      deletedAt: app.deleted_at,
+      deletedBy: app.deleted_by,
+      deleteReason: app.delete_reason,
       schoolClass: app.school_class,
       schoolName: app.school_name,
       previousProgramme: app.previous_children_programme,
@@ -1123,7 +1148,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         isWorker: app.is_koinonia_worker === 1,
         department: app.parent_department,
         address: app.parent_address,
-        photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (app.parent_photo_file_id.startsWith('http') || app.parent_photo_file_id.startsWith('/') ? app.parent_photo_file_id : `/api/media/files/${app.parent_photo_file_id}`) : '')
+        photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (String(app.parent_photo_file_id).startsWith('http') || String(app.parent_photo_file_id).startsWith('/') ? String(app.parent_photo_file_id) : `/api/media/files/${app.parent_photo_file_id}`) : '')
       },
       pickupPeople: formattedPickups,
       history
@@ -1793,7 +1818,7 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
         dateLabel,
         timeLabel,
         status: event?.status || 'active',
-        registrationStatus: event?.status === 'open' ? 'open' : 'closed'
+        registrationStatus: (event?.status === 'open' || event?.status === 'current' || event?.status === 'upcoming') ? 'open' : 'closed'
       },
       metrics: {
         totalChildren: totalChildrenRes?.count || 0,
@@ -3631,6 +3656,193 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// GET app media settings
+router.get('/settings/media', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rows = await query('SELECT slot, url, thumbnail_url FROM app_media_settings');
+    const mediaMap: Record<string, string> = {
+      parent_dashboard_hero: '',
+      volunteer_dashboard_hero: '',
+      default_event_hero: ''
+    };
+    for (const row of rows) {
+      mediaMap[row.slot] = row.url || '';
+    }
+    return res.json({ success: true, media: mediaMap });
+  } catch (err: any) {
+    console.error('Error fetching settings media:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve media settings.' });
+  }
+});
+
+// POST upload app media setting
+router.post('/settings/media', upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { slot } = req.body;
+    const file = req.file;
+    if (!slot) {
+      return res.status(400).json({ success: false, error: 'Slot key is required.' });
+    }
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero'];
+    if (!allowedSlots.includes(slot)) {
+      return res.status(400).json({ success: false, error: 'Invalid slot key.' });
+    }
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'File is required.' });
+    }
+
+    // Reject oversized files
+    if (file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'This image is too large. Please upload an image under 5MB.' });
+    }
+
+    // Verify MIME type
+    const mimeType = file.mimetype;
+    const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedImageTypes.includes(mimeType)) {
+      return res.status(400).json({ success: false, error: 'Please upload a JPG, PNG, or WebP image.' });
+    }
+
+    // Verify file extension matches allowed image extensions to prevent renaming exploits
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (!allowedExts.includes(ext)) {
+      return res.status(400).json({ success: false, error: 'This file type is not supported. Please upload JPG, PNG, or WebP.' });
+    }
+
+    let buffer = file.buffer;
+    // Strict processing check: If image processing fails, fail immediately with 422 Unprocessable Entity
+    try {
+      const processed = await processImage(buffer, slot, mimeType);
+      buffer = processed.buffer;
+    } catch (err: any) {
+      console.error('Image processing failed:', err);
+      return res.status(422).json({
+        success: false,
+        error: 'We could not process this image. Please try another JPG, PNG, or WebP file.'
+      });
+    }
+
+    const uploadResult = await uploadMedia(buffer, {
+      purpose: 'landing_image',
+      ownerUserId: req.user!.id,
+      mimeType
+    });
+
+    const url = uploadResult.secureUrl;
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const existing = await queryOne('SELECT id FROM app_media_settings WHERE slot = ?', [slot]);
+    if (existing) {
+      await execute(`
+        UPDATE app_media_settings 
+        SET url = ?, thumbnail_url = ?, width = ?, height = ?, mime_type = ?, size = ?, uploaded_by = ?, updated_at = ?
+        WHERE slot = ?
+      `, [
+        url,
+        url,
+        uploadResult.width || null,
+        uploadResult.height || null,
+        mimeType,
+        buffer.length,
+        req.user!.id,
+        now,
+        slot
+      ]);
+    } else {
+      await execute(`
+        INSERT INTO app_media_settings (
+          id, slot, url, thumbnail_url, width, height, mime_type, size, uploaded_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        id,
+        slot,
+        url,
+        url,
+        uploadResult.width || null,
+        uploadResult.height || null,
+        mimeType,
+        buffer.length,
+        req.user!.id,
+        now,
+        now
+      ]);
+    }
+
+    // Ensure it also has a record in the media_files table so that the local server /api/media/files/:fileId can serve it!
+    const fileIdMatch = url.match(/\/files\/([a-f0-9-]+)/);
+    if (fileIdMatch) {
+      const fileId = fileIdMatch[1];
+      const folder = uploadResult.publicId.includes('/')
+        ? uploadResult.publicId.substring(0, uploadResult.publicId.lastIndexOf('/'))
+        : 'koinonia-children-teens';
+
+      const mExisting = await queryOne('SELECT id FROM media_files WHERE id = ?', [fileId]);
+      if (!mExisting) {
+        await execute(`
+          INSERT INTO media_files (
+            id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
+            mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          fileId,
+          req.user!.id,
+          uploadResult.provider || 'cloudinary',
+          'landing_image',
+          uploadResult.publicId,
+          url,
+          'image',
+          mimeType,
+          buffer.length,
+          uploadResult.width || null,
+          uploadResult.height || null,
+          null,
+          folder,
+          url,
+          uploadResult.publicId,
+          now
+        ]);
+      }
+    }
+
+    return res.json({
+      success: true,
+      media: {
+        slot,
+        url
+      }
+    });
+  } catch (err: any) {
+    console.error('Error uploading admin settings media:', err);
+    const friendlyMsg = err.message || 'Image upload could not be completed. Please try again.';
+    const displayError = friendlyMsg.includes('Please connect') || friendlyMsg.includes('could not be completed')
+      ? friendlyMsg
+      : 'Image upload could not be completed. Please try again.';
+    return res.status(500).json({ success: false, error: displayError });
+  }
+});
+
+// POST reset app media setting
+router.post('/settings/media/reset', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { slot } = req.body;
+    if (!slot) {
+      return res.status(400).json({ success: false, error: 'Slot key is required.' });
+    }
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero'];
+    if (!allowedSlots.includes(slot)) {
+      return res.status(400).json({ success: false, error: 'Invalid slot key.' });
+    }
+
+    await execute('DELETE FROM app_media_settings WHERE slot = ?', [slot]);
+    return res.json({ success: true, message: 'Media slot reset successfully.' });
+  } catch (err: any) {
+    console.error('Error resetting settings media:', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset media.' });
+  }
+});
+
 // POST edit team role
 router.post('/team/edit-role', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -4030,6 +4242,12 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
 
     if (status === 'removed') {
       queryStr += ` AND v.is_deleted = 1`;
+    } else if (status === 'active') {
+      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('approved', 'active')`;
+    } else if (status === 'pending_review' || status === 'pending') {
+      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('pending_review', 'pending')`;
+    } else if (status === 'declined' || status === 'rejected') {
+      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('rejected', 'declined')`;
     } else {
       queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL)`;
       if (status) {
@@ -4055,11 +4273,12 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       isKoinoniaWorker: v.is_koinonia_worker === 1,
       department: v.department,
       preferredTeam: v.preferred_team,
+      assignedTeam: v.preferred_team, // map to assignedTeam too
       servingExperience: v.serving_experience,
       note: v.note,
       status: v.status,
       photoFileId: v.photo_file_id,
-      photoUrl: v.photo_url || (v.photo_file_id ? (v.photo_file_id.startsWith('http') || v.photo_file_id.startsWith('/') ? v.photo_file_id : `/api/media/files/${v.photo_file_id}`) : ''),
+      photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
       createdAt: v.created_at,
       updatedAt: v.updated_at,
       email: v.email,
@@ -4072,10 +4291,30 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       deleteReason: v.delete_reason,
       restoredAt: v.restored_at,
       restoredBy: v.restored_by,
-      restoredByEmail: v.restored_by_email
+      restoredByEmail: v.restored_by_email,
+      approvedAt: v.approved_at,
+      reviewedAt: v.approved_at, // map to reviewedAt too
+      removedAt: v.deleted_at // map to removedAt too
     }));
 
-    return res.json({ success: true, volunteers: formatted });
+    // Calculate metrics
+    const totalVolunteers = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL)`))?.count || 0;
+    const pendingReview = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL) AND status IN ('pending_review', 'pending')`))?.count || 0;
+    const approvedVolunteers = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL) AND status IN ('approved', 'active')`))?.count || 0;
+    const assignedTeamsCount = (await queryOne(`SELECT COUNT(DISTINCT preferred_team) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL) AND status IN ('approved', 'active') AND preferred_team IS NOT NULL AND preferred_team != ''`))?.count || 0;
+    const removedVolunteers = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE is_deleted = 1`))?.count || 0;
+
+    return res.json({ 
+      success: true, 
+      stats: {
+        totalVolunteers,
+        pendingReview,
+        approvedVolunteers,
+        assignedTeams: assignedTeamsCount,
+        removedVolunteers
+      },
+      volunteers: formatted 
+    });
   } catch (err: any) {
     console.error('Error fetching admin volunteers:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch volunteers' });
@@ -4174,7 +4413,7 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
       note: v.note,
       status: v.status,
       photoFileId: v.photo_file_id,
-      photoUrl: v.photo_url || (v.photo_file_id ? (v.photo_file_id.startsWith('http') || v.photo_file_id.startsWith('/') ? v.photo_file_id : `/api/media/files/${v.photo_file_id}`) : ''),
+      photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
       createdAt: v.created_at,
       updatedAt: v.updated_at,
       email: v.email,
@@ -4186,6 +4425,78 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
   } catch (err: any) {
     console.error('Error fetching volunteer details:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch volunteer details' });
+  }
+});
+
+// PATCH /api/admin/volunteers/:id/assignment - Update team assignment of a volunteer
+router.patch('/volunteers/:id/assignment', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const { assignedTeam } = req.body;
+
+    if (!assignedTeam) {
+      return res.status(400).json({ success: false, error: 'Assigned team is required' });
+    }
+
+    const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+    if (!v) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    const nowStr = new Date().toISOString();
+    await execute(`
+      UPDATE volunteer_profiles 
+      SET preferred_team = ?, updated_at = ?
+      WHERE id = ?
+    `, [assignedTeam, nowStr, id]);
+
+    return res.json({ success: true, message: 'Volunteer team assignment updated successfully' });
+  } catch (err: any) {
+    console.error('Error updating volunteer assignment:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update volunteer assignment' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/resend-approval-email - Resend approval welcome email
+router.post('/volunteers/:id/resend-approval-email', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+
+    const v = await queryOne(`
+      SELECT v.*, u.email 
+      FROM volunteer_profiles v 
+      JOIN users u ON u.id = v.user_id 
+      WHERE v.id = ?
+    `, [id]);
+
+    if (!v) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    if (v.status !== 'approved' && v.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Only approved volunteers can receive an approval email.' });
+    }
+
+    const baseUrl = process.env.APP_BASE_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
+    const loginLink = `${baseUrl}/#/volunteer/sign-in`;
+
+    await sendVolunteerApprovedEmail({
+      volunteerEmail: v.email,
+      volunteerFirstName: v.full_name,
+      preferredTeam: v.preferred_team,
+      loginLink: loginLink
+    });
+
+    return res.json({ success: true, message: 'Approval email resent successfully.' });
+  } catch (err: any) {
+    console.error('Error resending volunteer approval email:', err);
+    return res.status(500).json({ success: false, error: 'Failed to resend approval email' });
   }
 });
 
@@ -4312,7 +4623,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       isKoinoniaWorker: p.is_koinonia_worker === 1,
       department: p.department,
       photoFileId: p.photo_file_id,
-      photoUrl: p.photo_url || (p.photo_file_id ? (p.photo_file_id.startsWith('http') || p.photo_file_id.startsWith('/') ? p.photo_file_id : `/api/media/files/${p.photo_file_id}`) : ''),
+      photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : ''),
       country: p.country,
       stateRegion: p.state_region,
       city: p.city,
@@ -4458,7 +4769,7 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
         ageLabel: `${c.calculated_age || 0} years`,
         gender: c.gender,
         ageGroup: c.age_group || 'Not Assigned',
-        photoUrl: c.photo_url || (c.photo_file_id ? (c.photo_file_id.startsWith('http') || c.photo_file_id.startsWith('/') ? c.photo_file_id : `/api/media/files/${c.photo_file_id}`) : null),
+        photoUrl: c.photo_url || (c.photo_file_id ? (String(c.photo_file_id).startsWith('http') || String(c.photo_file_id).startsWith('/') ? String(c.photo_file_id) : `/api/media/files/${c.photo_file_id}`) : null),
         reviewStatus: c.entry_status || 'not_registered',
         entryStatus: c.entry_status || 'not_registered',
         pickupStatus,
@@ -4542,7 +4853,7 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       preferredContact: p.preferred_contact || 'phone',
       isKoinoniaWorker: p.is_koinonia_worker === 1,
       department: p.department || '',
-      photoUrl: p.photo_url || (p.photo_file_id ? (p.photo_file_id.startsWith('http') || p.photo_file_id.startsWith('/') ? p.photo_file_id : `/api/media/files/${p.photo_file_id}`) : null),
+      photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : null),
       photoFileId: p.photo_file_id || null,
       emailVerified: p.user_email_verified === 1,
       accountStatus: p.user_email_verified === 1 ? 'verified' : 'pending',
@@ -4807,6 +5118,533 @@ router.post('/children/:childId/pass/revoke', authMiddleware, async (req: Authen
   } catch (err: any) {
     console.error('Error in POST /api/admin/children/:childId/pass/revoke:', err);
     return res.status(400).json({ success: false, error: err.message || 'Failed to revoke pass' });
+  }
+});
+
+// PUT /api/admin/applications/:id - Edit child and entry details
+router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      fullName,
+      gender,
+      dateOfBirth,
+      schoolClass,
+      schoolName,
+      hasMedicalNotes,
+      medicalNotes,
+      needsExtraSupport,
+      supportNotes,
+      parentFullName,
+      parentPhone,
+      parentWhatsApp,
+      parentHomeAddress,
+      pickupPersonName,
+      pickupPersonRelationship,
+      pickupPersonPhone
+    } = req.body;
+
+    const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    const now = new Date().toISOString();
+
+    // Update parent details if specified
+    const childRow = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [entry.child_id]);
+    if (childRow && childRow.parent_profile_id) {
+      const parentUpdates: string[] = [];
+      const parentParams: any[] = [];
+      if (parentFullName !== undefined) { parentUpdates.push('full_name = ?'); parentParams.push(parentFullName); }
+      if (parentPhone !== undefined) { parentUpdates.push('phone_number = ?'); parentParams.push(parentPhone); }
+      if (parentWhatsApp !== undefined) { parentUpdates.push('whatsapp_number = ?'); parentParams.push(parentWhatsApp); }
+      if (parentHomeAddress !== undefined) { parentUpdates.push('home_address = ?'); parentParams.push(parentHomeAddress); }
+      if (parentUpdates.length > 0) {
+        parentUpdates.push('updated_at = ?'); parentParams.push(now);
+        parentParams.push(childRow.parent_profile_id);
+        await execute(`UPDATE parent_profiles SET ${parentUpdates.join(', ')} WHERE id = ?`, parentParams);
+      }
+    }
+
+    // Update authorized pickup details if specified
+    if (pickupPersonName !== undefined || pickupPersonRelationship !== undefined || pickupPersonPhone !== undefined) {
+      const existingPickup = await queryOne('SELECT id FROM pickup_people WHERE child_event_entry_id = ?', [id]);
+      if (existingPickup) {
+        const pickupUpdates: string[] = [];
+        const pickupParams: any[] = [];
+        if (pickupPersonName !== undefined) { pickupUpdates.push('full_name = ?'); pickupParams.push(pickupPersonName); }
+        if (pickupPersonRelationship !== undefined) { pickupUpdates.push('relationship_to_child = ?'); pickupParams.push(pickupPersonRelationship); }
+        if (pickupPersonPhone !== undefined) { pickupUpdates.push('phone_number = ?'); pickupParams.push(pickupPersonPhone); }
+        if (pickupUpdates.length > 0) {
+          pickupUpdates.push('updated_at = ?'); pickupParams.push(now);
+          pickupParams.push(existingPickup.id);
+          await execute(`UPDATE pickup_people SET ${pickupUpdates.join(', ')} WHERE id = ?`, pickupParams);
+        }
+      } else {
+        const newPickupId = 'pickup-' + Math.random().toString(36).substring(2, 11);
+        await execute(`
+          INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, approved_by_parent, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', 1, now, now]);
+      }
+    }
+
+    // Calculate age if dob is updated
+    let calculatedAge = null;
+    let ageGroup = null;
+    let needsAgeReview = 0;
+    if (dateOfBirth) {
+      const dobDate = new Date(dateOfBirth);
+      const today = new Date();
+      let age = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+        age--;
+      }
+      calculatedAge = age;
+
+      // Determine age group
+      if (age < 1) {
+        ageGroup = 'Below 1';
+      } else if (age < 3) {
+        ageGroup = 'Ages 1 to 2';
+      } else if (age < 6) {
+        ageGroup = 'Ages 3 to 5';
+      } else if (age < 10) {
+        ageGroup = 'Ages 6 to 9';
+      } else {
+        ageGroup = 'Teens (Ages 10+)';
+      }
+
+      // Under 1 year check for event
+      if (age < 1) {
+        needsAgeReview = 1;
+      }
+    }
+
+    // Update children table
+    const childUpdates: string[] = [];
+    const childParams: any[] = [];
+
+    if (fullName) { childUpdates.push('full_name = ?'); childParams.push(fullName); }
+    if (gender) { childUpdates.push('gender = ?'); childParams.push(gender); }
+    if (dateOfBirth) { 
+      childUpdates.push('date_of_birth = ?'); childParams.push(dateOfBirth); 
+      childUpdates.push('calculated_age = ?'); childParams.push(calculatedAge);
+      childUpdates.push('age_group = ?'); childParams.push(ageGroup);
+      childUpdates.push('needs_age_review = ?'); childParams.push(needsAgeReview);
+    }
+    childUpdates.push('updated_at = ?'); childParams.push(now);
+
+    if (childUpdates.length > 1) {
+      childParams.push(entry.child_id);
+      await execute(`UPDATE children SET ${childUpdates.join(', ')} WHERE id = ?`, childParams);
+    }
+
+    // Update child_event_entries table
+    const entryUpdates: string[] = [];
+    const entryParams: any[] = [];
+
+    if (schoolClass !== undefined) { entryUpdates.push('school_class = ?'); entryParams.push(schoolClass); }
+    if (schoolName !== undefined) { entryUpdates.push('school_name = ?'); entryParams.push(schoolName); }
+    if (hasMedicalNotes !== undefined) { entryUpdates.push('has_medical_notes = ?'); entryParams.push(hasMedicalNotes ? 1 : 0); }
+    if (medicalNotes !== undefined) { entryUpdates.push('medical_notes = ?'); entryParams.push(medicalNotes); }
+    if (needsExtraSupport !== undefined) { entryUpdates.push('needs_extra_support = ?'); entryParams.push(needsExtraSupport ? 1 : 0); }
+    if (supportNotes !== undefined) { entryUpdates.push('support_notes = ?'); entryParams.push(supportNotes); }
+    entryUpdates.push('updated_at = ?'); entryParams.push(now);
+
+    entryParams.push(id);
+    await execute(`UPDATE child_event_entries SET ${entryUpdates.join(', ')} WHERE id = ?`, entryParams);
+
+    // Audit history trail
+    const adminId = req.user?.id || 'admin';
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      Math.random().toString(36).substring(2, 15),
+      adminId,
+      'admin',
+      'Update Child details',
+      'child_event_entry',
+      id,
+      JSON.stringify({ fullName, gender, dateOfBirth, schoolClass }),
+      now
+    ]);
+
+    return res.json({ success: true, message: 'Child details updated successfully' });
+  } catch (err: any) {
+    console.error('Error updating child details:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to update child details' });
+  }
+});
+
+// POST /api/admin/applications/:id/remove - Soft-delete a child registration
+router.post('/applications/:id/remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Removal reason is required' });
+    }
+
+    const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+
+    // Soft delete child_event_entries
+    await execute(`
+      UPDATE child_event_entries 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed'
+      WHERE id = ?
+    `, [now, adminId, reason, id]);
+
+    // Soft delete children
+    await execute(`
+      UPDATE children 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+      WHERE id = ?
+    `, [now, adminId, reason, entry.child_id]);
+
+    // Revoke any active passes for the child
+    try {
+      await revokePassForChild(entry.child_id, undefined, `Child registration removed: ${reason}`, adminId);
+    } catch (passErr) {
+      console.log('No active pass to revoke or pass revocation failed:', passErr);
+    }
+
+    // Add audit history trail
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      Math.random().toString(36).substring(2, 15),
+      adminId,
+      'admin',
+      'Remove Child',
+      'child_event_entry',
+      id,
+      JSON.stringify({ reason }),
+      now
+    ]);
+
+    return res.json({ success: true, message: 'Child registration removed successfully.' });
+  } catch (err: any) {
+    console.error('Error removing child:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to remove child.' });
+  }
+});
+
+// POST /api/admin/applications/:id/restore - Restore a soft-deleted child registration
+router.post('/applications/:id/restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+
+    // Restore child_event_entries (status resets to under_review)
+    await execute(`
+      UPDATE child_event_entries 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?, status = 'under_review'
+      WHERE id = ?
+    `, [now, adminId, id]);
+
+    // Restore children
+    await execute(`
+      UPDATE children 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?
+      WHERE id = ?
+    `, [now, adminId, entry.child_id]);
+
+    // Add audit history trail
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      Math.random().toString(36).substring(2, 15),
+      adminId,
+      'admin',
+      'Restore Child',
+      'child_event_entry',
+      id,
+      JSON.stringify({ reason: reason || 'Restored by administrator' }),
+      now
+    ]);
+
+    return res.json({ success: true, message: 'Child registration restored successfully. Status reset to Under Review.' });
+  } catch (err: any) {
+    console.error('Error restoring child:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to restore child.' });
+  }
+});
+
+// POST /api/admin/parents/:parentId/permanent-delete - Permanently delete parent (Anonymization)
+router.post('/parents/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const parentId = req.params.id;
+    const { reason, confirmation } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Delete reason is required' });
+    }
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+    }
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    if (parent.is_deleted !== 1) {
+      return res.status(400).json({ success: false, error: 'Only removed parents can be permanently deleted. Remove this parent first.' });
+    }
+
+    // Block if there are active (non-deleted) children
+    const activeChildren = await queryOne('SELECT COUNT(*) as count FROM children WHERE parent_profile_id = ? AND is_deleted = 0', [parentId]);
+    if (activeChildren && activeChildren.count > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'This parent still has active child records. Remove those children first before permanent deletion.' 
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    // Anonymize user login record
+    const anonymizedEmail = `deleted_parent_${parentId}@koinonia.org`;
+    await execute(`
+      UPDATE users 
+      SET email = ?, password_hash = NULL, email_verified = 0, role = 'removed_parent' 
+      WHERE id = ?
+    `, [anonymizedEmail, parent.user_id]);
+
+    // Anonymize parent profile
+    await execute(`
+      UPDATE parent_profiles 
+      SET full_name = 'Deleted parent', 
+          phone_number = NULL, 
+          whatsapp_number = NULL, 
+          email = NULL, 
+          home_address = NULL, 
+          photo_file_id = NULL, 
+          preferred_contact = NULL, 
+          is_deleted = 1,
+          permanently_deleted_at = ?, 
+          permanently_deleted_by = ?, 
+          permanent_delete_reason = ?, 
+          anonymized_at = ?
+      WHERE id = ?
+    `, [now, adminId, reason, now, parentId]);
+
+    // Revoke any active sessions
+    await execute(`DELETE FROM auth_tokens WHERE user_id = ?`, [parent.user_id]);
+
+    // Add audit history trail
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      Math.random().toString(36).substring(2, 15),
+      adminId,
+      'admin',
+      'Permanent Delete Parent',
+      'parent_profile',
+      parentId,
+      JSON.stringify({ reason }),
+      now
+    ]);
+
+    return res.json({ success: true, message: 'Parent profile and login permanently deleted/anonymized successfully.' });
+  } catch (err: any) {
+    console.error('Error in permanent parent delete:', err);
+    return res.status(500).json({ success: false, error: 'Failed to permanently delete parent profile.' });
+  }
+});
+
+// POST /api/admin/volunteers/:volunteerId/permanent-delete - Permanently delete volunteer (Anonymization)
+router.post('/volunteers/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const volunteerId = req.params.id;
+    const { reason, confirmation } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Delete reason is required' });
+    }
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+    }
+
+    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    if (!volunteer) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    if (volunteer.is_deleted !== 1) {
+      return res.status(400).json({ success: false, error: 'Only removed volunteers can be permanently deleted. Remove this volunteer first.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    // Anonymize user login record
+    const anonymizedEmail = `deleted_volunteer_${volunteerId}@koinonia.org`;
+    await execute(`
+      UPDATE users 
+      SET email = ?, password_hash = NULL, email_verified = 0, role = 'removed_volunteer' 
+      WHERE id = ?
+    `, [anonymizedEmail, volunteer.user_id]);
+
+    // Anonymize volunteer profile
+    await execute(`
+      UPDATE volunteer_profiles 
+      SET full_name = 'Deleted volunteer', 
+          phone = '00000000000', 
+          whatsapp = '00000000000', 
+          note = NULL, 
+          photo_file_id = NULL, 
+          department = NULL, 
+          is_deleted = 1,
+          permanently_deleted_at = ?, 
+          permanently_deleted_by = ?, 
+          permanent_delete_reason = ?, 
+          anonymized_at = ?
+      WHERE id = ?
+    `, [now, adminId, reason, now, volunteerId]);
+
+    // Revoke any active sessions
+    await execute(`DELETE FROM auth_tokens WHERE user_id = ?`, [volunteer.user_id]);
+
+    // Add audit history trail
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      Math.random().toString(36).substring(2, 15),
+      adminId,
+      'admin',
+      'Permanent Delete Volunteer',
+      'volunteer_profile',
+      volunteerId,
+      JSON.stringify({ reason }),
+      now
+    ]);
+
+    return res.json({ success: true, message: 'Volunteer profile and login permanently deleted/anonymized successfully.' });
+  } catch (err: any) {
+    console.error('Error in permanent volunteer delete:', err);
+    return res.status(500).json({ success: false, error: 'Failed to permanently delete volunteer profile.' });
+  }
+});
+
+// GET /api/admin/attention-items
+router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const items = await query(`
+      SELECT cai.*, 
+             c.full_name as child_name, 
+             c.photo_file_id as child_photo_file_id, 
+             c.calculated_age as child_age, 
+             c.age_group as child_age_group,
+             parent.full_name as parent_name,
+             parent.phone_number as parent_phone
+      FROM child_attention_items cai
+      JOIN children c ON cai.child_id = c.id
+      LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
+      WHERE cai.event_id = ?
+      ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
+    `, [REAL_EVENT_ID]);
+
+    res.json(items);
+  } catch (err) {
+    console.error('Get admin attention items error:', err);
+    res.status(500).json({ error: 'Failed to retrieve attention items' });
+  }
+});
+
+// POST /api/admin/attention-items/:itemId/resolve
+router.post('/attention-items/:itemId/resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+    const { itemId } = req.params;
+    const { note } = req.body;
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ?', [itemId]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, note || 'Resolved by administrator', now, itemId]);
+
+    res.json({ success: true, message: 'Attention item resolved by admin.' });
+  } catch (err) {
+    console.error('Admin resolve attention item error:', err);
+    res.status(500).json({ error: 'Failed to resolve attention item' });
+  }
+});
+
+// POST /api/admin/attention-items/:itemId/reopen
+router.post('/attention-items/:itemId/reopen', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+    const { itemId } = req.params;
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ?', [itemId]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'open',
+          resolved_by = NULL,
+          resolved_at = NULL,
+          resolution_note = NULL,
+          updated_at = ?
+      WHERE id = ?
+    `, [now, itemId]);
+
+    res.json({ success: true, message: 'Attention item reopened.' });
+  } catch (err) {
+    console.error('Admin reopen attention item error:', err);
+    res.status(500).json({ error: 'Failed to reopen attention item' });
   }
 });
 

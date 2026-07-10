@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { AppRoute } from '../../types';
 import { 
   Users, 
@@ -31,6 +31,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { playSound, resumeAudioContext } from '../../utils/sound';
 import { AdminApplicationsView } from './AdminApplicationsView';
 import { AdminReviewBoardView } from './AdminReviewBoardView';
 import { AdminChildrenView } from './AdminChildrenView';
@@ -100,13 +101,187 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   // Attention filter modal
   const [activeAttentionModal, setActiveAttentionModal] = useState<{ id: string, label: string } | null>(null);
 
+  // Real-time notification and preferences states
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('koinonia_sound_enabled');
+      return stored !== 'false';
+    }
+    return true;
+  });
+  const [pushEnabled, setPushEnabled] = useState(false);
+
+  // Timeago helper
+  const formatTimeAgo = (isoString: string) => {
+    try {
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ago`;
+    } catch (_) {
+      return 'Recent';
+    }
+  };
+
+  // Fetch Admin Notifications
+  const fetchNotificationsList = async (playFeedback = false) => {
+    try {
+      const list = await api.parent.getNotifications(false, 'admin');
+      const unreadList = list.filter((n: any) => !n.isRead);
+      
+      setNotifications(list);
+      
+      // If we got a new notification, play appropriate sound
+      setUnreadNotifCount((prevCount) => {
+        if (unreadList.length > prevCount && prevCount > 0 && soundEnabled) {
+          const hasNewEscalation = unreadList.some(
+            (n: any) => n.type === 'escalation' && !notifications.some((oldN) => oldN.id === n.id)
+          );
+          if (hasNewEscalation) {
+            playSound('alert');
+          } else {
+            playSound('notification');
+          }
+        } else if (playFeedback) {
+          playSound('success');
+        }
+        return unreadList.length;
+      });
+    } catch (err) {
+      console.error('Error fetching admin notifications:', err);
+    }
+  };
+
+  // Fetch initial preferences
+  const fetchPreferences = async () => {
+    try {
+      const res = await api.request<{ soundEnabled: boolean; pushEnabled: boolean }>('/api/notifications/preferences');
+      if (res) {
+        setSoundEnabled(res.soundEnabled);
+        setPushEnabled(res.pushEnabled);
+        localStorage.setItem('koinonia_sound_enabled', String(res.soundEnabled));
+      }
+    } catch (err) {
+      console.warn('Preferences fetch failed:', err);
+    }
+  };
+
+  // Preferences effects
+  useEffect(() => {
+    fetchPreferences();
+  }, []);
+
+  // Poll for notifications
+  useEffect(() => {
+    fetchNotificationsList();
+    const interval = setInterval(() => {
+      fetchNotificationsList();
+    }, 20000); // 20s poll
+    return () => clearInterval(interval);
+  }, [soundEnabled]);
+
+  const toggleSound = async () => {
+    const nextVal = !soundEnabled;
+    setSoundEnabled(nextVal);
+    localStorage.setItem('koinonia_sound_enabled', String(nextVal));
+    try {
+      await api.request('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ soundEnabled: nextVal })
+      });
+      showSuccess(
+        nextVal ? 'Sound Alerts On' : 'Sound Alerts Off',
+        nextVal ? 'Notification sounds enabled.' : 'Notification sounds disabled.'
+      );
+      if (nextVal) {
+        playSound('success');
+      }
+    } catch (err) {
+      console.error('Failed to update sound preference:', err);
+    }
+  };
+
+  const togglePush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      showError('Unsupported Device', 'Push notifications are not supported on this browser or device.');
+      return;
+    }
+
+    const nextVal = !pushEnabled;
+    try {
+      if (nextVal) {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          showError('Permission Denied', 'Please allow notifications in your browser settings to subscribe.');
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.ready;
+        const keyRes = await api.parent.getVapidPublicKey();
+        const vapidPublicKey = keyRes.publicKey;
+
+        if (!vapidPublicKey) {
+          throw new Error('No VAPID key found');
+        }
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidPublicKey
+        });
+
+        await api.parent.savePushSubscription(subscription);
+        setPushEnabled(true);
+        showSuccess('Subscribed', 'You will now receive instant push alerts.');
+        playSound('success');
+
+        await api.request('/api/notifications/preferences', {
+          method: 'PATCH',
+          body: JSON.stringify({ pushEnabled: true })
+        });
+      } else {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe();
+          await api.request('/api/notifications/push/unsubscribe', {
+            method: 'POST',
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+          });
+        }
+        setPushEnabled(false);
+        showSuccess('Unsubscribed', 'Push alerts disabled.');
+        playSound('success');
+
+        await api.request('/api/notifications/preferences', {
+          method: 'PATCH',
+          body: JSON.stringify({ pushEnabled: false })
+        });
+      }
+    } catch (err: any) {
+      console.error('Push toggle error:', err);
+      showError('Subscription Failed', 'Could not sync push configuration with the service worker.');
+    }
+  };
+
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab as AdminTab);
     }
   }, [initialTab]);
 
+  const isFetchingRef = useRef(false);
+
   const fetchDashboardData = async (isRefresh = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
 
@@ -130,11 +305,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         }
       }
     } catch (err: any) {
+      console.error('[AdminOverviewView - fetchDashboardData Error]:', err);
       const parsed = extractApiError(err);
       showError('Sync Failed', parsed.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      isFetchingRef.current = false;
     }
   };
 
@@ -482,13 +659,170 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
             </button>
 
-            <button
-              className="p-2 text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 rounded-full transition-colors relative"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowNotifPanel(!showNotifPanel);
+                  resumeAudioContext();
+                }}
+                className="p-2 text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 rounded-full transition-colors relative cursor-pointer"
+                title="Notifications"
+                id="admin-notification-bell"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[9px] font-sans font-bold leading-none text-white bg-[#C59B27] rounded-full animate-pulse">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifPanel && (
+                <div 
+                  className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#EAE8E1] rounded-3xl shadow-2xl overflow-hidden z-50 animate-fade-in"
+                  data-component-version="admin-attention-escalation-notification-v1"
+                >
+                  <div className="p-4 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between">
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-[#18181B]">Updates & Care Alerts</h4>
+                      <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Stay connected to ongoing check-ins</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={toggleSound}
+                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                          soundEnabled 
+                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
+                            : 'bg-zinc-50 border-zinc-200 text-zinc-400'
+                        }`}
+                        title={soundEnabled ? 'Mute Alert Sounds' : 'Unmute Alert Sounds'}
+                      >
+                        {soundEnabled ? (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm10.95 3.536l-8.486-8.486" />
+                          </svg>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={togglePush}
+                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                          pushEnabled 
+                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
+                            : 'bg-zinc-50 border-zinc-200 text-zinc-400'
+                        }`}
+                        title={pushEnabled ? 'Disable Push Alerts' : 'Enable Push Alerts'}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 font-sans">
+                    {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-zinc-400 text-xs">
+                        No recent updates found.
+                      </div>
+                    ) : (
+                      notifications.map((notif: any) => {
+                        const isUnread = !notif.isRead;
+                        return (
+                          <div 
+                            key={notif.id}
+                            className={`p-3.5 flex items-start gap-3 hover:bg-zinc-50 transition-colors text-left ${
+                              isUnread ? 'bg-amber-50/10' : ''
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
+                              notif.type === 'escalation' ? 'bg-[#C59B27]' : 'bg-zinc-400'
+                            }`} />
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <p className={`text-xs font-serif font-semibold truncate ${
+                                  isUnread ? 'text-[#18181B]' : 'text-zinc-600'
+                                }`}>
+                                  {notif.title}
+                                </p>
+                                <span className="text-[9px] text-zinc-400 shrink-0">
+                                  {formatTimeAgo(notif.createdAt)}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed break-words whitespace-normal">
+                                {notif.message}
+                              </p>
+
+                              <div className="flex items-center justify-between mt-2.5">
+                                {notif.metadata?.childId ? (
+                                  <button
+                                    onClick={async () => {
+                                      setActiveTab('review');
+                                      setSearchQuery(notif.message.replace(/.*\sfor\s/, '').replace(/\..*/, '').trim());
+                                      setShowNotifPanel(false);
+                                      if (isUnread) {
+                                        try {
+                                          await api.parent.markNotificationAsRead(notif.id);
+                                          fetchNotificationsList();
+                                        } catch (_) {}
+                                      }
+                                    }}
+                                    className="text-[10px] font-semibold text-[#9A7326] hover:text-[#C59B27] underline cursor-pointer"
+                                  >
+                                    View Details
+                                  </button>
+                                ) : (
+                                  <div />
+                                )}
+
+                                {isUnread && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await api.parent.markNotificationAsRead(notif.id);
+                                        fetchNotificationsList();
+                                      } catch (err) {
+                                        console.error('Mark read failed:', err);
+                                      }
+                                    }}
+                                    className="text-[10px] font-bold text-zinc-400 hover:text-[#18181B] border border-zinc-200 hover:border-zinc-300 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                                  >
+                                    Mark as read
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-zinc-50 border-t border-zinc-100 text-center">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.parent.markAllNotificationsAsRead();
+                          fetchNotificationsList();
+                          showSuccess('All Read', 'Marked all updates as read.');
+                        } catch (err) {
+                          console.error('Mark all read failed:', err);
+                        }
+                      }}
+                      className="text-[10px] font-bold text-zinc-500 hover:text-[#18181B] transition-colors cursor-pointer"
+                    >
+                      Clear all unread
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

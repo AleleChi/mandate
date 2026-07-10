@@ -377,12 +377,33 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
   const underReviewCount = list.filter(c => c.status === 'Under review').length;
   const passReadyCount = list.filter(c => c.status === 'Pass ready').length;
 
+  const event = await queryOne('SELECT * FROM events WHERE id = ?', [REAL_EVENT_ID]);
+  const activeEvent = event ? {
+    id: event.id,
+    title: event.title,
+    section_name: event.section_name,
+    sectionName: event.section_name,
+    theme: event.theme,
+    scripture: event.scripture,
+    starts_at: event.starts_at,
+    startsAt: event.starts_at,
+    ends_at: event.ends_at,
+    endsAt: event.ends_at,
+    daily_start_time: event.daily_start_time,
+    dailyStartTime: event.daily_start_time,
+    daily_end_time: event.daily_end_time,
+    dailyEndTime: event.daily_end_time,
+    location: event.location,
+    status: event.status
+  } : null;
+
   res.json({
     parentProfile: await mapProfileToFrontend(req.parentProfile),
     childrenCount,
     underReviewCount,
     passReadyCount,
-    childrenList: list
+    childrenList: list,
+    activeEvent
   });
 });
 
