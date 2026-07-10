@@ -362,6 +362,14 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS notification_archives (
+      id TEXT PRIMARY KEY,
+      notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      archived_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1100,6 +1108,14 @@ async function initPostgresSchema(pool: any) {
         notification_id VARCHAR(64) NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
         user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         read_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS notification_archives (
+        id VARCHAR(64) PRIMARY KEY,
+        notification_id VARCHAR(64) NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+        user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        archived_at TIMESTAMP NOT NULL,
         created_at TIMESTAMP NOT NULL
       );
 

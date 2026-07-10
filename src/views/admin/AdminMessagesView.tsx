@@ -17,7 +17,18 @@ import {
   AlertTriangle,
   Info,
   RefreshCw,
-  Settings
+  Settings,
+  Search,
+  Filter,
+  Archive,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  User,
+  ExternalLink,
+  Bell,
+  BellOff
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -62,11 +73,81 @@ const TOKENS = [
   { key: '{Support contact}', label: 'Support Contact' }
 ];
 
+function formatPremiumDate(dateStr: string) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  
+  const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  
+  if (isToday) {
+    return `Today, ${timeStr}`;
+  } else if (isYesterday) {
+    return `Yesterday, ${timeStr}`;
+  } else {
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true };
+    return d.toLocaleDateString([], options);
+  }
+}
+
+function formatPremiumDateDetail(dateStr: string) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+  const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${d.toLocaleDateString([], dateOptions)} · ${timeStr}`;
+}
+
+function formatPremiumType(typeStr: string) {
+  if (!typeStr) return '';
+  const map: Record<string, string> = {
+    safety_alert: 'Safety alert',
+    escalation: 'Escalation',
+    parent_message: 'Parent message',
+    volunteer_message: 'Volunteer message',
+    pass_update: 'Pass update',
+    application_update: 'Application update',
+    delivery_issue: 'Delivery issue',
+    info: 'General info',
+    broadcast: 'Broadcast'
+  };
+  return map[typeStr] || typeStr.charAt(0).toUpperCase() + typeStr.slice(1).replace(/_/g, ' ');
+}
+
 export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessagesViewProps) {
   const { showSuccess, showError, showInfo } = useNotification();
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+
+  // Messages & Updates Centre state
+  const [activeTab, setActiveTab] = useState<'updates' | 'broadcast'>('updates');
+  const [updates, setUpdates] = useState<any[]>([]);
+  const [pagination, setPagination] = useState<any>({ total: 0, page: 1, limit: 15, pages: 1 });
+  const [updatesLoading, setUpdatesLoading] = useState(false);
+  const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
+
+  // Summary card counts state
+  const [summaryStats, setSummaryStats] = useState({
+    unread: 0,
+    openAlerts: 0,
+    urgent: 0,
+    deliveryIssues: 0
+  });
+
+  // Filters for Updates Centre
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [senderRoleFilter, setSenderRoleFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   // Stats from backend
@@ -208,8 +289,142 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
     }
   };
 
+  const fetchSummaryStats = async () => {
+    try {
+      const resUnread = await api.adminUpdates.getUpdates({ status: 'unread', limit: 1 });
+      const resOpen = await api.adminUpdates.getUpdates({ status: 'open', limit: 1 });
+      const resUrgent = await api.adminUpdates.getUpdates({ priority: 'urgent', limit: 1 });
+      const resDelivery = await api.adminUpdates.getUpdates({ type: 'delivery_issue', limit: 1 }).catch(() => null);
+      
+      setSummaryStats({
+        unread: resUnread?.pagination?.total ?? 0,
+        openAlerts: resOpen?.pagination?.total ?? 0,
+        urgent: resUrgent?.pagination?.total ?? 0,
+        deliveryIssues: resDelivery?.pagination?.total ?? stats.failed
+      });
+    } catch (err) {
+      console.warn('Failed to fetch summary card statistics:', err);
+    }
+  };
+
+  const fetchUpdates = async (page = 1) => {
+    setUpdatesLoading(true);
+    try {
+      const res = await api.adminUpdates.getUpdates({
+        limit: 15,
+        page,
+        status: statusFilter,
+        type: typeFilter,
+        senderRole: senderRoleFilter,
+        priority: priorityFilter,
+        search: searchFilter,
+        dateFrom,
+        dateTo
+      });
+      if (res && res.updates) {
+        setUpdates(res.updates);
+        setPagination(res.pagination);
+        setCurrentPage(res.pagination.page);
+      }
+      // Also fetch stats
+      fetchSummaryStats();
+    } catch (err) {
+      console.error('Error loading updates:', err);
+      showError('Failed to load updates.');
+    } finally {
+      setUpdatesLoading(false);
+    }
+  };
+
+  const handleViewDetail = async (update: any) => {
+    setSelectedUpdate(update);
+    // Mark as read if unread
+    if (!update.isRead) {
+      try {
+        await api.adminUpdates.markAsRead(update.rawId);
+        // Update local status so we don't have to reload list
+        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: true } : u));
+        update.isRead = true;
+        // Refresh summary stats
+        fetchSummaryStats();
+      } catch (err) {
+        console.warn('Failed to mark update as read:', err);
+      }
+    }
+  };
+
+  const handleToggleRead = async (update: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (update.isRead) {
+        await api.adminUpdates.markAsUnread(update.rawId);
+        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: false, readAt: null } : u));
+        showSuccess('Marked as unread');
+      } else {
+        await api.adminUpdates.markAsRead(update.rawId);
+        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: true, readAt: new Date().toISOString() } : u));
+        showSuccess('Marked as read');
+      }
+      fetchSummaryStats();
+    } catch (err) {
+      showError('Action failed.');
+    }
+  };
+
+  const handleToggleArchive = async (update: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (update.isArchived) {
+        await api.adminUpdates.unarchiveUpdate(update.rawId);
+        showSuccess('Update unarchived');
+        if (statusFilter === 'archived') {
+          setUpdates(prev => prev.filter(u => u.rawId !== update.rawId));
+        } else {
+          setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isArchived: false, archivedAt: null } : u));
+        }
+      } else {
+        await api.adminUpdates.archiveUpdate(update.rawId);
+        showSuccess('Update archived');
+        if (statusFilter !== 'archived') {
+          setUpdates(prev => prev.filter(u => u.rawId !== update.rawId));
+        } else {
+          setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isArchived: true, archivedAt: new Date().toISOString() } : u));
+        }
+      }
+      if (selectedUpdate && selectedUpdate.rawId === update.rawId) {
+        setSelectedUpdate(prev => prev ? { ...prev, isArchived: !prev.isArchived } : null);
+      }
+      fetchSummaryStats();
+    } catch (err) {
+      showError('Action failed.');
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await api.adminUpdates.markAllAsRead();
+      setUpdates(prev => prev.map(u => ({ ...u, isRead: true, readAt: new Date().toISOString() })));
+      showSuccess('All updates marked as read');
+      fetchUpdates(currentPage);
+    } catch (err) {
+      showError('Action failed.');
+    }
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchUpdates(1);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'updates') {
+      fetchUpdates(1);
+    }
+  }, [activeTab, statusFilter, typeFilter, senderRoleFilter, priorityFilter, dateFrom, dateTo]);
+
   useEffect(() => {
     fetchMessagesData();
+    fetchSummaryStats();
   }, []);
 
   const generateLivePreview = async () => {
@@ -402,23 +617,32 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
   return (
     <div 
-      data-view-version="admin-messages-v4-mobile-refined" 
+      data-view-version="admin-messages-updates-centre-v2-premium" 
       className="flex-1 flex flex-col overflow-y-auto min-w-0 bg-[#FAF9F6] p-4 sm:p-8 space-y-6 animate-fade-in"
     >
       {/* PAGE HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-[#EAE8E1] space-y-4 sm:space-y-0">
+      <div 
+        data-component-version="admin-messages-header-v2-premium"
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-[#EAE8E1] space-y-4 sm:space-y-0"
+      >
         <div>
           <h1 className="font-serif text-3xl font-bold text-[#18181B] tracking-tight">
-            Messages
+            Messages & updates
           </h1>
           <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-            Send clear updates to parents by Email, WhatsApp, or both.
+            Review care alerts, volunteer messages, parent updates, and delivery activity.
           </p>
         </div>
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => fetchMessagesData(false)}
-            className="p-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 transition-all cursor-pointer"
+            onClick={() => {
+              if (activeTab === 'updates') {
+                fetchUpdates(currentPage);
+              } else {
+                fetchMessagesData(false);
+              }
+            }}
+            className="p-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
             title="Refresh Details"
           >
             <RefreshCw className="w-4 h-4" />
@@ -427,78 +651,688 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
             id="back-to-dashboard-btn"
             variant="outline" 
             onClick={onBackToOverview}
-            className="text-xs cursor-pointer"
+            className="text-xs cursor-pointer shadow-2xs"
           >
             Overview Dashboard
           </Button>
         </div>
       </div>
 
-      {/* METRIC CARDS ROW */}
-      <div 
-        data-component-version="admin-message-stats-v3-stitch"
-        className="grid grid-cols-2 md:grid-cols-5 gap-4"
-      >
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
-          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Messages sent
-          </span>
-          <p className="font-serif text-2xl font-semibold text-zinc-900">
-            {stats.messagesSent.toLocaleString()}
-          </p>
-          <span className="text-[9px] text-zinc-400 block font-mono">
-            Total sent logs
-          </span>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
-          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            WhatsApp sent
-          </span>
-          <p className="font-serif text-2xl font-semibold text-zinc-900">
-            {stats.whatsappSent.toLocaleString()}
-          </p>
-          <span className="text-[9px] text-zinc-400 block font-mono">
-            Total WhatsApp
-          </span>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
-          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Email sent
-          </span>
-          <p className="font-serif text-2xl font-semibold text-zinc-900">
-            {stats.emailSent.toLocaleString()}
-          </p>
-          <span className="text-[9px] text-zinc-400 block font-mono">
-            Total Emails
-          </span>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 border-red-100">
-          <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wider block">
-            Failed
-          </span>
-          <p className="font-serif text-2xl font-semibold text-red-600">
-            {stats.failed.toLocaleString()}
-          </p>
-          <span className="text-[9px] text-zinc-400 block font-mono">
-            Delivery faults
-          </span>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 border-amber-100">
-          <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider block">
-            Pending
-          </span>
-          <p className="font-serif text-2xl font-semibold text-amber-600">
-            {stats.pending.toLocaleString()}
-          </p>
-          <span className="text-[9px] text-zinc-400 block font-mono">
-            Queued status
-          </span>
-        </div>
+      {/* TABS SELECTOR */}
+      <div className="flex border-b border-[#EAE8E1] space-x-6">
+        <button
+          onClick={() => setActiveTab('updates')}
+          className={`pb-3 text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer ${
+            activeTab === 'updates'
+              ? 'border-[#C59B27] text-[#18181B]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+          }`}
+        >
+          Messages & Updates Centre
+        </button>
+        <button
+          onClick={() => setActiveTab('broadcast')}
+          className={`pb-3 text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer ${
+            activeTab === 'broadcast'
+              ? 'border-[#C59B27] text-[#18181B]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+          }`}
+        >
+          Broadcast Composer
+        </button>
       </div>
+
+      {activeTab === 'updates' ? (
+        <div className="space-y-6">
+          
+          {/* SUMMARY CARDS ROW */}
+          <div 
+            data-component-version="admin-messages-summary-v1-premium"
+            className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in"
+          >
+            {/* Card 1: Unread */}
+            <div 
+              onClick={() => setStatusFilter('unread')}
+              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Unread</span>
+                <span className="w-2 h-2 rounded-full bg-[#C59B27] group-hover:animate-ping" />
+              </div>
+              <div className="flex items-baseline space-x-1">
+                <span className="font-serif text-2xl font-bold text-zinc-900">{summaryStats.unread}</span>
+              </div>
+              <p className="text-[9px] text-zinc-400 font-medium">New notifications & care alerts</p>
+            </div>
+
+            {/* Card 2: Open Alerts */}
+            <div 
+              onClick={() => setStatusFilter('open')}
+              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Open Alerts</span>
+                <span className="w-2 h-2 rounded-full bg-rose-500" />
+              </div>
+              <div className="flex items-baseline space-x-1">
+                <span className="font-serif text-2xl font-bold text-rose-600">{summaryStats.openAlerts}</span>
+              </div>
+              <p className="text-[9px] text-zinc-400 font-medium">Active unresolved volunteer alerts</p>
+            </div>
+
+            {/* Card 3: Urgent */}
+            <div 
+              onClick={() => setPriorityFilter('urgent')}
+              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Urgent</span>
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+              </div>
+              <div className="flex items-baseline space-x-1">
+                <span className="font-serif text-2xl font-bold text-amber-600">{summaryStats.urgent}</span>
+              </div>
+              <p className="text-[9px] text-zinc-400 font-medium">Immediate priority attention items</p>
+            </div>
+
+            {/* Card 4: Delivery Issues */}
+            <div 
+              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Delivery Issues</span>
+                <span className="w-2 h-2 rounded-full bg-zinc-300" />
+              </div>
+              <div className="flex items-baseline space-x-1">
+                <span className="font-serif text-2xl font-bold text-zinc-800">{summaryStats.deliveryIssues}</span>
+              </div>
+              <p className="text-[9px] text-zinc-400 font-medium">Failed emails or whatsapp dispatches</p>
+            </div>
+          </div>
+
+          <div 
+            data-component-version="admin-messages-responsive-v1"
+            className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-in"
+          >
+            {/* LEFT SIDE: LIST & FILTERS */}
+            <div className="lg:col-span-7 space-y-4">
+              
+              {/* FILTER BLOCK */}
+              <div 
+                data-component-version="admin-updates-filters-v2-premium"
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs space-y-4"
+              >
+                
+                {/* SEARCH */}
+                <form onSubmit={handleSearchSubmit} className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={searchFilter}
+                      onChange={(e) => setSearchFilter(e.target.value)}
+                      placeholder="Search messages, senders, child names..."
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#18181B] placeholder-zinc-400 focus:outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-xs hover:shadow-sm"
+                  >
+                    Search
+                  </button>
+                </form>
+
+                {/* TWO ROWS OF DROPDOWNS */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  {/* PRIORITY */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Priority</label>
+                    <select
+                      value={priorityFilter}
+                      onChange={(e) => setPriorityFilter(e.target.value)}
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                    >
+                      <option value="all">All Priorities</option>
+                      <option value="normal">Normal</option>
+                      <option value="important">Important</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+
+                  {/* SENDER ROLE */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Sender Role</label>
+                    <select
+                      value={senderRoleFilter}
+                      onChange={(e) => setSenderRoleFilter(e.target.value)}
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                    >
+                      <option value="all">All Senders</option>
+                      <option value="admin">Admins</option>
+                      <option value="volunteer">Volunteers</option>
+                      <option value="parent">Parents</option>
+                      <option value="system">Platform Updates</option>
+                    </select>
+                  </div>
+
+                  {/* TYPE */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Category</label>
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                    >
+                      <option value="all">All Types</option>
+                      <option value="safety_alert">Safety Alert</option>
+                      <option value="escalation">Escalation</option>
+                      <option value="info">General Info</option>
+                      <option value="broadcast">Broadcast</option>
+                    </select>
+                  </div>
+
+                  {/* STATUS */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Status</label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                    >
+                      <option value="all">All</option>
+                      <option value="unread">Unread</option>
+                      <option value="read">Read</option>
+                      <option value="open">Open Alerts</option>
+                      <option value="acknowledged">Acknowledged Alerts</option>
+                      <option value="resolved">Resolved Alerts</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* DATE FILTERS & BULK ACTIONS */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-3 border-t border-[#EAE8E1] gap-3">
+                  {/* DATES */}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                    <div className="flex items-center space-x-1.5">
+                      <span>From:</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-lg px-2 py-1 text-xs text-zinc-700 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span>To:</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-lg px-2 py-1 text-xs text-zinc-700 focus:outline-none"
+                      />
+                    </div>
+                    {(dateFrom || dateTo || searchFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDateFrom('');
+                          setDateTo('');
+                          setSearchFilter('');
+                          // Trigger reload
+                          setTimeout(() => fetchUpdates(1), 50);
+                        }}
+                        className="text-[10px] text-[#C59B27] hover:underline font-semibold cursor-pointer"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* BULK ACTIONS */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={handleMarkAllAsRead}
+                      className="text-[11px] font-semibold text-[#18181B] bg-zinc-100 hover:bg-zinc-200 border border-[#EAE8E1] px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>Mark all read</span>
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* LIST CARDS */}
+              <div className="space-y-3">
+                {updatesLoading ? (
+                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 flex flex-col items-center justify-center space-y-4" data-component-version="admin-updates-state-v2-premium">
+                    <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
+                    <span className="text-xs text-[#A37B1B] font-serif font-medium">Loading updates & alerts...</span>
+                  </div>
+                ) : updates.length === 0 ? (
+                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 text-center space-y-4 max-w-xl mx-auto" data-component-version="admin-updates-state-v2-premium">
+                    <div className="w-12 h-12 bg-[#FAF9F6] border border-[#EAE8E1] rounded-full flex items-center justify-center mx-auto shadow-xs">
+                      <BellOff className="w-5 h-5 text-zinc-400" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <h3 className="font-serif font-bold text-base text-[#18181B]">No updates found</h3>
+                      <p className="text-xs text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                        There are no active messages or care updates matching your current filter parameters.
+                      </p>
+                    </div>
+                    {(priorityFilter !== 'all' || statusFilter !== 'all' || typeFilter !== 'all' || senderRoleFilter !== 'all' || searchFilter || dateFrom || dateTo) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPriorityFilter('all');
+                          setStatusFilter('all');
+                          setTypeFilter('all');
+                          setSenderRoleFilter('all');
+                          setSearchFilter('');
+                          setDateFrom('');
+                          setDateTo('');
+                          setTimeout(() => fetchUpdates(1), 50);
+                        }}
+                        className="inline-flex items-center space-x-1 px-4 py-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 text-[#18181B] font-semibold rounded-xl border border-[#EAE8E1] transition-all cursor-pointer"
+                      >
+                        <span>Clear all filters</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      {updates.map((update) => {
+                        const isUnread = !update.isRead;
+                        const isSelected = selectedUpdate?.rawId === update.rawId;
+                        
+                        const priorityStyle = update.priority === 'urgent'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200 font-semibold'
+                          : update.priority === 'important'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200 font-semibold'
+                          : 'bg-zinc-100 text-zinc-700 border border-zinc-200';
+
+                        const catStyle = update.type === 'safety_alert'
+                          ? 'bg-rose-100/50 text-rose-800 border border-rose-100'
+                          : update.type === 'escalation'
+                          ? 'bg-amber-100/50 text-amber-800 border border-amber-100'
+                          : 'bg-zinc-100/50 text-zinc-800 border border-zinc-100';
+
+                        // Format sender role nicely
+                        let cleanRole = update.senderRole;
+                        if (update.senderRole) {
+                          const rLower = update.senderRole.toLowerCase();
+                          if (rLower.includes('volunteer')) cleanRole = 'Volunteer';
+                          else if (rLower.includes('parent')) cleanRole = 'Parent';
+                          else if (rLower.includes('super')) cleanRole = 'Super Admin';
+                          else if (rLower.includes('admin')) cleanRole = 'Admin';
+                          else if (rLower.includes('system')) cleanRole = 'Platform Updates';
+                        }
+
+                        return (
+                          <div
+                            key={update.id}
+                            onClick={() => handleViewDetail(update)}
+                            data-component-version="admin-update-card-v2-premium"
+                            className={`group relative border rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col md:flex-row md:items-start justify-between gap-4 ${
+                              isSelected
+                                ? 'border-[#C59B27] bg-[#C59B27]/5 shadow-xs'
+                                : isUnread
+                                ? 'border-[#EAE8E1] bg-[#C59B27]/3 hover:bg-[#C59B27]/8'
+                                : 'border-[#EAE8E1] bg-white hover:bg-zinc-50 shadow-2xs'
+                            }`}
+                          >
+                            {/* Warm left border indicator for unread item */}
+                            {isUnread && (
+                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#C59B27] rounded-l-2xl" />
+                            )}
+
+                            {/* Left: Unread dot & main body */}
+                            <div className="flex-1 flex items-start space-x-3.5 min-w-0">
+                              {isUnread && (
+                                <span className="w-2.5 h-2.5 bg-[#C59B27] rounded-full shrink-0 mt-1.5 animate-pulse" />
+                              )}
+                              <div className="space-y-2 min-w-0">
+                                <div 
+                                  data-component-version="admin-update-badges-v2-premium"
+                                  className="flex flex-wrap items-center gap-2"
+                                >
+                                  <span className={`text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${catStyle}`}>
+                                    {formatPremiumType(update.type)}
+                                  </span>
+                                  <span className={`text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${priorityStyle}`}>
+                                    {update.priority === 'normal' ? 'Normal' : update.priority === 'important' ? 'Important' : 'Urgent'}
+                                  </span>
+                                  {update.isArchived && (
+                                    <span className="text-[9px] bg-zinc-100 text-zinc-500 border border-zinc-200 px-2 py-0.5 rounded-full font-semibold">
+                                      Archived
+                                    </span>
+                                  )}
+                                </div>
+                                <h3 className="font-serif font-bold text-sm text-[#18181B] group-hover:text-[#C59B27] transition-all truncate">
+                                  {update.title}
+                                </h3>
+                                <p className="text-zinc-500 text-xs leading-relaxed line-clamp-2">
+                                  {update.bodyPreview}
+                                </p>
+                                {/* Metadata footer */}
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-400 font-mono">
+                                  <span className="flex items-center space-x-1 font-sans">
+                                    <span className="w-4 h-4 rounded-full bg-[#FAF9F6] border border-[#EAE8E1] text-[#A37B1B] text-[8px] font-bold flex items-center justify-center shrink-0">
+                                      {update.senderName ? update.senderName[0].toUpperCase() : '?'}
+                                    </span>
+                                    <span className="text-zinc-600 font-semibold">{update.senderName}</span>
+                                    <span className="text-zinc-400">({cleanRole})</span>
+                                  </span>
+                                  <span>•</span>
+                                  <span data-component-version="admin-update-date-format-v1">
+                                    {formatPremiumDate(update.createdAt)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right: Quick action overlays */}
+                            <div className="flex items-center space-x-1.5 self-end md:self-start shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleRead(update, e)}
+                                className="p-2 rounded-xl border border-[#EAE8E1] bg-white text-zinc-400 hover:text-[#C59B27] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
+                                title={isUnread ? "Mark as Read" : "Mark as Unread"}
+                              >
+                                <Check className={`w-3.5 h-3.5 ${update.isRead ? 'text-emerald-600' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleArchive(update, e)}
+                                className="p-2 rounded-xl border border-[#EAE8E1] bg-white text-zinc-400 hover:text-[#C59B27] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
+                                title={update.isArchived ? "Restore from Archive" : "Archive Update"}
+                              >
+                                <Archive className={`w-3.5 h-3.5 ${update.isArchived ? 'text-[#C59B27]' : ''}`} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* PAGINATION CONTROLS */}
+                    {pagination && pagination.pages > 1 && (
+                      <div className="flex items-center justify-between pt-4 border-t border-[#EAE8E1]">
+                        <span className="text-xs text-zinc-500">
+                          Showing page <strong>{pagination.page}</strong> of {pagination.pages} ({pagination.total} records)
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            disabled={pagination.page <= 1}
+                            onClick={() => fetchUpdates(pagination.page - 1)}
+                            className="p-2 border border-[#EAE8E1] rounded-xl text-zinc-500 hover:bg-[#C59B27]/5 hover:text-[#C59B27] disabled:opacity-50 disabled:hover:bg-transparent cursor-pointer transition-all"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pagination.page >= pagination.pages}
+                            onClick={() => fetchUpdates(pagination.page + 1)}
+                            className="p-2 border border-[#EAE8E1] rounded-xl text-zinc-500 hover:bg-[#C59B27]/5 hover:text-[#C59B27] disabled:opacity-50 disabled:hover:bg-transparent cursor-pointer transition-all"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+            </div>
+
+            {/* RIGHT SIDE: SELECTED DETAIL PANEL */}
+            <div className="lg:col-span-5 h-full">
+              {selectedUpdate ? (
+                <div 
+                  data-view-version="admin-update-detail-v2-premium"
+                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-sm space-y-6 sticky top-6 animate-fade-in"
+                >
+                  {/* 1. Detail header */}
+                  <div 
+                    data-component-version="admin-update-detail-header-v2"
+                    className="flex items-center justify-between pb-4 border-b border-[#EAE8E1]"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] uppercase tracking-wider font-semibold bg-[#C59B27]/10 text-[#C59B27] px-2.5 py-1 rounded-full">
+                        {selectedUpdate.type.replace(/_/g, ' ')}
+                      </span>
+                      <span className={`text-[10px] px-2.5 py-1 rounded-full ${
+                        selectedUpdate.priority === 'urgent' 
+                          ? 'bg-rose-50 text-rose-700 font-semibold border border-rose-200' 
+                          : selectedUpdate.priority === 'important'
+                          ? 'bg-amber-50 text-amber-700 font-semibold border border-amber-200'
+                          : 'bg-zinc-100 text-zinc-700 border border-zinc-200'
+                      }`}>
+                        {selectedUpdate.priority === 'normal' ? 'Normal' : selectedUpdate.priority === 'important' ? 'Important' : 'Urgent'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUpdate(null)}
+                      className="text-zinc-400 hover:text-[#18181B] text-xs font-semibold cursor-pointer flex items-center space-x-1"
+                    >
+                      <span>Close</span>
+                    </button>
+                  </div>
+
+                  {/* 2. Sender card */}
+                  <div 
+                    data-component-version="admin-update-detail-sender-v2"
+                    className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4"
+                  >
+                    <div className="flex items-center space-x-3.5" data-component-version="admin-update-sender-avatar-v2-premium">
+                      <div className="w-10 h-10 rounded-full bg-[#FAF9F6] border-2 border-[#EAE8E1] text-[#A37B1B] font-serif font-semibold text-sm flex items-center justify-center shadow-xs">
+                        {selectedUpdate.senderName ? selectedUpdate.senderName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() : '??'}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-[#18181B] tracking-tight">{selectedUpdate.senderName}</h4>
+                        <p className="text-[10px] text-zinc-400 font-medium tracking-wide uppercase mt-0.5">
+                          {selectedUpdate.senderRole === 'system' ? 'Automated Update' : selectedUpdate.senderRole}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Message content card */}
+                  <div 
+                    data-component-version="admin-update-detail-content-v2"
+                    className="space-y-3"
+                  >
+                    <div className="space-y-1">
+                      <h2 className="font-serif text-lg font-bold text-[#18181B] leading-snug">
+                        {selectedUpdate.title}
+                      </h2>
+                      <div className="flex items-center space-x-1.5 text-[10px] text-zinc-400 font-mono" data-component-version="admin-update-date-format-v1">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Sent: {formatPremiumDateDetail(selectedUpdate.createdAt)}</span>
+                      </div>
+                    </div>
+                    <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 text-xs text-zinc-700 leading-relaxed whitespace-pre-wrap font-sans">
+                      {selectedUpdate.bodyFull}
+                    </div>
+                  </div>
+
+                  {/* 4. Related details card */}
+                  {(selectedUpdate.relatedChildName || selectedUpdate.relatedEventId || selectedUpdate.actionStatus !== 'n/a') && (
+                    <div 
+                      data-component-version="admin-update-detail-related-v2"
+                      className="border border-[#EAE8E1] rounded-xl p-4 space-y-3 text-xs"
+                    >
+                      <span className="text-[9px] text-[#A37B1B] uppercase tracking-wider block font-serif font-bold pb-1.5 border-b border-zinc-100">Related Details</span>
+                      
+                      {selectedUpdate.relatedChildName && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-zinc-500 font-medium">Child:</span>
+                          <strong className="text-[#18181B] font-semibold text-xs">{selectedUpdate.relatedChildName}</strong>
+                        </div>
+                      )}
+                      
+                      {selectedUpdate.relatedEventId && (
+                        <div className="flex justify-between items-center" data-component-version="admin-update-safe-event-display-v1">
+                          <span className="text-zinc-500 font-medium">Event:</span>
+                          <strong className="text-[#18181B] font-serif text-xs">
+                            {selectedUpdate.relatedEventId === 'event-ga-2026' || selectedUpdate.relatedEventId.includes('2026')
+                              ? 'Koinonia Children & Teens Event 2026'
+                              : 'Current Event'}
+                          </strong>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-zinc-500 font-medium">Delivery Status:</span>
+                        <span className="font-semibold text-emerald-700 text-xs flex items-center space-x-1">
+                          <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full inline-block" />
+                          <span>Delivered (In-App)</span>
+                        </span>
+                      </div>
+
+                      {selectedUpdate.actionStatus !== 'n/a' && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-zinc-500 font-medium">Alert Status:</span>
+                          <span className={`font-semibold uppercase text-[10px] flex items-center space-x-1 ${
+                            selectedUpdate.actionStatus === 'resolved'
+                              ? 'text-emerald-700'
+                              : selectedUpdate.actionStatus === 'acknowledged'
+                              ? 'text-[#C59B27]'
+                              : 'text-rose-600 animate-pulse'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full inline-block ${
+                              selectedUpdate.actionStatus === 'resolved'
+                                ? 'bg-emerald-600'
+                                : selectedUpdate.actionStatus === 'acknowledged'
+                                ? 'bg-[#C59B27]'
+                                : 'bg-rose-600'
+                            }`} />
+                            <span>{selectedUpdate.actionStatus}</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 5. Action footer */}
+                  <div 
+                    data-component-version="admin-update-detail-actions-v2"
+                    className="flex flex-col gap-2 pt-1"
+                  >
+                    {selectedUpdate.targetUrl && (
+                      <button
+                        type="button"
+                        data-component-version="admin-update-actions-v2-working"
+                        onClick={() => onNavigate(selectedUpdate.targetUrl)}
+                        className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs hover:shadow-sm"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open related review</span>
+                      </button>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleRead(selectedUpdate, e)}
+                        className="flex-1 bg-zinc-100 hover:bg-zinc-200 border border-[#EAE8E1] text-[#18181B] text-xs font-semibold py-2 rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5 text-[#C59B27]" />
+                        <span>{selectedUpdate.isRead ? 'Mark unread' : 'Mark read'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleArchive(selectedUpdate, e)}
+                        className="flex-1 bg-zinc-100 hover:bg-zinc-200 border border-[#EAE8E1] text-[#18181B] text-xs font-semibold py-2 rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                      >
+                        <Archive className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>{selectedUpdate.isArchived ? 'Restore' : 'Archive'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-zinc-50 border-2 border-dashed border-zinc-200 rounded-2xl p-12 text-center text-zinc-400 space-y-2.5">
+                  <Info className="w-6 h-6 text-zinc-300 mx-auto" />
+                  <span className="text-xs block leading-relaxed max-w-xs mx-auto">Select a care update or message from the list to view complete records and execute associated review operations.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* METRIC CARDS ROW */}
+          <div 
+            data-component-version="admin-message-stats-v3-stitch"
+            className="grid grid-cols-2 md:grid-cols-5 gap-4"
+          >
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
+              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                Messages sent
+              </span>
+              <p className="font-serif text-2xl font-semibold text-zinc-900">
+                {stats.messagesSent.toLocaleString()}
+              </p>
+              <span className="text-[9px] text-zinc-400 block font-mono">
+                Total sent logs
+              </span>
+            </div>
+
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
+              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                WhatsApp sent
+              </span>
+              <p className="font-serif text-2xl font-semibold text-zinc-900">
+                {stats.whatsappSent.toLocaleString()}
+              </p>
+              <span className="text-[9px] text-zinc-400 block font-mono">
+                Total WhatsApp
+              </span>
+            </div>
+
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
+              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                Email sent
+              </span>
+              <p className="font-serif text-2xl font-semibold text-zinc-900">
+                {stats.emailSent.toLocaleString()}
+              </p>
+              <span className="text-[9px] text-zinc-400 block font-mono">
+                Total Emails
+              </span>
+            </div>
+
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 border-red-100">
+              <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wider block">
+                Failed
+              </span>
+              <p className="font-serif text-2xl font-semibold text-red-600">
+                {stats.failed.toLocaleString()}
+              </p>
+              <span className="text-[9px] text-zinc-400 block font-mono">
+                Delivery faults
+              </span>
+            </div>
+
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 border-amber-100">
+              <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider block">
+                Pending
+              </span>
+              <p className="font-serif text-2xl font-semibold text-amber-600">
+                {stats.pending.toLocaleString()}
+              </p>
+              <span className="text-[9px] text-zinc-400 block font-mono">
+                Queued status
+              </span>
+            </div>
+          </div>
 
       {/* RECIPIENT GROUP CHIPS (HORIZONTALLY SCROLLABLE) */}
       <div 
@@ -1111,6 +1945,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
 
     </div>

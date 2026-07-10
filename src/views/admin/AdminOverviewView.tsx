@@ -111,6 +111,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [notifTab, setNotifTab] = useState<'unread' | 'all'>('unread');
   const [soundEnabled, setSoundEnabled] = useState(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('koinonia_sound_enabled');
@@ -901,14 +902,50 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     </div>
                   </div>
 
+                  {/* Tabs: Unread vs All */}
+                  <div className="flex border-b border-[#EAE8E1]/60 px-5 py-2 bg-[#FAF9F6] space-x-4">
+                    <button
+                      type="button"
+                      onClick={() => setNotifTab('unread')}
+                      className={`pb-1 text-xs font-semibold tracking-wide border-b-2 transition-all cursor-pointer ${
+                        notifTab === 'unread'
+                          ? 'border-[#C59B27] text-[#18181B]'
+                          : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                      }`}
+                    >
+                      Unread ({unreadNotifCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotifTab('all')}
+                      className={`pb-1 text-xs font-semibold tracking-wide border-b-2 transition-all cursor-pointer ${
+                        notifTab === 'all'
+                          ? 'border-[#C59B27] text-[#18181B]'
+                          : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                      }`}
+                    >
+                      All Updates
+                    </button>
+                  </div>
+
                   <div className="max-h-[360px] overflow-y-auto divide-y divide-[#EAE8E1]/40 font-sans">
-                    {notifications.length === 0 ? (
-                      <div className="p-10 text-center text-zinc-400 text-sm flex flex-col items-center justify-center gap-2">
-                        <Bell className="w-8 h-8 text-zinc-300 stroke-[1.5]" />
-                        <span className="font-medium">No active updates or care alerts</span>
-                      </div>
-                    ) : (
-                      notifications.map((notif: any) => {
+                    {(() => {
+                      const listToRender = (Array.isArray(notifications) ? notifications : [])
+                        .filter(notif => notifTab === 'all' || !notif.isRead)
+                        .slice(0, notifTab === 'unread' ? 10 : 15);
+
+                      if (listToRender.length === 0) {
+                        return (
+                          <div className="p-10 text-center text-zinc-400 text-sm flex flex-col items-center justify-center gap-2">
+                            <Bell className="w-8 h-8 text-zinc-300 stroke-[1.5]" />
+                            <span className="font-medium">
+                              {notifTab === 'unread' ? 'No unread updates' : 'No active updates'}
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      return listToRender.map((notif: any) => {
                         const isUnread = !notif.isRead;
                         
                         // Select premium icon + colors based on notification metadata
@@ -1035,11 +1072,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </div>
                           </div>
                         );
-                      })
-                    )}
+                      });
+                    })()}
                   </div>
 
-                  <div className="p-4 bg-[#FAF9F6] border-t border-[#EAE8E1]/80 text-center">
+                  <div className="p-4 bg-[#FAF9F6] border-t border-[#EAE8E1]/80 grid grid-cols-2 gap-2 text-center">
                     <button
                       onClick={async () => {
                         try {
@@ -1050,9 +1087,19 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           console.error('Mark all read failed:', err);
                         }
                       }}
-                      className="text-[11px] font-bold text-[#9A7326] hover:text-[#C59B27] transition-all cursor-pointer"
+                      className="text-[11px] font-bold text-[#9A7326] hover:text-[#C59B27] transition-all cursor-pointer border-r border-[#EAE8E1] text-left pl-2"
                     >
-                      Mark all updates as read
+                      Mark all as read
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab('messages');
+                        setShowNotifPanel(false);
+                      }}
+                      className="text-[11px] font-bold text-[#C59B27] hover:text-[#A37B1B] transition-all cursor-pointer flex items-center justify-end pr-2 space-x-1"
+                    >
+                      <span>Updates Centre</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-[#C59B27]" />
                     </button>
                   </div>
                 </div>

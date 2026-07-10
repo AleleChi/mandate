@@ -1741,6 +1741,91 @@ Marks all active, unread notifications matching the user's role and scoping para
   }
   ```
 
+### 17.4 GET `/api/notifications/admin/updates`
+Retrieves Messages & updates list with advanced premium filters for the History center. Supports search, read/unread filtering, priority, and pagination.
+- **Query Parameters**:
+  - `search`: string (optional search keyword)
+  - `status`: `'all' | 'unread' | 'archived'` (defaults to `'all'`)
+  - `priority`: `'all' | 'normal' | 'important'` (defaults to `'all'`)
+  - `senderRole`: `'all' | 'volunteer' | 'parent'` (defaults to `'all'`)
+  - `page`: number (page index, default 1)
+  - `limit`: number (items per page, default 20)
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "updates": [
+      {
+        "id": "notif-uuid",
+        "title": "Care updates escalated",
+        "message": "Attention item escalated...",
+        "type": "escalation",
+        "priority": "important",
+        "createdAt": "2026-07-09T00:19:05.593Z",
+        "isRead": false,
+        "isArchived": false,
+        "metadata": {}
+      }
+    ],
+    "pagination": {
+      "total": 42,
+      "page": 1,
+      "limit": 20,
+      "pages": 3
+    }
+  }
+  ```
+
+### 17.5 POST `/api/notifications/admin/updates/:id/read`
+Marks an individual administrative message or care update as read. Does not delete or remove the item from the History center.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Update marked as read"
+  }
+  ```
+
+### 17.6 POST `/api/notifications/admin/updates/:id/unread`
+Marks an individual administrative message or care update as unread.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Update marked as unread"
+  }
+  ```
+
+### 17.7 POST `/api/notifications/admin/updates/:id/archive`
+Archives an administrative message or care update. The archived item is preserved and accessible in the archive filter of the History center.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Update archived successfully"
+  }
+  ```
+
+### 17.8 POST `/api/notifications/admin/updates/:id/unarchive`
+Restores an archived administrative message or care update.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Update restored successfully"
+  }
+  ```
+
+### 17.9 POST `/api/notifications/admin/updates/read-all`
+Marks all active administrative messages and care updates as read.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "All updates marked as read"
+  }
+  ```
+
 ### 17.4 POST `/api/admin/parents/:id/permanent-delete`
 Permanently deletes and anonymizes a soft-removed parent's profile and disables their user login credentials.
 - **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)

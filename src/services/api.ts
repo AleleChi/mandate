@@ -529,6 +529,50 @@ export const api = {
     }
   },
 
+  adminUpdates: {
+    async getUpdates(filters: {
+      limit?: number;
+      page?: number;
+      status?: string;
+      type?: string;
+      senderRole?: string;
+      priority?: string;
+      search?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    }) {
+      const params = new URLSearchParams();
+      if (filters.limit) params.append('limit', String(filters.limit));
+      if (filters.page) params.append('page', String(filters.page));
+      if (filters.status) params.append('status', filters.status);
+      if (filters.type) params.append('type', filters.type);
+      if (filters.senderRole) params.append('senderRole', filters.senderRole);
+      if (filters.priority) params.append('priority', filters.priority);
+      if (filters.search) params.append('search', filters.search);
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.append('dateTo', filters.dateTo);
+
+      return api.request<{ updates: any[]; pagination: any }>(
+        `/api/notifications/admin/updates?${params.toString()}`
+      );
+    },
+    async markAsRead(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/read`, { method: 'POST' });
+    },
+    async markAsUnread(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/unread`, { method: 'POST' });
+    },
+    async markAllAsRead() {
+      return api.request<any>('/api/notifications/admin/updates/read-all', { method: 'POST' });
+    },
+    async archiveUpdate(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/archive`, { method: 'POST' });
+    },
+    async unarchiveUpdate(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/unarchive`, { method: 'POST' });
+    }
+  },
+
   admin: {
     async signIn(payload: any) {
       const res = await api.request<any>('/api/admin/sign-in', {

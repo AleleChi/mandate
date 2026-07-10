@@ -395,3 +395,23 @@ To support coordinators in monitoring event-day physical checkmarks and escalati
 - **Short Reference Display**: To match production UI standards and protect data privacy, volunteers only see a short uppercase reference code (derived from the last 4 characters of the child's ID) and stripped name suffixes instead of raw UUIDs or long numeric names, while administrators retain full file visibility.
 - **Demo Filtering**: The administration panel and volunteer systems have a safeguard (`ENABLE_DEMO_DATA` setting) that filters out "Test Child" entries in production to keep the command center clear of clutter.
 - **Interactive Verification Modal Integration**: On the volunteer dashboard, the interactive sheet utilizes modern, user-friendly forms (`data-view-version="volunteer-attention-detail-v3-premium"`) to allow active check-ins, medical note verification, and escalate requests with pristine, brand-safe wording.
+
+
+## 16. Advanced Admin Messages & Updates Centre & Refined Quick Panel
+
+To support long-term message retention, notification tracking, and seamless administrative communication:
+
+### A. Non-Destructive Update Management
+- **Description**: Replaced temporary notifications with permanent Messages & updates. Marking an update as read removes the unread highlight and reduces the unread badge count, but keeps the item stored in the History center for later reference.
+- **Archive Action**: Allows administrators to soft-archive updates when they are no longer top priority, preserving them in the archive filter of the History center without deleting them.
+
+### B. Messages & Updates Centre
+- **Interactive Multi-Tab Dashboard**: Conditional tab selection switches between the "Broadcast Composer" and the advanced "Messages & Updates Centre" (History center).
+- **Advanced Filtering and Search**: Supports high-fidelity filters (search keyword, priority, sender role, and status) with dynamic pagination to prevent interface slowdown on large datasets (such as 1000+ items).
+- **Proof Identifier**: `data-component-version="admin-updates-centre-v3-premium"`
+
+### C. Refined Bell Quick Panel
+- **A. Dynamic Tab selection**: The header notification bell opens a premium quick panel divided into "Unread" and "All Updates" tabs.
+- **B. Overcrowding Protection**: Restricts list rendering to the top 10 unread or 15 recent updates respectively to preserve visual cleanliness.
+- **C. History Link**: Includes a direct link pointing to the Messages & Updates Centre to quickly manage complete history logs.
+- **Proof Identifier**: `data-component-version="admin-notification-panel-v3-premium"`

@@ -749,4 +749,342 @@ router.post('/push/unsubscribe', async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// GET /api/notifications/admin/updates
+router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    const role = req.user?.role;
+    if (!userId || (role !== 'admin' && role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const limit = parseInt(req.query.limit as string) || 25;
+    const page = parseInt(req.query.page as string) || 1;
+    const offset = (page - 1) * limit;
+
+    const statusFilter = (req.query.status as string) || 'all'; // all, unread, read, open, acknowledged, resolved, archived
+    const typeFilter = (req.query.type as string) || 'all';
+    const senderRoleFilter = (req.query.senderRole as string) || 'all';
+    const priorityFilter = (req.query.priority as string) || 'all';
+    const searchQuery = (req.query.search as string || '').trim().toLowerCase();
+    const dateFrom = req.query.dateFrom as string;
+    const dateTo = req.query.dateTo as string;
+
+    // We build the query dynamically
+    let queryStr = `
+      SELECT n.* FROM notifications n
+      WHERE (n.audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR n.audience_role IS NULL)
+    `;
+    const params: any[] = [];
+
+    // Archive filter
+    if (statusFilter === 'archived') {
+      queryStr += ` AND n.id IN (SELECT notification_id FROM notification_archives WHERE user_id = ?)`;
+      params.push(userId);
+    } else {
+      queryStr += ` AND n.id NOT IN (SELECT notification_id FROM notification_archives WHERE user_id = ?)`;
+      params.push(userId);
+    }
+
+    // Read/Unread filters
+    if (statusFilter === 'unread') {
+      queryStr += ` AND n.id NOT IN (SELECT notification_id FROM notification_reads WHERE user_id = ?)`;
+      params.push(userId);
+    } else if (statusFilter === 'read') {
+      queryStr += ` AND n.id IN (SELECT notification_id FROM notification_reads WHERE user_id = ?)`;
+      params.push(userId);
+    }
+
+    // Priority filter
+    if (priorityFilter !== 'all') {
+      queryStr += ` AND n.priority = ?`;
+      params.push(priorityFilter);
+    }
+
+    // Type filter
+    if (typeFilter !== 'all') {
+      queryStr += ` AND n.type = ?`;
+      params.push(typeFilter);
+    }
+
+    // For date filters
+    if (dateFrom) {
+      queryStr += ` AND n.created_at >= ?`;
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      queryStr += ` AND n.created_at <= ?`;
+      params.push(dateTo);
+    }
+
+    // Query execution
+    const rawNotifs = await query(queryStr, params);
+
+    // Let's map each raw notification and populate metadata, sender, related entity status
+    let mapped = [];
+    for (const n of rawNotifs) {
+      // 1. Check read status
+      const readRow = await queryOne('SELECT read_at FROM notification_reads WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isRead = !!readRow;
+      const readAt = readRow ? readRow.read_at : null;
+
+      // 2. Check archived status
+      const archiveRow = await queryOne('SELECT archived_at FROM notification_archives WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isArchived = !!archiveRow;
+      const archivedAt = archiveRow ? archiveRow.archived_at : null;
+
+      // Parse metadata_json
+      let metadata: any = null;
+      if (n.metadata_json) {
+        try {
+          metadata = JSON.parse(n.metadata_json);
+        } catch (_) {}
+      }
+
+      // 3. Sender info
+      let senderName = 'System';
+      let senderRole = 'System';
+      if (n.created_by_user_id) {
+        const u = await queryOne('SELECT email, role FROM users WHERE id = ?', [n.created_by_user_id]);
+        if (u) {
+          senderRole = u.role === 'super_admin' ? 'Super Admin' : u.role === 'admin' ? 'Admin' : u.role === 'staff' ? 'Care Lead' : 'Parent';
+          senderName = u.email ? u.email.split('@')[0] : 'Admin';
+          // Check if volunteer
+          const vol = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [n.created_by_user_id]);
+          if (vol) {
+            senderName = vol.full_name;
+            senderRole = 'Volunteer';
+          } else {
+            // Check if parent
+            const par = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [n.created_by_user_id]);
+            if (par) {
+              senderName = par.full_name;
+              senderRole = 'Parent';
+            }
+          }
+        }
+      }
+
+      // Filter by sender role if requested
+      if (senderRoleFilter !== 'all') {
+        const sRoleLower = senderRole.toLowerCase();
+        const filterLower = senderRoleFilter.toLowerCase();
+        if (sRoleLower !== filterLower && !sRoleLower.includes(filterLower) && !filterLower.includes(sRoleLower)) {
+          continue; // Skip
+        }
+      }
+
+      // 4. Action status & delivery status
+      let actionStatus = 'n/a';
+      let relatedItemTitle = '';
+      if (n.type === 'safety_alert' || n.type === 'escalation') {
+        const alertId = metadata?.safetyAlertId || metadata?.safety_alert_id || metadata?.alertId || n.id;
+        const alertObj = await queryOne('SELECT status, title FROM event_safety_alerts WHERE id = ?', [alertId]);
+        if (alertObj) {
+          actionStatus = alertObj.status; // open, acknowledged, resolved
+          relatedItemTitle = alertObj.title;
+        } else {
+          // Check child attention items
+          const attId = metadata?.attentionItemId || metadata?.attention_item_id || n.id;
+          const attObj = await queryOne('SELECT status, title FROM child_attention_items WHERE id = ?', [attId]);
+          if (attObj) {
+            actionStatus = attObj.status; // open, resolved
+            relatedItemTitle = attObj.title;
+          }
+        }
+      }
+
+      // Filter by open/acknowledged/resolved if statusFilter is specific
+      if (['open', 'acknowledged', 'resolved'].includes(statusFilter)) {
+        if (actionStatus !== statusFilter) {
+          continue; // Skip
+        }
+      }
+
+      // 5. Related child/event
+      let childName = null;
+      if (n.child_id) {
+        const child = await queryOne('SELECT full_name FROM children WHERE id = ?', [n.child_id]);
+        childName = child ? child.full_name : null;
+      }
+
+      // 6. Search filter
+      if (searchQuery) {
+        const titleMatch = (n.title || '').toLowerCase().includes(searchQuery);
+        const messageMatch = (n.message || '').toLowerCase().includes(searchQuery);
+        const childMatch = childName ? childName.toLowerCase().includes(searchQuery) : false;
+        const senderMatch = senderName.toLowerCase().includes(searchQuery);
+        const typeMatch = (n.type || '').toLowerCase().includes(searchQuery);
+        if (!titleMatch && !messageMatch && !childMatch && !senderMatch && !typeMatch) {
+          continue; // Skip
+        }
+      }
+
+      mapped.push({
+        id: `notifications:${n.id}`,
+        rawId: n.id,
+        title: n.title,
+        bodyPreview: n.message ? (n.message.length > 80 ? n.message.substring(0, 80) + '...' : n.message) : '',
+        bodyFull: n.message,
+        type: n.type || 'info',
+        priority: n.priority || 'normal',
+        senderUserId: n.created_by_user_id,
+        senderName,
+        senderRole,
+        recipientRole: n.audience_role || 'All',
+        relatedChildId: n.child_id,
+        relatedChildName: childName,
+        relatedEventId: n.event_id,
+        targetUrl: n.target_url,
+        readAt,
+        isRead,
+        isArchived,
+        archivedAt,
+        deliveryStatus: 'delivered', // in-app delivery is confirmed
+        actionStatus,
+        createdAt: n.created_at,
+        metadata
+      });
+    }
+
+    // Sort: newest first
+    mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Paginate in memory
+    const totalCount = mapped.length;
+    const paginated = mapped.slice(offset, offset + limit);
+
+    return res.json({
+      updates: paginated,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Error fetching admin updates center:', err);
+    return res.status(500).json({ error: 'Failed to retrieve messages and updates' });
+  }
+});
+
+// POST /api/notifications/admin/updates/:updateId/read
+router.post('/admin/updates/:updateId/read', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    let rawId = req.params.updateId;
+    if (rawId.includes(':')) {
+      rawId = rawId.split(':')[1];
+    }
+
+    const alreadyRead = await queryOne('SELECT id FROM notification_reads WHERE user_id = ? AND notification_id = ?', [userId, rawId]);
+    if (!alreadyRead) {
+      const readId = `read-${crypto.randomUUID()}`;
+      await execute(
+        'INSERT INTO notification_reads (id, notification_id, user_id, read_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        [readId, rawId, userId, new Date().toISOString(), new Date().toISOString()]
+      );
+    }
+    return res.json({ success: true, message: 'Updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to mark as read' });
+  }
+});
+
+// POST /api/notifications/admin/updates/:updateId/unread
+router.post('/admin/updates/:updateId/unread', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    let rawId = req.params.updateId;
+    if (rawId.includes(':')) {
+      rawId = rawId.split(':')[1];
+    }
+
+    await execute('DELETE FROM notification_reads WHERE user_id = ? AND notification_id = ?', [userId, rawId]);
+    return res.json({ success: true, message: 'Updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to mark as unread' });
+  }
+});
+
+// POST /api/notifications/admin/updates/:updateId/archive
+router.post('/admin/updates/:updateId/archive', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    let rawId = req.params.updateId;
+    if (rawId.includes(':')) {
+      rawId = rawId.split(':')[1];
+    }
+
+    const alreadyArchived = await queryOne('SELECT id FROM notification_archives WHERE user_id = ? AND notification_id = ?', [userId, rawId]);
+    if (!alreadyArchived) {
+      const archiveId = `archive-${crypto.randomUUID()}`;
+      await execute(
+        'INSERT INTO notification_archives (id, notification_id, user_id, archived_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        [archiveId, rawId, userId, new Date().toISOString(), new Date().toISOString()]
+      );
+    }
+    return res.json({ success: true, message: 'Archived successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to archive update' });
+  }
+});
+
+// POST /api/notifications/admin/updates/:updateId/unarchive
+router.post('/admin/updates/:updateId/unarchive', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    let rawId = req.params.updateId;
+    if (rawId.includes(':')) {
+      rawId = rawId.split(':')[1];
+    }
+
+    await execute('DELETE FROM notification_archives WHERE user_id = ? AND notification_id = ?', [userId, rawId]);
+    return res.json({ success: true, message: 'Unarchived successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to unarchive update' });
+  }
+});
+
+// POST /api/notifications/admin/updates/read-all
+router.post('/admin/updates/read-all', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const now = new Date().toISOString();
+    // Get all admin notifications that are not yet read
+    const rawNotifs = await query(`
+      SELECT id FROM notifications 
+      WHERE (audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR audience_role IS NULL)
+        AND id NOT IN (SELECT notification_id FROM notification_reads WHERE user_id = ?)
+    `, [userId]);
+
+    for (const n of rawNotifs) {
+      const readId = `read-${crypto.randomUUID()}`;
+      await execute(
+        'INSERT INTO notification_reads (id, notification_id, user_id, read_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        [readId, n.id, userId, now, now]
+      );
+    }
+
+    return res.json({ success: true, message: 'All updates marked as read.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to mark all as read' });
+  }
+});
+
+// POST /api/notifications/push/unsubscribe
+
 export default router;

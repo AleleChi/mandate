@@ -650,3 +650,10 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Draft Persistence (Save for Later)**: The "Save for later" action (`data-component-version="parent-review-save-later-v1"`) allows parents to save partial, incomplete child drafts at any time without triggering validation errors. All entered fields and uploaded photos are securely preserved in the database so the parent can return to complete the process later.
 - **Send for Review Controls**: Tapping "Send for review" (`data-component-version="parent-review-submit-validation-v1"`) performs high-fidelity client-side validation that perfectly mirrors server-side validation (`validateChildDraftStep`). If validation fails, submission is blocked, a friendly error notification is displayed, and the page smooth-scrolls to the validation summary panel.
 
+
+## 44. Advanced Admin Messages & Updates Centre & Refined Quick Panel
+- **Non-Destructive Mark as Read**: Marking an update or alert as read removes the unread highlight and reduces the unread badge count, but does not delete or permanently discard the item. The update remains stored in the History center for continued reference.
+- **Advanced Messages & Updates Centre**: Designed to handle extensive volumes of updates (such as 1000+ items). It provides high-fidelity filtering by priority, sender role, read/unread state, and search query. Built-in pagination ensures fast, lag-free list loading.
+- **Unified Detail Panel**: Selecting an update in the History center displays its full content, metadata details, and direct action controls (Mark Unread, Archive, or Restore) in a responsive side-by-side split layout.
+- **Refined Bell Quick Panel**: The navigation header notification bell opens a premium quick panel divided into "Unread" and "All Updates" tabs. It displays up to 10 unread or 15 recent items respectively to avoid page overcrowding, and includes a direct deep-link shortcut to load the full Messages & Updates Centre.
+

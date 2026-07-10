@@ -199,5 +199,10 @@ To ensure the administrative event management pages match Koinonia's premium bra
   - *"Send for review"* (`data-component-version="parent-review-submit-validation-v1"`) -> Restricts incomplete submissions and initiates focus scroll to the specific missing fields.
 
 
+### Admin Messages & Updates Centre & Refined Quick Panel Design Specifications
+- **Messages & Updates Centre Layout**: The center utilizes a balanced split-pane layout (`grid-cols-1 lg:grid-cols-12`). The left pane lists message/update cards with active status pills (unread, archived, priority), while the right pane presents the full detail card of the selected item with a clear header, metadata rows, and prominent premium action controls (Mark read, Archive). It implements proof attribute `data-view-version="admin-updates-centre-v3-premium"`.
+- **Refined Bell Quick Panel**: Styled as a floating panel dropdown with smooth transition entry (`animate-fade-in`), rounded borders (`rounded-[24px]`), and a soft ivory canvas background. It introduces an interactive tab layout dividing "Unread" and "All Updates" with a gold active bottom line (`border-[#C59B27]`). The panel restricts its scrollable list to 10-15 entries to prevent layout stretching, and features a bottom footer splitting "Mark all as read" and a gold deep-link to the full "Updates Centre". It implements proof attribute `data-component-version="admin-notification-panel-v3-premium"`.
+
+
 
 
