@@ -4200,6 +4200,21 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       [logId, recipientGroup, messageType, channel, subject || '', body, messagesToSend.length, logStatus, logNow]
     );
 
+    if (failedCount > 0) {
+      const failNotifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, created_at, priority, channel, metadata_json
+        ) VALUES (?, ?, ?, 'delivery_failed', 'admin', 'all', ?, 'high', 'in-app', ?)
+      `, [
+        failNotifId,
+        'Message delivery failed',
+        `Failed to deliver ${failedCount} message(s) to group "${recipientGroup}" via ${channel}.`,
+        logNow,
+        JSON.stringify({ type: 'delivery_failed', recipientGroup, channel, failedCount, logId })
+      ]);
+    }
+
     res.json({
       success: true,
       summary: {
@@ -5197,7 +5212,7 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
         const newPickupId = 'pickup-' + Math.random().toString(36).substring(2, 11);
         await execute(`
           INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, approved_by_parent, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', 1, now, now]);
       }
     }
@@ -5657,6 +5672,146 @@ router.post('/attention-items/:itemId/reopen', authMiddleware, async (req: Authe
   } catch (err) {
     console.error('Admin reopen attention item error:', err);
     res.status(500).json({ error: 'Failed to reopen attention item' });
+  }
+});
+
+// GET /api/admin/safety-alerts
+router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const alerts = await query(`
+      SELECT a.*,
+             c.full_name as child_name,
+             c.photo_file_id as child_photo_file_id,
+             p_parent.full_name as parent_name,
+             p_parent.phone_number as parent_phone,
+             COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
+             COALESCE(p_ack.full_name, v_ack.full_name, 'Admin') as acknowledged_by_name,
+             COALESCE(p_res.full_name, v_res.full_name, 'Admin') as resolved_by_name
+      FROM event_safety_alerts a
+      LEFT JOIN children c ON a.child_id = c.id
+      LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
+      LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
+      LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
+      LEFT JOIN parent_profiles p_ack ON a.acknowledged_by = p_ack.user_id
+      LEFT JOIN volunteer_profiles v_ack ON a.acknowledged_by = v_ack.user_id
+      LEFT JOIN parent_profiles p_res ON a.resolved_by = p_res.user_id
+      LEFT JOIN volunteer_profiles v_res ON a.resolved_by = v_res.user_id
+      WHERE a.event_id = ?
+      ORDER BY 
+        CASE WHEN a.status = 'open' THEN 1
+             WHEN a.status = 'acknowledged' THEN 2
+             ELSE 3
+        END,
+        CASE WHEN a.severity = 'urgent' THEN 1
+             WHEN a.severity = 'important' THEN 2
+             ELSE 3
+        END,
+        a.created_at DESC
+    `, [REAL_EVENT_ID]);
+
+    res.json(alerts);
+  } catch (err) {
+    console.error('Get admin safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to retrieve safety alerts' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/acknowledge
+router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET status = 'acknowledged',
+          acknowledged_by = ?,
+          acknowledged_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, now, id]);
+
+    res.json({ success: true, message: 'Alert acknowledged.' });
+  } catch (err) {
+    console.error('Acknowledge safety alert error:', err);
+    res.status(500).json({ error: 'Failed to acknowledge safety alert' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/resolve
+router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if ((alert.severity === 'important' || alert.severity === 'urgent') && (!note || !note.trim())) {
+      return res.status(400).json({ error: 'Please add a resolution note.' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, (note || 'Resolved by admin').trim(), now, id]);
+
+    res.json({ success: true, message: 'Alert resolved.' });
+  } catch (err) {
+    console.error('Resolve safety alert error:', err);
+    res.status(500).json({ error: 'Failed to resolve safety alert' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/escalate
+router.post('/safety-alerts/:id/escalate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET severity = 'urgent',
+          updated_at = ?
+      WHERE id = ?
+    `, [now, id]);
+
+    res.json({ success: true, message: 'Alert escalated to urgent severity.' });
+  } catch (err) {
+    console.error('Escalate safety alert error:', err);
+    res.status(500).json({ error: 'Failed to escalate safety alert' });
   }
 });
 

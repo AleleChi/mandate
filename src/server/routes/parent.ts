@@ -740,6 +740,28 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     WHERE id = ?
   `, [now, now, entry.id]);
 
+  const appNotifId = `notif-${crypto.randomUUID()}`;
+  await execute(`
+    INSERT INTO notifications (
+      id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at, priority, channel, metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    appNotifId,
+    'New child application',
+    `New application submitted for ${c.full_name || 'child'}.`,
+    'new_application',
+    'admin',
+    'all',
+    REAL_EVENT_ID,
+    childId,
+    req.parentProfile.id,
+    req.user.id,
+    now,
+    'normal',
+    'in-app',
+    JSON.stringify({ childId, applicationId: entry.id, type: 'new_application' })
+  ]);
+
   const updatedEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entry.id]);
   if (req.user && req.user.email) {
     const baseUrl = process.env.APP_BASE_URL || 'https://koinonia12.netlify.app';

@@ -22,12 +22,15 @@ import {
   Phone,
   Image,
   Upload,
-  Trash2
+  Trash2,
+  Bell,
+  Volume2
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
 import { AdminLandingView } from './AdminLandingView';
 import { SafeImage } from '../../components/common/SafeImage';
+import { playSound, resumeAudioContext } from '../../utils/sound';
 
 interface AdminSettingsViewProps {
   onBackToOverview?: () => void;
@@ -45,7 +48,94 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [savingRole, setSavingRole] = useState(false);
   
   // Tab/Active Panel State inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'landing-page' | 'app-media'>('parent-access');
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media'>('parent-access');
+
+  // Feedback State
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
+    setFeedbackMessage({ type, text });
+    setTimeout(() => {
+      setFeedbackMessage(null);
+    }, 4000);
+  };
+
+  // Global Admin Alert Delivery Rules State
+  const [recipientRoles, setRecipientRoles] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_recipient_roles');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { super_admin: true, admin: true, care_lead: true, gate_lead: false, pickup_lead: false };
+  });
+
+  const [alertCategories, setAlertCategories] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_alert_categories');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { child_care: true, pickup_issue: true, pass_issue: true, medical_support: true, security_concern: true, general_help: true };
+  });
+
+  const [deliveryMethods, setDeliveryMethods] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_delivery_methods');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { in_app: true, urgent_screen: true, sound: true, vibration: true, push: false, email_fallback: false };
+  });
+
+  const [severityRules, setSeverityRules] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_severity_rules');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { normal: 'bell_only', important: 'bell_sound', urgent: 'bell_overlay_vibe_push' };
+  });
+
+  // Device-specific Alert Preferences State
+  const [deviceReceiveUrgent, setDeviceReceiveUrgent] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_receive_urgent') === 'true';
+    }
+    return false;
+  });
+  const [deviceUrgentOnly, setDeviceUrgentOnly] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_urgent_only') === 'true';
+    }
+    return false;
+  });
+  const [deviceSound, setDeviceSound] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_sound') === 'true';
+    }
+    return false;
+  });
+  const [deviceVibration, setDeviceVibration] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_vibration') === 'true';
+    }
+    return false;
+  });
+  const [devicePush, setDevicePush] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_push') === 'true';
+    }
+    return false;
+  });
+  const [deviceShowPopup, setDeviceShowPopup] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_show_popup') === 'true';
+    }
+    return false;
+  });
+  const [deviceRepeatUrgent, setDeviceRepeatUrgent] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_repeat_urgent') === 'true';
+    }
+    return false;
+  });
 
   // Cover Media Settings State
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({
@@ -103,16 +193,6 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordError, setPasswordError] = useState('');
-
-  // Status/Toast Feedback State
-  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
-    setFeedbackMessage({ type, text });
-    setTimeout(() => {
-      setFeedbackMessage(null);
-    }, 4000);
-  };
 
   // Load All Settings Data
   const loadSettingsData = async () => {
@@ -297,6 +377,30 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     } finally {
       setSavingMessages(false);
     }
+  };
+
+  const handleSaveAlertDeliverySettings = () => {
+    localStorage.setItem('koinonia_admin_recipient_roles', JSON.stringify(recipientRoles));
+    localStorage.setItem('koinonia_admin_alert_categories', JSON.stringify(alertCategories));
+    localStorage.setItem('koinonia_admin_delivery_methods', JSON.stringify(deliveryMethods));
+    localStorage.setItem('koinonia_admin_severity_rules', JSON.stringify(severityRules));
+    
+    showFeedback('Alert delivery rules updated successfully.');
+  };
+
+  const handleSaveDeviceAlertPreferences = () => {
+    localStorage.setItem('koinonia_device_receive_urgent', String(deviceReceiveUrgent));
+    localStorage.setItem('koinonia_device_urgent_only', String(deviceUrgentOnly));
+    localStorage.setItem('koinonia_device_sound', String(deviceSound));
+    localStorage.setItem('koinonia_device_vibration', String(deviceVibration));
+    localStorage.setItem('koinonia_device_push', String(devicePush));
+    localStorage.setItem('koinonia_device_show_popup', String(deviceShowPopup));
+    localStorage.setItem('koinonia_device_repeat_urgent', String(deviceRepeatUrgent));
+
+    // Update the other soundEnabled state used in app
+    localStorage.setItem('koinonia_sound_enabled', String(deviceSound));
+
+    showFeedback('Device alert preferences saved.');
   };
 
   // Invite Team Member
@@ -485,6 +589,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           { id: 'parent-access', label: 'Parent access & details', icon: Users },
           { id: 'team-access', label: 'Event team access', icon: ShieldCheck },
           { id: 'message-channels', label: 'Message channels', icon: MessageSquare },
+          { id: 'alert-delivery', label: 'Alert delivery & device preferences', icon: ShieldAlert },
           { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon },
           { id: 'app-media', label: 'App media', icon: Image }
         ].map((tab) => {
@@ -520,7 +625,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* MAIN SETTINGS LEFT COLUMN (7 or 12 columns depending on selection) */}
-          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
+          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' || activeSubTab === 'alert-delivery' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
             
             {/* SUB-TAB 1: PARENT ACCESS */}
             {activeSubTab === 'parent-access' && (
@@ -1399,10 +1504,373 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               </div>
             )}
 
+            {/* SUB-TAB: ALERT DELIVERY & DEVICE PREFERENCES */}
+            {activeSubTab === 'alert-delivery' && (
+              <div 
+                className="grid grid-cols-1 lg:grid-cols-2 gap-8"
+                data-view-version="admin-alert-delivery-settings-v1"
+              >
+                {/* CARD 1: GLOBAL ALERT ROUTING RULES */}
+                <div 
+                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                  data-component-version="admin-alert-delivery-rules-v1"
+                >
+                  <div className="space-y-6">
+                    <div className="border-b border-[#EAE8E1] pb-4">
+                      <div className="flex items-center space-x-2.5">
+                        <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                          <ShieldAlert className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-serif font-medium text-[#18181B] text-base">Global alert routing rules</h3>
+                          <p className="text-xs text-zinc-500 mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 1: Who Receives Urgent Alerts */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">1. Recipient roles</h4>
+                      <p className="text-[11px] text-zinc-400 mt-1">Select the active management roles that should receive urgent escalated alerts.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                        {Object.entries(recipientRoles).map(([role, checked]) => {
+                          const labelMap: Record<string, string> = {
+                            super_admin: 'Super administrators',
+                            admin: 'Admins & registrars',
+                            care_lead: 'Care leads & coordinators',
+                            gate_lead: 'Gate/check-in leads',
+                            pickup_lead: 'Pickup safety coordinators'
+                          };
+                          return (
+                            <button
+                              key={role}
+                              type="button"
+                              onClick={() => setRecipientRoles(prev => ({ ...prev, [role]: !checked }))}
+                              className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                            >
+                              <div className="text-zinc-500">
+                                {checked ? (
+                                  <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                ) : (
+                                  <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                )}
+                              </div>
+                              <span className="text-xs font-medium text-zinc-700">{labelMap[role] || role}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Section 2: Alert Categories */}
+                    <div className="space-y-3 pt-2">
+                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">2. Routed categories</h4>
+                      <p className="text-[11px] text-zinc-400 mt-1">Active event concern classifications subject to this routing profile.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                        {Object.entries(alertCategories).map(([cat, checked]) => {
+                          const labelMap: Record<string, string> = {
+                            child_care: 'Child care concern',
+                            pickup_issue: 'Pickup issue',
+                            pass_issue: 'Pass/check-in issue',
+                            medical_support: 'Medical support',
+                            security_concern: 'Security concern',
+                            general_help: 'General care support'
+                          };
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setAlertCategories(prev => ({ ...prev, [cat]: !checked }))}
+                              className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                            >
+                              <div className="text-zinc-500">
+                                {checked ? (
+                                  <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                ) : (
+                                  <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                )}
+                              </div>
+                              <span className="text-xs font-medium text-zinc-700">{labelMap[cat] || cat}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Section 3: Delivery Methods */}
+                    <div className="space-y-3 pt-2">
+                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">3. Delivery channels</h4>
+                      <p className="text-[11px] text-zinc-400 mt-1">Authorized channels for transmitting active real-time safety alerts.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                        {Object.entries(deliveryMethods).map(([method, checked]) => {
+                          const labelMap: Record<string, string> = {
+                            in_app: 'In-app notification banner',
+                            urgent_screen: 'Urgent screen takeover',
+                            sound: 'Synthesized audio sound',
+                            vibration: 'Physical vibration pulse',
+                            push: 'Secure push notification',
+                            email_fallback: 'Email fallback digest'
+                          };
+                          return (
+                            <button
+                              key={method}
+                              type="button"
+                              onClick={() => setDeliveryMethods(prev => ({ ...prev, [method]: !checked }))}
+                              className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                            >
+                              <div className="text-zinc-500">
+                                {checked ? (
+                                  <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                ) : (
+                                  <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                )}
+                              </div>
+                              <span className="text-xs font-medium text-zinc-700">{labelMap[method] || method}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Section 4: Severity-based Routing Rules */}
+                    <div className="space-y-3 pt-2">
+                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">4. Severity-based routing rules</h4>
+                      <div className="border border-zinc-100 rounded-xl overflow-hidden divide-y divide-zinc-50">
+                        <div className="p-3 bg-zinc-50/50 flex justify-between text-[11px] font-semibold text-zinc-500">
+                          <span>SEVERITY LEVEL</span>
+                          <span>ROUTING ACTION</span>
+                        </div>
+                        <div className="p-3 flex justify-between items-center text-xs">
+                          <span className="font-medium text-zinc-800">🟢 Normal</span>
+                          <span className="text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-lg text-[10px]">Bell notification only</span>
+                        </div>
+                        <div className="p-3 flex justify-between items-center text-xs">
+                          <span className="font-medium text-amber-600">🟡 Important</span>
+                          <span className="text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-amber-100/50">Bell + Sound Chime</span>
+                        </div>
+                        <div className="p-3 flex justify-between items-center text-xs">
+                          <span className="font-medium text-red-600">🔴 Urgent</span>
+                          <span className="text-red-600 bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50">Bell + Full Overlay + Sound + Vibe + Push</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleSaveAlertDeliverySettings}
+                      className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Save Global Rules</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* CARD 2: DEVICE-SPECIFIC ALERT PREFERENCES */}
+                <div 
+                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                  data-component-version="device-alert-preferences-v1"
+                >
+                  <div className="space-y-6">
+                    <div className="border-b border-[#EAE8E1] pb-4">
+                      <div className="flex items-center space-x-2.5">
+                        <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                          <Bell className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-serif font-medium text-[#18181B] text-base">This device alert preferences</h3>
+                          <p className="text-xs text-zinc-500 mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Toggle: Receive alerts */}
+                    <div className="flex items-center justify-between p-4 bg-zinc-50/50 border border-zinc-100 rounded-xl">
+                      <div className="space-y-0.5 pr-4">
+                        <span className="text-xs font-semibold text-zinc-800">Receive safety alerts on this device</span>
+                        <p className="text-[10px] text-zinc-400">Enable or disable all real-time visual and audio alerts on this browser.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDeviceReceiveUrgent(!deviceReceiveUrgent)}
+                        className="focus:outline-none cursor-pointer"
+                      >
+                        {deviceReceiveUrgent ? (
+                          <ToggleRight className="w-10 h-10 text-[#C59B27]" />
+                        ) : (
+                          <ToggleLeft className="w-10 h-10 text-zinc-300" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Only show sub-settings if alerts are enabled on this device */}
+                    <div className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">Device Delivery Preferences</h4>
+                      
+                      {/* Sound Preference */}
+                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-medium text-zinc-800 flex items-center space-x-1.5">
+                            <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>Play alert sound</span>
+                          </span>
+                          <p className="text-[10px] text-zinc-400">Plays synthesized major chord chimes during critical alert events.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resumeAudioContext();
+                              playSound('alert');
+                            }}
+                            className="mt-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-[#C59B27] border border-[#C59B27]/30 rounded text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
+                            title="Test alert sound trigger"
+                          >
+                            <Volume2 className="w-3 h-3" />
+                            <span>Test Alert Sound</span>
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!deviceReceiveUrgent}
+                          onClick={() => setDeviceSound(!deviceSound)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {deviceSound ? (
+                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Urgent Alerts Only Toggle */}
+                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-medium text-zinc-800">Urgent alerts only</span>
+                          <p className="text-[10px] text-zinc-400">Filter out normal/important concern alerts; only notify for absolute urgent status items.</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!deviceReceiveUrgent}
+                          onClick={() => setDeviceUrgentOnly(!deviceUrgentOnly)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {deviceUrgentOnly ? (
+                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Vibration Preference */}
+                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-medium text-zinc-800">Vibration physical feedback</span>
+                          <p className="text-[10px] text-zinc-400">Fires the physical device vibration motor for incoming events.</p>
+                          {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') && (
+                            <p className="text-[9px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-100/30 w-fit mt-1">
+                              Vibration is not supported on this device.
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!deviceReceiveUrgent || !(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')}
+                          onClick={() => setDeviceVibration(!deviceVibration)}
+                          className={`focus:outline-none cursor-pointer ${!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? 'opacity-30' : ''}`}
+                        >
+                          {deviceVibration && (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
+                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Urgent overlay Preference */}
+                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-medium text-zinc-800">Show urgent pop-up overlay</span>
+                          <p className="text-[10px] text-zinc-400">Triggers a persistent critical takeover modal requiring manual clearance.</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!deviceReceiveUrgent}
+                          onClick={() => setDeviceShowPopup(!deviceShowPopup)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {deviceShowPopup ? (
+                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Repeat urgent alarm Preference */}
+                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-medium text-zinc-800">Repeat urgent alert until acknowledged</span>
+                          <p className="text-[10px] text-zinc-400">Continuously repeats synthesized sound and pulse alerts until cleared.</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!deviceReceiveUrgent}
+                          onClick={() => setDeviceRepeatUrgent(!deviceRepeatUrgent)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {deviceRepeatUrgent ? (
+                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Push & SMS alerts Preference */}
+                      <div className="flex items-center justify-between py-2">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-medium text-zinc-800">Browser push & SMS notifications</span>
+                          <p className="text-[10px] text-zinc-400">Fires web push alerts or triggers emergency SMS fallback if permitted and configured.</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!deviceReceiveUrgent}
+                          onClick={() => setDevicePush(!devicePush)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {devicePush ? (
+                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleSaveDeviceAlertPreferences}
+                      className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Save Device Settings</span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* MAIN SETTINGS RIGHT COLUMN: PROFILE SECURITY CARD (Only visible for Parent Access and Message Channels) */}
-          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && (
+          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && activeSubTab !== 'alert-delivery' && (
             <div className="lg:col-span-5 space-y-6">
               
               {/* Profile Security Update Password */}

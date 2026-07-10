@@ -14,7 +14,7 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
-export function playSound(type: 'success' | 'error' | 'notification' | 'alert') {
+export function playSound(type: 'success' | 'error' | 'notification' | 'alert' | 'notification_gentle') {
   try {
     // Check local preference override
     const stored = localStorage.getItem('koinonia_sound_enabled');
@@ -63,15 +63,21 @@ export function playSound(type: 'success' | 'error' | 'notification' | 'alert') 
         playTone(130, 0.15, 'sawtooth', 0.15);
         break;
       case 'notification':
-        // Gentle synth chime
-        playTone(587.33, 0.15, 'triangle', 0); // D5
-        playTone(880, 0.25, 'triangle', 0.08); // A5
+        // Soft, elegant premium dual-tone chime using clean sine waves
+        playTone(659.25, 0.4, 'sine', 0); // E5
+        playTone(987.77, 0.6, 'sine', 0.12); // B5 (fifth up, beautiful resonance)
+        break;
+      case 'notification_gentle':
+        // Extremely gentle, low-profile double chime for in-app status updates
+        playTone(523.25, 0.3, 'sine', 0); // C5
+        playTone(587.33, 0.4, 'sine', 0.1); // D5
         break;
       case 'alert':
-        // Urgent high dual-beep for escalation alerts
-        playTone(880, 0.1, 'square', 0);
-        playTone(880, 0.1, 'square', 0.12);
-        playTone(1200, 0.25, 'square', 0.24);
+        // Warm, beautiful, and gentle major chord chime for high-priority care alerts
+        playTone(523.25, 0.4, 'sine', 0); // C5
+        playTone(659.25, 0.45, 'sine', 0.08); // E5
+        playTone(783.99, 0.5, 'sine', 0.16); // G5
+        playTone(1046.50, 0.6, 'sine', 0.24); // C6 (sparkling, highly audible but peaceful)
         break;
     }
   } catch (err) {

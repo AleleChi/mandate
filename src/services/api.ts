@@ -278,6 +278,15 @@ export const api = {
     },
     async getVapidPublicKey() {
       return api.request<{ publicKey: string }>('/api/notifications/push/vapid-key');
+    },
+    async getNotificationPreferences() {
+      return api.request<{ soundEnabled: boolean; pushEnabled: boolean; emailEnabled: boolean }>('/api/notifications/preferences');
+    },
+    async updateNotificationPreferences(payload: { soundEnabled?: boolean; pushEnabled?: boolean; emailEnabled?: boolean }) {
+      return api.request<{ soundEnabled: boolean; pushEnabled: boolean; emailEnabled: boolean }>('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
     }
   },
 
@@ -450,6 +459,15 @@ export const api = {
     },
     async escalateAttentionItem(itemId: string, payload: { note: string }) {
       return api.request<any>(`/api/volunteer/attention-items/${itemId}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getSafetyAlerts() {
+      return api.request<{ success: boolean; alerts: any[] }>('/api/volunteer/safety-alerts');
+    },
+    async raiseSafetyAlert(payload: { childId?: string; childEventEntryId?: string; category: string; severity: string; locationLabel?: string; message: string }) {
+      return api.request<any>('/api/volunteer/safety-alerts', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
@@ -925,6 +943,25 @@ export const api = {
     },
     async setCurrentEvent(eventId: string) {
       return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/set-current`, {
+        method: 'POST'
+      });
+    },
+    async getSafetyAlerts() {
+      return api.request<any[]>('/api/admin/safety-alerts');
+    },
+    async acknowledgeSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/acknowledge`, {
+        method: 'POST'
+      });
+    },
+    async resolveSafetyAlert(id: string, note?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note })
+      });
+    },
+    async escalateSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/escalate`, {
         method: 'POST'
       });
     }

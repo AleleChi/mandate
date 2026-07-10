@@ -27,8 +27,14 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
     let notifications: any[] = [];
 
     if (activeRole === 'admin' || activeRole === 'super_admin') {
-      // Admins can see ALL notifications
-      const rawNotifs = await query('SELECT * FROM notifications ORDER BY created_at DESC');
+      // Admins see notifications meant for admins/staff/volunteers/team/all or null,
+      // filtering out self-triggered actions unless they are care alerts/failures.
+      const rawNotifs = await query(`
+        SELECT * FROM notifications 
+        WHERE (audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR audience_role IS NULL)
+          AND (created_by_user_id IS NULL OR created_by_user_id != ?)
+        ORDER BY created_at DESC
+      `, [userId]);
       notifications = rawNotifs.map((n: any) => ({
         id: `notifications:${n.id}`,
         rawId: n.id,

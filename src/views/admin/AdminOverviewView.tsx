@@ -24,7 +24,8 @@ import {
   Check,
   Shield,
   Loader2,
-  ChevronRight
+  ChevronRight,
+  Phone
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -101,6 +102,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   // Attention filter modal
   const [activeAttentionModal, setActiveAttentionModal] = useState<{ id: string, label: string } | null>(null);
 
+  // Deep linking states
+  const [initialApplicationId, setInitialApplicationId] = useState<string | null>(null);
+  const [initialChildId, setInitialChildId] = useState<string | null>(null);
+  const [initialAttentionId, setInitialAttentionId] = useState<string | null>(null);
+
   // Real-time notification and preferences states
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
@@ -113,6 +119,167 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     return true;
   });
   const [pushEnabled, setPushEnabled] = useState(false);
+
+  // Safety Alerts states
+  const [safetyAlerts, setSafetyAlerts] = useState<any[]>([]);
+  const [activeAlertDetail, setActiveAlertDetail] = useState<any | null>(null);
+  const [resolvingAlertId, setResolvingAlertId] = useState<string | null>(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [isAcknowledgeInProgress, setIsAcknowledgeInProgress] = useState<string | null>(null);
+  const [activeUrgentAlertCount, setActiveUrgentAlertCount] = useState(0);
+  const [activeUrgentAlert, setActiveUrgentAlert] = useState<any | null>(null);
+
+  const fetchSafetyAlerts = async () => {
+    try {
+      const res = await api.admin.getSafetyAlerts();
+      if (Array.isArray(res)) {
+        setSafetyAlerts((prevAlerts) => {
+          const currentAlerts = res;
+          
+          const openAlerts = currentAlerts.filter((a: any) => a.status !== 'resolved');
+          const prevOpenAlerts = prevAlerts.filter((a: any) => a.status !== 'resolved');
+          
+          // Load device alert preferences (Default safe/off. User must explicitly enable)
+          const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') === 'true';
+          const sndPref = localStorage.getItem('koinonia_device_sound') === 'true';
+          const vibePref = localStorage.getItem('koinonia_device_vibration') === 'true';
+          const showPopupPref = localStorage.getItem('koinonia_device_show_popup') === 'true';
+
+          // Detect newly arrived open alerts
+          const newAlerts = openAlerts.filter(
+            (a: any) => !prevOpenAlerts.some((oldA) => oldA.id === a.id)
+          );
+
+          if (newAlerts.length > 0 && rxUrgentPref) {
+            const hasUrgent = newAlerts.some((a: any) => a.severity === 'urgent');
+            const hasImportant = newAlerts.some((a: any) => a.severity === 'important');
+
+            if (hasUrgent) {
+              // 1. Play premium alert sound (synthesized major chord chime)
+              if (sndPref) {
+                try { playSound('alert'); } catch (e) {}
+              }
+              // 2. Physical device vibration feedback [200, 100, 200, 100, 500]
+              if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (e) {}
+              }
+              // 3. Set the latest urgent alert as the active takeover overlay
+              if (showPopupPref) {
+                const latestUrgent = newAlerts.find((a: any) => a.severity === 'urgent');
+                if (latestUrgent) {
+                  setActiveUrgentAlert(latestUrgent);
+                }
+              }
+            } else if (hasImportant) {
+              // 1. Play beautiful gentle notification chime once
+              if (sndPref) {
+                try { playSound('notification_gentle'); } catch (e) {}
+              }
+              // 2. Single short physical vibration [150]
+              if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                try { navigator.vibrate([150]); } catch (e) {}
+              }
+            }
+          }
+
+          // Count active urgent alerts
+          const urgentCount = openAlerts.filter((a: any) => a.severity === 'urgent').length;
+          setActiveUrgentAlertCount(urgentCount);
+
+          // If there is an active takeover urgent alert, update its data if altered
+          if (activeUrgentAlert) {
+            const updated = currentAlerts.find((a: any) => a.id === activeUrgentAlert.id);
+            if (updated) {
+              // If it has been resolved, clear the takeover
+              if (updated.status === 'resolved') {
+                setActiveUrgentAlert(null);
+              } else {
+                setActiveUrgentAlert(updated);
+              }
+            }
+          }
+
+          // Auto-update active details panel if open
+          if (activeAlertDetail) {
+            const updated = currentAlerts.find((a: any) => a.id === activeAlertDetail.id);
+            if (updated) {
+              setActiveAlertDetail(updated);
+            }
+          }
+          
+          return currentAlerts;
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch safety alerts:', err);
+    }
+  };
+
+  // Repeating urgent alarm effect
+  useEffect(() => {
+    let alarmInterval: any = null;
+    const isRepeatEnabled = localStorage.getItem('koinonia_device_repeat_urgent') === 'true';
+    const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') === 'true';
+    const sndPref = localStorage.getItem('koinonia_device_sound') === 'true';
+    const vibePref = localStorage.getItem('koinonia_device_vibration') === 'true';
+
+    if (activeUrgentAlert && activeUrgentAlert.status === 'open' && isRepeatEnabled && rxUrgentPref) {
+      alarmInterval = setInterval(() => {
+        if (sndPref) {
+          try { playSound('alert'); } catch (e) {}
+        }
+        if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (e) {}
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (alarmInterval) clearInterval(alarmInterval);
+    };
+  }, [activeUrgentAlert]);
+
+  const handleAcknowledgeAlert = async (alertId: string) => {
+    setIsAcknowledgeInProgress(alertId);
+    try {
+      const res = await api.admin.acknowledgeSafetyAlert(alertId);
+      if (res && res.success) {
+        showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
+        fetchSafetyAlerts();
+      } else {
+        showError('Acknowledge Failed', 'Could not acknowledge alert at this moment.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Error', apiErr.message || 'Error acknowledging alert.');
+    } finally {
+      setIsAcknowledgeInProgress(null);
+    }
+  };
+
+  const handleResolveAlert = async (alertId: string) => {
+    if (!resolutionNote.trim()) {
+      showError('Required', 'Please specify what actions were taken to resolve this safety concern.');
+      return;
+    }
+    setResolvingAlertId(alertId);
+    try {
+      const res = await api.admin.resolveSafetyAlert(alertId, resolutionNote);
+      if (res && res.success) {
+        showSuccess('Resolved', 'Safety concern has been successfully resolved and logged.');
+        setActiveAlertDetail(null);
+        setResolutionNote('');
+        fetchSafetyAlerts();
+      } else {
+        showError('Resolution Failed', 'Could not mark alert as resolved.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Error', apiErr.message || 'Error resolving alert.');
+    } finally {
+      setResolvingAlertId(null);
+    }
+  };
 
   // Timeago helper
   const formatTimeAgo = (isoString: string) => {
@@ -182,12 +349,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     fetchPreferences();
   }, []);
 
-  // Poll for notifications
+  // Poll for notifications and safety alerts
   useEffect(() => {
     fetchNotificationsList();
+    fetchSafetyAlerts();
     const interval = setInterval(() => {
       fetchNotificationsList();
-    }, 20000); // 20s poll
+      fetchSafetyAlerts();
+    }, 10000); // 10s poll for real-time responsiveness
     return () => clearInterval(interval);
   }, [soundEnabled]);
 
@@ -684,32 +853,32 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
               {showNotifPanel && (
                 <div 
-                  className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#EAE8E1] rounded-3xl shadow-2xl overflow-hidden z-50 animate-fade-in"
-                  data-component-version="admin-notification-panel-v2-live"
+                  className="absolute right-0 mt-2 w-80 sm:w-[420px] bg-[#FCFBF9] border border-[#EAE8E1] rounded-[24px] shadow-2xl overflow-hidden z-50 animate-fade-in"
+                  data-component-version="admin-notification-panel-v3-premium"
                 >
-                  <div className="p-4 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v1" data-sound-rule-version="admin-message-alert-sound-rule-v1">
+                  <div className="p-5 border-b border-[#EAE8E1]/80 bg-[#FAF9F6] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v2" data-sound-rule-version="admin-message-alert-sound-rule-v2">
                     <div>
-                      <h4 className="font-serif font-bold text-sm text-[#18181B]">Updates & Care Alerts</h4>
-                      <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Stay connected to ongoing check-ins</p>
+                      <h4 className="font-serif font-bold text-base text-[#18181B] tracking-tight">Updates & Care Alerts</h4>
+                      <p className="text-[11px] text-[#C59B27] font-medium font-sans mt-0.5 uppercase tracking-wider">Active child review actions</p>
                     </div>
                     
                     <div className="flex items-center gap-2">
                       <button
                         onClick={toggleSound}
-                        data-component-version="admin-sound-notification-toggle-v2"
-                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        data-component-version="admin-sound-notification-toggle-v3"
+                        className={`p-2 rounded-xl border transition-all cursor-pointer ${
                           soundEnabled 
                             ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
-                            : 'bg-zinc-50 border-zinc-200 text-zinc-400'
+                            : 'bg-zinc-100 border-zinc-200 text-zinc-400'
                         }`}
-                        title={soundEnabled ? 'Mute Alert Sounds' : 'Unmute Alert Sounds'}
+                        title={soundEnabled ? 'Mute Alert Chimes' : 'Unmute Alert Chimes'}
                       >
                         {soundEnabled ? (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                           </svg>
                         ) : (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm10.95 3.536l-8.486-8.486" />
                           </svg>
                         )}
@@ -717,62 +886,121 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                       <button
                         onClick={togglePush}
-                        data-component-version="admin-push-notification-toggle-v1"
-                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        data-component-version="admin-push-notification-toggle-v2"
+                        className={`p-2 rounded-xl border transition-all cursor-pointer ${
                           pushEnabled 
                             ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
-                            : 'bg-zinc-50 border-zinc-200 text-zinc-400'
+                            : 'bg-zinc-100 border-zinc-200 text-zinc-400'
                         }`}
-                        title={pushEnabled ? 'Disable Push Alerts' : 'Enable Push Alerts'}
+                        title={pushEnabled ? 'Disable Push Notifications' : 'Enable Push Notifications'}
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                         </svg>
                       </button>
                     </div>
                   </div>
 
-                  <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 font-sans">
+                  <div className="max-h-[360px] overflow-y-auto divide-y divide-[#EAE8E1]/40 font-sans">
                     {notifications.length === 0 ? (
-                      <div className="p-8 text-center text-zinc-400 text-xs">
-                        No recent updates found.
+                      <div className="p-10 text-center text-zinc-400 text-sm flex flex-col items-center justify-center gap-2">
+                        <Bell className="w-8 h-8 text-zinc-300 stroke-[1.5]" />
+                        <span className="font-medium">No active updates or care alerts</span>
                       </div>
                     ) : (
                       notifications.map((notif: any) => {
                         const isUnread = !notif.isRead;
+                        
+                        // Select premium icon + colors based on notification metadata
+                        let IconComponent = Bell;
+                        let iconBgClass = "bg-zinc-100 text-zinc-500";
+                        
+                        if (notif.type === 'escalation') {
+                          IconComponent = ShieldAlert;
+                          iconBgClass = "bg-[#FFF0F0] text-[#E05252] border border-[#FFD1D1]";
+                        } else if (notif.type === 'new_application') {
+                          IconComponent = UserCheck;
+                          iconBgClass = "bg-[#ECFDF5] text-[#10B981] border border-[#A7F3D0]";
+                        } else if (notif.type === 'incoming_reply') {
+                          IconComponent = MessageSquare;
+                          iconBgClass = "bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A]";
+                        } else if (notif.type === 'delivery_failed') {
+                          IconComponent = ShieldAlert;
+                          iconBgClass = "bg-[#FEF2F2] text-[#EF4444] border border-[#FEE2E2]";
+                        }
+
                         return (
                           <div 
                             key={notif.id}
-                            className={`p-3.5 flex items-start gap-3 hover:bg-zinc-50 transition-colors text-left ${
-                              isUnread ? 'bg-amber-50/10' : ''
+                            className={`p-4 flex items-start gap-4 hover:bg-[#FAF9F6] transition-colors text-left relative ${
+                              isUnread ? 'bg-[#FCFBF9]' : 'bg-white/60'
                             }`}
                           >
-                            <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
-                              notif.type === 'escalation' ? 'bg-[#C59B27]' : 'bg-zinc-400'
-                            }`} />
+                            {isUnread && (
+                              <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C59B27]" />
+                            )}
 
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <p className={`text-xs font-serif font-semibold truncate ${
+                            <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${iconBgClass}`}>
+                              <IconComponent className="w-4 h-4 stroke-[2]" />
+                            </div>
+
+                            <div className="flex-1 min-w-0 pr-2">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className={`text-xs font-serif font-bold ${
                                   isUnread ? 'text-[#18181B]' : 'text-zinc-600'
                                 }`}>
                                   {notif.title}
                                 </p>
-                                <span className="text-[9px] text-zinc-400 shrink-0">
+                                <span className="text-[10px] text-zinc-400 shrink-0 font-medium">
                                   {formatTimeAgo(notif.createdAt)}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed break-words whitespace-normal">
+                              <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed break-words whitespace-normal font-sans">
                                 {notif.message}
                               </p>
 
-                              <div className="flex items-center justify-between mt-2.5">
-                                {notif.metadata?.childId ? (
+                              <div className="flex items-center gap-3 mt-3">
+                                {(notif.metadata?.childId || notif.metadata?.child_id || notif.childId || notif.type === 'escalation' || notif.metadata?.safetyAlertId || notif.metadata?.safety_alert_id || notif.metadata?.alertId) ? (
                                   <button
                                     onClick={async () => {
-                                      setActiveTab('review');
-                                      setSearchQuery(notif.message.replace(/.*\sfor\s/, '').replace(/\..*/, '').trim());
-                                      setShowNotifPanel(false);
+                                      // Extract ids from metadata or direct properties
+                                      const cid = notif.metadata?.childId || notif.metadata?.child_id || notif.childId;
+                                      const aid = notif.metadata?.applicationId || notif.metadata?.application_id || notif.applicationId;
+                                      const alertId = notif.metadata?.safetyAlertId || notif.metadata?.safety_alert_id || notif.metadata?.alertId;
+                                      
+                                      if (alertId) {
+                                        setActiveTab('overview');
+                                        setShowNotifPanel(false);
+                                        const alertObj = safetyAlerts.find((a: any) => a.id === alertId);
+                                        if (alertObj) {
+                                          setActiveAlertDetail(alertObj);
+                                        } else {
+                                          try {
+                                            const resAlerts = await api.admin.getSafetyAlerts();
+                                            if (Array.isArray(resAlerts)) {
+                                              const matched = resAlerts.find((a: any) => a.id === alertId);
+                                              if (matched) {
+                                                setActiveAlertDetail(matched);
+                                              }
+                                            }
+                                          } catch (e) {
+                                            console.warn('Error fetching alerts for details:', e);
+                                          }
+                                        }
+                                      } else if (cid) {
+                                        // Deep link states set
+                                        if (aid) setInitialApplicationId(aid);
+                                        setInitialChildId(cid);
+                                        
+                                        // Navigate to Review Board Tab
+                                        setActiveTab('review');
+                                        setShowNotifPanel(false);
+                                      } else {
+                                        // Fallback to overview dashboard
+                                        setActiveTab('overview');
+                                        setShowNotifPanel(false);
+                                      }
+                                      
                                       if (isUnread) {
                                         try {
                                           await api.parent.markNotificationAsRead(notif.id);
@@ -780,9 +1008,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         } catch (_) {}
                                       }
                                     }}
-                                    className="text-[10px] font-semibold text-[#9A7326] hover:text-[#C59B27] underline cursor-pointer"
+                                    className="text-[11px] font-bold text-[#9A7326] hover:text-[#C59B27] underline cursor-pointer transition-colors"
                                   >
-                                    View Details
+                                    View details
                                   </button>
                                 ) : (
                                   <div />
@@ -798,7 +1026,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         console.error('Mark read failed:', err);
                                       }
                                     }}
-                                    className="text-[10px] font-bold text-zinc-400 hover:text-[#18181B] border border-zinc-200 hover:border-zinc-300 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                                    className="text-[10px] font-bold text-zinc-500 hover:text-[#18181B] bg-white border border-[#EAE8E1] hover:border-zinc-300 px-2.5 py-1 rounded-lg transition-all cursor-pointer shadow-sm"
                                   >
                                     Mark as read
                                   </button>
@@ -811,7 +1039,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     )}
                   </div>
 
-                  <div className="p-3 bg-zinc-50 border-t border-zinc-100 text-center">
+                  <div className="p-4 bg-[#FAF9F6] border-t border-[#EAE8E1]/80 text-center">
                     <button
                       onClick={async () => {
                         try {
@@ -822,9 +1050,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           console.error('Mark all read failed:', err);
                         }
                       }}
-                      className="text-[10px] font-bold text-zinc-500 hover:text-[#18181B] transition-colors cursor-pointer"
+                      className="text-[11px] font-bold text-[#9A7326] hover:text-[#C59B27] transition-all cursor-pointer"
                     >
-                      Clear all unread
+                      Mark all updates as read
                     </button>
                   </div>
                 </div>
@@ -835,6 +1063,113 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
         {/* Dashboard Main container */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6 sm:space-y-8 bg-[#FAF9F6]">
+          
+          {/* IMPORTANT ALERT PERSISTENT BANNER */}
+          {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').length > 0 && (
+            <div 
+              className="bg-[#FFFDF3] border-l-4 border-amber-500 border border-[#F5E6BE]/80 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in"
+              data-view-version="important-alert-banner-v1"
+            >
+              <div className="flex items-start space-x-3.5">
+                <div className="p-2 bg-amber-50 rounded-xl text-amber-600 border border-amber-100/50 shrink-0 mt-0.5 animate-pulse-subtle">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-serif font-bold text-sm text-amber-900">
+                      Important Care Support Request
+                    </span>
+                    <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Important Priority
+                    </span>
+                  </div>
+                  {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').map((alert: any) => {
+                    const isAck = alert.status === 'acknowledged';
+                    return (
+                      <div key={alert.id} className="mt-1.5 space-y-1.5 text-xs text-zinc-600">
+                        <p className="font-medium text-zinc-800">
+                          Raised {formatTimeAgo(alert.created_at)} by <strong className="text-zinc-900">{alert.raised_by_name}</strong>
+                          {alert.location_label && <span> at <strong className="text-zinc-900">{alert.location_label}</strong></span>}
+                          {alert.child_name && <span> regarding <strong className="text-zinc-900">{alert.child_name}</strong></span>}
+                        </p>
+                        {alert.message && (
+                          <p className="italic bg-white/50 border border-amber-200/40 rounded-lg p-2.5 text-[11px] leading-relaxed max-w-2xl text-zinc-700">
+                            "{alert.message}"
+                          </p>
+                        )}
+                        
+                        {/* Inline Resolution form if resolving is clicked */}
+                        {resolvingAlertId === alert.id && (
+                          <div className="mt-3 bg-white border border-amber-200 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                              Resolution Action Note (Required to resolve)
+                            </label>
+                            <textarea
+                              required
+                              value={resolutionNote}
+                              onChange={(e) => setResolutionNote(e.target.value)}
+                              placeholder="Describe the care action or resolution taken to secure the child..."
+                              className="w-full text-xs p-2.5 border border-zinc-200 rounded-xl focus:outline-none focus:border-[#C59B27] bg-zinc-50/50"
+                              rows={2}
+                            />
+                            <div className="flex justify-end gap-2 text-xs font-bold">
+                              <button
+                                onClick={() => {
+                                  setResolvingAlertId(null);
+                                  setResolutionNote('');
+                                }}
+                                className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleResolveAlert(alert.id)}
+                                className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors cursor-pointer shadow-xs"
+                              >
+                                Submit Resolution
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center">
+                {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').map((alert: any) => {
+                  const isAck = alert.status === 'acknowledged';
+                  if (resolvingAlertId === alert.id) return null;
+                  return (
+                    <div key={alert.id} className="flex gap-2">
+                      {!isAck && (
+                        <button
+                          onClick={() => handleAcknowledgeAlert(alert.id)}
+                          disabled={isAcknowledgeInProgress === alert.id}
+                          className="font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-3.5 py-2 rounded-xl border border-amber-200 text-xs transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          {isAcknowledgeInProgress === alert.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : 'Acknowledge'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setResolvingAlertId(alert.id);
+                          setResolutionNote('');
+                        }}
+                        className="font-bold text-white bg-[#C59B27] hover:bg-[#b58c22] px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-sm shadow-amber-200/50"
+                      >
+                        Resolve Concern
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           
           {/* TAB 1: OVERVIEW DASHBOARD */}
           {activeTab === 'overview' && (
@@ -858,6 +1193,148 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 </div>
               ) : (
                 <>
+                  {/* Event Safety Alerts Panel */}
+                  {safetyAlerts.filter((a: any) => a.status !== 'resolved').length > 0 && (
+                    <div 
+                      className="bg-[#FFF8F8] border-2 border-red-200/60 rounded-[28px] p-6 shadow-md mb-8 animate-pulse-subtle"
+                      data-component-version="admin-safety-alerts-panel-v1"
+                    >
+                      <div className="flex items-center justify-between pb-4 border-b border-red-100 mb-5">
+                        <div className="flex items-center space-x-3">
+                          <span className="flex h-3.5 w-3.5 relative">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600"></span>
+                          </span>
+                          <div>
+                            <h3 className="font-serif text-lg font-bold text-[#18181B] tracking-tight">
+                              Active Event Safety Alerts
+                            </h3>
+                            <p className="text-[11px] text-red-700/80 font-medium font-sans">
+                              {safetyAlerts.filter((a: any) => a.status !== 'resolved').length} open safety requests require attention
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-medium text-zinc-500 mr-2">
+                            Real-time sync active
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {safetyAlerts.filter((a: any) => a.status !== 'resolved').map((alert: any) => {
+                          const isUrgent = alert.severity === 'urgent';
+                          const isAck = alert.status === 'acknowledged';
+                          
+                          let catLabel = alert.category;
+                          if (alert.category === 'medical') catLabel = '🩺 Medical concern';
+                          else if (alert.category === 'missing_child') catLabel = '🚨 Missing Child alert';
+                          else if (alert.category === 'failed_scan') catLabel = '⚠️ Failed Scan escalation';
+                          else if (alert.category === 'wrong_pickup') catLabel = '🛑 Unauthorized Pickup issue';
+                          else if (alert.category === 'other_safety') catLabel = '🛡️ General Safety concern';
+
+                          return (
+                            <div 
+                              key={alert.id}
+                              className={`bg-white border rounded-2xl p-5 relative transition-all shadow-sm flex flex-col justify-between ${
+                                isUrgent 
+                                  ? 'border-red-300 hover:border-red-400 ring-2 ring-red-100/50' 
+                                  : 'border-amber-200 hover:border-amber-300'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-start justify-between gap-3 mb-3">
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-zinc-400">
+                                      {alert.severity} priority
+                                    </span>
+                                    <span className="font-serif font-bold text-sm text-[#18181B] mt-0.5">
+                                      {catLabel}
+                                    </span>
+                                  </div>
+                                  
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border shrink-0 ${
+                                    isAck 
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                                      : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+                                  }`}>
+                                    {isAck ? 'Acknowledged' : 'New request'}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-2.5 my-3 text-xs text-zinc-600">
+                                  {alert.location && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-zinc-800">Location:</span>
+                                      <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded-lg font-medium">
+                                        {alert.location}
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {alert.message && (
+                                    <p className="bg-[#FAF9F6] border border-[#EAE8E1]/80 rounded-xl p-3 text-[11px] text-zinc-700 leading-relaxed font-sans italic">
+                                      "{alert.message}"
+                                    </p>
+                                  )}
+
+                                  {alert.child_name && (
+                                    <div className="border-t border-dashed border-zinc-100 pt-2.5 mt-2 flex items-center justify-between">
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-400">ASSOCIATED CHILD</p>
+                                        <p className="text-zinc-800 font-bold mt-0.5 text-xs">{alert.child_name}</p>
+                                      </div>
+                                      {alert.parent_phone && (
+                                        <a 
+                                          href={`tel:${alert.parent_phone}`}
+                                          className="text-[10px] font-bold text-[#9A7326] bg-[#FAF6EB] border border-[#E5D5AE] px-2.5 py-1 rounded-lg hover:bg-[#FAF0D4] transition-colors flex items-center gap-1.5"
+                                        >
+                                          <Phone className="w-3 h-3" />
+                                          Call parent
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="border-t border-[#EAE8E1]/60 pt-3 mt-4 flex items-center justify-between text-[11px]">
+                                <div className="text-zinc-400 font-medium shrink-0">
+                                  Raised {formatTimeAgo(alert.created_at)} by {alert.raised_by_name}
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0 mt-2 sm:mt-0">
+                                  {!isAck && (
+                                    <button
+                                      onClick={() => handleAcknowledgeAlert(alert.id)}
+                                      disabled={isAcknowledgeInProgress === alert.id}
+                                      className="font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-xl border border-amber-200 transition-all cursor-pointer flex items-center gap-1"
+                                    >
+                                      {isAcknowledgeInProgress === alert.id ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : 'Acknowledge'}
+                                    </button>
+                                  )}
+                                  
+                                  <button
+                                    onClick={() => {
+                                      setResolutionNote('');
+                                      setActiveAlertDetail(alert);
+                                    }}
+                                    className="font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm shadow-red-200"
+                                  >
+                                    Resolve alert
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Slim warm alert strip for pending reviews (restyled) */}
                   {stats.pendingVolunteers > 0 && (
                     <div className="bg-[#FFFDF5] border border-[#F5E6BE] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs text-amber-800 shadow-xs mb-6 animate-fade-in">
@@ -1180,6 +1657,78 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </div>
                           </div>
 
+                          {/* Care Support & Safety Logs Panel */}
+                          <div 
+                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
+                            data-component-version="admin-safety-history-logs-v1"
+                          >
+                            <div className="flex items-center justify-between pb-1">
+                              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
+                                Care & Safety Audit Log
+                              </span>
+                              <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
+                                {safetyAlerts.length} total
+                              </span>
+                            </div>
+
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                              {safetyAlerts.length === 0 ? (
+                                <p className="text-xs text-zinc-400 text-center py-4 font-sans">No safety logs registered.</p>
+                              ) : (
+                                safetyAlerts.map((log: any) => {
+                                  const isResolved = log.status === 'resolved';
+                                  const isAck = log.status === 'acknowledged';
+                                  
+                                  let typeLabel = log.category;
+                                  if (log.category === 'medical') typeLabel = '🩺 Medical request';
+                                  else if (log.category === 'missing_child') typeLabel = '🚨 Missing Child';
+                                  else if (log.category === 'failed_scan') typeLabel = '⚠️ Scan issue';
+                                  else if (log.category === 'wrong_pickup') typeLabel = '🛑 Pickup concern';
+                                  else if (log.category === 'other_safety') typeLabel = '🛡️ Safety Concern';
+
+                                  return (
+                                    <div 
+                                      key={log.id} 
+                                      className="p-3 bg-[#FAF9F6]/80 hover:bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1.5 transition-all text-xs"
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="font-semibold text-zinc-800 font-serif">
+                                          {typeLabel}
+                                        </div>
+                                        <span className={`text-[9px] font-sans font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${
+                                          isResolved 
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                            : isAck
+                                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                              : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+                                        }`}>
+                                          {log.status.toUpperCase()}
+                                        </span>
+                                      </div>
+
+                                      <p className="text-[11px] text-zinc-600 leading-relaxed break-words font-sans">
+                                        {log.message || "No notes provided."}
+                                      </p>
+
+                                      <div className="text-[10px] text-zinc-400 flex flex-wrap justify-between gap-1.5 border-t border-zinc-100/60 pt-1.5 mt-1">
+                                        <span>Loc: <strong className="text-zinc-600">{log.location || 'Foyer'}</strong></span>
+                                        <span>{formatTimeAgo(log.created_at)}</span>
+                                      </div>
+
+                                      {isResolved && log.resolution_note && (
+                                        <div className="bg-emerald-50/40 border border-emerald-100/50 rounded-lg p-2 mt-1.5 text-[10px] text-zinc-700">
+                                          <p className="font-semibold text-emerald-800">Resolution:</p>
+                                          <p className="italic font-sans mt-0.5">"{log.resolution_note}"</p>
+                                          <p className="text-[9px] text-zinc-400 mt-1">Resolved by {log.resolved_by_name}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+
                         </div>
 
                       </div>
@@ -1205,7 +1754,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* REVIEW BOARD VIEW PANEL */}
           {activeTab === 'review' && (
-            <AdminReviewBoardView onBackToOverview={() => handleTabChange('overview')} />
+            <AdminReviewBoardView 
+              onBackToOverview={() => handleTabChange('overview')} 
+              initialApplicationId={initialApplicationId}
+              initialChildId={initialChildId}
+              onClearInitialParams={() => {
+                setInitialApplicationId(null);
+                setInitialChildId(null);
+                setInitialAttentionId(null);
+              }}
+            />
           )}
 
           {/* CHILDREN MODULE VIEW PANEL */}
@@ -1334,6 +1892,353 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               >
                 Close Window
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EVENT SAFETY ALERT DETAIL & RESOLUTION MODAL */}
+      {activeAlertDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            onClick={() => setActiveAlertDetail(null)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs" 
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-[28px] w-full max-w-xl p-6 shadow-2xl animate-fade-in space-y-5 max-h-[90vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <div className="flex items-center space-x-2.5">
+                <span className="flex h-3 w-3 relative">
+                  {activeAlertDetail.status !== 'resolved' && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-3 w-3 ${activeAlertDetail.status === 'resolved' ? 'bg-emerald-500' : 'bg-red-600'}`}></span>
+                </span>
+                <h4 className="font-serif font-bold text-lg text-[#18181B] tracking-tight">
+                  Event Care & Safety Alert
+                </h4>
+              </div>
+              <button 
+                onClick={() => setActiveAlertDetail(null)}
+                className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+              
+              {/* Alert Meta Tags */}
+              <div className="flex flex-wrap gap-2">
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border ${
+                  activeAlertDetail.severity === 'urgent' 
+                    ? 'bg-red-50 text-red-700 border-red-100' 
+                    : 'bg-amber-50 text-amber-700 border-amber-100'
+                }`}>
+                  {activeAlertDetail.severity.toUpperCase()} PRIORITY
+                </span>
+
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border ${
+                  activeAlertDetail.status === 'resolved' 
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                    : activeAlertDetail.status === 'acknowledged'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+                }`}>
+                  {activeAlertDetail.status.toUpperCase()}
+                </span>
+
+                {activeAlertDetail.location && (
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-sans font-bold bg-zinc-100 text-zinc-700 border border-zinc-200">
+                    📍 {activeAlertDetail.location}
+                  </span>
+                )}
+              </div>
+
+              {/* Raised by info */}
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl p-3 flex items-center justify-between text-[11px]">
+                <div>
+                  <p className="text-[10px] font-semibold text-zinc-400">RAISED BY</p>
+                  <p className="font-semibold text-zinc-800 mt-0.5">{activeAlertDetail.raised_by_name}</p>
+                </div>
+                <div className="text-right text-zinc-400 font-medium">
+                  {formatTimeAgo(activeAlertDetail.created_at)}
+                  <p className="text-[9px] mt-0.5">{new Date(activeAlertDetail.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Alarm Description message */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">CRITICAL ISSUE DESCRIPTION</p>
+                <div className="bg-red-50/30 border border-red-100/50 rounded-xl p-4 text-[11px] text-zinc-800 leading-relaxed font-sans italic">
+                  "{activeAlertDetail.message || 'No descriptive details provided by volunteer.'}"
+                </div>
+              </div>
+
+              {/* Associated Child & Parent Details */}
+              {activeAlertDetail.child_name && (
+                <div className="border border-[#EAE8E1] rounded-xl p-4 space-y-3 bg-white">
+                  <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">ASSOCIATED CHILD & CONTACTS</p>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="font-serif font-bold text-sm text-[#18181B]">{activeAlertDetail.child_name}</h5>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">Active registration check-in record linked</p>
+                    </div>
+
+                    {activeAlertDetail.parent_phone && (
+                      <div className="flex gap-2">
+                        <a 
+                          href={`tel:${activeAlertDetail.parent_phone}`}
+                          className="font-bold text-xs text-white bg-[#C59B27] hover:bg-[#b58c22] px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          Call Parent
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Resolution Form */}
+              {activeAlertDetail.status !== 'resolved' ? (
+                <div className="border-t border-[#EAE8E1] pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                      RESOLUTION ACTION NOTE <span className="text-red-500 font-bold">*</span>
+                    </label>
+                    <span className="text-[9px] text-zinc-400">Required to close safety alert</span>
+                  </div>
+                  
+                  <textarea
+                    rows={3}
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="Describe actions taken (e.g., 'Met volunteer in Room 2, verified wrong scan code, resolved parent verification successfully.')"
+                    className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-sans text-zinc-800 placeholder-zinc-400 resize-none leading-relaxed"
+                  />
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1 justify-between items-center">
+                    <div>
+                      {activeAlertDetail.status === 'open' && (
+                        <button
+                          type="button"
+                          onClick={() => handleAcknowledgeAlert(activeAlertDetail.id)}
+                          disabled={isAcknowledgeInProgress === activeAlertDetail.id}
+                          className="font-bold text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          {isAcknowledgeInProgress === activeAlertDetail.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : 'Acknowledge Alert (Log Response)'}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => setActiveAlertDetail(null)}
+                        className="text-xs bg-zinc-100 text-[#18181B] hover:bg-zinc-200 px-4 py-2"
+                      >
+                        Cancel
+                      </Button>
+                      <button
+                        type="button"
+                        disabled={resolvingAlertId === activeAlertDetail.id}
+                        onClick={() => handleResolveAlert(activeAlertDetail.id)}
+                        className="font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-100 flex items-center gap-1.5"
+                      >
+                        {resolvingAlertId === activeAlertDetail.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : 'Resolve & Close Safety Issue'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 space-y-2 mt-2">
+                  <p className="font-bold text-xs text-emerald-800 font-serif">Resolution Log details</p>
+                  <p className="text-zinc-700 italic font-sans leading-relaxed text-[11px]">
+                    "{activeAlertDetail.resolution_note || 'No notes left during resolution.'}"
+                  </p>
+                  <div className="text-[10px] text-zinc-400 border-t border-emerald-100 pt-2 flex justify-between">
+                    <span>Resolved by: <strong className="text-zinc-600">{activeAlertDetail.resolved_by_name}</strong></span>
+                    <span>Date: {new Date(activeAlertDetail.resolved_at || activeAlertDetail.created_at).toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer */}
+            {activeAlertDetail.status === 'resolved' && (
+              <div className="pt-3 border-t border-[#EAE8E1] flex justify-end">
+                <Button
+                  type="button"
+                  onClick={() => setActiveAlertDetail(null)}
+                  className="text-xs bg-zinc-100 text-[#18181B] hover:bg-zinc-200 px-4 py-2"
+                >
+                  Close Window
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* URGENT SAFETY ALERT FULL-SCREEN TAKEOVER OVERLAY */}
+      {activeUrgentAlert && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-red-950/95 backdrop-blur-md animate-fade-in text-white"
+          data-view-version="urgent-alert-overlay-v1"
+        >
+          <div className="w-full max-w-2xl bg-zinc-900 border-2 border-red-500/80 rounded-[32px] p-8 space-y-6 shadow-2xl relative overflow-hidden">
+            {/* Pulsing decoration circle */}
+            <div className="absolute -top-16 -right-16 w-48 h-48 bg-red-500/10 rounded-full blur-2xl animate-pulse" />
+            <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-red-500/10 rounded-full blur-2xl animate-pulse" />
+
+            <div className="flex flex-col items-center text-center space-y-4 border-b border-red-500/20 pb-6 relative z-10">
+              <div className="relative">
+                <div className="p-4 bg-red-600/20 rounded-2xl text-red-500 border border-red-500/30 animate-pulse">
+                  <ShieldAlert className="w-10 h-10" />
+                </div>
+                <div className="absolute -top-1.5 -right-1.5 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500"></span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-2xl font-serif font-black tracking-tight text-red-500 uppercase">
+                  CRITICAL URGENT ALERT
+                </h2>
+                <p className="text-xs text-zinc-400 font-sans tracking-wide">
+                  IMMEDIATE ACTION REQUIRED BY AVAILABLE ADMINS/CARE LEADS
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-sm relative z-10">
+              <div className="grid grid-cols-2 gap-4 bg-zinc-800/60 border border-zinc-700/40 p-4 rounded-2xl">
+                <div>
+                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Raised by</span>
+                  <span className="font-semibold text-zinc-200 text-xs">{activeUrgentAlert.raised_by_name}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Category</span>
+                  <span className="font-semibold text-zinc-200 text-xs">{activeUrgentAlert.title || activeUrgentAlert.category}</span>
+                </div>
+                {activeUrgentAlert.location_label && (
+                  <div>
+                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Location</span>
+                    <span className="font-semibold text-amber-500 text-xs bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 w-fit block mt-0.5">
+                      {activeUrgentAlert.location_label}
+                    </span>
+                  </div>
+                )}
+                {activeUrgentAlert.created_at && (
+                  <div>
+                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Time elapsed</span>
+                    <span className="font-semibold text-zinc-200 text-xs">{formatTimeAgo(activeUrgentAlert.created_at)}</span>
+                  </div>
+                )}
+                {activeUrgentAlert.child_name && (
+                  <div className="col-span-2 border-t border-zinc-700/40 pt-3 mt-1">
+                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
+                    <span className="font-black text-red-400 text-sm">{activeUrgentAlert.child_name}</span>
+                  </div>
+                )}
+              </div>
+
+              {activeUrgentAlert.message && (
+                <div className="bg-red-500/5 border border-red-500/20 p-4 rounded-2xl font-mono text-[11px] leading-relaxed text-red-200/90 italic">
+                  "{activeUrgentAlert.message}"
+                </div>
+              )}
+
+              {/* State transitions inside Overlay Takeover */}
+              {activeUrgentAlert.status === 'open' ? (
+                <div className="pt-4 flex flex-col gap-3 relative z-10">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await api.admin.acknowledgeSafetyAlert(activeUrgentAlert.id);
+                        if (res && res.success) {
+                          showSuccess('Acknowledged', 'marked as acknowledged.');
+                          // Refresh safety alerts
+                          fetchSafetyAlerts();
+                        }
+                      } catch (err) {
+                        console.error('Error acknowledging inside overlay:', err);
+                      }
+                    }}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-red-600/30 text-center flex items-center justify-center space-x-2 text-sm cursor-pointer"
+                  >
+                    <Check className="w-5 h-5" />
+                    <span>ACKNOWLEDGE ALERT</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveUrgentAlert(null)}
+                    className="w-full bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 py-3 rounded-xl transition-all text-xs font-semibold text-center cursor-pointer"
+                  >
+                    Close Overlay View (Keeps Alert Open)
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-4 space-y-4 relative z-10 border-t border-zinc-800">
+                  <div className="flex items-center space-x-2 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3.5 rounded-xl">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>ALREADY ACKNOWLEDGED — RESOLUTION NOTE REQUIRED TO CLOSE</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                      Resolution Actions Taken (Required)
+                    </label>
+                    <textarea
+                      required
+                      value={resolutionNote}
+                      onChange={(e) => setResolutionNote(e.target.value)}
+                      placeholder="Specify actions taken to secure the child and coordinate with volunteers..."
+                      className="w-full text-xs p-3.5 border border-zinc-700 rounded-2xl focus:outline-none focus:border-red-500 bg-zinc-800/80 text-zinc-100 placeholder-zinc-500"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="flex gap-3 text-xs font-bold">
+                    <button
+                      onClick={() => setActiveUrgentAlert(null)}
+                      className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-3.5 rounded-xl text-center transition-all cursor-pointer"
+                    >
+                      Close View
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!resolutionNote.trim()) {
+                          showError('Required', 'Please add a resolution note.');
+                          return;
+                        }
+                        try {
+                          const res = await api.admin.resolveSafetyAlert(activeUrgentAlert.id, resolutionNote);
+                          if (res && res.success) {
+                            showSuccess('Resolved', 'Safety concern has been successfully resolved and logged.');
+                            setActiveUrgentAlert(null);
+                            setResolutionNote('');
+                            fetchSafetyAlerts();
+                          }
+                        } catch (err) {
+                          console.error('Error resolving inside overlay:', err);
+                        }
+                      }}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl text-center transition-all cursor-pointer shadow-md shadow-emerald-600/20"
+                    >
+                      Submit & Close Alert
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -17,6 +17,7 @@ import {
   Hourglass,
   Edit,
   X,
+  XCircle,
   MapPin,
   ChevronDown,
   QrCode
@@ -26,6 +27,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { EventPassPreviewCard } from '../../components/common/EventPassPreviewCard';
+import { SafeImage } from '../../components/common/SafeImage';
 
 interface AdminReviewChildViewProps {
   applicationId: string;
@@ -90,6 +92,89 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState('');
   const [revoking, setRevoking] = useState(false);
+
+  // State-dependent confirmation modals
+  const [isSelectModalOpen, setIsSelectModalOpen] = useState(false);
+  const [isWaitlistModalOpen, setIsWaitlistModalOpen] = useState(false);
+  const [isNotSelectedModalOpen, setIsNotSelectedModalOpen] = useState(false);
+  const [notSelectedReason, setNotSelectedReason] = useState('');
+  const [isGeneratePassModalOpen, setIsGeneratePassModalOpen] = useState(false);
+
+  const handleConfirmSelect = async () => {
+    setSaving(true);
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'selected',
+        noteToTeam: 'Selected for enrollment.',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Child Selected', `${app?.child?.fullName || 'Child'} has been successfully selected.`);
+        setIsSelectModalOpen(false);
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Selection Failed', parsed.message || 'Could not select child.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmWaitlist = async () => {
+    setSaving(true);
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'waiting_list',
+        noteToTeam: 'Moved to waiting list.',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Added to Waitlist', `${app?.child?.fullName || 'Child'} moved to waitlist.`);
+        setIsWaitlistModalOpen(false);
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Waitlist Failed', parsed.message || 'Could not waitlist child.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmNotSelected = async () => {
+    if (!notSelectedReason.trim()) {
+      showError('Reason Required', 'Please provide a reason.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'not_selected',
+        noteToTeam: notSelectedReason,
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Marked Not Selected', `${app?.child?.fullName || 'Child'} marked as not selected.`);
+        setIsNotSelectedModalOpen(false);
+        setNotSelectedReason('');
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Operation Failed', parsed.message || 'Could not update status.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmGeneratePass = async () => {
+    setIsGeneratePassModalOpen(false);
+    await handleGeneratePass();
+  };
 
   const fetchDetails = async () => {
     setLoading(true);
@@ -333,8 +418,10 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   // Generate real-time live preview of the pastoral parent notification email (human-centered, off-portal)
   const getNotificationPreview = () => {
     if (!app) return '';
-    const parentFirstName = app.parent.fullName.split(' ')[0] || app.parent.fullName;
-    const childFirstName = app.child.fullName.split(' ')[0] || app.child.fullName;
+    const parentFullName = app.parent?.fullName || 'Parent';
+    const childFullName = app.child?.fullName || 'Child';
+    const parentFirstName = parentFullName.split(' ')[0] || parentFullName;
+    const childFirstName = childFullName.split(' ')[0] || childFullName;
 
     switch (decision) {
       case 'selected':
@@ -474,19 +561,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           >
             {/* Child Photo with soft gold-tint border frame */}
             <div className="shrink-0">
-              {app.child.photoUrl ? (
-                <img 
-                  referrerPolicy="no-referrer"
-                  src={app.child.photoUrl} 
-                  alt={app.child.fullName} 
-                  className="w-24 h-28 rounded-2xl object-cover border border-[#E2DFD7] shadow-sm ring-1 ring-[#C59B27]/10 ring-offset-1"
-                />
-              ) : (
-                <div className="w-24 h-28 rounded-2xl bg-gradient-to-br from-[#FCFBF9] to-[#EFECE4] border border-[#E2DFD7] flex flex-col items-center justify-center text-[#715D3A] font-medium text-2xl uppercase shadow-xs ring-1 ring-[#C59B27]/10 ring-offset-1">
-                  <span>{app.child.fullName?.charAt(0) || 'C'}</span>
-                  <span className="text-[9px] text-[#A37E1C] uppercase font-bold tracking-wider mt-1 font-sans">Child</span>
-                </div>
-              )}
+              <SafeImage
+                src={app.child.photoUrl}
+                alt={app.child.fullName}
+                className="w-24 h-28 rounded-2xl object-cover border border-[#E2DFD7] shadow-sm ring-1 ring-[#C59B27]/10 ring-offset-1"
+                containerClassName="w-24 h-28 rounded-2xl"
+                fallbackComponent={
+                  <div className="w-24 h-28 rounded-2xl bg-gradient-to-br from-[#FCFBF9] to-[#EFECE4] border border-[#E2DFD7] flex flex-col items-center justify-center text-[#715D3A] font-medium text-2xl uppercase shadow-xs ring-1 ring-[#C59B27]/10 ring-offset-1">
+                    <span>{app.child.fullName?.charAt(0) || 'C'}</span>
+                    <span className="text-[9px] text-[#A37E1C] uppercase font-bold tracking-wider mt-1 font-sans">Child</span>
+                  </div>
+                }
+              />
             </div>
 
             {/* Title Block & Primary Tags */}
@@ -672,19 +758,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 </h3>
 
                 <div className="flex items-start space-x-4 pt-1.5">
-                  {app.parent.photoUrl ? (
-                    <img 
-                      referrerPolicy="no-referrer"
-                      src={app.parent.photoUrl} 
-                      alt={app.parent.fullName} 
-                      className="w-20 h-24 rounded-xl object-cover border border-[#E2DFD7] shadow-xs shrink-0 ring-1 ring-[#C59B27]/5"
-                    />
-                  ) : (
-                    <div className="w-20 h-24 rounded-xl bg-gradient-to-br from-[#FCFBF9] to-[#EFECE4] border border-[#E2DFD7] flex flex-col items-center justify-center text-[#715D3A] font-medium text-xl uppercase shrink-0 shadow-xs">
-                      <span>{app.parent.fullName?.charAt(0) || 'P'}</span>
-                      <span className="text-[8px] text-[#A37E1C] uppercase font-bold tracking-widest mt-1 font-sans">Guardian</span>
-                    </div>
-                  )}
+                  <SafeImage
+                    src={app.parent.photoUrl}
+                    alt={app.parent.fullName}
+                    className="w-20 h-24 rounded-xl object-cover border border-[#E2DFD7] shadow-xs shrink-0 ring-1 ring-[#C59B27]/5"
+                    containerClassName="w-20 h-24 rounded-xl"
+                    fallbackComponent={
+                      <div className="w-20 h-24 rounded-xl bg-gradient-to-br from-[#FCFBF9] to-[#EFECE4] border border-[#E2DFD7] flex flex-col items-center justify-center text-[#715D3A] font-medium text-xl uppercase shrink-0 shadow-xs">
+                        <span>{app.parent.fullName?.charAt(0) || 'P'}</span>
+                        <span className="text-[8px] text-[#A37E1C] uppercase font-bold tracking-widest mt-1 font-sans">Guardian</span>
+                      </div>
+                    }
+                  />
                   <div className="space-y-1.5 flex-1 min-w-0 pt-1">
                     <span className="font-semibold text-zinc-800 text-sm block leading-tight truncate">{app.parent.fullName}</span>
                     <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
@@ -754,19 +839,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   app.pickupPeople.slice(0, 1).map((person: any) => (
                     <div key={person.id} className="pt-1.5">
                       <div className="flex items-start space-x-4">
-                        {person.photoUrl ? (
-                          <img 
-                            referrerPolicy="no-referrer"
-                            src={person.photoUrl} 
-                            alt={person.fullName} 
-                            className="w-20 h-24 rounded-xl object-cover border border-[#E2DFD7] shadow-xs shrink-0 ring-1 ring-[#C59B27]/5"
-                          />
-                        ) : (
-                          <div className="w-20 h-24 rounded-xl bg-gradient-to-br from-[#FCFBF9] to-[#EFECE4] border border-[#E2DFD7] flex flex-col items-center justify-center text-[#715D3A] font-medium text-xl uppercase shrink-0 shadow-xs">
-                            <span>{person.fullName?.charAt(0) || 'P'}</span>
-                            <span className="text-[8px] text-[#A37E1C] uppercase font-bold tracking-widest mt-1 font-sans">Pickup</span>
-                          </div>
-                        )}
+                        <SafeImage
+                          src={person.photoUrl}
+                          alt={person.fullName}
+                          className="w-20 h-24 rounded-xl object-cover border border-[#E2DFD7] shadow-xs shrink-0 ring-1 ring-[#C59B27]/5"
+                          containerClassName="w-20 h-24 rounded-xl"
+                          fallbackComponent={
+                            <div className="w-20 h-24 rounded-xl bg-gradient-to-br from-[#FCFBF9] to-[#EFECE4] border border-[#E2DFD7] flex flex-col items-center justify-center text-[#715D3A] font-medium text-xl uppercase shrink-0 shadow-xs">
+                              <span>{person.fullName?.charAt(0) || 'P'}</span>
+                              <span className="text-[8px] text-[#A37E1C] uppercase font-bold tracking-widest mt-1 font-sans">Pickup</span>
+                            </div>
+                          }
+                        />
                         <div className="space-y-1.5 flex-1 min-w-0 pt-1">
                           <span className="font-semibold text-zinc-800 text-sm block leading-tight truncate">{person.fullName}</span>
                           <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
@@ -850,182 +934,244 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             </p>
           </div>
 
-          {/* Approved Status / Reopen Action Card */}
-          {['selected', 'pass_ready'].includes(app.status) && (
-            <div 
-              data-component-version="admin-child-pass-card-v4-repair"
-              className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-5 space-y-4"
-            >
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                <div className="space-y-1 flex-1">
-                  <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Approved & Verified</h4>
-                  <p className="text-xs text-emerald-700 leading-relaxed mb-3">
-                    This child's application is currently approved and marked <strong>{statusLabels[app.status]}</strong>. 
-                    Parents can access and download their secure digital event pass.
-                  </p>
-                  {app.status === 'selected' && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={handleGeneratePass}
-                        disabled={saving}
-                        data-component-version="admin-child-generate-pass-action-v4"
-                        className="w-full sm:w-auto px-4 py-2.5 bg-[#8C6D23] hover:bg-[#715D3A] active:bg-[#5C4B2E] disabled:bg-[#FAF8F3] disabled:text-[#A1A1AA] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer focus:outline-none"
-                      >
-                        <QrCode className="w-4 h-4 animate-pulse" />
-                        <span>Generate pass</span>
-                      </button>
-                    </div>
-                  )}
-                  {app.status === 'pass_ready' && (
-                    <div className="max-w-[320px] mx-auto pt-2 pb-2">
-                      <EventPassPreviewCard
-                        childName={app.child.fullName}
-                        ageGroup={app.child.ageGroup || 'Section'}
-                        status="Pass ready"
-                        photoUrl={app.child.photoUrl || undefined}
-                        passReference={app.passReference}
-                      />
-                    </div>
-                  )}
+          {/* STATE-DEPENDENT OPERATIONS WORKSPACE */}
+          <div className="space-y-4">
+            
+            {/* 1. ARCHIVED / REMOVED CHILD PROFILE STATE */}
+            {app.isDeleted && (
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <ShieldAlert className="w-5.5 h-5.5 text-red-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-red-800 uppercase tracking-wider">Profile Archived</h4>
+                    <p className="text-xs text-red-700 leading-relaxed">
+                      This child registration is soft-deleted and locked. You must restore the child profile to enable administrative operations.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRestoreModalOpen(true)}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+                >
+                  Restore Child Profile
+                </button>
+              </div>
+            )}
+
+            {/* 2. ATTENDANCE & CHECKED-IN STATE (READ-ONLY TERMINAL STATE) */}
+            {!app.isDeleted && ['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) && (
+              <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-3">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="w-5.5 h-5.5 text-[#C59B27] shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Child In Attendance</h4>
+                    <p className="text-xs text-zinc-600 leading-relaxed">
+                      This child is currently checked in or picked up at the event. Review decisions cannot be reopened or revoked.
+                    </p>
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div className="pt-2 border-t border-emerald-100/50 flex justify-end gap-2">
-                {app.status === 'pass_ready' && (
+            {/* 3. UNDER REVIEW / REOPENED REVIEW STATUS */}
+            {!app.isDeleted && ['under_review', 'review_reopened'].includes(app.status) && (
+              <div className="space-y-4">
+                <div className="bg-[#FAF8F3] border border-[#E5D5AE]/40 rounded-2xl p-4 text-xs text-[#715D3A] leading-relaxed space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-[10px] text-[#A37E1C]">Review Pending</p>
+                  <p>Choose an enrollment decision to update this child's application status.</p>
+                </div>
+                
+                {app.child.needsAgeReview && (
+                  <div className="bg-[#FFF8F6] border border-red-100 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center space-x-2 text-red-700 font-bold text-[10px] uppercase tracking-wider">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                      <span>Attention Required</span>
+                    </div>
+                    <div className="flex items-center space-x-2.5">
+                      <input
+                        type="checkbox"
+                        id="ageConfirm"
+                        checked={ageChecked}
+                        onChange={(e) => setAgeChecked(e.target.checked)}
+                        className="w-4 h-4 rounded text-[#C59B27] border-red-200 focus:ring-[#C59B27]"
+                      />
+                      <label htmlFor="ageConfirm" className="text-xs text-zinc-700 font-medium cursor-pointer select-none">
+                        Age group checked & confirmed
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (app.child.needsAgeReview && !ageChecked) {
+                        showError('Action Blocked', 'Please confirm that you have checked the child\'s age group first.');
+                        return;
+                      }
+                      setIsSelectModalOpen(true);
+                    }}
+                    className="w-full p-4 text-left rounded-xl border border-[#EAE8E1] hover:border-[#C59B27] bg-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider text-[#C59B27] hover:bg-zinc-50 cursor-pointer"
+                  >
+                    <span>Select Child for Enrollment</span>
+                    <CheckCircle2 className="w-4 h-4 text-[#C59B27]" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsWaitlistModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-[#EAE8E1] hover:border-zinc-800 bg-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider text-zinc-800 hover:bg-zinc-50 cursor-pointer"
+                  >
+                    <span>Waitlist Child</span>
+                    <Hourglass className="w-4 h-4 text-zinc-500" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsNotSelectedModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-[#EAE8E1] hover:border-red-500 bg-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider text-red-700 hover:bg-red-50/20 cursor-pointer"
+                  >
+                    <span>Mark as Not Selected</span>
+                    <X className="w-4 h-4 text-red-500" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 4. SELECTED STATUS (PENDING EVENT PASS GENERATION) */}
+            {!app.isDeleted && app.status === 'selected' && (
+              <div className="space-y-4">
+                <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-800 leading-relaxed space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-[10px]">Enrollment Approved</p>
+                  <p>This child has been selected. You can now generate their digital event pass.</p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsGeneratePassModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-[#C59B27] bg-[#C59B27] hover:bg-[#B08921] text-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider cursor-pointer shadow-xs"
+                  >
+                    <span>Generate Digital Event Pass</span>
+                    <QrCode className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsWaitlistModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-[#EAE8E1] hover:border-zinc-800 bg-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider text-zinc-800 hover:bg-zinc-50 cursor-pointer"
+                  >
+                    <span>Move to Waitlist</span>
+                    <Hourglass className="w-4 h-4 text-zinc-500" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsNotSelectedModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-[#EAE8E1] hover:border-red-500 bg-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider text-red-700 hover:bg-red-50/20 cursor-pointer"
+                  >
+                    <span>Mark as Not Selected</span>
+                    <X className="w-4 h-4 text-red-500" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 5. PASS READY STATUS */}
+            {!app.isDeleted && app.status === 'pass_ready' && (
+              <div className="space-y-4">
+                <div className="bg-emerald-50/80 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-800 leading-relaxed space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-[10px]">Event Pass Issued</p>
+                  <p>The digital event pass is active and available to the parent.</p>
+                </div>
+
+                <div className="max-w-[300px] mx-auto py-2">
+                  <EventPassPreviewCard
+                    childName={app.child.fullName}
+                    ageGroup={app.child.ageGroup || 'Section'}
+                    status="Pass ready"
+                    photoUrl={app.child.photoUrl || undefined}
+                    passReference={app.passReference}
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-[#EAE8E1]/60 flex gap-2">
                   <button
                     type="button"
                     onClick={() => setIsRevokeModalOpen(true)}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg text-xs font-bold text-red-700 transition-colors shadow-2xs cursor-pointer"
+                    className="flex-1 py-3 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
                   >
-                    <X className="w-3.5 h-3.5" />
-                    <span>REVOKE PASS</span>
+                    <X className="w-4 h-4" />
+                    <span>Revoke Pass</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsReopenModalOpen(true)}
+                    className="flex-1 py-3 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Reopen Review</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 6. WAITING LIST STATUS */}
+            {!app.isDeleted && app.status === 'waiting_list' && (
+              <div className="space-y-4">
+                <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs text-zinc-700 leading-relaxed space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-[10px]">Waiting List</p>
+                  <p>This child is currently on the waitlist. You can choose to admit them if space opens up.</p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsSelectModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-[#C59B27] bg-[#C59B27] hover:bg-[#B08921] text-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider cursor-pointer shadow-xs"
+                  >
+                    <span>Admit & Select Child</span>
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsNotSelectedModalOpen(true)}
+                    className="w-full p-4 text-left rounded-xl border border-zinc-200 hover:border-red-500 bg-white transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider text-red-700 hover:bg-red-50/20 cursor-pointer"
+                  >
+                    <span>Mark as Not Selected</span>
+                    <X className="w-4 h-4 text-red-500" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 7. NOT SELECTED STATUS */}
+            {!app.isDeleted && app.status === 'not_selected' && (
+              <div className="space-y-4">
+                <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4 text-xs text-red-800 leading-relaxed space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-[10px]">Not Selected</p>
+                  <p>This child is marked as not selected. You can reopen the review to reconsider.</p>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setIsReopenModalOpen(true)}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-50 text-xs font-bold text-zinc-700 transition-colors shadow-2xs cursor-pointer"
+                  className="w-full p-4 text-left rounded-xl border border-[#C59B27] bg-white text-[#C59B27] hover:bg-zinc-50 transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider cursor-pointer"
                 >
-                  <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>REOPEN REVIEW</span>
+                  <span>Reopen Review for Reconsideration</span>
+                  <Clock className="w-4 h-4 text-[#C59B27]" />
                 </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Checked-in Attendance State Card */}
-          {['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) && (
-            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-3">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-[#C59B27] shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Child In Attendance</h4>
-                  <p className="text-xs text-zinc-600 leading-relaxed">
-                    This child has already checked in or been picked up at the event. Review decisions cannot be reopened or revoked.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {app.isDeleted ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-              <p className="text-xs text-amber-800 font-bold uppercase tracking-wider">Profile Locked</p>
-              <p className="text-xs text-[#715D3A] leading-relaxed mt-1">
-                Decision options and status changes are locked because this child registration is removed. Restore the child profile to enable decision controls.
-              </p>
-            </div>
-          ) : !['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status) ? (
-            <>
-              {/* ATTENTION REQUIRED CHECKBOX IF AGE REVISIONS NEEDED */}
-          {app.child.needsAgeReview && (
-            <div className="bg-[#FFF8F6] border border-red-100 rounded-xl p-4 space-y-3">
-              <div className="flex items-center space-x-2 text-red-700 font-bold text-[10px] uppercase tracking-wider">
-                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                <span>Attention Required</span>
-              </div>
-              <div className="flex items-center space-x-2.5">
-                <input
-                  type="checkbox"
-                  id="ageConfirm"
-                  checked={ageChecked}
-                  onChange={(e) => setAgeChecked(e.target.checked)}
-                  className="w-4 h-4 rounded text-[#C59B27] border-red-200 focus:ring-[#C59B27]"
-                />
-                <label htmlFor="ageConfirm" className="text-xs text-zinc-700 font-medium cursor-pointer select-none">
-                  Age group checked & confirmed
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* DYNAMIC DECISION SELECTOR (STACKED BUTTONS AS PER STITCH TARGET) */}
-          <div className="space-y-2.5">
-            {/* 1. SELECT CHILD BUTTON */}
-            <button
-              type="button"
-              onClick={() => setDecision('selected')}
-              className={`w-full p-3.5 text-left rounded-xl border transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider ${
-                decision === 'selected'
-                  ? 'bg-[#C59B27] border-[#C59B27] text-white shadow-xs'
-                  : 'bg-white border-[#EAE8E1] hover:border-zinc-300 text-[#C59B27]'
-              }`}
-            >
-              <span>SELECT CHILD</span>
-              {decision === 'selected' ? (
-                <Check className="w-4 h-4 text-white" />
-              ) : (
-                <Check className="w-4 h-4 text-zinc-400" />
-              )}
-            </button>
-
-            {/* 2. MOVE TO WAITING LIST */}
-            <button
-              type="button"
-              onClick={() => setDecision('waiting_list')}
-              className={`w-full p-3.5 text-left rounded-xl border transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider ${
-                decision === 'waiting_list'
-                  ? 'bg-zinc-800 border-zinc-800 text-white shadow-xs'
-                  : 'bg-white border-[#EAE8E1] hover:border-zinc-300 text-zinc-700'
-              }`}
-            >
-              <span>MOVE TO WAITING LIST</span>
-              <Hourglass className={`w-4 h-4 ${decision === 'waiting_list' ? 'text-white' : 'text-zinc-400'}`} />
-            </button>
-
-            {/* 3. REQUEST UPDATE */}
-            <button
-              type="button"
-              onClick={() => setDecision('under_review')}
-              className={`w-full p-3.5 text-left rounded-xl border transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider ${
-                decision === 'under_review'
-                  ? 'bg-[#C59B27]/10 border-[#C59B27] text-[#C59B27] shadow-xs'
-                  : 'bg-white border-[#EAE8E1] hover:border-zinc-300 text-zinc-700'
-              }`}
-            >
-              <span>REQUEST UPDATE</span>
-              <Edit className="w-4 h-4 text-zinc-400" />
-            </button>
-
-            {/* 4. NOT SELECTED */}
-            <button
-              type="button"
-              onClick={() => setDecision('not_selected')}
-              className={`w-full p-3.5 text-left rounded-xl border transition-all flex items-center justify-between font-bold text-xs uppercase tracking-wider ${
-                decision === 'not_selected'
-                  ? 'bg-[#FFF8F6] border-red-200 text-red-700'
-                  : 'bg-white border-[#EAE8E1] hover:border-zinc-300 text-zinc-700'
-              }`}
-            >
-              <span className={decision === 'not_selected' ? 'text-red-700' : 'text-zinc-700'}>NOT SELECTED</span>
-              <X className="w-4 h-4 text-zinc-400" />
-            </button>
           </div>
 
           {/* TEAM INTERNAL NOTES */}
-          <div className="space-y-1.5 pt-2">
+          <div className="space-y-1.5 pt-4 border-t border-[#EAE8E1]/60">
             <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">
               INTERNAL TEAM NOTES
             </span>
@@ -1034,13 +1180,23 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               onChange={(e) => setNoteToTeam(e.target.value)}
               placeholder="Add notes for other reviewers..."
               rows={3}
-              className="w-full p-3 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all placeholder:text-zinc-400 text-zinc-800"
+              className="w-full p-3 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all placeholder:text-zinc-400 text-zinc-800 font-medium"
             />
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSubmitReview}
+                disabled={saving}
+                className="px-4 py-2 bg-zinc-800 hover:bg-[#C59B27] hover:text-white text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+              >
+                {saving ? 'Saving Notes...' : 'Save Internal Notes'}
+              </button>
+            </div>
           </div>
 
           {/* AUTOMATED PARENT NOTIFICATION PREVIEW */}
           <div 
-            className="space-y-2 pt-2 border-t border-[#EAE8E1]/60"
+            className="space-y-2 pt-4 border-t border-[#EAE8E1]/60"
             data-component-version="admin-review-notification-preview-v2"
           >
             <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">
@@ -1064,14 +1220,6 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </label>
             </div>
           </div>
-          </>
-          ) : (
-            <div className="bg-zinc-50 border border-dashed border-zinc-200 rounded-xl p-4 text-center">
-              <p className="text-xs text-zinc-500">
-                Decision options are locked because the child is already checked in.
-              </p>
-            </div>
-          )}
 
           {/* REMOVE CHILD ACTION FOR ACTIVE REGISTRATIONS */}
           {!app.isDeleted && (
@@ -1116,7 +1264,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                     </p>
 
                     {hist.note && (
-                      <div className="mt-1 p-2 bg-zinc-50 border border-zinc-100 rounded-lg text-[10px] text-zinc-500 italic">
+                      <div className="mt-1 p-2 bg-zinc-50 border border-zinc-100 rounded-lg text-[10px] text-zinc-500 italic text-left">
                         "{hist.note}"
                       </div>
                     )}
@@ -1138,7 +1286,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in">
             <div className="flex items-start gap-3 text-amber-700">
               <AlertCircle className="w-6 h-6 shrink-0 text-amber-600" />
-              <div className="space-y-1">
+              <div className="space-y-1 text-left">
                 <h3 className="text-lg font-serif font-medium text-zinc-900">Reopen Application Review?</h3>
                 <p className="text-xs text-zinc-600 leading-relaxed">
                   Are you sure you want to reopen the review for <strong>{app.child.fullName}</strong>?
@@ -1146,7 +1294,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </div>
             </div>
 
-            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3.5 text-xs text-amber-800 leading-relaxed space-y-1.5">
+            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3.5 text-xs text-amber-800 leading-relaxed space-y-1.5 text-left">
               <p className="font-semibold">Important Consequences:</p>
               <ul className="list-disc pl-4 space-y-1 text-[11px]">
                 <li>The child's status will revert to <strong>Review Reopened</strong> immediately.</li>
@@ -1155,7 +1303,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </ul>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 text-left">
               <label htmlFor="reopenReason" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
                 Reason for Reopening (Required for audit trail)
               </label>
@@ -1165,7 +1313,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 placeholder="e.g. Discrepancy in medical notes, parent requested update, age limit verification required..."
                 value={reopenReason}
                 onChange={(e) => setReopenReason(e.target.value)}
-                className="w-full p-3 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                className="w-full p-3 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all bg-zinc-50 text-zinc-800 font-medium"
               />
             </div>
 
@@ -1205,19 +1353,10 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
       <div className="border-t border-[#EAE8E1] pt-6 flex items-center justify-between">
         <button
           onClick={onBack}
-          className="px-5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl hover:bg-zinc-50 text-zinc-600 text-xs font-bold uppercase tracking-wider transition-colors shadow-2xs"
+          className="px-5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl hover:bg-zinc-50 text-zinc-600 text-xs font-bold uppercase tracking-wider transition-colors shadow-2xs cursor-pointer"
         >
-          CANCEL
+          BACK TO QUEUE
         </button>
-
-        <Button
-          onClick={handleSubmitReview}
-          variant="primary"
-          loading={saving}
-          className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs"
-        >
-          SAVE DECISION
-        </Button>
       </div>
 
       {/* EDIT CHILD DETAILS MODAL */}
@@ -1598,7 +1737,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
             <div className="flex items-start gap-3 text-red-700">
               <AlertCircle className="w-6 h-6 shrink-0 text-red-600" />
-              <div className="space-y-1">
+              <div className="space-y-1 text-left">
                 <h3 className="text-lg font-serif font-medium text-zinc-900">Revoke Event Pass?</h3>
                 <p className="text-xs text-zinc-600 leading-relaxed">
                   Are you sure you want to revoke the digital event pass for <strong>{app.child.fullName}</strong>?
@@ -1606,14 +1745,14 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </div>
             </div>
 
-            <div className="bg-red-50/50 border border-red-100 rounded-xl p-3.5 text-xs text-red-800 leading-relaxed space-y-1">
+            <div className="bg-red-50/50 border border-red-100 rounded-xl p-3.5 text-xs text-red-800 leading-relaxed space-y-1 text-left">
               <p className="font-semibold">Important Warning:</p>
               <p className="text-[11px] text-red-700">
                 This digital pass reference will be disabled. It will no longer scan validly at check-in terminals, and parents will see that the pass has been withdrawn.
               </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 text-left">
               <label htmlFor="revokeReason" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
                 Reason for Revocation (Required for parent notice)
               </label>
@@ -1653,6 +1792,196 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 ) : (
                   <span>Revoke Pass</span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SELECT CHILD CONFIRMATION MODAL */}
+      {isSelectModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-[#C59B27]">
+              <CheckCircle2 className="w-6 h-6 shrink-0 text-[#C59B27]" />
+              <div className="space-y-1 text-left">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Select Child for Enrollment?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to select <strong>{app.child.fullName}</strong> for enrollment in <strong>{app.child.ageGroup || 'Section'}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 text-xs text-emerald-800 leading-relaxed space-y-1.5 text-left">
+              <p className="font-semibold text-[10px] uppercase tracking-wider">Consequences:</p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                <li>Child's status will update to <strong>Selected</strong> instantly.</li>
+                <li>You can subsequently generate their digital QR Event Pass.</li>
+                <li>The parent will be notified to view their selection status online.</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsSelectModalOpen(false)}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSelect}
+                className="px-4 py-2 bg-[#C59B27] hover:bg-[#B08921] text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+              >
+                Confirm Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WAITLIST CONFIRMATION MODAL */}
+      {isWaitlistModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-zinc-700">
+              <Hourglass className="w-6 h-6 shrink-0 text-zinc-600 animate-pulse" />
+              <div className="space-y-1 text-left">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Waitlist Child Registration?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to move <strong>{app.child.fullName}</strong> to the event Waitlist?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3.5 text-xs text-zinc-700 leading-relaxed space-y-1.5 text-left">
+              <p className="font-semibold text-[10px] uppercase tracking-wider">Consequences:</p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                <li>Child's status will transition to <strong>Waitlist</strong>.</li>
+                <li>If the child previously had an active event pass, it will be <strong>revoked</strong>.</li>
+                <li>The parent will be informed that they are on the waitlist pending open slots.</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsWaitlistModalOpen(false)}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmWaitlist}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+              >
+                Confirm Waitlist
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOT SELECTED CONFIRMATION MODAL */}
+      {isNotSelectedModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-red-700">
+              <XCircle className="w-6 h-6 shrink-0 text-red-600" />
+              <div className="space-y-1 text-left">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Mark as Not Selected?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to mark the application for <strong>{app.child.fullName}</strong> as not selected?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-red-50/50 border border-red-100 rounded-xl p-3.5 text-xs text-red-800 leading-relaxed space-y-1.5 text-left">
+              <p className="font-semibold text-[10px] uppercase tracking-wider">Consequences:</p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                <li>Child's status transitions to <strong>Not Selected</strong> immediately.</li>
+                <li>Active digital event passes are instantly revoked.</li>
+                <li>Parent receives an automated update advising of selection outcomes.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2 text-left">
+              <label htmlFor="notSelectedReason" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Reason for Decision (Required for audit logging)
+              </label>
+              <textarea
+                id="notSelectedReason"
+                rows={3}
+                placeholder="e.g. Over maximum capacity in this age group, registered in wrong event pool..."
+                value={notSelectedReason}
+                onChange={(e) => setNotSelectedReason(e.target.value)}
+                className="w-full p-3 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-all bg-zinc-50 text-zinc-800 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNotSelectedModalOpen(false);
+                  setNotSelectedReason('');
+                }}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!notSelectedReason.trim()}
+                onClick={handleConfirmNotSelected}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white border border-red-600 rounded-xl text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 shadow-xs cursor-pointer"
+              >
+                Confirm Not Selected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GENERATE EVENT PASS CONFIRMATION MODAL */}
+      {isGeneratePassModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-zinc-800">
+            <div className="flex items-start gap-3 text-emerald-700">
+              <QrCode className="w-6 h-6 shrink-0 text-emerald-600 animate-pulse" />
+              <div className="space-y-1 text-left">
+                <h3 className="text-lg font-serif font-medium text-zinc-900">Generate Digital Event Pass?</h3>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Are you sure you want to generate and issue the secure digital Event Pass for <strong>{app.child.fullName}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 text-xs text-emerald-800 leading-relaxed space-y-1.5 text-left">
+              <p className="font-semibold text-[10px] uppercase tracking-wider">Consequences:</p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                <li>A secure cryptographic check-in token is created.</li>
+                <li>A premium printable & scannable QR Pass is activated on the parent dashboard.</li>
+                <li>Child registration enters <strong>Pass Ready</strong> status, ready for physical gate scanning.</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsGeneratePassModalOpen(false)}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-bold text-zinc-600 uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmGeneratePass}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+              >
+                Generate QR Pass
               </button>
             </div>
           </div>

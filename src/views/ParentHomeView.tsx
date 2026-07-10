@@ -1028,6 +1028,101 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         </p>
       </div>
 
+      {/* Notification Preferences Card */}
+      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 shadow-2xs space-y-4">
+        <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] uppercase block">
+          Notification Preferences
+        </span>
+
+        <div className="space-y-3.5 divide-y divide-[#EAE8E1]/30 text-xs text-[#18181B]">
+          {/* Sound Notification Preference */}
+          <div className="flex items-center justify-between pt-0.5">
+            <div className="flex flex-col text-left">
+              <span className="font-semibold text-zinc-800">Sound alerts</span>
+              <span className="text-[10px] text-[#6B7280]">Play a soft alert for new updates</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const nextVal = !isSoundOn;
+                setIsSoundOn(nextVal);
+                soundUtility.setEnabled(nextVal);
+                if (nextVal) {
+                  soundUtility.playChime(true);
+                }
+                showSuccess('Sound Alerts Updated', `Sound notifications turned ${nextVal ? 'on' : 'off'}.`);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                isSoundOn 
+                  ? 'bg-[#C59B27] text-white' 
+                  : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
+              }`}
+            >
+              {isSoundOn ? 'On' : 'Off'}
+            </button>
+          </div>
+
+          {/* Push Notification Preference */}
+          <div className="flex items-center justify-between pt-3.5">
+            <div className="flex flex-col text-left">
+              <span className="font-semibold text-zinc-800">Push notifications</span>
+              <span className="text-[10px] text-[#6B7280]">Receive updates on this device</span>
+            </div>
+            {typeof Notification === 'undefined' ? (
+              <span className="text-[10px] font-semibold text-[#6B7280]">
+                Unavailable
+              </span>
+            ) : isPushEnabled ? (
+              <span className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE] tracking-wider uppercase">
+                On
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await subscribeUserToPush();
+                  if (res.success) {
+                    setIsPushEnabled(true);
+                    showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                  } else {
+                    showInfo('Setup Alert', 'Push notifications are not available yet.');
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all cursor-pointer"
+              >
+                Enable
+              </button>
+            )}
+          </div>
+
+          {/* Email Notification Preference */}
+          <div className="flex items-center justify-between pt-3.5">
+            <div className="flex flex-col text-left">
+              <span className="font-semibold text-zinc-800">Email updates</span>
+              <span className="text-[10px] text-[#6B7280]">Weekly newsletters and care reminders</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const storedValue = localStorage.getItem('koinonia_parent_email_notifications') === 'true';
+                const nextVal = !storedValue;
+                localStorage.setItem('koinonia_parent_email_notifications', nextVal ? 'true' : 'false');
+                showSuccess('Email Settings Saved', `Email updates turned ${nextVal ? 'on' : 'off'}.`);
+                // Simple force update for React state
+                setNotifications([...notifications]);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                localStorage.getItem('koinonia_parent_email_notifications') === 'true'
+                  ? 'bg-[#C59B27] text-white' 
+                  : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
+              }`}
+            >
+              {localStorage.getItem('koinonia_parent_email_notifications') === 'true' ? 'On' : 'Off'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* 4. Parent details card */}
       <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 shadow-2xs space-y-4">
         <div className="flex items-center justify-between">

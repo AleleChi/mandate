@@ -44,6 +44,7 @@ import { AdminForgotPasswordView } from './views/admin/AdminForgotPasswordView';
 import { AdminResetPasswordView } from './views/admin/AdminResetPasswordView';
 import { AdminOverviewView } from './views/admin/AdminOverviewView';
 import { AdminAcceptInviteView } from './views/admin/AdminAcceptInviteView';
+import { TeamAlertsView } from './views/admin/TeamAlertsView';
 import { Seo } from './components/common/Seo';
 
 const getSeoPropsForRoute = (route: string) => {
@@ -968,6 +969,19 @@ export default function App() {
             activeEvent={activeEvent}
           />
         </ProtectedRoute>
+      );
+    }
+
+    if (cleanRoute === '/admin/team-alerts') {
+      return (
+        <AdminProtectedRoute>
+          <TeamAlertsView
+            onNavigate={navigate}
+            onSignOut={handleSignOut}
+            adminUser={user}
+            volunteerProfile={volunteerProfile}
+          />
+        </AdminProtectedRoute>
       );
     }
 

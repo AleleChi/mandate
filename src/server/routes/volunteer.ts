@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword, generateToken, authMiddleware, Authentica
 import { sendEmail, sendVolunteerVerificationEmail, sendVolunteerPasswordResetEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { uploadMedia } from '../services/media/cloudinary';
+import { sendWebPush } from '../services/push';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -3967,8 +3968,10 @@ router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: Aut
       ? `${volFirstName} escalated an item for ${childFirstName}.`
       : 'A volunteer escalated an attention item.';
 
+    const appEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [child.id, REAL_EVENT_ID]);
     const metadataJson = JSON.stringify({
       childId: child.id,
+      applicationId: appEntry?.id || null,
       itemId: itemId,
       type: 'escalation'
     });
@@ -3997,6 +4000,178 @@ router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: Aut
   } catch (err) {
     console.error('Escalate attention item error:', err);
     res.status(500).json({ error: 'Internal server error escalating attention item' });
+  }
+});
+
+// GET /api/volunteer/safety-alerts
+router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+    // Fetch safety alerts raised by this volunteer
+    const alerts = await query(`
+      SELECT a.*, 
+             c.full_name as child_name,
+             COALESCE(p.full_name, v.full_name, 'Admin') as acknowledged_by_name
+      FROM event_safety_alerts a
+      LEFT JOIN children c ON a.child_id = c.id
+      LEFT JOIN parent_profiles p ON a.acknowledged_by = p.user_id
+      LEFT JOIN volunteer_profiles v ON a.acknowledged_by = v.user_id
+      WHERE a.raised_by_user_id = ? AND a.event_id = ?
+      ORDER BY a.created_at DESC
+    `, [req.user.id, REAL_EVENT_ID]);
+
+    res.json({ success: true, alerts });
+  } catch (err) {
+    console.error('Fetch volunteer safety alerts error:', err);
+    res.status(500).json({ error: 'Internal server error fetching safety alerts' });
+  }
+});
+
+// POST /api/volunteer/safety-alerts
+router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const volProfile = await queryOne('SELECT status, full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    if (!volProfile || volProfile.status !== 'active') {
+      return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
+    }
+
+    const { childId, childEventEntryId, category, severity, locationLabel, message } = req.body;
+
+    const validSeverities = ['normal', 'important', 'urgent'];
+    const validCategories = ['child_care', 'pickup_issue', 'pass_issue', 'medical_support', 'security_concern', 'location_support', 'other'];
+
+    if (!severity || !validSeverities.includes(severity)) {
+      return res.status(400).json({ error: 'Invalid or missing urgency level' });
+    }
+    if (!category || !validCategories.includes(category)) {
+      return res.status(400).json({ error: 'Invalid or missing alert type' });
+    }
+
+    if ((severity === 'important' || severity === 'urgent') && (!message || !message.trim())) {
+      return res.status(400).json({ error: 'Please describe what you need help with.' });
+    }
+    const cleanMessage = (message || '').trim().substring(0, 500);
+
+    const thirtySecsAgo = new Date(Date.now() - 30 * 1000).toISOString();
+    const duplicateAlert = await queryOne(`
+      SELECT id FROM event_safety_alerts
+      WHERE raised_by_user_id = ? AND category = ? AND severity = ? AND created_at > ?
+    `, [req.user.id, category, severity, thirtySecsAgo]);
+
+    if (duplicateAlert) {
+      return res.status(429).json({ error: 'An identical alert was sent recently. Please wait before submitting again.' });
+    }
+
+    let finalChildId = null;
+    let finalEntryId = null;
+    if (childId) {
+      const childCheck = await queryOne('SELECT id FROM children WHERE id = ?', [childId]);
+      if (!childCheck) {
+        return res.status(400).json({ error: 'Selected child profile not found.' });
+      }
+      finalChildId = childId;
+
+      const entryCheck = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+      if (entryCheck) {
+        finalEntryId = entryCheck.id;
+      }
+    }
+
+    if (childEventEntryId && !finalChildId) {
+      const entryCheck = await queryOne('SELECT id, child_id FROM child_event_entries WHERE id = ? AND event_id = ?', [childEventEntryId, REAL_EVENT_ID]);
+      if (entryCheck) {
+        finalEntryId = childEventEntryId;
+        finalChildId = entryCheck.child_id;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const alertId = `alert-${crypto.randomUUID()}`;
+
+    const catLabels: Record<string, string> = {
+      child_care: 'Child care concern',
+      pickup_issue: 'Pickup issue',
+      pass_issue: 'Pass/check-in issue',
+      medical_support: 'Medical support',
+      security_concern: 'Security concern',
+      location_support: 'Location support',
+      other: 'Care support needed'
+    };
+    const alertTitle = catLabels[category] || 'Volunteer requested help';
+
+    await execute(`
+      INSERT INTO event_safety_alerts (
+        id, event_id, child_id, child_event_entry_id, raised_by_user_id, raised_by_role,
+        severity, category, title, message, location_label, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+    `, [
+      alertId, REAL_EVENT_ID, finalChildId, finalEntryId, req.user.id, 'volunteer',
+      severity, category, alertTitle, cleanMessage, locationLabel || null, now, now
+    ]);
+
+    const volFirstName = (volProfile.full_name || 'A volunteer').replace(/\s*\d+$/, '').trim().split(' ')[0];
+    const locText = locationLabel ? ` at ${locationLabel}` : '';
+    const adminMessageText = cleanMessage 
+      ? `${volFirstName} requested support${locText}: "${cleanMessage}"`
+      : `${volFirstName} requested support${locText}.`;
+
+    const notificationId = `notif-${crypto.randomUUID()}`;
+    const metadataJson = JSON.stringify({
+      alertId,
+      childId: finalChildId,
+      applicationId: finalEntryId,
+      type: 'safety_alert',
+      severity,
+      category,
+      locationLabel,
+      raisedBy: volProfile.full_name
+    });
+
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at, priority, channel, metadata_json
+      ) VALUES (?, ?, ?, 'safety_alert', 'admin', 'all', ?, ?, null, ?, ?, ?, 'in-app', ?)
+    `, [
+      notificationId,
+      severity === 'urgent' ? 'Urgent Safety Alert' : 'Safety alert',
+      adminMessageText,
+      REAL_EVENT_ID,
+      finalChildId,
+      req.user.id,
+      now,
+      severity === 'urgent' ? 'high' : 'normal',
+      metadataJson
+    ]);
+
+    try {
+      const admins = await query("SELECT id FROM users WHERE role IN ('admin', 'super_admin')");
+      const pushTitle = severity === 'urgent' ? 'Urgent help needed' : 'Support requested';
+      const pushBody = `A volunteer requested admin support.`;
+      for (const admin of admins) {
+        await sendWebPush(admin.id, {
+          title: pushTitle,
+          body: pushBody,
+          metadata: { alertId, severity }
+        });
+      }
+    } catch (pushErr) {
+      console.error('[Safety Alert] Failed to send push notifications to admins:', pushErr);
+    }
+
+    res.json({
+      success: true,
+      message: severity === 'urgent' ? 'Urgent alert sent. An admin has been notified.' : 'Alert sent.',
+      alertId
+    });
+  } catch (err) {
+    console.error('Create safety alert error:', err);
+    res.status(500).json({ error: 'Internal server error creating safety alert' });
   }
 });
 

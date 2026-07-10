@@ -30,10 +30,16 @@ import { AdminReviewChildView } from './AdminReviewChildView';
 
 interface AdminReviewBoardViewProps {
   onBackToOverview: () => void;
+  initialApplicationId?: string | null;
+  initialChildId?: string | null;
+  onClearInitialParams?: () => void;
 }
 
 export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
-  onBackToOverview
+  onBackToOverview,
+  initialApplicationId,
+  initialChildId,
+  onClearInitialParams
 }) => {
   const { showError, showSuccess } = useNotification();
   const [applications, setApplications] = useState<any[]>([]);
@@ -89,6 +95,32 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   useEffect(() => {
     fetchApplications();
   }, []);
+
+  useEffect(() => {
+    if (loading || applications.length === 0) return;
+
+    if (initialApplicationId) {
+      const matchedApp = applications.find(app => app.id === initialApplicationId);
+      if (matchedApp) {
+        setSelectedApplicationId(initialApplicationId);
+      } else {
+        showError('Not Found', 'This item is no longer available.');
+      }
+      if (onClearInitialParams) {
+        onClearInitialParams();
+      }
+    } else if (initialChildId) {
+      const matchedApp = applications.find(app => app.child?.id === initialChildId || app.child_id === initialChildId);
+      if (matchedApp) {
+        setSelectedApplicationId(matchedApp.id);
+      } else {
+        showError('Not Found', 'This item is no longer available.');
+      }
+      if (onClearInitialParams) {
+        onClearInitialParams();
+      }
+    }
+  }, [initialApplicationId, initialChildId, applications, loading]);
 
   // Compute duplicate parent phones to identify sibling groups / duplicate contacts
   const parentPhoneCounts = useMemo(() => {
@@ -475,7 +507,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3">
                 <span className="text-xs font-bold text-[#18181B] flex items-center gap-1.5 uppercase tracking-wider">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-[#C59B27]" />
-                  Filter Filters
+                  Refine Queue
                 </span>
                 <button 
                   onClick={handleResetFilters}
@@ -506,14 +538,14 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               {/* Diagnostic Flag Filter */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Review Alerts / Flags
+                  Attention Alerts
                 </label>
                 <select 
                   value={flagFilter}
                   onChange={(e) => setFlagFilter(e.target.value)}
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27]"
                 >
-                  <option value="all">No Diagnostic Filter</option>
+                  <option value="all">All Registrations</option>
                   <option value="below_age">Below Event Age (&lt; 1 yr)</option>
                   <option value="missing_child_photo">Missing Child Profile Photo</option>
                   <option value="missing_pickup_photo">Missing Pickup Face Photo</option>
@@ -667,7 +699,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     onClick={handleResetFilters}
                     className="text-xs font-bold text-[#C59B27] hover:underline"
                   >
-                    Clear Filter Filters
+                    Clear All Filters
                   </button>
                 </div>
               ) : (
@@ -1196,14 +1228,14 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               {/* Diagnostic Flag Filter */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Review Alerts / Flags
+                  Attention Alerts
                 </label>
                 <select 
                   value={flagFilter}
                   onChange={(e) => setFlagFilter(e.target.value)}
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none"
                 >
-                  <option value="all">No Diagnostic Filter</option>
+                  <option value="all">All Registrations</option>
                   <option value="below_age">Below Event Age (&lt; 1 yr)</option>
                   <option value="missing_child_photo">Missing Child Profile Photo</option>
                   <option value="missing_pickup_photo">Missing Pickup Face Photo</option>

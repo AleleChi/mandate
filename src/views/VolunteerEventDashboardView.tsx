@@ -324,6 +324,79 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [directoryChildren, setDirectoryChildren] = useState<any[]>([]);
   const [directoryError, setDirectoryError] = useState<boolean>(false);
 
+  // Safety alert states
+  const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
+  const [safetySeverity, setSafetySeverity] = useState('normal');
+  const [safetyCategory, setSafetyCategory] = useState('child_care');
+  const [safetyMessage, setSafetyMessage] = useState('');
+  const [safetyLocationLabel, setSafetyLocationLabel] = useState('');
+  const [safetyChildContext, setSafetyChildContext] = useState<{ id: string; fullName: string } | null>(null);
+  const [isSubmittingSafetyAlert, setIsSubmittingSafetyAlert] = useState(false);
+  const [mySafetyAlerts, setMySafetyAlerts] = useState<any[]>([]);
+  const [showMyAlertsView, setShowMyAlertsView] = useState(false);
+
+  const fetchSafetyAlerts = async () => {
+    try {
+      const res = await api.volunteer.getSafetyAlerts();
+      if (res && res.success) {
+        setMySafetyAlerts(res.alerts || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch volunteer safety alerts:', err);
+    }
+  };
+
+  const handleOpenSafetyAlertModal = (childContext?: { id: string; fullName: string }) => {
+    if (childContext) {
+      setSafetyChildContext(childContext);
+    } else if (lookedUpChild) {
+      setSafetyChildContext({ id: lookedUpChild.id, fullName: lookedUpChild.fullName });
+    } else if (pickupChild) {
+      setSafetyChildContext({ id: pickupChild.id, fullName: pickupChild.fullName });
+    } else {
+      setSafetyChildContext(null);
+    }
+    
+    // Default values
+    setSafetySeverity('normal');
+    setSafetyCategory('child_care');
+    setSafetyMessage('');
+    setSafetyLocationLabel('');
+    setIsSafetyModalOpen(true);
+  };
+
+  const handleRaiseSafetyAlert = async () => {
+    if ((safetySeverity === 'important' || safetySeverity === 'urgent') && !safetyMessage.trim()) {
+      showWarning('Required', 'Please describe what you need help with.');
+      return;
+    }
+    
+    setIsSubmittingSafetyAlert(true);
+    try {
+      const res = await api.volunteer.raiseSafetyAlert({
+        childId: safetyChildContext?.id,
+        category: safetyCategory,
+        severity: safetySeverity,
+        locationLabel: safetyLocationLabel,
+        message: safetyMessage
+      });
+      
+      if (res && res.success) {
+        showSuccess('Alert Sent', res.message || 'Help request has been submitted to admins.');
+        setIsSafetyModalOpen(false);
+        fetchSafetyAlerts();
+        try { playSound('notification_gentle'); } catch (e) {}
+      } else {
+        showError('Request Failed', 'Failed to send alert. Please try again.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Error', apiErr.message || 'Error raising alert.');
+    } finally {
+      setIsSubmittingSafetyAlert(false);
+    }
+  };
+
   // Scanner refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const codeReaderRef = useRef<BrowserQRCodeReader | null>(null);
@@ -505,6 +578,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       setSelectedChildId(null);
     }
   }, [cleanRoute]);
+
+  // Poll safety alerts raised by this volunteer
+  useEffect(() => {
+    fetchSafetyAlerts();
+    const interval = setInterval(() => {
+      fetchSafetyAlerts();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch directory children list based on search query and status filter
   const fetchChildrenDirectory = async () => {
@@ -1480,25 +1562,49 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
                 </div>
 
-                <div className="pt-2 flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCameraActive(true);
-                      setScanMode('check_in');
-                      onNavigate('/volunteer/scan');
-                    }}
-                    className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-sm text-center"
-                  >
-                    Start check-in
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('/volunteer/pickup')}
-                    className="flex-1 py-3 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-xs text-center"
-                  >
-                    Open pickup
-                  </button>
+                <div className="pt-2 flex flex-col space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCameraActive(true);
+                        setScanMode('check_in');
+                        onNavigate('/volunteer/scan');
+                      }}
+                      className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-sm text-center"
+                    >
+                      Start check-in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('/volunteer/pickup')}
+                      className="flex-1 py-3 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-xs text-center"
+                    >
+                      Open pickup
+                    </button>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSafetyAlertModal()}
+                      className="flex-1 py-3 bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-xs"
+                    >
+                      <Bell className="h-4 w-4 animate-pulse shrink-0" />
+                      <span>Request admin help</span>
+                    </button>
+                    {mySafetyAlerts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMyAlertsView(true)}
+                        className="py-3 px-4 bg-gray-50 border border-[#EAE8E1] hover:bg-gray-100 text-gray-700 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                        title="View requested support history"
+                      >
+                        <History className="h-4 w-4 shrink-0 text-gray-500" />
+                        <span>({mySafetyAlerts.filter(a => a.status !== 'resolved').length})</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2119,6 +2225,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     >
                       <QrCode className="h-4 w-4 text-gray-600 stroke-[2]" />
                       <span>SCAN ANOTHER PASS</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleOpenSafetyAlertModal({ id: lookedUpChild.id, fullName: lookedUpChild.fullName })}
+                      className="w-full bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      <Bell className="h-4 w-4 animate-pulse" />
+                      <span>Request Help for {lookedUpChild.fullName.split(' ')[0]}</span>
                     </button>
                   </div>
 
@@ -2948,6 +3062,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   className="w-full border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white shadow-xs"
                 >
                   Cancel / Scan Another Pass
+                </button>
+
+                <button
+                  onClick={() => handleOpenSafetyAlertModal({ id: pickupChild.id, fullName: pickupChild.fullName })}
+                  className="w-full bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                >
+                  <Bell className="h-4 w-4 animate-pulse" />
+                  <span>Request Admin Help</span>
                 </button>
               </div>
             </div>
@@ -4637,6 +4759,274 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo' ? 'Resolve item' : 
                   selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review' ? 'Verify item' : 'Mark reviewed'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. VOLUNTEER EVENT SAFETY ALERT FORM MODAL */}
+      {isSafetyModalOpen && (
+        <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-rose-950 to-[#5C1D24] text-white px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <Bell className="h-5 w-5 text-[#C59B27] animate-pulse" />
+                <div>
+                  <h3 className="text-lg font-serif font-bold tracking-tight">Request Admin Help</h3>
+                  <p className="text-[10px] font-mono text-rose-200 uppercase tracking-widest mt-0.5">Care Team Escalation</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSafetyModalOpen(false)}
+                className="text-white/70 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Form Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-gray-800 text-xs">
+              {/* Optional Child Context Info */}
+              {safetyChildContext && (
+                <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-4 flex items-center space-x-3">
+                  <div className="p-2 bg-[#C59B27]/10 text-[#C59B27] rounded-xl">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block">Assoc. Child Record</span>
+                    <span className="font-serif font-bold text-gray-900 text-sm">{safetyChildContext.fullName}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Severity / Urgency Levels */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Urgency Level</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'normal', label: 'Normal', desc: 'Support needed soon', activeBg: 'bg-blue-500 text-white border-blue-500' },
+                    { value: 'important', label: 'Important', desc: 'Needs fast review', activeBg: 'bg-amber-500 text-white border-amber-500' },
+                    { value: 'urgent', label: 'Urgent', desc: 'Immediate attention', activeBg: 'bg-rose-600 text-white border-rose-600' }
+                  ].map((level) => (
+                    <button
+                      key={level.value}
+                      type="button"
+                      onClick={() => setSafetySeverity(level.value)}
+                      className={`border rounded-2xl p-3 text-center transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
+                        safetySeverity === level.value ? level.activeBg : `border-gray-200 hover:border-gray-300 bg-white`
+                      }`}
+                    >
+                      <span className="font-bold text-xs">{level.label}</span>
+                      <span className={`text-[8px] leading-tight font-medium ${safetySeverity === level.value ? 'text-white/80' : 'text-gray-400'}`}>
+                        {level.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category / Type Selector */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Alert Type / Category</label>
+                <select
+                  value={safetyCategory}
+                  onChange={(e) => setSafetyCategory(e.target.value)}
+                  className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
+                >
+                  <option value="child_care">General Child Care Concern</option>
+                  <option value="pickup_issue">Pickup Authorization Issue</option>
+                  <option value="pass_issue">Pass Scan or Verification Failure</option>
+                  <option value="medical_support">Medical or First Aid Support</option>
+                  <option value="security_concern">Security / Missing Child Concerns</option>
+                  <option value="location_support">Room/Classroom Assistance</option>
+                  <option value="other">Other - Care support needed</option>
+                </select>
+              </div>
+
+              {/* Room / Location label */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Your Location / Room Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Creche, Back Row, Gate 2"
+                  value={safetyLocationLabel}
+                  onChange={(e) => setSafetyLocationLabel(e.target.value.substring(0, 100))}
+                  className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                />
+              </div>
+
+              {/* Description Message */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                  Details / Message {(safetySeverity === 'important' || safetySeverity === 'urgent') && <span className="text-rose-500">*</span>}
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={
+                    safetySeverity === 'urgent' 
+                      ? "Please describe the urgent situation immediately so the care team can respond..." 
+                      : "Add details to help the admin team understand your request..."
+                  }
+                  value={safetyMessage}
+                  onChange={(e) => setSafetyMessage(e.target.value)}
+                  className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none"
+                />
+                <p className="text-[9px] text-gray-400 leading-normal">
+                  Limit message to 500 characters. Admin team receives these alerts in real-time.
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center space-x-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsSafetyModalOpen(false)}
+                className="flex-1 py-3 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRaiseSafetyAlert}
+                disabled={isSubmittingSafetyAlert}
+                className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md"
+              >
+                {isSubmittingSafetyAlert ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                  <span>Send Request</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 12. VOLUNTEER ALERTS HISTORY VIEW / FEEDBACK OVERLAY */}
+      {showMyAlertsView && (
+        <div className="fixed inset-0 bg-neutral-950/75 z-50 flex items-end justify-center backdrop-blur-xs animate-fade-in">
+          <div className="bg-white border-t border-[#EAE8E1] rounded-t-[2.5rem] w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col animate-slide-up">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-100 shrink-0 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-rose-50 rounded-xl text-rose-700">
+                  <Bell className="h-5 w-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-serif font-bold text-gray-900">My Care Requests</h3>
+                  <p className="text-[10px] text-gray-400 font-medium">Real-time status tracking</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMyAlertsView(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Alerts List */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-gray-50/50">
+              {mySafetyAlerts.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <span className="text-3xl block">✓</span>
+                  <p className="text-gray-400 font-serif font-bold text-sm">No requests raised yet</p>
+                  <p className="text-[10px] text-gray-400">All alerts you submit will be displayed here.</p>
+                </div>
+              ) : (
+                mySafetyAlerts.map((alert: any) => (
+                  <div 
+                    key={alert.id}
+                    className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
+                  >
+                    {/* Urgency and Category Row */}
+                    <div className="flex items-center justify-between">
+                      <span className={`px-2.5 py-0.5 text-[8px] font-bold font-mono tracking-wider rounded-md uppercase ${
+                        alert.severity === 'urgent' 
+                          ? 'bg-rose-50 text-rose-700 border border-rose-100' 
+                          : alert.severity === 'important'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                          : 'bg-blue-50 text-blue-700 border border-blue-100'
+                      }`}>
+                        {alert.severity} Urgency
+                      </span>
+                      
+                      <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded-full ${
+                        alert.status === 'open' 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : alert.status === 'acknowledged'
+                          ? 'bg-blue-100 text-blue-800 animate-pulse'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {alert.status === 'open' ? 'Waiting' : alert.status === 'acknowledged' ? 'Acknowledged' : 'Resolved'}
+                      </span>
+                    </div>
+
+                    {/* Category Title & Details */}
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-serif font-bold text-gray-900">{alert.title}</h4>
+                      {alert.location_label && (
+                        <p className="text-[10px] text-gray-400 font-medium flex items-center">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] mr-1.5 shrink-0"></span>
+                          Location: {alert.location_label}
+                        </p>
+                      )}
+                      {alert.child_name && (
+                        <p className="text-[10px] text-gray-400 font-medium flex items-center">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 mr-1.5 shrink-0"></span>
+                          Child: {alert.child_name}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Alert Message */}
+                    {alert.message && (
+                      <p className="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-100 leading-relaxed font-medium">
+                        "{alert.message}"
+                      </p>
+                    )}
+
+                    {/* Admin Actions Status & Notes */}
+                    <div className="pt-2 border-t border-gray-100 text-[10px] space-y-1.5 text-gray-500">
+                      <div className="flex justify-between">
+                        <span>Submitted</span>
+                        <span>{formatDate(alert.created_at)}</span>
+                      </div>
+                      {alert.acknowledged_at && (
+                        <div className="flex justify-between text-blue-700 font-medium">
+                          <span>Acknowledged by {alert.acknowledged_by_name || 'Admin'}</span>
+                          <span>{formatTime(alert.acknowledged_at)}</span>
+                        </div>
+                      )}
+                      {alert.status === 'resolved' && (
+                        <div className="space-y-1 pt-1.5 text-emerald-700 font-semibold bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-xl">
+                          <div className="flex justify-between text-[11px]">
+                            <span>Resolved by {alert.resolved_by_name || 'Admin'}</span>
+                            <span className="font-mono">{formatTime(alert.resolved_at)}</span>
+                          </div>
+                          {alert.resolution_note && (
+                            <p className="text-[10px] text-emerald-800 leading-normal font-medium pl-1.5 border-l-2 border-emerald-300">
+                              Note: {alert.resolution_note}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Bottom Bar Close Button */}
+            <div className="p-6 border-t border-gray-100 shrink-0">
+              <button
+                onClick={() => setShowMyAlertsView(false)}
+                className="w-full py-3.5 bg-gray-900 hover:bg-black text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer"
+              >
+                Close List
               </button>
             </div>
           </div>

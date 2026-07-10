@@ -542,6 +542,29 @@ function initSqliteSchema(db: Database.Database) {
       updated_at TEXT NOT NULL,
       UNIQUE(child_id, event_id, type)
     );
+
+    CREATE TABLE IF NOT EXISTS event_safety_alerts (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      child_event_entry_id TEXT REFERENCES child_event_entries(id) ON DELETE SET NULL,
+      pass_id TEXT REFERENCES event_passes(id) ON DELETE SET NULL,
+      raised_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      raised_by_role TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      location_label TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      acknowledged_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      acknowledged_at TEXT,
+      resolved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at TEXT,
+      resolution_note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -1260,6 +1283,29 @@ async function initPostgresSchema(pool: any) {
         updated_at TIMESTAMP NOT NULL,
         UNIQUE(child_id, event_id, type)
       );
+
+      CREATE TABLE IF NOT EXISTS event_safety_alerts (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        child_id VARCHAR(64) REFERENCES children(id) ON DELETE SET NULL,
+        child_event_entry_id VARCHAR(64) REFERENCES child_event_entries(id) ON DELETE SET NULL,
+        pass_id VARCHAR(64) REFERENCES event_passes(id) ON DELETE SET NULL,
+        raised_by_user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        raised_by_role VARCHAR(64) NOT NULL,
+        severity VARCHAR(64) NOT NULL,
+        category VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        location_label VARCHAR(255),
+        status VARCHAR(64) NOT NULL DEFAULT 'open',
+        acknowledged_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+        acknowledged_at TIMESTAMP,
+        resolved_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+        resolved_at TIMESTAMP,
+        resolution_note TEXT,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
     `);
 
     // Safe migration for column length extension
@@ -1405,6 +1451,30 @@ async function initPostgresSchema(pool: any) {
         const colName = parts[0];
         const colDef = parts.slice(1).join(' ');
         await pool.query(`ALTER TABLE volunteer_profiles ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    // Soft delete columns for children and child_event_entries in Postgres
+    const pgChildSoftDeleteCols = [
+      "is_deleted INTEGER DEFAULT 0",
+      "deleted_at TIMESTAMP",
+      "deleted_by VARCHAR(64)",
+      "delete_reason TEXT",
+      "restored_at TIMESTAMP",
+      "restored_by VARCHAR(64)"
+    ];
+    for (const col of pgChildSoftDeleteCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
       } catch (e) {}
     }
 

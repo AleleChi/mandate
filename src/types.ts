@@ -47,7 +47,8 @@ export type AppRoute =
   | '/admin/attendance'
   | '/admin/reports'
   | '/admin/messages'
-  | '/admin/settings';
+  | '/admin/settings'
+  | '/admin/team-alerts';
 
 export type BottomNavTab = 'Home' | 'Children' | 'Status' | 'Passes' | 'Profile';
 
