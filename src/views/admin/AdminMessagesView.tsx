@@ -138,6 +138,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
     urgent: 0,
     deliveryIssues: 0
   });
+  const [summaryStatsLoading, setSummaryStatsLoading] = useState(false);
+  const [summaryStatsError, setSummaryStatsError] = useState<string | null>(null);
 
   // Filters for Updates Centre
   const [statusFilter, setStatusFilter] = useState('all');
@@ -290,20 +292,25 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
   };
 
   const fetchSummaryStats = async () => {
+    setSummaryStatsLoading(true);
+    setSummaryStatsError(null);
     try {
-      const resUnread = await api.adminUpdates.getUpdates({ status: 'unread', limit: 1 });
-      const resOpen = await api.adminUpdates.getUpdates({ status: 'open', limit: 1 });
-      const resUrgent = await api.adminUpdates.getUpdates({ priority: 'urgent', limit: 1 });
-      const resDelivery = await api.adminUpdates.getUpdates({ type: 'delivery_issue', limit: 1 }).catch(() => null);
-      
-      setSummaryStats({
-        unread: resUnread?.pagination?.total ?? 0,
-        openAlerts: resOpen?.pagination?.total ?? 0,
-        urgent: resUrgent?.pagination?.total ?? 0,
-        deliveryIssues: resDelivery?.pagination?.total ?? stats.failed
-      });
+      const res = await api.adminUpdates.getSummary();
+      if (res && res.success && res.summary) {
+        setSummaryStats({
+          unread: res.summary.unread,
+          openAlerts: res.summary.openAlerts,
+          urgent: res.summary.urgent,
+          deliveryIssues: res.summary.deliveryIssues
+        });
+      } else {
+        setSummaryStatsError('We could not update message totals. Please refresh.');
+      }
     } catch (err) {
       console.warn('Failed to fetch summary card statistics:', err);
+      setSummaryStatsError('We could not update message totals. Please refresh.');
+    } finally {
+      setSummaryStatsLoading(false);
     }
   };
 
@@ -687,66 +694,91 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           
           {/* SUMMARY CARDS ROW */}
           <div 
-            data-component-version="admin-messages-summary-v1-premium"
-            className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in"
+            data-component-version="admin-messages-summary-v2-live"
+            data-component-override-api="admin-updates-summary-api-v1-live"
+            data-component-sync-version="admin-message-list-stats-sync-v1"
+            className="space-y-3"
           >
-            {/* Card 1: Unread */}
-            <div 
-              onClick={() => setStatusFilter('unread')}
-              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Unread</span>
-                <span className="w-2 h-2 rounded-full bg-[#C59B27] group-hover:animate-ping" />
+            {summaryStatsError && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-3 rounded-xl flex items-center justify-between">
+                <span>{summaryStatsError}</span>
+                <button 
+                  onClick={() => fetchSummaryStats()} 
+                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold px-2 py-1 rounded cursor-pointer"
+                >
+                  Retry
+                </button>
               </div>
-              <div className="flex items-baseline space-x-1">
-                <span className="font-serif text-2xl font-bold text-zinc-900">{summaryStats.unread}</span>
-              </div>
-              <p className="text-[9px] text-zinc-400 font-medium">New notifications & care alerts</p>
-            </div>
+            )}
 
-            {/* Card 2: Open Alerts */}
-            <div 
-              onClick={() => setStatusFilter('open')}
-              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Open Alerts</span>
-                <span className="w-2 h-2 rounded-full bg-rose-500" />
-              </div>
-              <div className="flex items-baseline space-x-1">
-                <span className="font-serif text-2xl font-bold text-rose-600">{summaryStats.openAlerts}</span>
-              </div>
-              <p className="text-[9px] text-zinc-400 font-medium">Active unresolved volunteer alerts</p>
-            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in relative">
+              {summaryStatsLoading && (
+                <div className="absolute inset-0 bg-white/40 backdrop-blur-xs flex items-center justify-center z-10 rounded-2xl">
+                  <span className="text-xs text-zinc-500 font-mono flex items-center space-x-1">
+                    <span className="animate-spin inline-block mr-1">⚡</span>
+                    <span>Updating counts...</span>
+                  </span>
+                </div>
+              )}
 
-            {/* Card 3: Urgent */}
-            <div 
-              onClick={() => setPriorityFilter('urgent')}
-              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Urgent</span>
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
+              {/* Card 1: Unread */}
+              <div 
+                onClick={() => setStatusFilter('unread')}
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Unread</span>
+                  <span className="w-2 h-2 rounded-full bg-[#C59B27] group-hover:animate-ping" />
+                </div>
+                <div className="flex items-baseline space-x-1">
+                  <span className="font-serif text-2xl font-bold text-zinc-900">{summaryStats.unread}</span>
+                </div>
+                <p className="text-[9px] text-zinc-400 font-medium">New notifications & care alerts</p>
               </div>
-              <div className="flex items-baseline space-x-1">
-                <span className="font-serif text-2xl font-bold text-amber-600">{summaryStats.urgent}</span>
-              </div>
-              <p className="text-[9px] text-zinc-400 font-medium">Immediate priority attention items</p>
-            </div>
 
-            {/* Card 4: Delivery Issues */}
-            <div 
-              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Delivery Issues</span>
-                <span className="w-2 h-2 rounded-full bg-zinc-300" />
+              {/* Card 2: Open Alerts */}
+              <div 
+                onClick={() => setStatusFilter('open')}
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Open Alerts</span>
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                </div>
+                <div className="flex items-baseline space-x-1">
+                  <span className="font-serif text-2xl font-bold text-rose-600">{summaryStats.openAlerts}</span>
+                </div>
+                <p className="text-[9px] text-zinc-400 font-medium">Active unresolved volunteer alerts</p>
               </div>
-              <div className="flex items-baseline space-x-1">
-                <span className="font-serif text-2xl font-bold text-zinc-800">{summaryStats.deliveryIssues}</span>
+
+              {/* Card 3: Urgent */}
+              <div 
+                onClick={() => setPriorityFilter('urgent')}
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Urgent</span>
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                </div>
+                <div className="flex items-baseline space-x-1">
+                  <span className="font-serif text-2xl font-bold text-amber-600">{summaryStats.urgent}</span>
+                </div>
+                <p className="text-[9px] text-zinc-400 font-medium">Immediate priority attention items</p>
               </div>
-              <p className="text-[9px] text-zinc-400 font-medium">Failed emails or whatsapp dispatches</p>
+
+              {/* Card 4: Delivery Issues */}
+              <div 
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Delivery Issues</span>
+                  <span className="w-2 h-2 rounded-full bg-zinc-300" />
+                </div>
+                <div className="flex items-baseline space-x-1">
+                  <span className="font-serif text-2xl font-bold text-zinc-800">{summaryStats.deliveryIssues}</span>
+                </div>
+                <p className="text-[9px] text-zinc-400 font-medium">Failed emails or whatsapp dispatches</p>
+              </div>
             </div>
           </div>
 

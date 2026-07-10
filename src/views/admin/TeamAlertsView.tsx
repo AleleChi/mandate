@@ -27,6 +27,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { playSound, resumeAudioContext } from '../../utils/sound';
+import { urgentAlertEffectsManager } from '../../utils/urgentAlertEffects';
 import { AppRoute } from '../../types';
 
 interface TeamAlertsViewProps {
@@ -80,35 +81,8 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
     try {
       const res = await api.admin.getSafetyAlerts();
       if (Array.isArray(res)) {
-        // Detect if there is a newly arrived active alert to trigger audio/vibration feedback
-        setAlerts((prev) => {
-          const prevOpenIds = new Set(prev.filter(a => a.status !== 'resolved').map(a => a.id));
-          const currentOpen = res.filter(a => a.status !== 'resolved');
-          const newlyArrived = currentOpen.filter(a => !prevOpenIds.has(a.id));
-
-          if (newlyArrived.length > 0 && localStorage.getItem('koinonia_device_receive_urgent') !== 'false') {
-            const hasUrgent = newlyArrived.some(a => a.severity === 'urgent');
-            const hasImportant = newlyArrived.some(a => a.severity === 'important');
-
-            if (hasUrgent) {
-              if (localStorage.getItem('koinonia_device_sound') !== 'false') {
-                try { playSound('alert'); } catch (e) {}
-              }
-              if (localStorage.getItem('koinonia_device_vibration') !== 'false' && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (e) {}
-              }
-            } else if (hasImportant) {
-              if (localStorage.getItem('koinonia_device_sound') !== 'false') {
-                try { playSound('notification_gentle'); } catch (e) {}
-              }
-              if (localStorage.getItem('koinonia_device_vibration') !== 'false' && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                try { navigator.vibrate([150]); } catch (e) {}
-              }
-            }
-          }
-
-          return res;
-        });
+        setAlerts(res);
+        urgentAlertEffectsManager.syncAlerts(res);
       }
     } catch (err: any) {
       console.error('Failed to load safety alerts:', err);
@@ -127,6 +101,42 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
     }, 10000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Listen to browser lifecycle events to immediately silence alert effects if hidden or closed
+  useEffect(() => {
+    const handleUnloadCleanup = () => {
+      try {
+        (window as any).stopAllUrgentAlertEffects?.();
+      } catch (e) {
+        console.warn('Failed in stopAllUrgentAlertEffects during unload:', e);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        try {
+          (window as any).stopAllUrgentAlertEffects?.();
+        } catch (e) {
+          console.warn('Failed in stopAllUrgentAlertEffects during visibility change:', e);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnloadCleanup);
+    window.addEventListener('pagehide', handleUnloadCleanup);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadCleanup);
+      window.removeEventListener('pagehide', handleUnloadCleanup);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Also stop sound when this view unmounts
+      try {
+        (window as any).stopAllUrgentAlertEffects?.();
+      } catch (_) {}
+    };
   }, []);
 
   const handleTogglePreference = (key: string) => {
@@ -158,6 +168,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
       const res = await api.admin.acknowledgeSafetyAlert(id);
       if (res.success) {
         showSuccess('Alert Claimed', 'You have acknowledged and claimed responsibility for this request.');
+        urgentAlertEffectsManager.silenceAlert(id);
         fetchAlerts(true);
       }
     } catch (err: any) {
@@ -198,6 +209,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
       const res = await api.admin.resolveSafetyAlert(resolvingAlert.id, resolutionNote.trim());
       if (res.success) {
         showSuccess('Request Settled', 'The care and safety request has been marked as resolved.');
+        urgentAlertEffectsManager.silenceAlert(resolvingAlert.id);
         setResolvingAlert(null);
         setResolutionNote('');
         fetchAlerts(true);

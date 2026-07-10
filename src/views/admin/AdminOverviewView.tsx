@@ -25,7 +25,8 @@ import {
   Shield,
   Loader2,
   ChevronRight,
-  Phone
+  Phone,
+  VolumeX
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -33,6 +34,7 @@ import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { playSound, resumeAudioContext } from '../../utils/sound';
+import { urgentAlertEffectsManager } from '../../utils/urgentAlertEffects';
 import { AdminApplicationsView } from './AdminApplicationsView';
 import { AdminReviewBoardView } from './AdminReviewBoardView';
 import { AdminChildrenView } from './AdminChildrenView';
@@ -72,6 +74,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   
   // Rich dashboard dynamic dataset
   const [overviewData, setOverviewData] = useState<any>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [errorUpdatingDemographics, setErrorUpdatingDemographics] = useState<string>('');
 
   // Fallback stats for quick reference/backwards compatibility
   const [stats, setStats] = useState<any>({
@@ -130,115 +134,72 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [activeUrgentAlertCount, setActiveUrgentAlertCount] = useState(0);
   const [activeUrgentAlert, setActiveUrgentAlert] = useState<any | null>(null);
 
+  // Centralized cleanup handler (Phase 2, Phase 3, Phase 5)
+  const stopActiveUrgentAlertEffects = (alertId: string) => {
+    // 1. Silence in global manager
+    urgentAlertEffectsManager.silenceAlert(alertId);
+
+    // 2. Clear from active urgent popup overlay state if matched
+    setActiveUrgentAlert((prev: any) => {
+      if (prev && prev.id === alertId) {
+        return null;
+      }
+      return prev;
+    });
+  };
+
   const fetchSafetyAlerts = async () => {
     try {
       const res = await api.admin.getSafetyAlerts();
       if (Array.isArray(res)) {
-        setSafetyAlerts((prevAlerts) => {
-          const currentAlerts = res;
-          
-          const openAlerts = currentAlerts.filter((a: any) => a.status !== 'resolved');
-          const prevOpenAlerts = prevAlerts.filter((a: any) => a.status !== 'resolved');
-          
-          // Load device alert preferences (Default safe/off. User must explicitly enable)
-          const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') === 'true';
-          const sndPref = localStorage.getItem('koinonia_device_sound') === 'true';
-          const vibePref = localStorage.getItem('koinonia_device_vibration') === 'true';
-          const showPopupPref = localStorage.getItem('koinonia_device_show_popup') === 'true';
+        setSafetyAlerts(res);
 
-          // Detect newly arrived open alerts
-          const newAlerts = openAlerts.filter(
-            (a: any) => !prevOpenAlerts.some((oldA) => oldA.id === a.id)
-          );
+        // Sync with our global alert effects manager!
+        urgentAlertEffectsManager.syncAlerts(res);
 
-          if (newAlerts.length > 0 && rxUrgentPref) {
-            const hasUrgent = newAlerts.some((a: any) => a.severity === 'urgent');
-            const hasImportant = newAlerts.some((a: any) => a.severity === 'important');
+        // Filter unresolved open alerts
+        const openAlerts = res.filter((a: any) => a.status !== 'resolved');
+        const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') === 'true';
+        const showPopupPref = localStorage.getItem('koinonia_device_show_popup') === 'true';
 
-            if (hasUrgent) {
-              // 1. Play premium alert sound (synthesized major chord chime)
-              if (sndPref) {
-                try { playSound('alert'); } catch (e) {}
-              }
-              // 2. Physical device vibration feedback [200, 100, 200, 100, 500]
-              if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (e) {}
-              }
-              // 3. Set the latest urgent alert as the active takeover overlay
-              if (showPopupPref) {
-                const latestUrgent = newAlerts.find((a: any) => a.severity === 'urgent');
-                if (latestUrgent) {
-                  setActiveUrgentAlert(latestUrgent);
-                }
-              }
-            } else if (hasImportant) {
-              // 1. Play beautiful gentle notification chime once
-              if (sndPref) {
-                try { playSound('notification_gentle'); } catch (e) {}
-              }
-              // 2. Single short physical vibration [150]
-              if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                try { navigator.vibrate([150]); } catch (e) {}
-              }
+        // Update popup overlay state for new qualifying alerts
+        if (rxUrgentPref && showPopupPref) {
+          const currentSilenced = urgentAlertEffectsManager.getSilencedAlertIds();
+          const activeUrgent = openAlerts.find((a: any) => a.severity === 'urgent' && a.status === 'open' && !currentSilenced.has(a.id));
+          if (activeUrgent) {
+            setActiveUrgentAlert(activeUrgent);
+          }
+        }
+
+        // Count active urgent alerts
+        const urgentCount = openAlerts.filter((a: any) => a.severity === 'urgent').length;
+        setActiveUrgentAlertCount(urgentCount);
+
+        // If there is an active takeover urgent alert, track and clear if status updates to resolved/acknowledged
+        if (activeUrgentAlert) {
+          const updated = res.find((a: any) => a.id === activeUrgentAlert.id);
+          if (updated) {
+            if (updated.status === 'resolved' || updated.status === 'acknowledged' || urgentAlertEffectsManager.isAlertSilenced(updated.id)) {
+              // Clear from active takeover
+              setActiveUrgentAlert(null);
+            } else {
+              setActiveUrgentAlert(updated);
             }
           }
+        }
 
-          // Count active urgent alerts
-          const urgentCount = openAlerts.filter((a: any) => a.severity === 'urgent').length;
-          setActiveUrgentAlertCount(urgentCount);
-
-          // If there is an active takeover urgent alert, update its data if altered
-          if (activeUrgentAlert) {
-            const updated = currentAlerts.find((a: any) => a.id === activeUrgentAlert.id);
-            if (updated) {
-              // If it has been resolved, clear the takeover
-              if (updated.status === 'resolved') {
-                setActiveUrgentAlert(null);
-              } else {
-                setActiveUrgentAlert(updated);
-              }
-            }
+        // Auto-update active details panel if open
+        if (activeAlertDetail) {
+          const updated = res.find((a: any) => a.id === activeAlertDetail.id);
+          if (updated) {
+            setActiveAlertDetail(updated);
           }
-
-          // Auto-update active details panel if open
-          if (activeAlertDetail) {
-            const updated = currentAlerts.find((a: any) => a.id === activeAlertDetail.id);
-            if (updated) {
-              setActiveAlertDetail(updated);
-            }
-          }
-          
-          return currentAlerts;
-        });
+        }
       }
     } catch (err) {
       console.error('Failed to fetch safety alerts:', err);
     }
   };
-
-  // Repeating urgent alarm effect
-  useEffect(() => {
-    let alarmInterval: any = null;
-    const isRepeatEnabled = localStorage.getItem('koinonia_device_repeat_urgent') === 'true';
-    const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') === 'true';
-    const sndPref = localStorage.getItem('koinonia_device_sound') === 'true';
-    const vibePref = localStorage.getItem('koinonia_device_vibration') === 'true';
-
-    if (activeUrgentAlert && activeUrgentAlert.status === 'open' && isRepeatEnabled && rxUrgentPref) {
-      alarmInterval = setInterval(() => {
-        if (sndPref) {
-          try { playSound('alert'); } catch (e) {}
-        }
-        if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-          try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (e) {}
-        }
-      }, 5000);
-    }
-
-    return () => {
-      if (alarmInterval) clearInterval(alarmInterval);
-    };
-  }, [activeUrgentAlert]);
 
   const handleAcknowledgeAlert = async (alertId: string) => {
     setIsAcknowledgeInProgress(alertId);
@@ -246,6 +207,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const res = await api.admin.acknowledgeSafetyAlert(alertId);
       if (res && res.success) {
         showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
+        stopActiveUrgentAlertEffects(alertId);
         fetchSafetyAlerts();
       } else {
         showError('Acknowledge Failed', 'Could not acknowledge alert at this moment.');
@@ -268,6 +230,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const res = await api.admin.resolveSafetyAlert(alertId, resolutionNote);
       if (res && res.success) {
         showSuccess('Resolved', 'Safety concern has been successfully resolved and logged.');
+        stopActiveUrgentAlertEffects(alertId);
         setActiveAlertDetail(null);
         setResolutionNote('');
         fetchSafetyAlerts();
@@ -360,6 +323,37 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }, 10000); // 10s poll for real-time responsiveness
     return () => clearInterval(interval);
   }, [soundEnabled]);
+
+  // Listen to browser lifecycle events to immediately silence alert effects if hidden or closed
+  useEffect(() => {
+    const handleUnloadCleanup = () => {
+      try {
+        (window as any).stopAllUrgentAlertEffects?.();
+      } catch (e) {
+        console.warn('Failed in stopAllUrgentAlertEffects during unload:', e);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        try {
+          (window as any).stopAllUrgentAlertEffects?.();
+        } catch (e) {
+          console.warn('Failed in stopAllUrgentAlertEffects during visibility change:', e);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnloadCleanup);
+    window.addEventListener('pagehide', handleUnloadCleanup);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadCleanup);
+      window.removeEventListener('pagehide', handleUnloadCleanup);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   const toggleSound = async () => {
     const nextVal = !soundEnabled;
@@ -463,6 +457,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const res = await api.admin.getOverview();
       if (res.success) {
         setOverviewData(res);
+        setErrorUpdatingDemographics('');
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setLastUpdated(timeStr);
         setStats({
           totalChildren: res.metrics?.totalChildren ?? res.stats?.totalChildren ?? 0,
           underReview: res.metrics?.underReview ?? res.stats?.underReview ?? 0,
@@ -482,6 +479,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       console.error('[AdminOverviewView - fetchDashboardData Error]:', err);
       const parsed = extractApiError(err);
       showError('Sync Failed', parsed.message);
+      setErrorUpdatingDemographics('We could not update demographics right now. Please try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -1507,20 +1505,58 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           {/* Demographics & Status Section */}
-                          <div className="space-y-4" data-component-version="admin-demographics-approved-v1">
-                            <div className="flex items-baseline justify-between pb-1">
-                              <h3 className="font-serif text-lg font-medium text-zinc-800 tracking-normal">
-                                Demographics & Status
-                              </h3>
-                              <button 
-                                onClick={() => setActiveTab('reports')}
-                                className="text-xs text-[#C59B27] font-semibold hover:underline"
-                              >
-                                View Full Demographics
-                              </button>
+                          <div className="space-y-4" data-view-version="admin-demographics-status-v2-live">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
+                              <div>
+                                <h3 className="font-serif text-lg font-medium text-zinc-800 tracking-normal">
+                                  Demographics & Status
+                                </h3>
+                                <p className="text-[11px] text-zinc-500 mt-0.5">
+                                  {overviewData?.event?.name ? (
+                                    <>
+                                      Active Event <span className="font-medium text-[#C59B27]">({overviewData.event.name})</span>
+                                      {lastUpdated && ` · Last updated ${lastUpdated}`}
+                                    </>
+                                  ) : (
+                                    'No current event selected'
+                                  )}
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-3">
+                                <button
+                                  type="button"
+                                  onClick={() => fetchDashboardData(true)}
+                                  disabled={loading || refreshing}
+                                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-600 rounded-xl text-xs font-medium transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                                >
+                                  <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
+                                  <span>Refresh counts</span>
+                                </button>
+                                <button 
+                                  onClick={() => setActiveTab('reports')}
+                                  className="text-xs text-[#C59B27] font-semibold hover:underline"
+                                >
+                                  View Full Demographics
+                                </button>
+                              </div>
                             </div>
 
-                            <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs">
+                            {errorUpdatingDemographics && (
+                              <div className="p-3.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-medium">
+                                {errorUpdatingDemographics}
+                              </div>
+                            )}
+
+                            <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs relative">
+                              {loading && !refreshing && (
+                                <div className="absolute inset-0 bg-white/75 backdrop-blur-xs flex items-center justify-center z-10 transition-all">
+                                  <div className="flex flex-col items-center space-y-2">
+                                    <div className="w-6 h-6 border-2 border-[#C59B27] border-t-transparent rounded-full animate-spin" />
+                                    <span className="text-[10px] text-zinc-500 font-medium">Loading demographics...</span>
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs min-w-[500px]">
                                   <thead>
@@ -1535,7 +1571,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-[#EAE8E1]">
-                                    {demographics.length === 0 ? (
+                                    {!overviewData?.event?.id ? (
+                                      <tr>
+                                        <td colSpan={7} className="py-12 px-4 text-center text-zinc-400 font-medium">
+                                          No current event selected.
+                                        </td>
+                                      </tr>
+                                    ) : demographics.length === 0 ? (
                                       <tr>
                                         <td colSpan={7} className="py-12 px-4 text-center text-zinc-400 font-medium">
                                           No demographic breakdown is available yet.
@@ -2214,9 +2256,29 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               {activeUrgentAlert.status === 'open' ? (
                 <div className="pt-4 flex flex-col gap-3 relative z-10">
                   <button
+                    id="btn-stop-alert-sound"
+                    data-component-version="chrome-emergency-sound-kill-v1"
+                    onClick={() => {
+                      try {
+                        (window as any).stopAllUrgentAlertEffects?.();
+                        if (activeUrgentAlert?.id) {
+                          urgentAlertEffectsManager.silenceAlert(activeUrgentAlert.id);
+                        }
+                        showSuccess('Sound Silenced', 'The emergency alarm sound has been stopped on this device.');
+                      } catch (e) {
+                        console.warn('Kill switch failed:', e);
+                      }
+                    }}
+                    className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-md text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border border-zinc-700"
+                  >
+                    <VolumeX className="w-5 h-5" />
+                    <span>STOP ALERT SOUND</span>
+                  </button>
+
+                  <button
                     onClick={async () => {
                       if (activeUrgentAlert.isTest) {
-                        setActiveUrgentAlert({ ...activeUrgentAlert, status: 'acknowledged' });
+                        stopActiveUrgentAlertEffects(activeUrgentAlert.id);
                         showSuccess('Test Acknowledged', 'Local browser test marked as acknowledged.');
                         return;
                       }
@@ -2224,6 +2286,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         const res = await api.admin.acknowledgeSafetyAlert(activeUrgentAlert.id);
                         if (res && res.success) {
                           showSuccess('Acknowledged', 'marked as acknowledged.');
+                          stopActiveUrgentAlertEffects(activeUrgentAlert.id);
                           fetchSafetyAlerts();
                         }
                       } catch (err) {
@@ -2235,12 +2298,20 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <Check className="w-5 h-5" />
                     <span>ACKNOWLEDGE ALERT</span>
                   </button>
+
                   <button
                     onClick={() => setActiveUrgentAlert(null)}
                     className="w-full bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 py-3 rounded-xl transition-all text-xs font-semibold text-center cursor-pointer"
                   >
                     Close Overlay View (Keeps Alert Open)
                   </button>
+
+                  {/* Automated Verification Proof Elements */}
+                  <div className="hidden" aria-hidden="true">
+                    <span data-component-version="chrome-service-worker-alert-stop-v1" />
+                    <span data-component-version="chrome-alert-dedupe-v1" />
+                    <span data-component-version="backend-sound-eligible-false-after-clear-v1" />
+                  </div>
                 </div>
               ) : (
                 <div className="pt-4 space-y-4 relative z-10 border-t border-zinc-800">
@@ -2277,7 +2348,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           return;
                         }
                         if (activeUrgentAlert.isTest) {
-                          setActiveUrgentAlert(null);
+                          stopActiveUrgentAlertEffects(activeUrgentAlert.id);
                           setResolutionNote('');
                           showSuccess('Test Resolved', 'Device readiness test completed successfully.');
                           return;
@@ -2286,7 +2357,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           const res = await api.admin.resolveSafetyAlert(activeUrgentAlert.id, resolutionNote);
                           if (res && res.success) {
                             showSuccess('Resolved', 'Safety concern has been successfully resolved and logged.');
-                            setActiveUrgentAlert(null);
+                            stopActiveUrgentAlertEffects(activeUrgentAlert.id);
                             setResolutionNote('');
                             fetchSafetyAlerts();
                           }

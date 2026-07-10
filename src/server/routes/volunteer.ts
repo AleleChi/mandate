@@ -4218,7 +4218,12 @@ router.get('/team-safety-alerts', authMiddleware, async (req: AuthenticatedReque
         a.created_at DESC
     `, [REAL_EVENT_ID]);
 
-    res.json(alerts);
+    const mappedAlerts = (alerts || []).map((a: any) => ({
+      ...a,
+      soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important')
+    }));
+
+    res.json(mappedAlerts);
   } catch (err) {
     console.error('Get team safety alerts error:', err);
     res.status(500).json({ error: 'Failed to retrieve safety alerts' });

@@ -415,3 +415,59 @@ To support long-term message retention, notification tracking, and seamless admi
 - **B. Overcrowding Protection**: Restricts list rendering to the top 10 unread or 15 recent updates respectively to preserve visual cleanliness.
 - **C. History Link**: Includes a direct link pointing to the Messages & Updates Centre to quickly manage complete history logs.
 - **Proof Identifier**: `data-component-version="admin-notification-panel-v3-premium"`
+
+
+## 17. Live Demographics Table & Active Event Tracking
+
+The **Demographics & Status** table has been completely refactored to query real, live database metrics, strictly adhering to administrative integrity and the dynamic active event selection.
+
+### A. Core Calculations & Logic
+- **Active Event Binding**: Calculates counts dynamically for the current active event. If no current active event exists, uses the default `event-ga-2026`.
+- **Soft Deletion Guard**: Ensures that soft-deleted children (`c.is_deleted = 1`) or deleted event registrations (`e.is_deleted = 1`) are completely ignored.
+- **Dynamic Age Groups**: Uses the child's registered Date of Birth (DOB) compared to the current system date to compute age. Falls back to `calculated_age` if DOB is missing.
+  - **Below 1**: Under 1 year of age (`ageYears = 0`). Fully processed and never treated as empty or missing.
+  - **Ages 1 to 3**: `1` to `3` years old.
+  - **Ages 4 to 6**: `4` to `6` years old.
+  - **Ages 7 to 9**: `7` to `9` years old.
+  - **Ages 10 to 12**: `10` to `12` years old.
+  - **Teens**: `13` years old and above.
+- **Gender Normalizer**: Standardizes gender categories into Boys and Girls regardless of formatting (matching `boy/boys/male/m` and `girl/girls/female/f` case-insensitively).
+- **Status Mapping**:
+  - **Under Review**: `under_review`, `pending_review`, `submitted`, `review_pending`, `pending`.
+  - **Selected**: `selected`, `approved`, `pass_ready`, `checked_in`, `inside`, `picked_up`.
+  - **Checked In**: `checked_in`, `inside`, or items with a recorded `checked_in_at` timestamp that are not yet marked as `picked_up`.
+
+### B. UI Presentation & Sync Features
+- **Visual State**: Displays clean, elegant loading spinners during fetch, empty states with pastoral guidance when zero matching children are found, and descriptive error banners if the API fails.
+- **Last Sync Indicator**: Renders an elegant time label indicating exactly when the demographic counts were last updated (e.g. *"Last synchronized 10:15 AM"*), paired with an instant **Refresh** button to trigger live recalculations without full-page reloads.
+- **Proof Identifier**: `data-component-version="admin-demographics-approved-v1"`
+
+
+## 18. Sound Silence & Vibration Cleanup (`#/admin/overview` / Takeover Overlay)
+
+To ensure the safety and sanity of the environment, alarms and physical loops are shut down immediately upon coordinator resolution.
+
+### A. Key Attributes & Visual Architecture
+- **Instant Silence**: Acknowledging or resolving an active safety alert clears the repeating alert interval timer (`alarmIntervalRef`) and triggers `navigator.vibrate(0)` to cut off active mechanical vibrations immediately.
+- **State-Driven Takeover Overlay**: The active takeover overlay closes instantly upon state transition of the alert to acknowledged or resolved.
+- **Proof Identifier**: `data-component-version="urgent-alert-effects-stop-v2"`
+
+### B. Setup & Safeguards
+- **First Load Safeguard**: On initial load, pre-existing open safety alerts are automatically marked as sounded/processed in the tracking set (`soundedAlertIds`), preventing retroactive sirens or audio disruption when entering the dashboard.
+
+
+## 19. Live Update Center Statistics Sync (`#/admin/messages`)
+
+The Messages & Updates Centre has been integrated with a real-time live statistics synchronization engine.
+
+### A. Core Features & UX Patterns
+- **Live Aggregation**: Replaced static cards with real-time live synchronized database aggregates tracking total notifications, unread updates, archived records, active safety concerns, and notification read counts.
+- **Database Synchronization**: The statistics are calculated using active queries from the `notifications`, `notification_reads`, `notification_archives`, and `event_safety_alerts` tables.
+- **Active Filter Rules**: Excludes soft-deleted and archived records from active totals to maintain strict metrics hygiene.
+
+### B. Render-Proofing Attributes Added
+- **Summary API Synchronizer**: `data-component-version="admin-updates-summary-api-v1-live"`
+- **Live Summary UI Cards**: `data-component-version="admin-messages-summary-v2-live"`
+- **Message List Sync Badge**: `data-component-version="admin-message-list-stats-sync-v1"`
+
+

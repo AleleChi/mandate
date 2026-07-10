@@ -570,6 +570,9 @@ export const api = {
     },
     async unarchiveUpdate(id: string) {
       return api.request<any>(`/api/notifications/admin/updates/${id}/unarchive`, { method: 'POST' });
+    },
+    async getSummary() {
+      return api.request<{ success: boolean; summary: any }>('/api/notifications/admin/updates/summary');
     }
   },
 

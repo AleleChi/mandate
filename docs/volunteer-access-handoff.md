@@ -704,5 +704,16 @@ To ensure volunteers stay logged in and prevent accidental session clearing on e
   - `data-component-version="volunteer-logout-action-v2-separated"` added to the "Sign out" button on the Volunteer Profile page.
 
 
+## 17. Volunteer Team Alerts Quiet First-Load Protection (`#/volunteer/team-alerts`)
+
+To prevent distracting or noisy interruptions on event day, the volunteer team alerts dashboard implements a quiet first-load safeguard.
+
+### A. Core Features & UX Patterns
+- **No Initial Noise**: On first loading the Desk/Team Alerts tab, pre-existing active safety alerts are fetched quietly without triggering the device alarm, siren sound, or phone vibration loop.
+- **First-Fetch Tracking**: A local reference (`isFirstFetchRef`) tracks if the initial list has been populated. Only subsequent safety alerts arriving via background polling will trigger the designated alarm and physical vibration feedback patterns.
+- **Audience Role Preferences**: Restricts noise triggers based on individual device preferences (`koinonia_device_receive_urgent` and `koinonia_device_sound`).
+
+
+
 
 

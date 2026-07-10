@@ -1527,6 +1527,71 @@ Restores an archived volunteer profile back to active status, making them availa
 
 ---
 
+## Administrative Overview, Reports & Demographics (`/api/admin`)
+
+The following endpoints support the executive dashboards and reports, querying the dynamically calculated, active event metrics.
+
+### 15.5 GET `/api/admin/overview`
+Retrieves live administrative statistics and real demographics counts dynamically computed from date of birth fields.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "totalChildren": 240,
+    "underReview": 5,
+    "approved": 235,
+    "fullName": "Senior Admin",
+    "roleTitle": "Global Director",
+    "event": { "id": "event-ga-2026", "title": "The General Assembly", ... },
+    "demographics": [
+      {
+        "ageGroup": "Below 1",
+        "boys": 2,
+        "girls": 3,
+        "total": 5,
+        "underReview": 1,
+        "selected": 4,
+        "checkedIn": 2
+      },
+      ...
+    ]
+  }
+  ```
+
+### 15.6 GET `/api/admin/reports/demographics`
+Provides a dedicated demographics aggregation report for a selected event.
+- **Query Parameters**:
+  - `eventId` (optional): Filter stats by a specific event ID. Defaults to current active event.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "eventId": "event-ga-2026",
+    "generatedAt": "2026-07-10T12:00:00.000Z",
+    "groups": [
+      {
+        "key": "below_1",
+        "label": "Below 1",
+        "boys": 2,
+        "girls": 3,
+        "total": 5,
+        "underReview": 1,
+        "selected": 4,
+        "checkedIn": 2
+      },
+      ...
+    ],
+    "summary": {
+      "totalChildren": 240,
+      "totalUnderReview": 5,
+      "totalSelected": 235,
+      "totalCheckedIn": 180
+    }
+  }
+  ```
+
+---
+
 ## Administrative Events & Gathering Operations (`/api/admin/events`)
 
 The following endpoints manage the administrative lifecycle of gatherings, events, and age groups/capacities.
@@ -1826,7 +1891,63 @@ Marks all active administrative messages and care updates as read.
   }
   ```
 
-### 17.4 POST `/api/admin/parents/:id/permanent-delete`
+### 17.10 GET `/api/notifications/admin/updates/summary`
+Retrieves live aggregate message totals and safety concern states across the active system (excluding archived updates).
+- **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "summary": {
+      "total": 42,
+      "unread": 5,
+      "read": 37,
+      "openAlerts": 1,
+      "urgent": 2,
+      "important": 4,
+      "resolved": 15,
+      "acknowledged": 10,
+      "archived": 3,
+      "deliveryIssues": 0
+    }
+  }
+  ```
+
+### 17.11 POST `/api/admin/safety-alerts/:id/acknowledge`
+Marks an active safety alert as acknowledged.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Alert acknowledged.",
+    "alert": {
+      "id": "alert-uuid",
+      "status": "acknowledged",
+      "acknowledgedAt": "2026-07-09T00:19:05.593Z",
+      "resolvedAt": null,
+      "soundEligible": false
+    }
+  }
+  ```
+
+### 17.12 POST `/api/admin/safety-alerts/:id/resolve`
+Marks a safety alert as resolved with a detailed resolution note.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Alert resolved.",
+    "alert": {
+      "id": "alert-uuid",
+      "status": "resolved",
+      "acknowledgedAt": "2026-07-09T00:19:05.593Z",
+      "resolvedAt": "2026-07-09T00:25:12.112Z",
+      "soundEligible": false
+    }
+  }
+  ```
+
+### 17.13 POST `/api/admin/parents/:id/permanent-delete`
 Permanently deletes and anonymizes a soft-removed parent's profile and disables their user login credentials.
 - **Headers**: `Authorization: Bearer <token>` (Admin/Super-Admin only)
 - **Request Body**:

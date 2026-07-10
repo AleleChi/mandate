@@ -657,3 +657,34 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Unified Detail Panel**: Selecting an update in the History center displays its full content, metadata details, and direct action controls (Mark Unread, Archive, or Restore) in a responsive side-by-side split layout.
 - **Refined Bell Quick Panel**: The navigation header notification bell opens a premium quick panel divided into "Unread" and "All Updates" tabs. It displays up to 10 unread or 15 recent items respectively to avoid page overcrowding, and includes a direct deep-link shortcut to load the full Messages & Updates Centre.
 
+
+## 45. Dynamic Demographics Counting & Active Event Scoping
+- **Active Event Scoping**: All Demographics metrics are bound dynamically to the current active event selected in the admin header. Demographics are computed strictly from real-time database joins, omitting soft-deleted records (`COALESCE(is_deleted, 0) = 0`).
+- **Dynamic Age Aggregations**: Child age groups are computed dynamically at runtime using their registered Date of Birth (DOB) compared to the current date. If DOB is missing or invalid, the system falls back to the database `calculated_age` field.
+- **Standardized Age Groups**:
+  - *Below 1*: Exactly `0` years old (under 1 year of age). This includes infants and newborns, and ensures age 0 is never treated as missing or empty.
+  - *Ages 1 to 3*: Children aged `1` to `3` years.
+  - *Ages 4 to 6*: Children aged `4` to `6` years.
+  - *Ages 7 to 9*: Children aged `7` to `9` years.
+  - *Ages 10 to 12*: Children aged `10` to `12` years.
+  - *Teens*: Children aged `13` years and above.
+- **Robust Gender Standardizing**: Gender counters normalize variation in string inputs dynamically (supporting `boy`, `boys`, `male`, `m` for Boys, and `girl`, `girls`, `female`, `f` for Girls).
+- **Flexible Status Grouping**:
+  - *Under Review*: Counts applications in states: `under_review`, `pending_review`, `submitted`, `review_pending`, `pending`.
+  - *Selected*: Counts approved applications in states: `selected`, `approved`, `pass_ready`, `checked_in`, `inside`, `picked_up`.
+  - *Checked In*: Counts active entries marked `checked_in` or `inside`, or entries with a recorded `checked_in_at` timestamp that have not been picked up yet.
+
+## 46. Urgent Alert Lifecycle, Immediate Silence & Vibration Cleanup
+- **Immediate Silence Handlers**: Once an urgent safety alert is acknowledged or resolved by any administrator (locally or remotely), all ongoing audio alarm sounds, repeat sound timers (`alarmIntervalRef`), active physical vibrations, and repeating alert overlay takeovers are cleared immediately.
+- **Vibration Interruption**: Invokes `navigator.vibrate(0)` immediately upon state alteration to cease active motor operations on physical handsets.
+- **Overlay Takeover Reset**: The active takeover overlay resets to null immediately when the alert status changes to acknowledged or resolved, transitioning smoothly back to the command center interface.
+- **Sound Isolation**: To prevent audio alerts from firing on page refresh or initial sign-in, any open or unacknowledged alerts already recorded in the system on first load are added directly to the sounded/silenced tracking set, blocking retroactive alarms.
+
+## 47. Live Messages & Updates Centre Statistics Engine
+- **Live Aggregation**: The dashboard and statistics panel in the Messages & Updates Centre use real live data gathered from active notifications, reads, archives, and safety alert tables.
+- **Total Counting Rule**: Counts all system and role-based updates, including unread, read, and active safety alerts.
+- **Read/Unread Differentiation**: Cross-references individual notification records against the notification read transactions table to provide real-time unread versus read counts.
+- **Exclusion of Archived Content**: Counts represent active administrative concerns. Archived records are excluded from standard active totals and read/unread counters, keeping metrics clean.
+- **Proof Alignment**: Uses `data-component-version="admin-updates-summary-api-v1-live"` and `data-component-version="admin-messages-summary-v2-live"` to verify live-synchronized endpoints are operational.
+
+

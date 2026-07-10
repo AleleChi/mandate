@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { query, queryOne, execute } from '../db';
+import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { getVapidPublicKey } from '../services/push';
 
@@ -968,6 +968,126 @@ router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) =>
   } catch (err: any) {
     console.error('Error fetching admin updates center:', err);
     return res.status(500).json({ error: 'Failed to retrieve messages and updates' });
+  }
+});
+
+// GET /api/notifications/admin/updates/summary
+router.get('/admin/updates/summary', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    const role = req.user?.role;
+    if (!userId || (role !== 'admin' && role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    // 1. Fetch all notifications matching audience roles
+    const rawNotifs = await query(`
+      SELECT n.* FROM notifications n
+      WHERE (n.audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR n.audience_role IS NULL)
+    `, []);
+
+    // Query open safety alerts directly from the database table for perfect, independent stats integrity
+    const openAlertsRow = await queryOne(`
+      SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?
+    `, [REAL_EVENT_ID]);
+    const openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
+
+    let total = 0;
+    let unread = 0;
+    let read = 0;
+    let urgent = 0;
+    let important = 0;
+    let resolved = 0;
+    let acknowledged = 0;
+    let archived = 0;
+    let deliveryIssues = 0;
+
+    for (const n of rawNotifs) {
+      // Check archived status
+      const archiveRow = await queryOne('SELECT archived_at FROM notification_archives WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isArchived = !!archiveRow;
+
+      if (isArchived) {
+        archived++;
+        continue; // Exclude archived items from standard active lists
+      }
+
+      // Check read status
+      const readRow = await queryOne('SELECT read_at FROM notification_reads WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isRead = !!readRow;
+
+      if (isRead) {
+        read++;
+      } else {
+        unread++;
+      }
+
+      // Parse metadata_json to look up actionStatus
+      let metadata: any = null;
+      if (n.metadata_json) {
+        try {
+          metadata = JSON.parse(n.metadata_json);
+        } catch (_) {}
+      }
+
+      let actionStatus = 'n/a';
+      if (n.type === 'safety_alert' || n.type === 'escalation') {
+        const alertId = metadata?.safetyAlertId || metadata?.safety_alert_id || metadata?.alertId || n.id;
+        const alertObj = await queryOne('SELECT status FROM event_safety_alerts WHERE id = ?', [alertId]);
+        if (alertObj) {
+          actionStatus = alertObj.status; // open, acknowledged, resolved
+        } else {
+          const attId = metadata?.attentionItemId || metadata?.attention_item_id || n.id;
+          const attObj = await queryOne('SELECT status FROM child_attention_items WHERE id = ?', [attId]);
+          if (attObj) {
+            actionStatus = attObj.status; // open, resolved
+          }
+        }
+      }
+
+      total++;
+
+      if (n.priority === 'urgent' || n.priority === 'high') {
+        urgent++;
+      }
+
+      if (n.priority === 'important') {
+        important++;
+      }
+
+      if (actionStatus === 'resolved') {
+        resolved++;
+      }
+
+      if (actionStatus === 'acknowledged') {
+        acknowledged++;
+      }
+
+      if (n.type === 'delivery_issue' || n.type === 'failed') {
+        deliveryIssues++;
+      }
+    }
+
+    return res.json({
+      success: true,
+      summary: {
+        total,
+        unread,
+        read,
+        openAlerts,
+        urgent,
+        important,
+        resolved,
+        acknowledged,
+        archived,
+        deliveryIssues
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Error fetching admin updates summary:', err);
+    return res.status(500).json({ error: 'Failed to retrieve updates summary' });
   }
 });
 

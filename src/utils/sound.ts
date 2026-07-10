@@ -1,6 +1,13 @@
 // Client-side Web Audio API Sound Effects Engine
 // Generates synthesized tones on the fly, avoiding any static asset load issues.
 
+const activeContexts = new Set<AudioContext>();
+const activeOscillators = new Set<OscillatorNode>();
+const activeGainNodes = new Set<GainNode>();
+const activeAudioElements = new Set<HTMLAudioElement>();
+const activeTimeouts = new Set<any>();
+const activeIntervals = new Set<any>();
+
 let audioCtx: AudioContext | null = null;
 
 function getAudioContext(): AudioContext | null {
@@ -8,7 +15,12 @@ function getAudioContext(): AudioContext | null {
   if (!audioCtx) {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (AudioContextClass) {
-      audioCtx = new AudioContextClass();
+      try {
+        audioCtx = new AudioContextClass();
+        activeContexts.add(audioCtx);
+      } catch (e) {
+        console.warn('Failed to construct AudioContext:', e);
+      }
     }
   }
   return audioCtx;
@@ -29,11 +41,16 @@ export function playSound(type: 'success' | 'error' | 'notification' | 'alert' |
     }
 
     const playTone = (freq: number, duration: number, oscType: OscillatorType = 'sine', delay = 0) => {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         try {
+          activeTimeouts.delete(timeoutId);
           if (!ctx || ctx.state === 'suspended') return;
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
+          
+          activeOscillators.add(osc);
+          activeGainNodes.add(gain);
+
           osc.type = oscType;
           osc.frequency.setValueAtTime(freq, ctx.currentTime);
           
@@ -45,10 +62,18 @@ export function playSound(type: 'success' | 'error' | 'notification' | 'alert' |
           
           osc.start();
           osc.stop(ctx.currentTime + duration);
+
+          const cleanupId = setTimeout(() => {
+            activeOscillators.delete(osc);
+            activeGainNodes.delete(gain);
+            activeTimeouts.delete(cleanupId);
+          }, duration * 1000 + 100);
+          activeTimeouts.add(cleanupId);
         } catch (e) {
           console.warn('Tone play error:', e);
         }
       }, delay * 1000);
+      activeTimeouts.add(timeoutId);
     };
 
     switch (type) {
@@ -93,6 +118,89 @@ export function resumeAudioContext() {
       ctx.resume().catch((err) => console.warn('Failed to resume AudioContext:', err));
     }
   } catch (_) {}
+}
+
+export function stopAllUrgentAlertEffects() {
+  console.log('[Emergency Kill Switch] stopping all AudioContext, oscillators, timers, and vibrations.');
+  
+  // 1. Close contexts
+  activeContexts.forEach(ctx => {
+    try {
+      ctx.close();
+    } catch (e) {
+      console.warn('Error closing AudioContext:', e);
+    }
+  });
+  activeContexts.clear();
+  audioCtx = null;
+
+  // 2. Stop and disconnect oscillators
+  activeOscillators.forEach(osc => {
+    try {
+      osc.stop();
+      osc.disconnect();
+    } catch (e) {}
+  });
+  activeOscillators.clear();
+
+  // 3. Disconnect gain nodes
+  activeGainNodes.forEach(g => {
+    try {
+      g.disconnect();
+    } catch (e) {}
+  });
+  activeGainNodes.clear();
+
+  // 4. Pause audio elements
+  activeAudioElements.forEach(aud => {
+    try {
+      aud.pause();
+      aud.currentTime = 0;
+    } catch (e) {}
+  });
+  activeAudioElements.clear();
+
+  // 5. Clear timeouts
+  activeTimeouts.forEach(id => {
+    try {
+      clearTimeout(id);
+    } catch (e) {}
+  });
+  activeTimeouts.clear();
+
+  // 6. Clear intervals
+  activeIntervals.forEach(id => {
+    try {
+      clearInterval(id);
+    } catch (e) {}
+  });
+  activeIntervals.clear();
+
+  // 7. Clear window-registered intervals & timeouts
+  if (typeof window !== 'undefined') {
+    try {
+      if ((window as any).koinonia_intervals) {
+        (window as any).koinonia_intervals.forEach((id: any) => clearInterval(id));
+        (window as any).koinonia_intervals = [];
+      }
+      if ((window as any).koinonia_timeouts) {
+        (window as any).koinonia_timeouts.forEach((id: any) => clearTimeout(id));
+        (window as any).koinonia_timeouts = [];
+      }
+    } catch (e) {}
+  }
+
+  // 8. Stop vibrations
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(0);
+    } catch (e) {}
+  }
+}
+
+// Bind globally
+if (typeof window !== 'undefined') {
+  (window as any).stopAllUrgentAlertEffects = stopAllUrgentAlertEffects;
 }
 
 export const soundUtility = {

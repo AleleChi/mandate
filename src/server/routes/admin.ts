@@ -1606,18 +1606,41 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
   }
 });
 
+function getChildAge(c: any): number {
+  let age = -1;
+  if (c.date_of_birth) {
+    try {
+      const dob = new Date(c.date_of_birth);
+      if (!isNaN(dob.getTime())) {
+        const now = new Date();
+        age = now.getFullYear() - dob.getFullYear();
+        const m = now.getMonth() - dob.getMonth();
+        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
+          age--;
+        }
+      }
+    } catch (_) {}
+  }
+  if (age < 0 && c.calculated_age !== null && c.calculated_age !== undefined) {
+    age = Number(c.calculated_age);
+  }
+  return age;
+}
+
 // GET admin overview dashboard metrics
 router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const eventId = 'event-ga-2026';
-    const totalChildrenRes = await queryOne('SELECT COUNT(*) as count FROM children');
-    const underReviewRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'", [eventId]);
-    const approvedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready')", [eventId]);
+    const currentEvent = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1");
+    const eventId = currentEvent?.id || 'event-ga-2026';
+
+    const totalChildrenRes = await queryOne('SELECT COUNT(*) as count FROM children WHERE COALESCE(is_deleted, 0) = 0');
+    const underReviewRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND COALESCE(is_deleted, 0) = 0", [eventId]);
+    const approvedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0", [eventId]);
     const totalParentsRes = await queryOne('SELECT COUNT(*) as count FROM parent_profiles');
     const totalVolunteersRes = await queryOne('SELECT COUNT(*) as count FROM volunteer_profiles');
     const pendingVolunteersRes = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'pending_review'");
-    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in'", [eventId]);
-    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up'", [eventId]);
+    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]);
+    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up' AND COALESCE(is_deleted, 0) = 0", [eventId]);
 
     // Format admin user info
     let fullName = 'Admin User';
@@ -1656,32 +1679,57 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
 
     // Fetch demographics and calculate counts dynamically from the DB
     const childrenData = await query(`
-      SELECT c.gender, c.age_group, e.status
+      SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.checked_in_at, e.picked_up_at
       FROM children c
-      LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
+      JOIN child_event_entries e ON c.id = e.child_id
+      WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
     `, [eventId]);
 
     const ageGroupsList = [
-      { ageGroup: 'Under 1 year', displayLabel: 'Below 1' },
-      { ageGroup: 'Ages 1 to 3', displayLabel: 'Ages 1 to 3' },
-      { ageGroup: 'Ages 4 to 6', displayLabel: 'Ages 4 to 6' },
-      { ageGroup: 'Ages 7 to 9', displayLabel: 'Ages 7 to 9' },
-      { ageGroup: 'Ages 10 to 12', displayLabel: 'Ages 10 to 12' },
-      { ageGroup: 'Teens', displayLabel: 'Teens' }
+      { min: 0, max: 0, displayLabel: 'Below 1' },
+      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
+      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
+      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
+      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
+      { min: 13, max: 999, displayLabel: 'Teens' }
     ];
 
     const demographics = ageGroupsList.map(g => {
-      const matching = (childrenData || []).filter((c: any) => c.age_group === g.ageGroup);
-      const boys = matching.filter((c: any) => String(c.gender).toLowerCase() === 'boy' || String(c.gender).toLowerCase() === 'male').length;
-      const girls = matching.filter((c: any) => String(c.gender).toLowerCase() === 'girl' || String(c.gender).toLowerCase() === 'female').length;
-      const underReview = matching.filter((c: any) => c.status === 'under_review').length;
-      const selected = matching.filter((c: any) => c.status === 'selected' || c.status === 'pass_ready').length;
-      const checkedIn = matching.filter((c: any) => c.status === 'checked_in').length;
+      const matching = (childrenData || []).filter((c: any) => {
+        const age = getChildAge(c);
+        return age >= g.min && age <= g.max;
+      });
+
+      const boys = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['boy', 'boys', 'male', 'm'].includes(s);
+      }).length;
+
+      const girls = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['girl', 'girls', 'female', 'f'].includes(s);
+      }).length;
+
+      const underReview = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['under_review', 'pending_review', 'submitted', 'review_pending', 'pending'].includes(s);
+      }).length;
+
+      const selected = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+      }).length;
+
+      const checkedIn = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['checked_in', 'inside'].includes(s) || (c.checked_in_at && !c.picked_up_at);
+      }).length;
+
       return {
         ageGroup: g.displayLabel,
         boys,
         girls,
-        total: boys + girls,
+        total: matching.length,
         underReview,
         selected,
         checkedIn
@@ -1862,6 +1910,100 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
   } catch (err: any) {
     console.error('Error in overview API:', err);
     return res.status(500).json({ error: 'Failed to fetch admin overview stats.' });
+  }
+});
+
+// GET Demographics breakdown report
+router.get('/reports/demographics', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const currentEvent = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1");
+    const defaultEventId = currentEvent?.id || 'event-ga-2026';
+    const eventId = (req.query.eventId as string) || defaultEventId;
+
+    const childrenData = await query(`
+      SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.checked_in_at, e.picked_up_at
+      FROM children c
+      JOIN child_event_entries e ON c.id = e.child_id
+      WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
+    `, [eventId]);
+
+    const ageGroupsList = [
+      { key: 'below_1', min: 0, max: 0, displayLabel: 'Below 1' },
+      { key: 'ages_1_3', min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
+      { key: 'ages_4_6', min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
+      { key: 'ages_7_9', min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
+      { key: 'ages_10_12', min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
+      { key: 'teens', min: 13, max: 999, displayLabel: 'Teens' }
+    ];
+
+    let totalChildren = 0;
+    let totalUnderReview = 0;
+    let totalSelected = 0;
+    let totalCheckedIn = 0;
+
+    const groups = ageGroupsList.map(g => {
+      const matching = (childrenData || []).filter((c: any) => {
+        const age = getChildAge(c);
+        return age >= g.min && age <= g.max;
+      });
+
+      const boys = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['boy', 'boys', 'male', 'm'].includes(s);
+      }).length;
+
+      const girls = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['girl', 'girls', 'female', 'f'].includes(s);
+      }).length;
+
+      const underReview = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['under_review', 'pending_review', 'submitted', 'review_pending', 'pending'].includes(s);
+      }).length;
+
+      const selected = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+      }).length;
+
+      const checkedIn = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['checked_in', 'inside'].includes(s) || (c.checked_in_at && !c.picked_up_at);
+      }).length;
+
+      totalChildren += matching.length;
+      totalUnderReview += underReview;
+      totalSelected += selected;
+      totalCheckedIn += checkedIn;
+
+      return {
+        key: g.key,
+        label: g.displayLabel,
+        boys,
+        girls,
+        total: matching.length,
+        underReview,
+        selected,
+        checkedIn
+      };
+    });
+
+    res.json({
+      success: true,
+      eventId,
+      generatedAt: new Date().toISOString(),
+      groups,
+      summary: {
+        totalChildren,
+        totalUnderReview,
+        totalSelected,
+        totalCheckedIn
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching demographics report:', err);
+    res.status(500).json({ error: 'Failed to generate demographics report.' });
   }
 });
 
@@ -2343,7 +2485,8 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
     const queryOne = safeReportQueryOne;
     const query = safeReportQuery;
 
-    const eventId = 'event-ga-2026';
+    const currentEvent = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1");
+    const eventId = currentEvent?.id || 'event-ga-2026';
     let reportType = typeof req.query.reportType === 'string' ? req.query.reportType.trim().toLowerCase() : 'end_of_event';
     if (reportType === 'pre_event' || reportType === 'pre-event') {
       reportType = 'pre_event';
@@ -2365,18 +2508,19 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
 
     // Fetch demographics and calculate counts dynamically from the DB
     const childrenData = await query(`
-      SELECT c.gender, c.age_group, e.status, e.has_medical_notes, e.needs_extra_support, c.needs_age_review
+      SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.has_medical_notes, e.needs_extra_support, c.needs_age_review, e.checked_in_at, e.picked_up_at
       FROM children c
       LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
+      WHERE COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
     `, [eventId]);
 
     const ageGroupsList = [
-      { ageGroup: 'Under 1 year', displayLabel: 'Below 1' },
-      { ageGroup: 'Ages 1 to 3', displayLabel: 'Ages 1 to 3' },
-      { ageGroup: 'Ages 4 to 6', displayLabel: 'Ages 4 to 6' },
-      { ageGroup: 'Ages 7 to 9', displayLabel: 'Ages 7 to 9' },
-      { ageGroup: 'Ages 10 to 12', displayLabel: 'Ages 10 to 12' },
-      { ageGroup: 'Teens', displayLabel: 'Teens' }
+      { min: 0, max: 0, displayLabel: 'Below 1' },
+      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
+      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
+      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
+      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
+      { min: 13, max: 999, displayLabel: 'Teens' }
     ];
 
     // Care & Attention items
@@ -2487,10 +2631,19 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
       const duplicatePhone = duplicatePhoneRes?.count || 0;
 
       const ageGroupSummary = ageGroupsList.map(g => {
-        const matching = (childrenData || []).filter((c: any) => c.age_group === g.ageGroup);
+        const matching = (childrenData || []).filter((c: any) => {
+          const age = getChildAge(c);
+          return age >= g.min && age <= g.max;
+        });
         const registered = matching.length;
-        const selectedCount = matching.filter((c: any) => ['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(c.status)).length;
-        const underReviewCount = matching.filter((c: any) => c.status === 'under_review').length;
+        const selectedCount = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+        }).length;
+        const underReviewCount = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['under_review', 'pending_review', 'submitted', 'review_pending', 'pending'].includes(s);
+        }).length;
         const needsAttentionCount = matching.filter((c: any) => c.has_medical_notes === 1 || c.needs_extra_support === 1 || c.needs_age_review === 1).length;
         return {
           ageGroup: g.displayLabel,
@@ -2573,12 +2726,30 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
       const pickupIssueCount = pickupIssueRes?.count || 0;
 
       const attendanceByAgeGroup = ageGroupsList.map(g => {
-        const matching = (childrenData || []).filter((c: any) => c.age_group === g.ageGroup);
-        const exp = matching.filter((c: any) => ['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(c.status)).length;
-        const chk = matching.filter((c: any) => ['checked_in', 'inside', 'picked_up'].includes(c.status)).length;
-        const ins = matching.filter((c: any) => ['checked_in', 'inside'].includes(c.status)).length;
-        const pku = matching.filter((c: any) => c.status === 'picked_up').length;
-        const nta = matching.filter((c: any) => ['selected', 'pass_ready'].includes(c.status)).length;
+        const matching = (childrenData || []).filter((c: any) => {
+          const age = getChildAge(c);
+          return age >= g.min && age <= g.max;
+        });
+        const exp = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+        }).length;
+        const chk = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['checked_in', 'inside', 'picked_up'].includes(s);
+        }).length;
+        const ins = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['checked_in', 'inside'].includes(s);
+        }).length;
+        const pku = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return s === 'picked_up';
+        }).length;
+        const nta = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['selected', 'approved', 'pass_ready'].includes(s);
+        }).length;
         return {
           ageGroup: g.displayLabel,
           expected: exp,
@@ -5714,7 +5885,12 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
         a.created_at DESC
     `, [REAL_EVENT_ID]);
 
-    res.json(alerts);
+    const mappedAlerts = (alerts || []).map((a: any) => ({
+      ...a,
+      soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important')
+    }));
+
+    res.json(mappedAlerts);
   } catch (err) {
     console.error('Get admin safety alerts error:', err);
     res.status(500).json({ error: 'Failed to retrieve safety alerts' });
@@ -5744,7 +5920,17 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       WHERE id = ?
     `, [req.user.id, now, now, id]);
 
-    res.json({ success: true, message: 'Alert acknowledged.' });
+    res.json({ 
+      success: true, 
+      message: 'Alert acknowledged.',
+      alert: {
+        id,
+        status: 'acknowledged',
+        acknowledgedAt: now,
+        resolvedAt: alert.resolved_at || null,
+        soundEligible: false
+      }
+    });
   } catch (err) {
     console.error('Acknowledge safety alert error:', err);
     res.status(500).json({ error: 'Failed to acknowledge safety alert' });
@@ -5781,7 +5967,17 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
       WHERE id = ?
     `, [req.user.id, now, (note || 'Resolved by admin').trim(), now, id]);
 
-    res.json({ success: true, message: 'Alert resolved.' });
+    res.json({ 
+      success: true, 
+      message: 'Alert resolved.',
+      alert: {
+        id,
+        status: 'resolved',
+        acknowledgedAt: alert.acknowledged_at || null,
+        resolvedAt: now,
+        soundEligible: false
+      }
+    });
   } catch (err) {
     console.error('Resolve safety alert error:', err);
     res.status(500).json({ error: 'Failed to resolve safety alert' });
@@ -5881,6 +6077,122 @@ router.post('/alert-delivery/test-device', authMiddleware, async (req: Authentic
   } catch (err) {
     console.error('Test device alert error:', err);
     res.status(500).json({ error: 'Failed to dispatch device test alert' });
+  }
+});
+
+// GET /api/admin/updates/summary
+router.get('/updates/summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    const role = req.user?.role;
+    if (!userId || (role !== 'admin' && role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const rawNotifs = await query(`
+      SELECT n.* FROM notifications n
+      WHERE (n.audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR n.audience_role IS NULL)
+    `, []);
+
+    // Query open safety alerts directly from the database table for perfect, independent stats integrity
+    const openAlertsRow = await queryOne(`
+      SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?
+    `, [REAL_EVENT_ID]);
+    const openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
+
+    let total = 0;
+    let unread = 0;
+    let read = 0;
+    let urgent = 0;
+    let important = 0;
+    let resolved = 0;
+    let acknowledged = 0;
+    let archived = 0;
+    let deliveryIssues = 0;
+
+    for (const n of rawNotifs) {
+      const archiveRow = await queryOne('SELECT archived_at FROM notification_archives WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isArchived = !!archiveRow;
+
+      if (isArchived) {
+        archived++;
+        continue;
+      }
+
+      const readRow = await queryOne('SELECT read_at FROM notification_reads WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isRead = !!readRow;
+
+      if (isRead) {
+        read++;
+      } else {
+        unread++;
+      }
+
+      let metadata: any = null;
+      if (n.metadata_json) {
+        try {
+          metadata = JSON.parse(n.metadata_json);
+        } catch (_) {}
+      }
+
+      let actionStatus = 'n/a';
+      if (n.type === 'safety_alert' || n.type === 'escalation') {
+        const alertId = metadata?.safetyAlertId || metadata?.safety_alert_id || metadata?.alertId || n.id;
+        const alertObj = await queryOne('SELECT status FROM event_safety_alerts WHERE id = ?', [alertId]);
+        if (alertObj) {
+          actionStatus = alertObj.status;
+        } else {
+          const attId = metadata?.attentionItemId || metadata?.attention_item_id || n.id;
+          const attObj = await queryOne('SELECT status FROM child_attention_items WHERE id = ?', [attId]);
+          if (attObj) {
+            actionStatus = attObj.status;
+          }
+        }
+      }
+
+      total++;
+
+      if (n.priority === 'urgent' || n.priority === 'high') {
+        urgent++;
+      }
+
+      if (n.priority === 'important') {
+        important++;
+      }
+
+      if (actionStatus === 'resolved') {
+        resolved++;
+      }
+
+      if (actionStatus === 'acknowledged') {
+        acknowledged++;
+      }
+
+      if (n.type === 'delivery_issue' || n.type === 'failed') {
+        deliveryIssues++;
+      }
+    }
+
+    return res.json({
+      success: true,
+      summary: {
+        total,
+        unread,
+        read,
+        openAlerts,
+        urgent,
+        important,
+        resolved,
+        acknowledged,
+        archived,
+        deliveryIssues
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Error fetching admin updates summary in admin.ts:', err);
+    return res.status(500).json({ error: 'Failed to retrieve updates summary' });
   }
 });
 

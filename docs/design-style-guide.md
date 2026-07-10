@@ -204,5 +204,28 @@ To ensure the administrative event management pages match Koinonia's premium bra
 - **Refined Bell Quick Panel**: Styled as a floating panel dropdown with smooth transition entry (`animate-fade-in`), rounded borders (`rounded-[24px]`), and a soft ivory canvas background. It introduces an interactive tab layout dividing "Unread" and "All Updates" with a gold active bottom line (`border-[#C59B27]`). The panel restricts its scrollable list to 10-15 entries to prevent layout stretching, and features a bottom footer splitting "Mark all as read" and a gold deep-link to the full "Updates Centre". It implements proof attribute `data-component-version="admin-notification-panel-v3-premium"`.
 
 
+### Demographics & Status Table Design Specifications
+- **Ivory & Charcoal Grid Styling**: Renders as an elegant, clean table nested inside a rounded white card with a subtle gold border. Rows alternate between light warm grey and pure ivory to offer excellent readability.
+- **Dynamic Indicators**:
+  - **Refreshed Timestamp**: Displays a calm, secondary text line stating the precise synchronization date and time, formatted cleanly (e.g. *"Last synchronized 10:15 AM"*).
+  - **Instant Sync Trigger**: Features a styled, text-button link `"Refresh"` styled with soft gold borders and a spinning indicator on click.
+  - **Interactivity and State-Aware Layout**: Renders elegant skeleton loaders on refresh, friendly empty stats cards if matching registrations do not exist, and clean, polite error banners rather than raw system error strings.
+- **Component Identifier**: `data-component-version="admin-demographics-approved-v1"`
+
+
+### Alarm Control and Sound Silence UI Specifications
+- **Takeover Urgent Alert Overlay**: Styled with a solid, high-priority dark backdrop with bright crimson warnings. Transitioning to 'Acknowledge' or 'Resolve' must immediately and visually clear the overlay.
+- **No Residual Loops**: Upon resolving or acknowledging, the repeating interval visualizer and handset vibration must terminate immediately to protect device stability.
+- **Quiet Initialization**: Initial load behaves passively; pre-existing alarms do not trigger loud sirens or active vibration patterns on initial render.
+
+
+### Messages Summary Statistics Visual Specifications
+- **Overview Grid Layout**: Displays a responsive 4-column metrics dashboard card layout.
+- **Clean Border Outlines**: Standardizes thin ivory border strokes (`border-[#EAE8E1]`) over a clean, warm background elevation (`bg-[#FAF9F6]`).
+- **Proof Indicators**: Employs `data-component-version="admin-updates-summary-api-v1-live"`, `data-component-version="admin-messages-summary-v2-live"`, and `data-component-version="admin-message-list-stats-sync-v1"` to verify real-time aggregates.
+
+
+
+
 
 
