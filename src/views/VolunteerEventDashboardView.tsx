@@ -3,7 +3,7 @@ import {
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
-  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell
+  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -335,6 +335,87 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [mySafetyAlerts, setMySafetyAlerts] = useState<any[]>([]);
   const [showMyAlertsView, setShowMyAlertsView] = useState(false);
 
+  // Team Safety Alert states
+  const [teamAlerts, setTeamAlerts] = useState<any[]>([]);
+  const [loadingTeamAlerts, setLoadingTeamAlerts] = useState(false);
+  const [teamAlertsTab, setTeamAlertsTab] = useState<'team' | 'all' | 'resolved'>('team');
+  const [resolvingTeamAlert, setResolvingTeamAlert] = useState<any | null>(null);
+  const [teamResolutionNote, setTeamResolutionNote] = useState('');
+  const [teamActionInProgress, setTeamActionInProgress] = useState<string | null>(null);
+
+  const fetchTeamSafetyAlerts = async (isQuiet = false) => {
+    if (!isQuiet) setLoadingTeamAlerts(true);
+    try {
+      const res = await api.volunteer.getTeamSafetyAlerts();
+      if (Array.isArray(res)) {
+        setTeamAlerts(res);
+      }
+    } catch (err) {
+      console.error('Failed to fetch team safety alerts:', err);
+    } finally {
+      setLoadingTeamAlerts(false);
+    }
+  };
+
+  const handleAcknowledgeTeamAlert = async (id: string) => {
+    resumeAudioContext();
+    setTeamActionInProgress(id);
+    try {
+      const res = await api.volunteer.acknowledgeSafetyAlert(id);
+      if (res.success) {
+        showSuccess('Alert Claimed', 'You have acknowledged and claimed responsibility for this request.');
+        fetchTeamSafetyAlerts(true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action Failed', parsed.message || 'Could not acknowledge this safety alert.');
+    } finally {
+      setTeamActionInProgress(null);
+    }
+  };
+
+  const handleEscalateTeamAlert = async (id: string) => {
+    resumeAudioContext();
+    setTeamActionInProgress(`escalate-${id}`);
+    try {
+      const res = await api.volunteer.escalateSafetyAlert(id);
+      if (res.success) {
+        showSuccess('Alert Escalated', 'Safety Alert has been escalated to Urgent priority.');
+        fetchTeamSafetyAlerts(true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Escalation Failed', parsed.message || 'Could not escalate this safety alert.');
+    } finally {
+      setTeamActionInProgress(null);
+    }
+  };
+
+  const handleResolveTeamAlertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingTeamAlert) return;
+    if (!teamResolutionNote.trim()) {
+      showError('Details Required', 'Please enter a brief note on how this situation was settled.');
+      return;
+    }
+
+    setTeamActionInProgress(`resolve-${resolvingTeamAlert.id}`);
+    try {
+      const res = await api.volunteer.resolveSafetyAlert(resolvingTeamAlert.id, teamResolutionNote.trim());
+      if (res.success) {
+        showSuccess('Request Settled', 'The care and safety request has been marked as resolved.');
+        setResolvingTeamAlert(null);
+        setTeamResolutionNote('');
+        fetchTeamSafetyAlerts(true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Resolution Failed', parsed.message || 'Could not resolve this safety alert.');
+    } finally {
+      setTeamActionInProgress(null);
+    }
+  };
+
   const fetchSafetyAlerts = async () => {
     try {
       const res = await api.volunteer.getSafetyAlerts();
@@ -587,6 +668,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  // Poll team-level safety alerts when active
+  useEffect(() => {
+    if (cleanRoute === '/volunteer/team-alerts') {
+      fetchTeamSafetyAlerts();
+      const interval = setInterval(() => {
+        fetchTeamSafetyAlerts(true);
+      }, 8000);
+      return () => clearInterval(interval);
+    }
+  }, [cleanRoute]);
 
   // Fetch directory children list based on search query and status filter
   const fetchChildrenDirectory = async () => {
@@ -5044,14 +5136,344 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         />
       )}
 
+      {cleanRoute === '/volunteer/team-alerts' && (
+        /* ==================== 6. VOLUNTEER TEAM SAFETY ALERTS VIEW ==================== */
+        <div className="min-h-screen bg-[#FAF9F6] text-[#18181B] pb-24" data-component-version="volunteer-team-alerts-ivory-v1">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-[#F5F3EC] to-[#EAE8E1] border-b border-[#EAE8E1] px-4 py-6 sm:px-6">
+            <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h1 className="font-serif text-2xl font-bold tracking-tight text-gray-900">
+                  Team Safety Desk
+                </h1>
+                <p className="text-xs text-zinc-500 font-medium mt-1">
+                  Active Room: <strong className="text-zinc-800">{volunteerProfile?.assignedArea || 'General Assembly'}</strong> &bull; Team: <strong className="text-[#C59B27]">{volunteerProfile?.assignedTeam || 'General Volunteer'}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => fetchTeamSafetyAlerts()}
+                disabled={loadingTeamAlerts}
+                className="self-start sm:self-center bg-white hover:bg-zinc-50 text-xs font-semibold px-4 py-2 border border-[#EAE8E1] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingTeamAlerts ? 'animate-spin' : ''}`} />
+                <span>Refresh Queue</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="max-w-4xl mx-auto px-4 mt-6 space-y-6">
+            {/* Filter Tabs */}
+            <div className="flex bg-[#F1EFE9] p-1 rounded-xl">
+              <button
+                onClick={() => setTeamAlertsTab('team')}
+                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  teamAlertsTab === 'team'
+                    ? 'bg-white text-[#C59B27] shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                My Team Alerts
+              </button>
+              <button
+                onClick={() => setTeamAlertsTab('all')}
+                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  teamAlertsTab === 'all'
+                    ? 'bg-white text-[#C59B27] shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                All Open
+              </button>
+              <button
+                onClick={() => setTeamAlertsTab('resolved')}
+                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  teamAlertsTab === 'resolved'
+                    ? 'bg-white text-[#C59B27] shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                Resolved
+              </button>
+            </div>
+
+            {/* List and Cards */}
+            {loadingTeamAlerts ? (
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center shadow-xs">
+                <div className="inline-block animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-[#C59B27] mb-3"></div>
+                <p className="text-xs text-zinc-400 font-medium">Checking room safety status...</p>
+              </div>
+            ) : (() => {
+              // Filtering logic based on tab
+              const filteredAlerts = teamAlerts.filter(alert => {
+                const isResolved = alert.status === 'resolved';
+                
+                if (teamAlertsTab === 'resolved') {
+                  return isResolved;
+                }
+                
+                // If we are looking for active alerts ('team' or 'all')
+                if (isResolved) return false;
+                
+                if (teamAlertsTab === 'team') {
+                  // Filter by purview category based on volunteer profile
+                  const pTeam = (volunteerProfile?.preferredTeam || '').toLowerCase();
+                  const pAssigned = (volunteerProfile?.assignedTeam || '').toLowerCase();
+                  const isCheckin = pTeam.includes('check-in') || pTeam.includes('entry') || pTeam.includes('gate') || pAssigned.includes('check-in') || pAssigned.includes('gate');
+                  const isPickup = pTeam.includes('pickup') || pTeam.includes('release') || pTeam.includes('checkout') || pAssigned.includes('pickup');
+                  
+                  if (isCheckin) {
+                    return ['pass_issue', 'security_concern', 'location_support'].includes(alert.category);
+                  } else if (isPickup) {
+                    return ['pickup_issue', 'child_care', 'other'].includes(alert.category);
+                  } else {
+                    return ['child_care', 'medical_support', 'location_support', 'other'].includes(alert.category);
+                  }
+                }
+                
+                return true; // 'all' tab returns all non-resolved alerts
+              });
+
+              if (filteredAlerts.length === 0) {
+                return (
+                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center shadow-xs space-y-3">
+                    <div className="w-10 h-10 bg-[#C59B27]/5 text-[#C59B27] rounded-full flex items-center justify-center mx-auto border border-[#C59B27]/10">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <h3 className="font-serif font-bold text-sm text-gray-900">All Clear</h3>
+                    <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                      No safety alerts reported in this category. Continue active monitoring of your station.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  {filteredAlerts.map(alert => {
+                    const isUrgent = alert.severity === 'urgent';
+                    const isImportant = alert.severity === 'important';
+                    const isAck = alert.status === 'acknowledged';
+
+                    return (
+                      <div
+                        key={alert.id}
+                        className={`bg-white border rounded-2xl p-4 shadow-xs relative overflow-hidden transition-all ${
+                          alert.status === 'resolved'
+                            ? 'border-zinc-200 opacity-70'
+                            : isUrgent
+                            ? 'border-red-200 bg-red-50/5'
+                            : 'border-[#EAE8E1]'
+                        }`}
+                      >
+                        {/* Status bar marker */}
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                          alert.status === 'resolved'
+                            ? 'bg-zinc-300'
+                            : isUrgent
+                            ? 'bg-rose-500 animate-pulse'
+                            : isImportant
+                            ? 'bg-amber-500'
+                            : 'bg-[#C59B27]'
+                        }`} />
+
+                        <div className="pl-1 space-y-3">
+                          {/* Alert Badge Info Row */}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`px-2 py-0.5 text-[8px] font-bold font-mono tracking-wider rounded-md uppercase ${
+                                isUrgent
+                                  ? 'bg-red-100 text-red-800'
+                                  : isImportant
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-zinc-100 text-zinc-800'
+                              }`}>
+                                {alert.severity} priority
+                              </span>
+                              <span className={`px-2 py-0.5 text-[8px] font-bold font-mono tracking-wider rounded-md uppercase ${
+                                alert.status === 'open'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                  : isAck
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              }`}>
+                                {alert.status === 'open' ? 'Waiting' : alert.status === 'acknowledged' ? 'Claimed' : 'Resolved'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" />
+                              {(() => {
+                                const diffMs = Date.now() - new Date(alert.created_at).getTime();
+                                const diffMins = Math.floor(diffMs / 60000);
+                                if (diffMins < 1) return 'Just now';
+                                if (diffMins === 1) return '1 min ago';
+                                return `${diffMins}m ago`;
+                              })()}
+                            </span>
+                          </div>
+
+                          {/* Content */}
+                          <div>
+                            <h3 className="font-serif font-bold text-sm text-gray-900">
+                              {alert.category ? alert.category.toUpperCase().replace(/_/g, ' ') : 'CARE REQUEST'}
+                            </h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">
+                              Raised by <strong className="text-zinc-800">{alert.raised_by_name || 'Volunteer'}</strong>
+                              {alert.location_label && <span> at <strong className="text-zinc-800">{alert.location_label}</strong></span>}
+                              {alert.child_name && <span> regarding child <strong className="text-zinc-800">{alert.child_name}</strong></span>}
+                            </p>
+                          </div>
+
+                          {alert.message && (
+                            <p className="text-xs italic bg-[#FAF9F6] border border-[#EAE8E1]/40 rounded-xl p-3 leading-relaxed text-zinc-600">
+                              "{alert.message}"
+                            </p>
+                          )}
+
+                          {alert.parent_name && alert.status !== 'resolved' && (
+                            <div className="text-[10px] bg-[#C59B27]/5 border border-[#C59B27]/10 rounded-xl px-3 py-1.5 text-[#C59B27] font-semibold w-fit">
+                              Parent: {alert.parent_name} ({alert.parent_phone || 'No phone'})
+                            </div>
+                          )}
+
+                          {alert.status === 'resolved' && alert.resolution_note && (
+                            <div className="text-xs bg-emerald-50/20 border border-emerald-100 text-emerald-900 p-3 rounded-xl space-y-1">
+                              <p className="font-bold flex items-center gap-1 text-[11px]">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                Settlement Note:
+                              </p>
+                              <p className="text-[11px] text-zinc-600">{alert.resolution_note}</p>
+                              {alert.resolved_by_name && (
+                                <p className="text-[9px] text-zinc-400">Resolved by {alert.resolved_by_name}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Action Panel for Active Alerts */}
+                          {alert.status !== 'resolved' && (
+                            <div className="flex flex-wrap gap-2.5 pt-1.5 border-t border-[#EAE8E1]/40">
+                              {!isAck && (
+                                <button
+                                  onClick={() => handleAcknowledgeTeamAlert(alert.id)}
+                                  disabled={teamActionInProgress !== null}
+                                  className="text-xs bg-[#C59B27] hover:bg-[#b58c22] text-white px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
+                                >
+                                  {teamActionInProgress === alert.id ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <UserCheck className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Acknowledge</span>
+                                </button>
+                              )}
+
+                              {isAck && (
+                                <button
+                                  onClick={() => { resumeAudioContext(); setResolvingTeamAlert(alert); }}
+                                  disabled={teamActionInProgress !== null}
+                                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Resolve Issue</span>
+                                </button>
+                              )}
+
+                              {!isUrgent && (
+                                <button
+                                  onClick={() => handleEscalateTeamAlert(alert.id)}
+                                  disabled={teamActionInProgress !== null}
+                                  className="text-[10px] text-red-700 border border-red-100 hover:bg-red-50 bg-white px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  {teamActionInProgress === `escalate-${alert.id}` ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <AlertTriangle className="w-3 h-3" />
+                                  )}
+                                  <span>Escalate to Admin</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* RESOLUTION DIALOG MODAL FOR TEAM ALERTS */}
+      {resolvingTeamAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            onClick={() => setResolvingTeamAlert(null)}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-[24px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
+              <h4 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
+                <Check className="w-5 h-5 text-emerald-600" />
+                Resolve Care Request
+              </h4>
+            </div>
+
+            <form onSubmit={handleResolveTeamAlertSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1 bg-[#FAF9F6] border border-[#EAE8E1]/60 p-3.5 rounded-xl text-zinc-600">
+                <p>Concern: <strong>{resolvingTeamAlert.category ? resolvingTeamAlert.category.toUpperCase().replace(/_/g, ' ') : 'CARE REQUEST'}</strong></p>
+                <p>Location: <strong>{resolvingTeamAlert.location_label || 'Not specified'}</strong></p>
+                {resolvingTeamAlert.child_name && <p>Child: <strong>{resolvingTeamAlert.child_name}</strong></p>}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-zinc-700 block">Resolution Action Notes</label>
+                <textarea
+                  value={teamResolutionNote}
+                  onChange={(e) => setTeamResolutionNote(e.target.value)}
+                  placeholder="Explain how this situation was settled (e.g. parent has been contacted and child is settled, Care Lead escorted child to rest zone)..."
+                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] hover:border-zinc-300 focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none min-h-[90px] resize-none transition-all placeholder:text-zinc-400 text-gray-900"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3.5 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setResolvingTeamAlert(null)}
+                  className="text-xs px-4 py-2 border-[#EAE8E1] cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={teamActionInProgress !== null}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 cursor-pointer"
+                >
+                  {teamActionInProgress === `resolve-${resolvingTeamAlert.id}` ? (
+                    <span className="flex items-center gap-1">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Resolving...
+                    </span>
+                  ) : (
+                    'Resolve'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Persistent Bottom Tab Bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-4 py-2 flex items-center justify-around z-20 shadow-lg" data-component-version="volunteer-bottom-nav-v2-stitch">
+      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-2 py-2 flex items-center justify-around z-20 shadow-lg" data-component-version="volunteer-bottom-nav-v2-stitch">
         <button
           onClick={() => onNavigate('/volunteer/event')}
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
         >
           <Calendar className="h-5 w-5" />
-          <span className="text-[10px] font-bold mt-1">Events</span>
+          <span className="text-[9px] font-bold mt-1">Events</span>
         </button>
         
         <button
@@ -5062,7 +5484,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/scan' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
         >
           <QrCode className="h-5 w-5" />
-          <span className="text-[10px] font-medium mt-1">Scan</span>
+          <span className="text-[9px] font-medium mt-1">Scan</span>
         </button>
 
         <button
@@ -5070,7 +5492,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/children' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
         >
           <Users className="h-5 w-5" />
-          <span className="text-[10px] font-medium mt-1">Children</span>
+          <span className="text-[9px] font-medium mt-1">Children</span>
         </button>
 
         <button
@@ -5078,15 +5500,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/reports' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
         >
           <BarChart3 className="h-5 w-5" />
-          <span className="text-[10px] font-medium mt-1">Reports</span>
+          <span className="text-[9px] font-medium mt-1">Reports</span>
         </button>
+
+        {volunteerProfile && (
+          <button
+            onClick={() => onNavigate('/volunteer/team-alerts')}
+            className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/team-alerts' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <ShieldAlert className="h-5 w-5" />
+            <span className="text-[9px] font-medium mt-1">Desk</span>
+          </button>
+        )}
 
         <button
           onClick={() => onNavigate('/volunteer/profile')}
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/profile' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
         >
           <User className="h-5 w-5" />
-          <span className="text-[10px] font-medium mt-1">Profile</span>
+          <span className="text-[9px] font-medium mt-1">Profile</span>
         </button>
       </div>
     </div>

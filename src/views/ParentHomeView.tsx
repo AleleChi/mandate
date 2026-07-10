@@ -104,6 +104,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
   const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
+  const [isVibrationOn, setIsVibrationOn] = useState<boolean>(true);
+  const [isWhatsAppOn, setIsWhatsAppOn] = useState<boolean>(true);
   const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(null);
   const [defaultEventHeroUrl, setDefaultEventHeroUrl] = useState<string | null>(null);
 
@@ -1820,6 +1822,55 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     Enable
                   </button>
                 )}
+              </div>
+
+              {/* Vibration alerts row */}
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E5D5AE]/30">
+                <div className="flex flex-col text-left">
+                  <span className="font-semibold text-[#18181B]">Device vibration</span>
+                  <span className="text-[10px] text-[#6B7280]">Tactile vibration on critical emergencies.</span>
+                </div>
+                <button
+                  onClick={() => {
+                    const nextVal = !isVibrationOn;
+                    setIsVibrationOn(nextVal);
+                    if (nextVal && navigator.vibrate) {
+                      navigator.vibrate([100, 50, 100]);
+                    }
+                    showSuccess('Vibration Preferences Saved', nextVal ? 'Tactile vibration is enabled.' : 'Vibration disabled.');
+                  }}
+                  data-component-version="parent-vibration-notification-toggle-v1"
+                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all ${
+                    isVibrationOn 
+                      ? 'bg-[#C59B27] text-white' 
+                      : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
+                  }`}
+                >
+                  {isVibrationOn ? 'On' : 'Off'}
+                </button>
+              </div>
+
+              {/* WhatsApp Mock Delivery row */}
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E5D5AE]/30">
+                <div className="flex flex-col text-left">
+                  <span className="font-semibold text-[#18181B]">WhatsApp Alerts (Mock)</span>
+                  <span className="text-[10px] text-[#6B7280]">Mirror safety notifications to WhatsApp.</span>
+                </div>
+                <button
+                  onClick={() => {
+                    const nextVal = !isWhatsAppOn;
+                    setIsWhatsAppOn(nextVal);
+                    showSuccess('WhatsApp Alerts Status', nextVal ? 'WhatsApp mock-mirroring enabled.' : 'WhatsApp mirroring disabled.');
+                  }}
+                  data-component-version="parent-whatsapp-notification-toggle-v1"
+                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all ${
+                    isWhatsAppOn 
+                      ? 'bg-[#C59B27] text-white' 
+                      : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
+                  }`}
+                >
+                  {isWhatsAppOn ? 'On' : 'Off'}
+                </button>
               </div>
             </div>
           </div>

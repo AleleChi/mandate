@@ -471,6 +471,25 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+    },
+    async getTeamSafetyAlerts() {
+      return api.request<any[]>('/api/volunteer/team-safety-alerts');
+    },
+    async acknowledgeSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/acknowledge`, {
+        method: 'POST'
+      });
+    },
+    async resolveSafetyAlert(id: string, note?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note })
+      });
+    },
+    async escalateSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/escalate`, {
+        method: 'POST'
+      });
     }
   },
 

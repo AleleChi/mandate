@@ -4037,7 +4037,7 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
     }
 
     const volProfile = await queryOne('SELECT status, full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
-    if (!volProfile || volProfile.status !== 'active') {
+    if (!volProfile || (volProfile.status !== 'active' && volProfile.status !== 'approved')) {
       return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
     }
 
@@ -4172,6 +4172,166 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
   } catch (err) {
     console.error('Create safety alert error:', err);
     res.status(500).json({ error: 'Internal server error creating safety alert' });
+  }
+});
+
+// GET /api/volunteer/team-safety-alerts
+router.get('/team-safety-alerts', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const volProfile = await queryOne('SELECT status FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    if (!volProfile || (volProfile.status !== 'active' && volProfile.status !== 'approved')) {
+      return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
+    }
+
+    const alerts = await query(`
+      SELECT a.*,
+             c.full_name as child_name,
+             c.photo_file_id as child_photo_file_id,
+             p_parent.full_name as parent_name,
+             p_parent.phone_number as parent_phone,
+             COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
+             COALESCE(p_ack.full_name, v_ack.full_name, 'Admin/Staff') as acknowledged_by_name,
+             COALESCE(p_res.full_name, v_res.full_name, 'Admin/Staff') as resolved_by_name
+      FROM event_safety_alerts a
+      LEFT JOIN children c ON a.child_id = c.id
+      LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
+      LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
+      LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
+      LEFT JOIN parent_profiles p_ack ON a.acknowledged_by = p_ack.user_id
+      LEFT JOIN volunteer_profiles v_ack ON a.acknowledged_by = v_ack.user_id
+      LEFT JOIN parent_profiles p_res ON a.resolved_by = p_res.user_id
+      LEFT JOIN volunteer_profiles v_res ON a.resolved_by = v_res.user_id
+      WHERE a.event_id = ?
+      ORDER BY 
+        CASE WHEN a.status = 'open' THEN 1
+             WHEN a.status = 'acknowledged' THEN 2
+             ELSE 3
+        END,
+        CASE WHEN a.severity = 'urgent' THEN 1
+             WHEN a.severity = 'important' THEN 2
+             ELSE 3
+        END,
+        a.created_at DESC
+    `, [REAL_EVENT_ID]);
+
+    res.json(alerts);
+  } catch (err) {
+    console.error('Get team safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to retrieve safety alerts' });
+  }
+});
+
+// POST /api/volunteer/safety-alerts/:id/acknowledge
+router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const volProfile = await queryOne('SELECT status FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    if (!volProfile || (volProfile.status !== 'active' && volProfile.status !== 'approved')) {
+      return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET status = 'acknowledged',
+          acknowledged_by = ?,
+          acknowledged_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, now, id]);
+
+    res.json({ success: true, message: 'Alert acknowledged.' });
+  } catch (err) {
+    console.error('Acknowledge safety alert error:', err);
+    res.status(500).json({ error: 'Failed to acknowledge safety alert' });
+  }
+});
+
+// POST /api/volunteer/safety-alerts/:id/resolve
+router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const volProfile = await queryOne('SELECT status FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    if (!volProfile || (volProfile.status !== 'active' && volProfile.status !== 'approved')) {
+      return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
+    }
+
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if ((alert.severity === 'important' || alert.severity === 'urgent') && (!note || !note.trim())) {
+      return res.status(400).json({ error: 'Please add a resolution note.' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, (note || 'Resolved by volunteer').trim(), now, id]);
+
+    res.json({ success: true, message: 'Alert resolved.' });
+  } catch (err) {
+    console.error('Resolve safety alert error:', err);
+    res.status(500).json({ error: 'Failed to resolve safety alert' });
+  }
+});
+
+// POST /api/volunteer/safety-alerts/:id/escalate
+router.post('/safety-alerts/:id/escalate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const volProfile = await queryOne('SELECT status FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    if (!volProfile || (volProfile.status !== 'active' && volProfile.status !== 'approved')) {
+      return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET severity = 'urgent',
+          updated_at = ?
+      WHERE id = ?
+    `, [now, id]);
+
+    res.json({ success: true, message: 'Alert escalated to urgent severity.' });
+  } catch (err) {
+    console.error('Escalate safety alert error:', err);
+    res.status(500).json({ error: 'Failed to escalate safety alert' });
   }
 });
 
