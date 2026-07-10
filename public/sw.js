@@ -153,7 +153,7 @@ self.addEventListener('push', (event) => {
     icon: '/favicon.ico',
     badge: '/favicon.ico',
     data: data.metadata || {},
-    vibrate: [100, 50, 100]
+    vibrate: [200, 100, 200, 100, 500]
   };
 
   event.waitUntil(
@@ -163,15 +163,34 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  
+  const notificationData = event.notification.data || {};
+  let targetUrl = notificationData.targetUrl || '/';
+  
+  // Ensure targetUrl is absolute for clients.navigate/openWindow
+  if (targetUrl.startsWith('/') && !targetUrl.startsWith('//')) {
+    targetUrl = self.location.origin + targetUrl;
+  } else if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+    targetUrl = self.location.origin + '/' + targetUrl;
+  }
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clientList) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url === '/' && 'focus' in client) {
-          return client.focus();
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          try {
+            client.focus();
+            if ('navigate' in client && targetUrl) {
+              return client.navigate(targetUrl);
+            }
+          } catch (e) {
+            console.error('Failed to focus/navigate:', e);
+          }
+          return;
         }
       }
       if (self.clients.openWindow) {
-        return self.clients.openWindow('/');
+        return self.clients.openWindow(targetUrl);
       }
     })
   );

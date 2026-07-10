@@ -687,4 +687,22 @@ We have successfully redesigned and polished the Attention Details modal into a 
 - All actions remain fully connected and update counts immediately across the application.
 
 
+## 16. Volunteer Navigation & Session Safety
+
+To ensure volunteers stay logged in and prevent accidental session clearing on event day:
+
+### A. Navigation & Session Retention
+- **Dashboard / Home Navigation**: Clicking the Compact Brand Logo or home icons in headers strictly routes to the volunteer event dashboard (`/volunteer/event`) and does not trigger logout or redirect to public landing pages.
+- **Route Whitelisting**: Added the Desk tab's route `/volunteer/team-alerts` to the matched volunteer routes switch statement in `src/App.tsx`, resolving the bug where clicking "Desk" would fall back to the default route and load `<LandingPage />`.
+- **Proof Attributes**:
+  - `data-component-version="volunteer-navigation-v3-safe-routing"` added to the bottom tab bar container.
+  - `data-component-version="volunteer-dashboard-icon-route-v2"` added to the "Desk" bottom nav button.
+
+### B. Separate Logout Actions
+- **Sign Out Button**: The logout handler has been completely isolated to the "Sign out" action inside the `VolunteerProfileView` component, ensuring clicking navigation tabs, headers, or home icons never clears session tokens or active cookies.
+- **Proof Attribute**:
+  - `data-component-version="volunteer-logout-action-v2-separated"` added to the "Sign out" button on the Volunteer Profile page.
+
+
+
 

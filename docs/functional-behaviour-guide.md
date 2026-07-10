@@ -233,6 +233,18 @@ To match Koinonia's premium brand experience, the Volunteer Attention Details mo
 - **Durable Endpoints**: Preserves full connectivity to live endpoints, ensuring counts and statuses update correctly for both volunteers and administrators.
 - **Safe Error Display**: Catches and maps raw technical errors or permission failures into user-facing, elegant banners (`data-component-version="volunteer-attention-safe-error-v2"`).
 
+## 18c. Volunteer Navigation & Session Safety
+To protect active sessions and prevent event-day disruptions:
+- **Volunteer Dashboard/Home Icons**: Home and Brand Logo icons in the header must strictly navigate back to the main volunteer dashboard `/volunteer/event`. They must never trigger logout/signOut actions or redirect to public landing pages.
+- **Volunteer Navigation Map**:
+  - Events Tab: `/volunteer/event`
+  - Scan Tab: `/volunteer/scan`
+  - Children Tab: `/volunteer/children`
+  - Reports Tab: `/volunteer/reports`
+  - Desk Tab: `/volunteer/team-alerts`
+  - Profile Tab: `/volunteer/profile`
+- **Logout Isolation**: Sign out / logout actions must be isolated exclusively to the designated "Sign out" button on the Volunteer Profile page. Clicking any navigation tabs, icons, or headers must never clear authentication tokens, modify session states, or clear localStorage/sessionStorage.
+
 ## 19. Admin Access & Event Command Centre
 - **Shortcut Entry**: Double-clicking (desktop) or double-tapping (mobile) the Koinonia logo on the Landing Page routes users directly to `/admin/sign-in`. This is an exclusive navigation shortcut and does not bypass authentication.
 - **Admin Password Reset**: Admins can request reset links via a dedicated admin recovery route `/admin/forgot-password`. Tokens expire in 1 hour and are single-use.

@@ -5,6 +5,7 @@ import multer from 'multer';
 import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
+import { sendWebPush } from '../services/push';
 import { sendEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia } from '../services/media/cloudinary';
@@ -5812,6 +5813,74 @@ router.post('/safety-alerts/:id/escalate', authMiddleware, async (req: Authentic
   } catch (err) {
     console.error('Escalate safety alert error:', err);
     res.status(500).json({ error: 'Failed to escalate safety alert' });
+  }
+});
+
+// POST /api/admin/alert-delivery/test-device
+router.post('/alert-delivery/test-device', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const testAlert = {
+      id: 'test_device_alert_id_' + Date.now(),
+      isTest: true,
+      event_id: REAL_EVENT_ID,
+      severity: 'urgent',
+      status: 'open',
+      category: 'TEST_ALERT',
+      title: 'Emergency Sound & Vibration Test',
+      message: 'This is an honest safety delivery test alert. If active sound & vibration are enabled, your browser will trigger them now. Please keep this application open on duty devices for best protection.',
+      location_label: 'Main Gate & Care HQ',
+      child_id: null,
+      child_name: 'System Test Record',
+      raised_by_user_id: req.user.id,
+      raised_by_name: 'Event Safety Monitor',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // Attempt to send physical push notification if subscriptions exist
+    let pushResult = null;
+    try {
+      pushResult = await sendWebPush(req.user.id, {
+        title: 'Urgent help needed',
+        body: 'A volunteer requested admin support. (This is a safety delivery test)',
+        metadata: {
+          targetUrl: '/#/admin?alertId=' + testAlert.id,
+          isTest: true
+        }
+      });
+    } catch (e) {
+      console.error('Failed to send web push in test-device alert:', e);
+    }
+
+    let pushSent = false;
+    let feedbackMessage = 'Test alert sent to this device.';
+
+    if (pushResult) {
+      if (pushResult.sentCount > 0) {
+        pushSent = true;
+        feedbackMessage = 'Test alert sent to this device.';
+      } else if (pushResult.error) {
+        feedbackMessage = 'We could not send a push notification to this device. Please check browser permission and push setup.';
+      } else {
+        feedbackMessage = 'In-app test worked, but push is not connected.';
+      }
+    } else {
+      feedbackMessage = 'In-app test worked, but push is not connected.';
+    }
+
+    res.json({
+      success: true,
+      message: feedbackMessage,
+      pushSent,
+      alert: testAlert
+    });
+  } catch (err) {
+    console.error('Test device alert error:', err);
+    res.status(500).json({ error: 'Failed to dispatch device test alert' });
   }
 });
 

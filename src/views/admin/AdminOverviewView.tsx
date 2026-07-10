@@ -474,7 +474,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         });
         setRecentSubmissions(res.recentSubmissions || []);
         if (isRefresh) {
-          showSuccess('Synchronized', 'Dashboard analytics refreshed.');
+          showSuccess('Refreshed', 'Dashboard analytics updated successfully.');
         }
       }
     } catch (err: any) {
@@ -1664,7 +1664,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           >
                             <div className="flex items-center justify-between pb-1">
                               <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
-                                Care & Safety Audit Log
+                                Care & Safety Audit Records
                               </span>
                               <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
                                 {safetyAlerts.length} total
@@ -1673,7 +1673,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                               {safetyAlerts.length === 0 ? (
-                                <p className="text-xs text-zinc-400 text-center py-4 font-sans">No safety logs registered.</p>
+                                <p className="text-xs text-zinc-400 text-center py-4 font-sans">No safety records registered.</p>
                               ) : (
                                 safetyAlerts.map((log: any) => {
                                   const isResolved = log.status === 'resolved';
@@ -1744,6 +1744,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminSettingsView 
               onBackToOverview={() => handleTabChange('overview')}
               isSuperAdmin={isSuperAdmin}
+              onTriggerTestAlert={(testAlert) => {
+                setActiveUrgentAlert(testAlert);
+              }}
             />
           )}
 
@@ -2093,7 +2096,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {activeUrgentAlert && (
         <div 
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-red-950/95 backdrop-blur-md animate-fade-in text-white"
-          data-view-version="urgent-alert-overlay-v1"
+          data-view-version="admin-urgent-alert-overlay-v2-active-device"
         >
           <div className="w-full max-w-2xl bg-zinc-900 border-2 border-red-500/80 rounded-[32px] p-8 space-y-6 shadow-2xl relative overflow-hidden">
             {/* Pulsing decoration circle */}
@@ -2112,10 +2115,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </div>
               <div className="space-y-1">
                 <h2 className="text-2xl font-serif font-black tracking-tight text-red-500 uppercase">
-                  CRITICAL URGENT ALERT
+                  {activeUrgentAlert.isTest ? '⚠️ SAFETY READINESS TEST ⚠️' : 'CRITICAL URGENT ALERT'}
                 </h2>
                 <p className="text-xs text-zinc-400 font-sans tracking-wide">
-                  IMMEDIATE ACTION REQUIRED BY AVAILABLE ADMINS/CARE LEADS
+                  {activeUrgentAlert.isTest 
+                    ? 'TESTING ACTIVE DEVICE SOUND, VIBRATION, AND OVERLAY CHANNELS' 
+                    : 'IMMEDIATE ACTION REQUIRED BY AVAILABLE ADMINS/CARE LEADS'}
                 </p>
               </div>
             </div>
@@ -2163,11 +2168,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 <div className="pt-4 flex flex-col gap-3 relative z-10">
                   <button
                     onClick={async () => {
+                      if (activeUrgentAlert.isTest) {
+                        setActiveUrgentAlert({ ...activeUrgentAlert, status: 'acknowledged' });
+                        showSuccess('Test Acknowledged', 'Local browser test marked as acknowledged.');
+                        return;
+                      }
                       try {
                         const res = await api.admin.acknowledgeSafetyAlert(activeUrgentAlert.id);
                         if (res && res.success) {
                           showSuccess('Acknowledged', 'marked as acknowledged.');
-                          // Refresh safety alerts
                           fetchSafetyAlerts();
                         }
                       } catch (err) {
@@ -2218,6 +2227,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       onClick={async () => {
                         if (!resolutionNote.trim()) {
                           showError('Required', 'Please add a resolution note.');
+                          return;
+                        }
+                        if (activeUrgentAlert.isTest) {
+                          setActiveUrgentAlert(null);
+                          setResolutionNote('');
+                          showSuccess('Test Resolved', 'Device readiness test completed successfully.');
                           return;
                         }
                         try {

@@ -24,28 +24,58 @@ import {
   Upload,
   Trash2,
   Bell,
-  Volume2
+  Volume2,
+  Activity,
+  TrendingUp,
+  Play
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
 import { AdminLandingView } from './AdminLandingView';
 import { SafeImage } from '../../components/common/SafeImage';
 import { playSound, resumeAudioContext } from '../../utils/sound';
+import { subscribeUserToPush } from '../../utils/pushSubscription';
 
 interface AdminSettingsViewProps {
   onBackToOverview?: () => void;
   isSuperAdmin: boolean;
+  onTriggerTestAlert?: (testAlert: any) => void;
 }
 
 export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ 
   onBackToOverview,
-  isSuperAdmin
+  isSuperAdmin,
+  onTriggerTestAlert
 }) => {
   // General State
   const [loading, setLoading] = useState(true);
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [savingMessages, setSavingMessages] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
+
+  // Fallback Escalation Rule State
+  const [fallbackRule, setFallbackRule] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_urgent_alert_fallback') || 'Off';
+    }
+    return 'Off';
+  });
+
+  const [lastTestTime, setLastTestTime] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_last_test_time') || 'Never';
+    }
+    return 'Never';
+  });
+
+  const [lastTestStatus, setLastTestStatus] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_last_test_status') || 'No test run yet';
+    }
+    return 'No test run yet';
+  });
+
+  const [isTestingDevice, setIsTestingDevice] = useState(false);
   
   // Tab/Active Panel State inside Settings
   const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media'>('parent-access');
@@ -137,6 +167,56 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     return false;
   });
 
+  // Push Subscription & Permission States
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() => {
+    if (typeof Notification !== 'undefined') {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+  const [pushConnected, setPushConnected] = useState(false);
+  const [isSubscribingPush, setIsSubscribingPush] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState('');
+  const [isVapidConfigured, setIsVapidConfigured] = useState<boolean | null>(null);
+  const [isSwRegistered, setIsSwRegistered] = useState(false);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      // 1. Check Service Worker Registration
+      if ('serviceWorker' in navigator) {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          setIsSwRegistered(regs.length > 0);
+        } catch (e) {
+          console.warn('SW registration check failed:', e);
+        }
+      }
+
+      // 2. Check Push subscription on ready sw
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          if (reg && reg.pushManager) {
+            const sub = await reg.pushManager.getSubscription();
+            setPushConnected(!!sub);
+          }
+        } catch (e) {
+          console.warn('Push subscription check failed:', e);
+        }
+      }
+
+      // 3. Fetch VAPID key configured state
+      try {
+        const { publicKey } = await api.parent.getVapidPublicKey();
+        setIsVapidConfigured(!!publicKey);
+      } catch (err) {
+        console.error('Failed to query VAPID key:', err);
+        setIsVapidConfigured(false);
+      }
+    };
+    checkStatus();
+  }, []);
+
   // Cover Media Settings State
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({
     parent_dashboard_hero: '',
@@ -225,7 +305,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
     } catch (err: any) {
       console.error('Failed to load settings data:', err);
-      showFeedback('Failed to retrieve settings profiles from the database.', 'error');
+      showFeedback('Failed to retrieve settings profiles from secure server storage.', 'error');
     } finally {
       setLoading(false);
     }
@@ -401,6 +481,102 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     localStorage.setItem('koinonia_sound_enabled', String(deviceSound));
 
     showFeedback('Device alert preferences saved.');
+  };
+
+  const handleEnablePushNotifications = async () => {
+    setPushFeedback('');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushFeedback('Browser notifications are not supported on this device.');
+      return;
+    }
+
+    setIsSubscribingPush(true);
+    try {
+      const res = await subscribeUserToPush();
+      if (res.success) {
+        setPushConnected(true);
+        setDevicePush(true);
+        localStorage.setItem('koinonia_device_push', 'true');
+        if (typeof Notification !== 'undefined') {
+          setPushPermission(Notification.permission);
+        }
+        setPushFeedback('');
+        showFeedback('Browser notifications successfully enabled and registered!');
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          setIsSwRegistered(regs.length > 0);
+        }
+      } else {
+        setPushConnected(false);
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          setPushFeedback('Notifications are blocked for this browser. Please allow notifications in your browser settings.');
+        } else {
+          setPushFeedback(res.error || 'Failed to complete registration.');
+        }
+      }
+    } catch (err: any) {
+      console.error('Push enabling error:', err);
+      setPushFeedback(err.message || 'An unexpected error occurred during subscription.');
+    } finally {
+      setIsSubscribingPush(false);
+    }
+  };
+
+  const handleSendTestAlert = async () => {
+    setIsTestingDevice(true);
+    try {
+      const res = await api.admin.testDeviceAlert();
+      
+      if (res && res.success && res.alert) {
+        const nowStr = new Date().toLocaleTimeString();
+        setLastTestTime(nowStr);
+        setLastTestStatus(res.message || 'Success (Triggered)');
+        localStorage.setItem('koinonia_last_test_time', nowStr);
+        localStorage.setItem('koinonia_last_test_status', res.message || 'Success (Triggered)');
+
+        showFeedback(res.message || 'Safe test alert triggered! Check overlay/sound/vibe.');
+
+        if (deviceSound) {
+          try {
+            resumeAudioContext();
+            playSound('alert');
+          } catch (e) {
+            console.warn('Sound play failed on test alert:', e);
+          }
+        }
+
+        if (deviceVibration && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          try {
+            navigator.vibrate([200, 100, 200, 100, 500]);
+          } catch (e) {
+            console.warn('Vibration failed on test alert:', e);
+          }
+        }
+
+        if (onTriggerTestAlert) {
+          onTriggerTestAlert(res.alert);
+        }
+      } else {
+        const errMessage = res?.message || 'Failed to dispatch device test alert.';
+        setLastTestStatus(`Failed: ${errMessage}`);
+        localStorage.setItem('koinonia_last_test_status', `Failed: ${errMessage}`);
+        showFeedback(errMessage, 'error');
+      }
+    } catch (err: any) {
+      console.error('Error triggering test alert:', err);
+      const errMessage = err?.message || 'Network error dispatching test alert.';
+      setLastTestStatus(`Failed: ${errMessage}`);
+      localStorage.setItem('koinonia_last_test_status', `Failed: ${errMessage}`);
+      showFeedback('Could not dispatch test alert: ' + errMessage, 'error');
+    } finally {
+      setIsTestingDevice(false);
+    }
+  };
+
+  const handleFallbackRuleChange = (val: string) => {
+    setFallbackRule(val);
+    localStorage.setItem('koinonia_urgent_alert_fallback', val);
+    showFeedback(`Fallback rule updated: Escalate after ${val}.`);
   };
 
   // Invite Team Member
@@ -1508,360 +1684,656 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
             {activeSubTab === 'alert-delivery' && (
               <div 
                 className="grid grid-cols-1 lg:grid-cols-2 gap-8"
-                data-view-version="admin-alert-delivery-settings-v1"
+                data-view-version="admin-alert-delivery-settings-v2"
               >
-                {/* CARD 1: GLOBAL ALERT ROUTING RULES */}
-                <div 
-                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
-                  data-component-version="admin-alert-delivery-rules-v1"
-                >
-                  <div className="space-y-6">
-                    <div className="border-b border-[#EAE8E1] pb-4">
-                      <div className="flex items-center space-x-2.5">
-                        <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
-                          <ShieldAlert className="w-5 h-5" />
+                {/* COLUMN 1: GLOBAL ALERT CONTEXT & ROUTING RULES */}
+                <div className="space-y-8">
+                  {/* CARD 1: GLOBAL ALERT ROUTING RULES */}
+                  <div 
+                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    data-component-version="admin-alert-delivery-rules-v1"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-medium text-[#18181B] text-base">Global alert routing rules</h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="font-serif font-medium text-[#18181B] text-base">Global alert routing rules</h3>
-                          <p className="text-xs text-zinc-500 mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
+                      </div>
+
+                      {/* Section 1: Who Receives Urgent Alerts */}
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">1. Recipient roles</h4>
+                        <p className="text-[11px] text-zinc-400 mt-1">Select the active management roles that should receive urgent escalated alerts.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                          {Object.entries(recipientRoles).map(([role, checked]) => {
+                            const labelMap: Record<string, string> = {
+                              super_admin: 'Super administrators',
+                              admin: 'Admins & registrars',
+                              care_lead: 'Care leads & coordinators',
+                              gate_lead: 'Gate/check-in leads',
+                              pickup_lead: 'Pickup safety coordinators'
+                            };
+                            return (
+                              <button
+                                key={role}
+                                type="button"
+                                onClick={() => setRecipientRoles(prev => ({ ...prev, [role]: !checked }))}
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                              >
+                                <div className="text-zinc-500">
+                                  {checked ? (
+                                    <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                  ) : (
+                                    <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700">{labelMap[role] || role}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Section 2: Alert Categories */}
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">2. Routed categories</h4>
+                        <p className="text-[11px] text-zinc-400 mt-1">Active event concern classifications subject to this routing profile.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                          {Object.entries(alertCategories).map(([cat, checked]) => {
+                            const labelMap: Record<string, string> = {
+                              child_care: 'Child care concern',
+                              pickup_issue: 'Pickup issue',
+                              pass_issue: 'Pass/check-in issue',
+                              medical_support: 'Medical support',
+                              security_concern: 'Security concern',
+                              general_help: 'General care support'
+                            };
+                            return (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setAlertCategories(prev => ({ ...prev, [cat]: !checked }))}
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                              >
+                                <div className="text-zinc-500">
+                                  {checked ? (
+                                    <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                  ) : (
+                                    <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700">{labelMap[cat] || cat}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Section 3: Delivery Methods */}
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">3. Delivery channels</h4>
+                        <p className="text-[11px] text-zinc-400 mt-1">Authorized channels for transmitting active real-time safety alerts.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                          {Object.entries(deliveryMethods).map(([method, checked]) => {
+                            const labelMap: Record<string, string> = {
+                              in_app: 'In-app notification banner',
+                              urgent_screen: 'Urgent screen takeover',
+                              sound: 'Synthesized audio sound',
+                              vibration: 'Physical vibration pulse',
+                              push: 'Secure push notification',
+                              email_fallback: 'Email fallback digest'
+                            };
+                            return (
+                              <button
+                                key={method}
+                                type="button"
+                                onClick={() => setDeliveryMethods(prev => ({ ...prev, [method]: !checked }))}
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                              >
+                                <div className="text-zinc-500">
+                                  {checked ? (
+                                    <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                  ) : (
+                                    <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700">{labelMap[method] || method}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Section 4: Severity-based Routing Rules */}
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">4. Severity-based routing rules</h4>
+                        <div className="border border-zinc-100 rounded-xl overflow-hidden divide-y divide-zinc-50">
+                          <div className="p-3 bg-zinc-50/50 flex justify-between text-[11px] font-semibold text-zinc-500">
+                            <span>SEVERITY LEVEL</span>
+                            <span>ROUTING ACTION</span>
+                          </div>
+                          <div className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-zinc-800">🟢 Normal</span>
+                            <span className="text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-lg text-[10px]">Bell notification only</span>
+                          </div>
+                          <div className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-amber-600">🟡 Important</span>
+                            <span className="text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-amber-100/50">Bell + Sound Chime</span>
+                          </div>
+                          <div className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-red-600">🔴 Urgent</span>
+                            <span className="text-red-600 bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50">Bell + Full Overlay + Sound + Vibe + Push</span>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Section 1: Who Receives Urgent Alerts */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">1. Recipient roles</h4>
-                      <p className="text-[11px] text-zinc-400 mt-1">Select the active management roles that should receive urgent escalated alerts.</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                        {Object.entries(recipientRoles).map(([role, checked]) => {
-                          const labelMap: Record<string, string> = {
-                            super_admin: 'Super administrators',
-                            admin: 'Admins & registrars',
-                            care_lead: 'Care leads & coordinators',
-                            gate_lead: 'Gate/check-in leads',
-                            pickup_lead: 'Pickup safety coordinators'
-                          };
-                          return (
-                            <button
-                              key={role}
-                              type="button"
-                              onClick={() => setRecipientRoles(prev => ({ ...prev, [role]: !checked }))}
-                              className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
-                            >
-                              <div className="text-zinc-500">
-                                {checked ? (
-                                  <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
-                                ) : (
-                                  <Square className="w-4.5 h-4.5 text-zinc-300" />
-                                )}
-                              </div>
-                              <span className="text-xs font-medium text-zinc-700">{labelMap[role] || role}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Section 2: Alert Categories */}
-                    <div className="space-y-3 pt-2">
-                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">2. Routed categories</h4>
-                      <p className="text-[11px] text-zinc-400 mt-1">Active event concern classifications subject to this routing profile.</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                        {Object.entries(alertCategories).map(([cat, checked]) => {
-                          const labelMap: Record<string, string> = {
-                            child_care: 'Child care concern',
-                            pickup_issue: 'Pickup issue',
-                            pass_issue: 'Pass/check-in issue',
-                            medical_support: 'Medical support',
-                            security_concern: 'Security concern',
-                            general_help: 'General care support'
-                          };
-                          return (
-                            <button
-                              key={cat}
-                              type="button"
-                              onClick={() => setAlertCategories(prev => ({ ...prev, [cat]: !checked }))}
-                              className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
-                            >
-                              <div className="text-zinc-500">
-                                {checked ? (
-                                  <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
-                                ) : (
-                                  <Square className="w-4.5 h-4.5 text-zinc-300" />
-                                )}
-                              </div>
-                              <span className="text-xs font-medium text-zinc-700">{labelMap[cat] || cat}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Section 3: Delivery Methods */}
-                    <div className="space-y-3 pt-2">
-                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">3. Delivery channels</h4>
-                      <p className="text-[11px] text-zinc-400 mt-1">Authorized channels for transmitting active real-time safety alerts.</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                        {Object.entries(deliveryMethods).map(([method, checked]) => {
-                          const labelMap: Record<string, string> = {
-                            in_app: 'In-app notification banner',
-                            urgent_screen: 'Urgent screen takeover',
-                            sound: 'Synthesized audio sound',
-                            vibration: 'Physical vibration pulse',
-                            push: 'Secure push notification',
-                            email_fallback: 'Email fallback digest'
-                          };
-                          return (
-                            <button
-                              key={method}
-                              type="button"
-                              onClick={() => setDeliveryMethods(prev => ({ ...prev, [method]: !checked }))}
-                              className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
-                            >
-                              <div className="text-zinc-500">
-                                {checked ? (
-                                  <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
-                                ) : (
-                                  <Square className="w-4.5 h-4.5 text-zinc-300" />
-                                )}
-                              </div>
-                              <span className="text-xs font-medium text-zinc-700">{labelMap[method] || method}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Section 4: Severity-based Routing Rules */}
-                    <div className="space-y-3 pt-2">
-                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">4. Severity-based routing rules</h4>
-                      <div className="border border-zinc-100 rounded-xl overflow-hidden divide-y divide-zinc-50">
-                        <div className="p-3 bg-zinc-50/50 flex justify-between text-[11px] font-semibold text-zinc-500">
-                          <span>SEVERITY LEVEL</span>
-                          <span>ROUTING ACTION</span>
-                        </div>
-                        <div className="p-3 flex justify-between items-center text-xs">
-                          <span className="font-medium text-zinc-800">🟢 Normal</span>
-                          <span className="text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-lg text-[10px]">Bell notification only</span>
-                        </div>
-                        <div className="p-3 flex justify-between items-center text-xs">
-                          <span className="font-medium text-amber-600">🟡 Important</span>
-                          <span className="text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-amber-100/50">Bell + Sound Chime</span>
-                        </div>
-                        <div className="p-3 flex justify-between items-center text-xs">
-                          <span className="font-medium text-red-600">🔴 Urgent</span>
-                          <span className="text-red-600 bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50">Bell + Full Overlay + Sound + Vibe + Push</span>
-                        </div>
-                      </div>
+                    <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={handleSaveAlertDeliverySettings}
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Save Global Rules</span>
+                      </Button>
                     </div>
                   </div>
 
-                  <div className="border-t border-zinc-100 pt-5 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      onClick={handleSaveAlertDeliverySettings}
-                      className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>Save Global Rules</span>
-                    </Button>
+                  {/* CARD 4: FALLBACK ESCALATION RULE */}
+                  <div 
+                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    data-component-version="urgent-alert-fallback-rule-v1"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                            <TrendingUp className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-medium text-[#18181B] text-base">Unresolved Escalation Fallback</h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">Automatically escalate unresolved critical alerts if left unacknowledged.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 text-xs">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-zinc-700 block">
+                            Escalate if urgent alert is not acknowledged after:
+                          </label>
+                          <select
+                            value={fallbackRule}
+                            onChange={(e) => handleFallbackRuleChange(e.target.value)}
+                            className="w-full bg-[#FAF9F6] border border-[#EAE8E1] hover:border-zinc-300 focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none transition-all cursor-pointer"
+                          >
+                            <option value="Off">Off</option>
+                            <option value="1 minute">1 minute</option>
+                            <option value="2 minutes">2 minutes</option>
+                            <option value="5 minutes">5 minutes</option>
+                          </select>
+                          <p className="text-[10px] text-zinc-400 mt-1">
+                            If enabled, the safety tracking service monitors open urgent alerts and broadcasts a second-wave high priority notification to all active care channels if the initial dispatcher does not respond.
+                          </p>
+                        </div>
+
+                        <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-semibold uppercase block">SMS & WhatsApp Fallback Channel</span>
+                          <p className="text-[11px] text-zinc-500 leading-relaxed">
+                            External fallback is not connected yet.
+                          </p>
+                          <p className="text-[10px] text-zinc-400 leading-normal">
+                            Secure SMS gateways must be registered via Settings &gt; Message Channels first.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* CARD 2: DEVICE-SPECIFIC ALERT PREFERENCES */}
-                <div 
-                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
-                  data-component-version="device-alert-preferences-v1"
-                >
-                  <div className="space-y-6">
-                    <div className="border-b border-[#EAE8E1] pb-4">
-                      <div className="flex items-center space-x-2.5">
-                        <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
-                          <Bell className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-serif font-medium text-[#18181B] text-base">This device alert preferences</h3>
-                          <p className="text-xs text-zinc-500 mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
+                {/* COLUMN 2: DEVICE-SPECIFIC SETTINGS & REAL-TIME READINESS */}
+                <div className="space-y-8">
+                  {/* CARD 2: DEVICE-SPECIFIC ALERT PREFERENCES */}
+                  <div 
+                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    data-component-version="device-alert-preferences-v1"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                            <Bell className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-medium text-[#18181B] text-base">This device alert preferences</h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Toggle: Receive alerts */}
-                    <div className="flex items-center justify-between p-4 bg-zinc-50/50 border border-zinc-100 rounded-xl">
-                      <div className="space-y-0.5 pr-4">
-                        <span className="text-xs font-semibold text-zinc-800">Receive safety alerts on this device</span>
-                        <p className="text-[10px] text-zinc-400">Enable or disable all real-time visual and audio alerts on this browser.</p>
+                      {/* Toggle: Receive alerts */}
+                      <div className="flex items-center justify-between p-4 bg-zinc-50/50 border border-zinc-100 rounded-xl">
+                        <div className="space-y-0.5 pr-4">
+                          <span className="text-xs font-semibold text-zinc-800">Receive safety alerts on this device</span>
+                          <p className="text-[10px] text-zinc-400">Enable or disable all real-time visual and audio alerts on this browser.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDeviceReceiveUrgent(!deviceReceiveUrgent)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {deviceReceiveUrgent ? (
+                            <ToggleRight className="w-10 h-10 text-[#C59B27]" />
+                          ) : (
+                            <ToggleLeft className="w-10 h-10 text-zinc-300" />
+                          )}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setDeviceReceiveUrgent(!deviceReceiveUrgent)}
-                        className="focus:outline-none cursor-pointer"
-                      >
-                        {deviceReceiveUrgent ? (
-                          <ToggleRight className="w-10 h-10 text-[#C59B27]" />
-                        ) : (
-                          <ToggleLeft className="w-10 h-10 text-zinc-300" />
-                        )}
-                      </button>
-                    </div>
 
-                    {/* Only show sub-settings if alerts are enabled on this device */}
-                    <div className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                      <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">Device Delivery Preferences</h4>
-                      
-                      {/* Sound Preference */}
-                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-medium text-zinc-800 flex items-center space-x-1.5">
-                            <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
-                            <span>Play alert sound</span>
-                          </span>
-                          <p className="text-[10px] text-zinc-400">Plays synthesized major chord chimes during critical alert events.</p>
+                      {/* Only show sub-settings if alerts are enabled on this device */}
+                      <div className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">Device Delivery Preferences</h4>
+                        
+                        {/* Sound Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 flex items-center space-x-1.5">
+                              <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
+                              <span>Play alert sound</span>
+                            </span>
+                            <p className="text-[10px] text-zinc-400">Plays synthesized major chord chimes during critical alert events.</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resumeAudioContext();
+                                playSound('alert');
+                              }}
+                              className="mt-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-[#C59B27] border border-[#C59B27]/30 rounded text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
+                              title="Test alert sound trigger"
+                            >
+                              <Volume2 className="w-3 h-3" />
+                              <span>Test Alert Sound</span>
+                            </button>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => {
-                              resumeAudioContext();
-                              playSound('alert');
-                            }}
-                            className="mt-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-[#C59B27] border border-[#C59B27]/30 rounded text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
-                            title="Test alert sound trigger"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceSound(!deviceSound)}
+                            className="focus:outline-none cursor-pointer"
                           >
-                            <Volume2 className="w-3 h-3" />
-                            <span>Test Alert Sound</span>
+                            {deviceSound ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                            )}
                           </button>
                         </div>
-                        <button
-                          type="button"
-                          disabled={!deviceReceiveUrgent}
-                          onClick={() => setDeviceSound(!deviceSound)}
-                          className="focus:outline-none cursor-pointer"
-                        >
-                          {deviceSound ? (
-                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
-                          ) : (
-                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
-                          )}
-                        </button>
-                      </div>
 
-                      {/* Urgent Alerts Only Toggle */}
-                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-medium text-zinc-800">Urgent alerts only</span>
-                          <p className="text-[10px] text-zinc-400">Filter out normal/important concern alerts; only notify for absolute urgent status items.</p>
+                        {/* Urgent Alerts Only Toggle */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800">Urgent alerts only</span>
+                            <p className="text-[10px] text-zinc-400">Filter out normal/important concern alerts; only notify for absolute urgent status items.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceUrgentOnly(!deviceUrgentOnly)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceUrgentOnly ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                            )}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          disabled={!deviceReceiveUrgent}
-                          onClick={() => setDeviceUrgentOnly(!deviceUrgentOnly)}
-                          className="focus:outline-none cursor-pointer"
-                        >
-                          {deviceUrgentOnly ? (
-                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
-                          ) : (
-                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
-                          )}
-                        </button>
-                      </div>
 
-                      {/* Vibration Preference */}
-                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-medium text-zinc-800">Vibration physical feedback</span>
-                          <p className="text-[10px] text-zinc-400">Fires the physical device vibration motor for incoming events.</p>
-                          {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') && (
-                            <p className="text-[9px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-100/30 w-fit mt-1">
-                              Vibration is not supported on this device.
-                            </p>
-                          )}
+                        {/* Vibration Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800">Vibration physical feedback</span>
+                            <p className="text-[10px] text-zinc-400">Fires the physical device vibration motor for incoming events.</p>
+                            {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') && (
+                              <p className="text-[9px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-100/30 w-fit mt-1">
+                                Vibration is not supported on this device.
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent || !(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')}
+                            onClick={() => setDeviceVibration(!deviceVibration)}
+                            className={`focus:outline-none cursor-pointer ${!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? 'opacity-30' : ''}`}
+                          >
+                            {deviceVibration && (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                            )}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          disabled={!deviceReceiveUrgent || !(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')}
-                          onClick={() => setDeviceVibration(!deviceVibration)}
-                          className={`focus:outline-none cursor-pointer ${!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? 'opacity-30' : ''}`}
-                        >
-                          {deviceVibration && (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
-                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
-                          ) : (
-                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
-                          )}
-                        </button>
-                      </div>
 
-                      {/* Urgent overlay Preference */}
-                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-medium text-zinc-800">Show urgent pop-up overlay</span>
-                          <p className="text-[10px] text-zinc-400">Triggers a persistent critical takeover modal requiring manual clearance.</p>
+                        {/* Urgent overlay Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800">Show urgent pop-up overlay</span>
+                            <p className="text-[10px] text-zinc-400">Triggers a persistent critical takeover modal requiring manual clearance.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceShowPopup(!deviceShowPopup)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceShowPopup ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                            )}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          disabled={!deviceReceiveUrgent}
-                          onClick={() => setDeviceShowPopup(!deviceShowPopup)}
-                          className="focus:outline-none cursor-pointer"
-                        >
-                          {deviceShowPopup ? (
-                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
-                          ) : (
-                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
-                          )}
-                        </button>
-                      </div>
 
-                      {/* Repeat urgent alarm Preference */}
-                      <div className="flex items-center justify-between py-2 border-b border-zinc-100">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-medium text-zinc-800">Repeat urgent alert until acknowledged</span>
-                          <p className="text-[10px] text-zinc-400">Continuously repeats synthesized sound and pulse alerts until cleared.</p>
+                        {/* Repeat urgent alarm Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800">Repeat urgent alert until acknowledged</span>
+                            <p className="text-[10px] text-zinc-400">Continuously repeats synthesized sound and pulse alerts until cleared.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceRepeatUrgent(!deviceRepeatUrgent)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceRepeatUrgent ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                            )}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          disabled={!deviceReceiveUrgent}
-                          onClick={() => setDeviceRepeatUrgent(!deviceRepeatUrgent)}
-                          className="focus:outline-none cursor-pointer"
-                        >
-                          {deviceRepeatUrgent ? (
-                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
-                          ) : (
-                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
-                          )}
-                        </button>
-                      </div>
 
-                      {/* Push & SMS alerts Preference */}
-                      <div className="flex items-center justify-between py-2">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-medium text-zinc-800">Browser push & SMS notifications</span>
-                          <p className="text-[10px] text-zinc-400">Fires web push alerts or triggers emergency SMS fallback if permitted and configured.</p>
+                        {/* Push & SMS alerts Preference */}
+                        <div className="flex items-center justify-between py-2">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800">Browser push notifications</span>
+                            <p className="text-[10px] text-zinc-400">Fires web push alerts to your background notification center.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDevicePush(!devicePush)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {devicePush ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                            )}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          disabled={!deviceReceiveUrgent}
-                          onClick={() => setDevicePush(!devicePush)}
-                          className="focus:outline-none cursor-pointer"
-                        >
-                          {devicePush ? (
-                            <ToggleRight className="w-9 h-9 text-[#C59B27]" />
-                          ) : (
-                            <ToggleLeft className="w-9 h-9 text-zinc-300" />
-                          )}
-                        </button>
                       </div>
+                    </div>
+
+                    <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={handleSaveDeviceAlertPreferences}
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Save Device Settings</span>
+                      </Button>
                     </div>
                   </div>
 
-                  <div className="border-t border-zinc-100 pt-5 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      onClick={handleSaveDeviceAlertPreferences}
-                      className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>Save Device Settings</span>
-                    </Button>
+                  {/* CARD 3: DEVICE ALERT READINESS CHECK */}
+                  <div 
+                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    data-component-version="device-alert-readiness-v2-laptop"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                            <Activity className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-medium text-[#18181B] text-base">Device alert status</h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">Live readiness check of alert delivery on this active terminal.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Explainer with premium honest wording */}
+                      <div 
+                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 text-xs text-zinc-600 space-y-2 leading-relaxed"
+                        data-component-version="admin-alert-delivery-explainer-v2"
+                      >
+                        <p className="font-semibold text-zinc-800">Honest Safety Notice</p>
+                        <p>
+                          For laptops, keep this app open during the event for the full urgent alert experience. Browser push can still notify you in the background when supported and enabled.
+                        </p>
+                        <p className="text-[#C59B27] font-medium flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] animate-pulse"></span>
+                          Best protection: Keep this application open on your duty laptop during active hours.
+                        </p>
+                      </div>
+
+                      {/* Device Readiness Grid */}
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-medium block">IN-APP OVERLAY</span>
+                          {deviceReceiveUrgent ? (
+                            <span className="font-semibold text-emerald-600 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Ready
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-amber-600 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              Needs app open
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-medium block">PREMIUM SOUND</span>
+                          {!deviceSound ? (
+                            <span className="font-semibold text-zinc-400">Disabled</span>
+                          ) : (
+                            <span className="font-semibold text-emerald-600">Enabled</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-medium block">VIBRATION ENGINE</span>
+                          {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
+                            <span className="font-semibold text-zinc-400">Vibration is not supported on this device.</span>
+                          ) : deviceVibration ? (
+                            <span className="font-semibold text-emerald-600">Supported & Active</span>
+                          ) : (
+                            <span className="font-semibold text-zinc-500">Supported (Off)</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-medium block">BROWSER NOTIFICATIONS</span>
+                          {typeof Notification === 'undefined' ? (
+                            <span className="font-semibold text-zinc-400">Not supported</span>
+                          ) : pushPermission === 'default' ? (
+                            <span className="font-semibold text-amber-600">Permission not requested</span>
+                          ) : pushPermission === 'denied' ? (
+                            <span className="font-semibold text-red-500">Permission blocked</span>
+                          ) : (
+                            <span className="font-semibold text-emerald-600">Permission granted</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-medium block">PUSH SUBSCRIPTION</span>
+                          {pushConnected ? (
+                            <span className="font-semibold text-emerald-600">Connected</span>
+                          ) : (
+                            <span className="font-semibold text-amber-600">Not connected</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 font-medium block">PUSH READY</span>
+                          {isVapidConfigured === false ? (
+                            <span className="font-semibold text-amber-600">Push setup incomplete</span>
+                          ) : isVapidConfigured === true ? (
+                            <span className="font-semibold text-emerald-600">Setup complete</span>
+                          ) : (
+                            <span className="font-semibold text-zinc-400">Checking...</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Enable Browser Notifications Button (Phase 3) */}
+                      <div 
+                        className="bg-zinc-50 border border-zinc-100 rounded-xl p-4 space-y-3"
+                        data-component-version="browser-notification-permission-v1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-semibold text-zinc-800">Browser notification permission</span>
+                            <p className="text-[10px] text-zinc-400">Requested only on clicking Enable</p>
+                          </div>
+                          {!pushConnected && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleEnablePushNotifications}
+                              disabled={isSubscribingPush || typeof Notification === 'undefined' || (typeof Notification !== 'undefined' && Notification.permission === 'denied')}
+                              className="px-3 py-1.5 text-[11px] font-medium border-[#C59B27]/40 hover:bg-[#C59B27]/5 text-[#C59B27] cursor-pointer"
+                            >
+                              {isSubscribingPush ? 'Enabling...' : 'Enable browser notifications'}
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Direct detailed feedbacks */}
+                        {typeof Notification === 'undefined' && (
+                          <p className="text-[10px] text-red-500">Browser notifications are not supported on this device.</p>
+                        )}
+                        {typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
+                          <p className="text-[10px] text-red-500">Notifications are blocked for this browser. Please allow notifications in your browser settings.</p>
+                        )}
+                        {pushFeedback && (
+                          <p className="text-[10px] text-amber-600">{pushFeedback}</p>
+                        )}
+                        {pushConnected && (
+                          <p className="text-[10px] text-emerald-600 flex items-center gap-1 font-medium">
+                            <Check className="w-3.5 h-3.5" />
+                            Notifications are active and connected on this device.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Detailed Push Alert Status Panel (Phase 4 & 5) */}
+                      <div 
+                        className="bg-zinc-50/50 border border-zinc-100 rounded-xl p-4 space-y-3"
+                        data-component-version="push-alert-status-panel-v1"
+                      >
+                        <span className="text-xs font-bold text-zinc-800 block">Detailed Push Alert Status</span>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] text-zinc-600">
+                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                            <span>Service worker support:</span>
+                            <strong className={('serviceWorker' in navigator) ? 'text-emerald-600' : 'text-zinc-400'}>
+                              {('serviceWorker' in navigator) ? 'Supported' : 'Unsupported'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                            <span>Push manager support:</span>
+                            <strong className={('PushManager' in window) ? 'text-emerald-600' : 'text-zinc-400'}>
+                              {('PushManager' in window) ? 'Supported' : 'Unsupported'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                            <span>Notification permission:</span>
+                            <strong className={pushPermission === 'granted' ? 'text-emerald-600' : pushPermission === 'denied' ? 'text-red-500' : 'text-amber-500'}>
+                              {pushPermission}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                            <span>Service worker registered:</span>
+                            <strong className={isSwRegistered ? 'text-emerald-600' : 'text-amber-500'}>
+                              {isSwRegistered ? 'Yes' : 'No'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 pb-1 col-span-2">
+                            <span>Server push subscription:</span>
+                            <strong className={pushConnected ? 'text-emerald-600' : 'text-amber-500'}>
+                              {pushConnected ? 'Connected & Registered' : 'Not Connected'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 pb-1 col-span-2">
+                            <span>VAPID Setup Configured:</span>
+                            {isVapidConfigured === null ? (
+                              <strong className="text-zinc-400">Checking...</strong>
+                            ) : isVapidConfigured ? (
+                              <strong className="text-emerald-600">Fully Configured</strong>
+                            ) : (
+                              <div className="text-right">
+                                <strong className="text-amber-600 block">Push setup is not complete yet.</strong>
+                                <span className="text-[9px] text-zinc-400 block leading-tight mt-0.5 max-w-[220px]">
+                                  Please set env variables: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT on server.
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-zinc-400 font-medium">LAST READINESS TEST</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            lastTestStatus.includes('Success') || lastTestStatus.includes('test sent') || lastTestStatus.includes('worked') ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'
+                          }`}>
+                            {lastTestStatus}
+                          </span>
+                        </div>
+                        <span className="text-zinc-600 font-medium block text-[11px] mt-1">
+                          Last Run: <strong className="text-zinc-800">{lastTestTime}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSendTestAlert}
+                        disabled={isTestingDevice}
+                        data-component-version="admin-test-device-alert-action-v1"
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5 border-[#C59B27]/45 hover:bg-[#C59B27]/5 text-[#C59B27] cursor-pointer"
+                      >
+                        {isTestingDevice ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Sending Test...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            <span>Send test alert to this device</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -5081,28 +5081,85 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </p>
                     )}
 
-                    {/* Admin Actions Status & Notes */}
-                    <div className="pt-2 border-t border-gray-100 text-[10px] space-y-1.5 text-gray-500">
-                      <div className="flex justify-between">
-                        <span>Submitted</span>
-                        <span>{formatDate(alert.created_at)}</span>
-                      </div>
-                      {alert.acknowledged_at && (
-                        <div className="flex justify-between text-blue-700 font-medium">
-                          <span>Acknowledged by {alert.acknowledged_by_name || 'Admin'}</span>
-                          <span>{formatTime(alert.acknowledged_at)}</span>
-                        </div>
-                      )}
-                      {alert.status === 'resolved' && (
-                        <div className="space-y-1 pt-1.5 text-emerald-700 font-semibold bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-xl">
-                          <div className="flex justify-between text-[11px]">
-                            <span>Resolved by {alert.resolved_by_name || 'Admin'}</span>
-                            <span className="font-mono">{formatTime(alert.resolved_at)}</span>
+                    {/* Real-time Delivery & Response Status Pipeline */}
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Response Status Pipeline</div>
+                      
+                      <div className="space-y-2 pl-1.5 border-l border-gray-200">
+                        {/* Step 1: Delivered */}
+                        <div className="flex items-start space-x-2 relative">
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                            alert.status === 'open' || alert.status === 'acknowledged' || alert.status === 'resolved'
+                              ? 'bg-emerald-500 ring-4 ring-emerald-100'
+                              : 'bg-gray-300'
+                          }`} />
+                          <div className="text-[11px]">
+                            <span className="font-semibold text-gray-800">
+                              {alert.severity === 'urgent' ? '🚨 Urgent alert sent' : '📢 Care request sent'}
+                            </span>
+                            <span className="text-[10px] text-emerald-600 block">✓ Delivered to admin devices in real-time</span>
                           </div>
-                          {alert.resolution_note && (
-                            <p className="text-[10px] text-emerald-800 leading-normal font-medium pl-1.5 border-l-2 border-emerald-300">
-                              Note: {alert.resolution_note}
-                            </p>
+                        </div>
+
+                        {/* Step 2: Acknowledged */}
+                        <div className="flex items-start space-x-2">
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                            alert.status === 'acknowledged' || alert.status === 'resolved'
+                              ? 'bg-blue-500 ring-4 ring-blue-100'
+                              : alert.status === 'open'
+                              ? 'bg-amber-400 ring-4 ring-amber-100 animate-pulse'
+                              : 'bg-gray-300'
+                          }`} />
+                          <div className="text-[11px]">
+                            <span className={`font-semibold ${
+                              alert.status === 'acknowledged' || alert.status === 'resolved'
+                                ? 'text-gray-800'
+                                : 'text-gray-400'
+                            }`}>
+                              Admin Acknowledged
+                            </span>
+                            {alert.status === 'open' && (
+                              <span className="text-[10px] text-amber-600 block animate-pulse">⚡ Waiting for admin to acknowledge...</span>
+                            )}
+                            {alert.acknowledged_at && (
+                              <span className="text-[10px] text-blue-600 block">
+                                ✓ Admin has acknowledged your alert ({alert.acknowledged_by_name || 'Admin'} at {formatTime(alert.acknowledged_at)})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Step 3: Resolved */}
+                        <div className="flex items-start space-x-2">
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                            alert.status === 'resolved'
+                              ? 'bg-emerald-600 ring-4 ring-emerald-100'
+                              : 'bg-gray-200'
+                          }`} />
+                          <div className="text-[11px]">
+                            <span className={`font-semibold ${
+                              alert.status === 'resolved' ? 'text-gray-800' : 'text-gray-400'
+                            }`}>
+                              Resolved & Secured
+                            </span>
+                            {alert.status === 'resolved' ? (
+                              <span className="text-[10px] text-emerald-600 block">✓ Safety concern has been resolved</span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400 block">Pending action</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Display Resolution Notes if resolved */}
+                      {alert.status === 'resolved' && alert.resolution_note && (
+                        <div className="mt-2 bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-emerald-800">
+                          <span className="text-[9px] font-bold uppercase tracking-wider block text-emerald-600">Resolution Note</span>
+                          <p className="text-[10px] italic font-medium mt-0.5 leading-normal">
+                            "{alert.resolution_note}"
+                          </p>
+                          {alert.resolved_by_name && (
+                            <span className="text-[8px] text-emerald-500 block mt-1">Resolved by {alert.resolved_by_name}</span>
                           )}
                         </div>
                       )}
@@ -5467,7 +5524,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       )}
 
       {/* Persistent Bottom Tab Bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-2 py-2 flex items-center justify-around z-20 shadow-lg" data-component-version="volunteer-bottom-nav-v2-stitch">
+      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-2 py-2 flex items-center justify-around z-20 shadow-lg" data-component-version="volunteer-navigation-v3-safe-routing">
         <button
           onClick={() => onNavigate('/volunteer/event')}
           className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
@@ -5506,6 +5563,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         {volunteerProfile && (
           <button
             onClick={() => onNavigate('/volunteer/team-alerts')}
+            data-component-version="volunteer-dashboard-icon-route-v2"
             className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/team-alerts' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <ShieldAlert className="h-5 w-5" />

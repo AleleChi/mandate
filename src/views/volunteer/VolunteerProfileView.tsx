@@ -395,6 +395,7 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
             <span className="font-bold text-gray-800">Sign out</span>
             <button
               onClick={onSignOut}
+              data-component-version="volunteer-logout-action-v2-separated"
               className="text-xs font-bold text-rose-600 hover:text-rose-800 cursor-pointer transition-colors"
             >
               Sign out

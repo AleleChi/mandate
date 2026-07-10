@@ -1310,6 +1310,7 @@ export default function App() {
       case '/volunteer/reports':
       case '/volunteer/profile':
       case '/volunteer/pickup':
+      case '/volunteer/team-alerts':
         return (
           <VolunteerProtectedRoute>
             <VolunteerEventDashboardView
