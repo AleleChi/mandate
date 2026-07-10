@@ -26,7 +26,13 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
-export function playSound(type: 'success' | 'error' | 'notification' | 'alert' | 'notification_gentle') {
+export function playSound(
+  type: 'success' | 'error' | 'notification' | 'alert' | 'notification_gentle' | 'emergency',
+  options?: {
+    volume?: 'standard' | 'loud' | 'very_loud';
+    profile?: 'normal' | 'important' | 'emergency';
+  }
+) {
   try {
     // Check local preference override
     const stored = localStorage.getItem('koinonia_sound_enabled');
@@ -40,7 +46,16 @@ export function playSound(type: 'success' | 'error' | 'notification' | 'alert' |
       return;
     }
 
-    const playTone = (freq: number, duration: number, oscType: OscillatorType = 'sine', delay = 0) => {
+    // Determine volume multiplier
+    const selectedVolume = options?.volume || localStorage.getItem('koinonia_alert_volume') || 'standard';
+    let volumeMultiplier = 1.0;
+    if (selectedVolume === 'loud') {
+      volumeMultiplier = 2.0;
+    } else if (selectedVolume === 'very_loud') {
+      volumeMultiplier = 4.0;
+    }
+
+    const playTone = (freq: number, duration: number, oscType: OscillatorType = 'sine', delay = 0, customBaseGain = 0.08) => {
       const timeoutId = setTimeout(() => {
         try {
           activeTimeouts.delete(timeoutId);
@@ -54,7 +69,9 @@ export function playSound(type: 'success' | 'error' | 'notification' | 'alert' |
           osc.type = oscType;
           osc.frequency.setValueAtTime(freq, ctx.currentTime);
           
-          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          // Apply multiplier safely (clamp to maximum 0.95 to prevent audio clipping)
+          const targetGain = Math.min(0.95, customBaseGain * volumeMultiplier);
+          gain.gain.setValueAtTime(targetGain, ctx.currentTime);
           gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
 
           osc.connect(gain);
@@ -103,6 +120,26 @@ export function playSound(type: 'success' | 'error' | 'notification' | 'alert' |
         playTone(659.25, 0.45, 'sine', 0.08); // E5
         playTone(783.99, 0.5, 'sine', 0.16); // G5
         playTone(1046.50, 0.6, 'sine', 0.24); // C6 (sparkling, highly audible but peaceful)
+        break;
+      case 'emergency':
+        // Determine sound profile
+        const selectedProfile = options?.profile || localStorage.getItem('koinonia_alert_profile') || 'emergency';
+        if (selectedProfile === 'normal') {
+          // Normal Alerts: Gentle, brief chime sequence.
+          playTone(523.25, 0.2, 'sine', 0, 0.06); // C5
+          playTone(659.25, 0.25, 'sine', 0.15, 0.06); // E5
+        } else if (selectedProfile === 'important') {
+          // Important Alerts: Clear dual-tone chime with moderate intensity.
+          playTone(587.33, 0.3, 'sine', 0, 0.08); // D5
+          playTone(783.99, 0.35, 'sine', 0.12, 0.08); // G5
+          playTone(880.00, 0.4, 'sine', 0.24, 0.08); // A5
+        } else {
+          // Urgent/Emergency Alerts: Distinct, loud, high-attention alarm sound.
+          playTone(880.00, 0.15, 'sine', 0, 0.12); // A5
+          playTone(660.00, 0.15, 'sine', 0.15, 0.12); // E5
+          playTone(880.00, 0.15, 'sine', 0.3, 0.12); // A5
+          playTone(1108.73, 0.35, 'sine', 0.45, 0.12); // C#6
+        }
         break;
     }
   } catch (err) {

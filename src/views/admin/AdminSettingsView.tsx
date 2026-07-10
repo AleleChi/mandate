@@ -126,9 +126,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   // Device-specific Alert Preferences State
   const [deviceReceiveUrgent, setDeviceReceiveUrgent] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_device_receive_urgent') === 'true';
+      return localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
     }
-    return false;
+    return true;
   });
   const [deviceUrgentOnly, setDeviceUrgentOnly] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -138,33 +138,33 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   });
   const [deviceSound, setDeviceSound] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_device_sound') === 'true';
+      return localStorage.getItem('koinonia_device_sound') !== 'false';
     }
-    return false;
+    return true;
   });
   const [deviceVibration, setDeviceVibration] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_device_vibration') === 'true';
+      return localStorage.getItem('koinonia_device_vibration') !== 'false';
     }
-    return false;
+    return true;
   });
   const [devicePush, setDevicePush] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_device_push') === 'true';
+      return localStorage.getItem('koinonia_device_push') !== 'false';
     }
-    return false;
+    return true;
   });
   const [deviceShowPopup, setDeviceShowPopup] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_device_show_popup') === 'true';
+      return localStorage.getItem('koinonia_device_show_popup') !== 'false';
     }
-    return false;
+    return true;
   });
   const [deviceRepeatUrgent, setDeviceRepeatUrgent] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_device_repeat_urgent') === 'true';
+      return localStorage.getItem('koinonia_device_repeat_urgent') !== 'false';
     }
-    return false;
+    return true;
   });
 
   // Push Subscription & Permission States
@@ -1939,7 +1939,10 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       </div>
 
                       {/* Only show sub-settings if alerts are enabled on this device */}
-                      <div className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                      <div 
+                        className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}
+                        data-component-version="urgent-alert-sound-settings-v2"
+                      >
                         <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">Device Delivery Preferences</h4>
                         
                         {/* Sound Preference */}

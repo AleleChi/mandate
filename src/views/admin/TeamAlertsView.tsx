@@ -27,7 +27,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { playSound, resumeAudioContext } from '../../utils/sound';
-import { urgentAlertEffectsManager } from '../../utils/urgentAlertEffects';
+import { urgentAlertEffectsManager, getCategoryLabel } from '../../utils/urgentAlertEffects';
 import { AppRoute } from '../../types';
 
 interface TeamAlertsViewProps {
@@ -388,7 +388,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
                           {/* Context Details */}
                           <div className="space-y-1">
                             <h3 className="font-serif font-bold text-sm text-[#18181B]">
-                              {alert.category ? alert.category.replace(/_/g, ' ') : 'Care Request'}
+                              {alert.category ? getCategoryLabel(alert.category) : 'Care Request'}
                             </h3>
                             <p className="text-xs text-zinc-600 font-medium">
                               Raised by <strong className="text-zinc-900">{alert.raised_by_name || 'Volunteer'}</strong>
@@ -589,7 +589,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
 
             <form onSubmit={handleResolveSubmit} className="space-y-4 text-xs">
               <div className="space-y-1 bg-[#FAF9F6] border border-[#EAE8E1]/60 p-3.5 rounded-xl text-zinc-600">
-                <p>Concern: <strong>{resolvingAlert.category ? resolvingAlert.category.replace(/_/g, ' ') : 'Care Request'}</strong></p>
+                <p>Concern: <strong>{resolvingAlert.category ? getCategoryLabel(resolvingAlert.category) : 'Care Request'}</strong></p>
                 <p>Location: <strong>{resolvingAlert.location_label || 'Not specified'}</strong></p>
                 {resolvingAlert.child_name && <p>Child: <strong>{resolvingAlert.child_name}</strong></p>}
               </div>

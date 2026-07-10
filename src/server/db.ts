@@ -573,6 +573,17 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      user_role TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      details TEXT,
+      timestamp TEXT NOT NULL
+    );
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -1321,6 +1332,17 @@ async function initPostgresSchema(pool: any) {
         resolution_note TEXT,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64),
+        user_role VARCHAR(64),
+        action VARCHAR(255) NOT NULL,
+        target_type VARCHAR(128),
+        target_id VARCHAR(128),
+        details TEXT,
+        timestamp TIMESTAMP NOT NULL
       );
     `);
 

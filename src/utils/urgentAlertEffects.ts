@@ -35,6 +35,19 @@ let alarmInterval: any = null;
 let currentActiveAlerts: any[] = [];
 let isFirstSync = true;
 
+export function getCategoryLabel(category: string): string {
+  const mapping: Record<string, string> = {
+    medical_support: 'Medical support',
+    pickup_issue: 'Pickup concern',
+    security_concern: 'Security concern',
+    pass_issue: 'Pass/check-in concern',
+    child_care: 'Child care concern',
+    location_support: 'Location support',
+    other: 'Other support'
+  };
+  return mapping[category] || category || 'Other support';
+}
+
 export const urgentAlertEffectsManager = {
   getSilencedAlertIds() {
     return getSilencedAlertIds();
@@ -57,6 +70,22 @@ export const urgentAlertEffectsManager = {
 
   isAlertSilenced(alertId: string): boolean {
     return getSilencedAlertIds().has(alertId);
+  },
+
+  hasUnsoundedUrgentOnLoad() {
+    const silenced = getSilencedAlertIds();
+    return currentActiveAlerts.some(
+      a => a.severity === 'urgent' && a.status === 'open' && !silenced.has(a.id) && soundedAlertIds.has(a.id)
+    );
+  },
+
+  resumeOnLoadAlerts() {
+    currentActiveAlerts.forEach(a => {
+      if (a.severity === 'urgent' && a.status === 'open') {
+        soundedAlertIds.delete(a.id);
+      }
+    });
+    this.evaluateEffects();
   },
 
   // Sync latest alerts from any view's polling loops or fetches
@@ -88,7 +117,7 @@ export const urgentAlertEffectsManager = {
 
         if (hasUrgent) {
           if (sndPref) {
-            try { playSound('alert'); } catch (_) {}
+            try { playSound('emergency'); } catch (_) {}
           }
           if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (_) {}
@@ -116,7 +145,7 @@ export const urgentAlertEffectsManager = {
     const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
     const sndPref = localStorage.getItem('koinonia_device_sound') !== 'false';
     const vibePref = localStorage.getItem('koinonia_device_vibration') !== 'false';
-    const isRepeatEnabled = localStorage.getItem('koinonia_device_repeat_urgent') === 'true';
+    const isRepeatEnabled = localStorage.getItem('koinonia_device_repeat_urgent') !== 'false';
 
     const silenced = getSilencedAlertIds();
 
@@ -140,12 +169,12 @@ export const urgentAlertEffectsManager = {
             }
 
             if (sndPref) {
-              try { playSound('alert'); } catch (_) {}
+              try { playSound('emergency'); } catch (_) {}
             }
             if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
               try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (_) {}
             }
-          }, 5000);
+          }, 4000); // Highly responsive 4-second repeating cadence
           
           if (typeof window !== 'undefined') {
             if (!(window as any).koinonia_intervals) {

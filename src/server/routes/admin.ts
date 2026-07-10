@@ -5456,26 +5456,30 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
     entryParams.push(id);
     await execute(`UPDATE child_event_entries SET ${entryUpdates.join(', ')} WHERE id = ?`, entryParams);
 
-    // Audit history trail
-    const adminId = req.user?.id || 'admin';
-    await execute(`
-      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      Math.random().toString(36).substring(2, 15),
-      adminId,
-      'admin',
-      'Update Child details',
-      'child_event_entry',
-      id,
-      JSON.stringify({ fullName, gender, dateOfBirth, schoolClass }),
-      now
-    ]);
+    // Audit history trail safely
+    try {
+      const adminId = req.user?.id || 'admin';
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Update Child details',
+        'child_event_entry',
+        id,
+        JSON.stringify({ fullName, gender, dateOfBirth, schoolClass }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log details update:', auditErr);
+    }
 
     return res.json({ success: true, message: 'Child details updated successfully' });
   } catch (err: any) {
     console.error('Error updating child details:', err);
-    return res.status(400).json({ success: false, error: err.message || 'Failed to update child details' });
+    return res.status(400).json({ success: false, error: 'We could not update child details right now. Please try again.' });
   }
 });
 
@@ -5517,25 +5521,29 @@ router.post('/applications/:id/remove', authMiddleware, async (req: Authenticate
       console.log('No active pass to revoke or pass revocation failed:', passErr);
     }
 
-    // Add audit history trail
-    await execute(`
-      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      Math.random().toString(36).substring(2, 15),
-      adminId,
-      'admin',
-      'Remove Child',
-      'child_event_entry',
-      id,
-      JSON.stringify({ reason }),
-      now
-    ]);
+    // Add audit history trail safely
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Remove Child',
+        'child_event_entry',
+        id,
+        JSON.stringify({ reason }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log child removal:', auditErr);
+    }
 
     return res.json({ success: true, message: 'Child registration removed successfully.' });
   } catch (err: any) {
     console.error('Error removing child:', err);
-    return res.status(400).json({ success: false, error: err.message || 'Failed to remove child.' });
+    return res.status(400).json({ success: false, error: 'We could not remove this child right now. Please try again.' });
   }
 });
 
@@ -5567,25 +5575,29 @@ router.post('/applications/:id/restore', authMiddleware, async (req: Authenticat
       WHERE id = ?
     `, [now, adminId, entry.child_id]);
 
-    // Add audit history trail
-    await execute(`
-      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      Math.random().toString(36).substring(2, 15),
-      adminId,
-      'admin',
-      'Restore Child',
-      'child_event_entry',
-      id,
-      JSON.stringify({ reason: reason || 'Restored by administrator' }),
-      now
-    ]);
+    // Add audit history trail safely
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Restore Child',
+        'child_event_entry',
+        id,
+        JSON.stringify({ reason: reason || 'Restored by administrator' }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log child restore:', auditErr);
+    }
 
     return res.json({ success: true, message: 'Child registration restored successfully. Status reset to Under Review.' });
   } catch (err: any) {
     console.error('Error restoring child:', err);
-    return res.status(400).json({ success: false, error: err.message || 'Failed to restore child.' });
+    return res.status(400).json({ success: false, error: 'We could not restore this child right now. Please try again.' });
   }
 });
 
@@ -5655,25 +5667,29 @@ router.post('/parents/:id/permanent-delete', authMiddleware, async (req: Authent
     // Revoke any active sessions
     await execute(`DELETE FROM auth_tokens WHERE user_id = ?`, [parent.user_id]);
 
-    // Add audit history trail
-    await execute(`
-      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      Math.random().toString(36).substring(2, 15),
-      adminId,
-      'admin',
-      'Permanent Delete Parent',
-      'parent_profile',
-      parentId,
-      JSON.stringify({ reason }),
-      now
-    ]);
+    // Add audit history trail safely
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Permanent Delete Parent',
+        'parent_profile',
+        parentId,
+        JSON.stringify({ reason }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log permanent parent delete:', auditErr);
+    }
 
     return res.json({ success: true, message: 'Parent profile and login permanently deleted/anonymized successfully.' });
   } catch (err: any) {
     console.error('Error in permanent parent delete:', err);
-    return res.status(500).json({ success: false, error: 'Failed to permanently delete parent profile.' });
+    return res.status(500).json({ success: false, error: 'We could not delete parent profile right now. Please try again.' });
   }
 });
 
@@ -5733,25 +5749,29 @@ router.post('/volunteers/:id/permanent-delete', authMiddleware, async (req: Auth
     // Revoke any active sessions
     await execute(`DELETE FROM auth_tokens WHERE user_id = ?`, [volunteer.user_id]);
 
-    // Add audit history trail
-    await execute(`
-      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      Math.random().toString(36).substring(2, 15),
-      adminId,
-      'admin',
-      'Permanent Delete Volunteer',
-      'volunteer_profile',
-      volunteerId,
-      JSON.stringify({ reason }),
-      now
-    ]);
+    // Add audit history trail safely
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Permanent Delete Volunteer',
+        'volunteer_profile',
+        volunteerId,
+        JSON.stringify({ reason }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log permanent volunteer delete:', auditErr);
+    }
 
     return res.json({ success: true, message: 'Volunteer profile and login permanently deleted/anonymized successfully.' });
   } catch (err: any) {
     console.error('Error in permanent volunteer delete:', err);
-    return res.status(500).json({ success: false, error: 'Failed to permanently delete volunteer profile.' });
+    return res.status(500).json({ success: false, error: 'We could not delete volunteer profile right now. Please try again.' });
   }
 });
 

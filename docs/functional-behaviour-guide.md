@@ -679,6 +679,9 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Vibration Interruption**: Invokes `navigator.vibrate(0)` immediately upon state alteration to cease active motor operations on physical handsets.
 - **Overlay Takeover Reset**: The active takeover overlay resets to null immediately when the alert status changes to acknowledged or resolved, transitioning smoothly back to the command center interface.
 - **Sound Isolation**: To prevent audio alerts from firing on page refresh or initial sign-in, any open or unacknowledged alerts already recorded in the system on first load are added directly to the sounded/silenced tracking set, blocking retroactive alarms.
+- **Emergency Standby & Resume**: Displays a clear standby warning and a "Resume Audio" activation prompt if unacknowledged urgent alerts exist on load, allowing users to manually resume audio effects within browser-enforced security rules.
+- **Unified Category Mapping**: Standardizes internal technical alert categories (e.g., `medical_support`, `pickup_issue`, `security_concern`) to clear, human-readable labels (e.g., "Medical support", "Pickup concern", "Security concern").
+- **Premium Alarm Sound**: Employs an explicit `emergency` synthesizer sound sequence rather than standard alerts, repeated dynamically at 8-second intervals to command staff attention.
 
 ## 47. Live Messages & Updates Centre Statistics Engine
 - **Live Aggregation**: The dashboard and statistics panel in the Messages & Updates Centre use real live data gathered from active notifications, reads, archives, and safety alert tables.
