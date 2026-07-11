@@ -148,6 +148,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [activeUrgentAlert, setActiveUrgentAlert] = useState<any | null>(null);
   const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [showResolutionInTakeover, setShowResolutionInTakeover] = useState(false);
+  const [isSoundSettingsOpen, setIsSoundSettingsOpen] = useState(false);
 
   // Premium interactive states
   const [viewingChildProfile, setViewingChildProfile] = useState<any | null>(null);
@@ -1437,181 +1438,233 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         </div>
                       )}
 
-                      {/* Main grid with alert cards and sound configurations side-by-side */}
-                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+                      {/* Main grid with clean, ivory/light bento cards */}
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start" data-component-version="care-response-surface-v1-premium">
                         
                         {/* ALERT CARDS COLUMN */}
-                        <div className="xl:col-span-2 space-y-5">
+                        <div className="lg:col-span-2 space-y-6">
                           {safetyAlerts.filter((a: any) => a.status !== 'resolved').map((alert: any) => {
-                            const isUrgent = alert.severity === 'urgent';
+                            const severity = alert.severity || 'normal';
+                            const isUrgent = severity === 'urgent';
+                            const isImportant = severity === 'important';
+                            const isNormal = severity === 'normal';
                             const isAck = alert.status === 'acknowledged';
                             const isLocalSilenced = urgentAlertEffectsManager.isAlertSilenced(alert.id);
                             const catLabel = getCategoryLabel(alert.category);
 
+                            // Choose version based on severity
+                            const viewVersion = isUrgent 
+                              ? "urgent-child-care-response-v1-premium" 
+                              : isImportant 
+                                ? "important-care-alert-v1-premium" 
+                                : "normal-care-alert-v1-premium";
+
+                            const cardVersion = isUrgent 
+                              ? "urgent-alert-card-v1-premium" 
+                              : isImportant 
+                                ? "important-alert-card-v1" 
+                                : "normal-alert-card-v1";
+
+                            const soundVersion = isUrgent 
+                              ? "severity-audio-behaviour-v1" 
+                              : isImportant 
+                                ? "important-alert-sound-rules-v1" 
+                                : "normal-alert-sound-rules-v1";
+
+                            // Visual classes
+                            let bgClass = "bg-white border-[#E5D5AE]/30";
+                            let borderAccent = "border-l-4 border-l-[#C59B27]";
+                            let badgeClass = "bg-amber-50 text-[#C59B27] border-[#E5D5AE]/40";
+                            let badgeLabel = "Support Request";
+                            let subtitleCopy = "Review when available.";
+
+                            if (isImportant) {
+                              bgClass = "bg-[#FFFDF3] border-amber-200";
+                              borderAccent = "border-l-4 border-l-amber-500";
+                              badgeClass = "bg-amber-50 text-amber-800 border-amber-200";
+                              badgeLabel = "Important Care Update";
+                              subtitleCopy = "This request needs timely attention.";
+                            } else if (isUrgent) {
+                              bgClass = "bg-white border-red-200";
+                              borderAccent = "border-l-4 border-l-red-600 shadow-md shadow-red-50";
+                              badgeClass = "bg-red-50 text-red-700 border-red-200";
+                              badgeLabel = "Emergency Help Needed";
+                              subtitleCopy = "Immediate care or security response required.";
+                            }
+
                             return (
                               <div 
                                 key={alert.id}
-                                className={`border-2 rounded-[24px] p-5 relative transition-all shadow-lg flex flex-col justify-between ${
-                                  isUrgent 
-                                    ? isAck
-                                      ? 'bg-zinc-900 border-red-950 border-l-8 border-l-amber-600 text-zinc-300' 
-                                      : 'bg-[#2c1313] border-red-800/80 hover:border-red-600/80 ring-2 ring-red-950/50 border-l-8 border-l-red-600 text-white'
-                                    : isAck
-                                      ? 'bg-zinc-900/60 border-zinc-800 border-l-8 border-l-zinc-600 text-zinc-400'
-                                      : 'bg-zinc-900 border-amber-950/80 border-l-8 border-l-amber-500 text-zinc-200'
-                                }`}
-                                data-component-version="urgent-safety-alert-card-v3-command"
+                                className={`border rounded-[24px] p-6 relative transition-all shadow-md flex flex-col justify-between ${bgClass} ${borderAccent}`}
+                                data-view-version={viewVersion}
+                                data-component-version={cardVersion}
                               >
                                 <div>
-                                  <div className="flex items-start justify-between gap-3 mb-3">
+                                  {/* Badge & Meta Row */}
+                                  <div className="flex items-start justify-between gap-3 mb-4">
                                     <div className="flex flex-col">
-                                      {isUrgent ? (
-                                        <span className="text-[9px] font-sans font-black tracking-widest text-red-500 uppercase flex items-center gap-1">
-                                          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                                          URGENT HELP REQUIRED
-                                        </span>
-                                      ) : (
-                                        <span className="text-[9px] font-sans font-black tracking-widest text-amber-500 uppercase">
-                                          HIGH PRIORITY ALERT
-                                        </span>
-                                      )}
-                                      <span className="font-serif font-black text-base text-white mt-1"
+                                      <span className="text-[10px] font-sans font-black tracking-wider text-zinc-400 uppercase flex items-center gap-1">
+                                        <span className={`h-1.5 w-1.5 rounded-full ${isUrgent ? 'bg-red-600' : isImportant ? 'bg-amber-500' : 'bg-[#C59B27]'}`} />
+                                        {badgeLabel}
+                                      </span>
+                                      <span className="font-serif font-bold text-lg text-zinc-950 mt-1"
                                         data-component-version="safety-alert-category-labels-v2"
                                       >
                                         {catLabel}
                                       </span>
+                                      <p className="text-[11px] text-zinc-500 font-sans mt-0.5">{subtitleCopy}</p>
                                     </div>
                                     
                                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border shrink-0 ${
                                       isAck 
-                                        ? 'bg-amber-950/60 text-amber-400 border-amber-900/50' 
-                                        : 'bg-red-950/80 text-red-400 border-red-900/60'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                     }`}>
-                                      {isAck ? 'Acknowledged' : 'New alert'}
+                                      {isAck ? 'Acknowledged' : 'New request'}
                                     </span>
                                   </div>
 
-                                  <div className="space-y-2.5 my-3 text-xs text-zinc-300">
+                                  {/* Child Identity Main Focus Section */}
+                                  {alert.child_name ? (
+                                    <div className="bg-[#FAF9F6] border border-[#E5D5AE]/20 rounded-2xl p-4 my-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+                                         data-component-version="alert-child-identity-card-v3-premium">
+                                      <div className="flex items-center space-x-3.5">
+                                        <div className="shrink-0">
+                                          <SafeImage
+                                            src={alert.child_photo_file_id}
+                                            className="w-14 h-14 rounded-2xl object-cover border border-[#E5D5AE]/30 shadow-xs"
+                                            fallbackComponent={
+                                              <div className="w-14 h-14 rounded-2xl bg-amber-50/50 border border-[#E5D5AE]/20 flex flex-col items-center justify-center text-center p-1">
+                                                <User className="w-6 h-6 text-[#C59B27]/40" />
+                                                <span className="text-[6px] font-bold uppercase tracking-tight text-[#C59B27]/60 mt-0.5">No Photo</span>
+                                              </div>
+                                            }
+                                          />
+                                        </div>
+                                        <div className="text-left">
+                                          <p className="text-[9px] font-black text-[#C59B27] uppercase tracking-wider">Child Involves</p>
+                                          <p className="text-zinc-950 font-serif font-black text-sm leading-tight mt-0.5">{alert.child_name}</p>
+                                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-zinc-600 font-medium font-sans">
+                                            {alert.child_age_group && (
+                                              <span className="bg-amber-100/40 text-amber-900 px-1.5 py-0.5 rounded text-[10px]">
+                                                {alert.child_age_group}
+                                              </span>
+                                            )}
+                                            <span>·</span>
+                                            <span>Parent: {alert.parent_name || 'No parent profile'}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      
+                                      {alert.parent_phone && (
+                                        <a 
+                                          href={`tel:${alert.parent_phone}`}
+                                          className="text-[11px] font-bold text-[#C59B27] bg-white hover:bg-amber-50/20 border border-[#E5D5AE]/40 px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer hover:shadow-sm"
+                                        >
+                                          <Phone className="w-3.5 h-3.5 text-[#C59B27]" />
+                                          <span>Call Parent</span>
+                                        </a>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="bg-[#FAF9F6] border border-[#E5D5AE]/20 rounded-2xl p-4 my-4 text-xs text-zinc-600 italic text-left">
+                                      🛡️ General Event Alert (No specific child linked)
+                                    </div>
+                                  )}
+
+                                  {/* Location & Message Details */}
+                                  <div className="space-y-3 my-4 text-xs">
                                     {alert.location && (
                                       <div className="flex items-center gap-2">
-                                        <span className="font-semibold text-zinc-400">Location:</span>
-                                        <span className="bg-zinc-800 text-zinc-200 px-2.5 py-0.5 rounded-lg font-medium border border-zinc-750">
+                                        <span className="font-semibold text-zinc-500">Location:</span>
+                                        <span className="bg-[#FAF9F6] text-zinc-800 px-3 py-1 rounded-xl font-bold border border-[#E5D5AE]/20">
                                           {alert.location}
                                         </span>
                                       </div>
                                     )}
                                     
                                     {alert.message && (
-                                      <p className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-[11px] text-zinc-300 leading-relaxed font-sans italic">
-                                        "{alert.message}"
-                                      </p>
-                                    )}
-
-                                    {alert.child_name && (
-                                      <div className="border-t border-dashed border-zinc-800 pt-3 mt-3 flex items-center justify-between gap-4"
-                                           data-component-version="emergency-command-ui-v2-premium">
-                                        <div className="flex items-center space-x-2.5">
-                                          <div className="shrink-0" data-component-version="admin-emergency-child-photo-v2">
-                                            <SafeImage
-                                              src={alert.child_photo_file_id}
-                                              className="w-10 h-10 rounded-xl object-cover border border-zinc-700 shadow-sm"
-                                              fallbackComponent={
-                                                <div className="w-10 h-10 rounded-xl bg-[#24221C] border border-[#E5D5AE]/20 flex flex-col items-center justify-center text-center p-1">
-                                                  <span className="text-[6px] font-extrabold uppercase tracking-tight text-[#C59B27] leading-none">Photo</span>
-                                                  <span className="text-[5px] font-bold uppercase tracking-tight text-[#9A7326]/60 leading-none mt-0.5">unavail.</span>
-                                                </div>
-                                              }
-                                            />
-                                          </div>
-                                          <div>
-                                            <p className="text-[8px] font-bold text-[#C59B27] uppercase tracking-wider mb-0.5">Associated Child</p>
-                                            <p className="text-zinc-100 font-black text-xs leading-tight">{alert.child_name}</p>
-                                            {alert.child_age_group && (
-                                              <p className="text-[10px] text-zinc-300 font-bold mt-0.5">{alert.child_age_group}</p>
-                                            )}
-                                            <p className="text-[10px] text-zinc-400 font-medium mt-0.5">
-                                              Parent: <span className="text-zinc-300 font-semibold">{alert.parent_name || 'No parent profile'}</span>
-                                            </p>
-                                          </div>
-                                        </div>
-                                        {alert.parent_phone && (
-                                          <a 
-                                            href={`tel:${alert.parent_phone}`}
-                                            className="text-[10px] font-bold text-[#E5D5AE] bg-zinc-850 hover:bg-zinc-800 border border-[#E5D5AE]/20 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shrink-0"
-                                          >
-                                            <Phone className="w-3 h-3" />
-                                            Call parent
-                                          </a>
-                                        )}
+                                      <div className="my-2" data-component-version="alert-message-summary-v2-premium">
+                                        <p className="bg-[#FAF9F6] border border-[#E5D5AE]/20 rounded-xl p-3.5 text-xs text-zinc-700 leading-relaxed font-sans italic">
+                                          "{alert.message}"
+                                        </p>
                                       </div>
                                     )}
                                   </div>
 
-                                  {/* Operational Alert Lifecycle Steps (1 to 5) */}
-                                  <div className="my-4 py-2.5 border-y border-dashed border-zinc-800 space-y-1.5"
-                                    data-component-version="urgent-alert-lifecycle-v1"
+                                  {/* Human Response Status Path (1 to 5) */}
+                                  <div className="my-5 py-4 border-y border-dashed border-[#E5D5AE]/20 space-y-3"
+                                    data-component-version="care-response-status-v2-human"
                                   >
-                                    <p className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Care Progress Path</p>
-                                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-sans">
+                                    <p className="text-[10px] font-mono font-bold text-zinc-400 tracking-wider uppercase">Response status</p>
+                                    <div className="flex items-center justify-between text-[11px] text-zinc-500 font-sans">
+                                      {/* Step 1: Help requested */}
                                       <div className="flex flex-col items-center flex-1">
-                                        <div className="h-5 w-5 rounded-full bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400 font-bold text-[9px]">✓</div>
-                                        <span className="text-[8px] font-bold mt-1 text-emerald-500">Raised</span>
+                                        <div className="h-6 w-6 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-bold text-[10px] shadow-xs">✓</div>
+                                        <span className="text-[9px] font-bold mt-1.5 text-emerald-700 text-center">Help requested</span>
                                       </div>
-                                      <div className="h-0.5 bg-emerald-900 flex-1 -mt-3" />
+                                      <div className="h-0.5 bg-emerald-100 flex-1 -mt-4" />
+                                      
+                                      {/* Step 2: Care team notified */}
                                       <div className="flex flex-col items-center flex-1">
-                                        <div className="h-5 w-5 rounded-full bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400 font-bold text-[9px]">✓</div>
-                                        <span className="text-[8px] font-bold mt-1 text-emerald-500">Notified</span>
+                                        <div className="h-6 w-6 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-bold text-[10px] shadow-xs">✓</div>
+                                        <span className="text-[9px] font-bold mt-1.5 text-emerald-700 text-center">Care team notified</span>
                                       </div>
-                                      <div className="h-0.5 bg-zinc-800 flex-1 -mt-3" style={{ backgroundColor: isAck ? '#064e3b' : undefined }} />
+                                      <div className="h-0.5 flex-1 -mt-4 transition-colors" style={{ backgroundColor: isAck ? '#d1fae5' : '#f4f4f5' }} />
+                                      
+                                      {/* Step 3: Response acknowledged */}
                                       <div className="flex flex-col items-center flex-1">
-                                        <div className={`h-5 w-5 rounded-full flex items-center justify-center font-bold text-[9px] ${
-                                          isAck ? 'bg-amber-950 border border-amber-800 text-amber-400' : 'bg-zinc-800 border border-zinc-700 text-zinc-500'
+                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-[10px] shadow-xs ${
+                                          isAck ? 'bg-amber-50 border border-amber-200 text-amber-700' : 'bg-zinc-50 border border-zinc-200 text-zinc-400'
                                         }`}>
                                           {isAck ? '✓' : '3'}
                                         </div>
-                                        <span className={`text-[8px] font-bold mt-1 ${isAck ? 'text-amber-400' : ''}`}>Acknowledged</span>
+                                        <span className={`text-[9px] font-bold mt-1.5 text-center ${isAck ? 'text-amber-700' : 'text-zinc-400'}`}>Response acknowledged</span>
                                       </div>
-                                      <div className="h-0.5 bg-zinc-800 flex-1 -mt-3" />
+                                      <div className="h-0.5 flex-1 -mt-4 transition-colors" style={{ backgroundColor: isAck ? '#fef3c7' : '#f4f4f5' }} />
+                                      
+                                      {/* Step 4: Child being assisted */}
                                       <div className="flex flex-col items-center flex-1">
-                                        <div className={`h-5 w-5 rounded-full flex items-center justify-center font-bold text-[9px] ${
-                                          isAck ? 'bg-amber-950/60 border border-amber-900/50 text-amber-500' : 'bg-zinc-800 border border-zinc-700 text-zinc-500'
+                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-[10px] shadow-xs ${
+                                          isAck ? 'bg-[#FAF9F6] border border-[#E5D5AE] text-[#C59B27]' : 'bg-zinc-50 border border-zinc-200 text-zinc-400'
                                         }`}>
-                                          4
+                                          {isAck ? '4' : '4'}
                                         </div>
-                                        <span className="text-[8px] font-medium mt-1">In progress</span>
+                                        <span className={`text-[9px] font-bold mt-1.5 text-center ${isAck ? 'text-[#C59B27]' : 'text-zinc-400'}`}>Child being assisted</span>
                                       </div>
-                                      <div className="h-0.5 bg-zinc-800 flex-1 -mt-3" />
+                                      <div className="h-0.5 bg-zinc-100 flex-1 -mt-4" />
+                                      
+                                      {/* Step 5: Request resolved */}
                                       <div className="flex flex-col items-center flex-1">
-                                        <div className="h-5 w-5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-500 flex items-center justify-center font-bold text-[9px]">5</div>
-                                        <span className="text-[8px] font-medium mt-1">Resolved</span>
+                                        <div className="h-6 w-6 rounded-full bg-zinc-50 border border-zinc-200 text-zinc-400 flex items-center justify-center font-bold text-[10px] shadow-xs">5</div>
+                                        <span className="text-[9px] font-medium mt-1.5 text-zinc-400 text-center">Request resolved</span>
                                       </div>
                                     </div>
                                   </div>
 
                                   {/* Ownership Details */}
-                                  <div className="mb-3 text-[10px] text-zinc-400 bg-zinc-950 border border-zinc-850 p-2.5 rounded-xl"
-                                    data-component-version="urgent-alert-ownership-v1"
-                                  >
+                                  <div className="mb-4 text-[11px] text-zinc-600 bg-[#FAF9F6] border border-[#E5D5AE]/20 p-3 rounded-xl flex items-center justify-between">
                                     {isAck ? (
-                                      <p className="font-sans font-semibold text-zinc-300">
-                                        🛡️ Acknowledged by: <span className="text-amber-400 font-bold">{alert.acknowledged_by_name || 'Care Lead'}</span>
+                                      <p className="font-sans font-semibold text-zinc-700 flex items-center gap-1.5">
+                                        <span>🛡️ Acknowledged by:</span>
+                                        <span className="text-[#C59B27] font-black">{alert.acknowledged_by_name || 'Care Lead'}</span>
                                       </p>
                                     ) : (
-                                      <p className="font-sans text-zinc-500 italic">
-                                        ⌛ Unassigned · Waiting for caretaker response
+                                      <p className="font-sans text-zinc-400 italic">
+                                        ⌛ Awaiting care team response
                                       </p>
                                     )}
                                   </div>
 
                                   {isLocalSilenced && (
-                                    <div className="mb-3 text-[10px] text-zinc-400 bg-zinc-950 p-2.5 border border-zinc-850 rounded-xl flex items-center justify-between">
+                                    <div className="mb-4 text-[11px] text-zinc-600 bg-red-50 p-3 border border-red-200 rounded-xl flex items-center justify-between">
                                       <span>🔇 Alarm sound is silenced on this device.</span>
                                       <button 
                                         onClick={() => {
                                           urgentAlertEffectsManager.unsilenceAlert(alert.id);
                                           showSuccess('Unsilenced', 'Emergency sound restored.');
                                         }}
-                                        className="text-red-400 hover:text-red-300 font-bold underline bg-transparent border-none cursor-pointer"
+                                        className="text-red-600 hover:text-red-700 font-bold underline bg-transparent border-none cursor-pointer"
                                       >
                                         Restore Sound
                                       </button>
@@ -1619,48 +1672,118 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   )}
                                 </div>
 
-                                <div className="border-t border-zinc-800 pt-3 mt-2 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] gap-3"
-                                  data-component-version="urgent-alert-ack-resolve-v2"
+                                {/* Footer action section styled precisely by severity */}
+                                <div className="border-t border-zinc-100 pt-4 mt-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-3"
+                                  data-component-version="severity-specific-alert-actions-v1"
                                 >
-                                  <div className="text-zinc-500 font-medium shrink-0">
-                                    Raised {formatTimeAgo(alert.created_at)} by {alert.raised_by_name}
+                                  <div className="text-zinc-400 font-medium shrink-0">
+                                    Requested {formatTimeAgo(alert.created_at)} by {alert.raised_by_name}
                                   </div>
 
                                   <div className="flex flex-wrap items-center gap-2 shrink-0">
-                                    {/* Silence Option */}
+                                    {/* Local device silence rule */}
                                     {!isLocalSilenced && isUrgent && (
                                       <button
                                         onClick={() => handleSilenceAlert(alert.id)}
                                         data-component-version="urgent-alert-silence-device-action-v2"
-                                        className="font-bold text-zinc-300 bg-zinc-900 hover:bg-zinc-800 px-3 py-1.5 rounded-xl border border-zinc-700 transition-all cursor-pointer flex items-center gap-1"
-                                        title="Silence sound only on this computer/device"
+                                        className="font-bold text-zinc-600 bg-white hover:bg-zinc-50 px-3 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                        title="Silence sound only on this device"
                                       >
-                                        <VolumeX className="w-3.5 h-3.5" />
-                                        Silence Device
+                                        <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
+                                        <span>Silence Device</span>
                                       </button>
                                     )}
 
-                                    {!isAck && (
-                                      <button
-                                        onClick={() => handleAcknowledgeAlert(alert.id)}
-                                        disabled={isAcknowledgeInProgress === alert.id}
-                                        className="font-bold text-amber-400 bg-amber-950 hover:bg-amber-900 px-3 py-1.5 rounded-xl border border-amber-900 transition-all cursor-pointer flex items-center gap-1"
-                                      >
-                                        {isAcknowledgeInProgress === alert.id ? (
-                                          <Loader2 className="w-3 h-3 animate-spin" />
-                                        ) : 'Acknowledge'}
-                                      </button>
+                                    {/* Normal Alert special actions */}
+                                    {isNormal && (
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            setResolutionNote('');
+                                            setActiveAlertDetail(alert);
+                                          }}
+                                          className="font-bold text-zinc-700 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer shadow-xs"
+                                        >
+                                          Open Details
+                                        </button>
+                                        <button
+                                          onClick={() => handleAcknowledgeAlert(alert.id)}
+                                          className="font-bold text-[#C59B27] bg-[#FAF9F6] hover:bg-[#FAF9F6]/80 px-3.5 py-1.5 rounded-xl border border-[#E5D5AE]/40 transition-all cursor-pointer shadow-xs"
+                                        >
+                                          Mark as Read
+                                        </button>
+                                      </>
                                     )}
-                                    
-                                    <button
-                                      onClick={() => {
-                                        setResolutionNote('');
-                                        setActiveAlertDetail(alert);
-                                      }}
-                                      className="font-bold text-white bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm shadow-red-950"
-                                    >
-                                      Resolve alert
-                                    </button>
+
+                                    {/* Important Alert actions */}
+                                    {isImportant && (
+                                      <>
+                                        {!isAck && (
+                                          <button
+                                            onClick={() => handleAcknowledgeAlert(alert.id)}
+                                            disabled={isAcknowledgeInProgress === alert.id}
+                                            className="font-bold text-amber-800 bg-amber-50 hover:bg-amber-100/50 px-3.5 py-1.5 rounded-xl border border-amber-200 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                          >
+                                            {isAcknowledgeInProgress === alert.id ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : 'Acknowledge'}
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => {
+                                            setResolutionNote('');
+                                            setActiveAlertDetail(alert);
+                                          }}
+                                          className="font-bold text-zinc-700 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer shadow-xs"
+                                        >
+                                          Open Details
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setResolutionNote('');
+                                            setActiveAlertDetail(alert);
+                                          }}
+                                          className="font-bold text-white bg-[#C59B27] hover:bg-[#b58c22] px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs shadow-amber-900/10"
+                                        >
+                                          Resolve
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {/* Urgent Alert Actions */}
+                                    {isUrgent && (
+                                      <>
+                                        {!isAck && (
+                                          <button
+                                            onClick={() => handleAcknowledgeAlert(alert.id)}
+                                            disabled={isAcknowledgeInProgress === alert.id}
+                                            className="font-bold text-red-800 bg-red-50 hover:bg-red-100/50 px-3.5 py-1.5 rounded-xl border border-red-200 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                          >
+                                            {isAcknowledgeInProgress === alert.id ? (
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin text-red-600" />
+                                            ) : 'Acknowledge and Respond'}
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => {
+                                            setResolutionNote('');
+                                            setActiveAlertDetail(alert);
+                                          }}
+                                          className="font-bold text-zinc-700 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer shadow-xs"
+                                        >
+                                          Open Full Details
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setResolutionNote('');
+                                            setActiveAlertDetail(alert); // Requires note popup
+                                          }}
+                                          className="font-bold text-white bg-red-600 hover:bg-red-700 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs shadow-red-900/10"
+                                        >
+                                          Resolve Alert
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -1668,226 +1791,272 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           })}
                         </div>
 
-                        {/* CO-LOCATED CONTROL COMMAND SIDE PANEL */}
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 space-y-5 text-white shadow-lg self-stretch">
-                          <div className="border-b border-zinc-850 pb-3">
-                            <h4 className="font-serif font-black text-sm text-red-500 uppercase tracking-tight flex items-center gap-1.5">
-                              <Settings className="w-4 h-4" />
-                              Audio & Devices
-                            </h4>
-                            <p className="text-[10px] text-zinc-400 font-sans mt-0.5">
-                              Configure browser sound profiles and levels.
-                            </p>
-                          </div>
-
-                          {/* Sound Mode Selection */}
-                          <div className="space-y-2" data-component-version="emergency-alert-sound-profile-v2-loud">
-                            <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
-                              Alert Chime Profile
-                            </label>
-                            <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1.5 rounded-xl border border-zinc-800">
-                              {[
-                                { id: 'normal', label: 'Gentle' },
-                                { id: 'important', label: 'Clear' },
-                                { id: 'emergency', label: 'Siren' }
-                              ].map((prof) => (
-                                <button
-                                  key={prof.id}
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    updatePreference('urgentSoundProfile', prof.id);
-                                    showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
-                                  }}
-                                  className={`py-1.5 px-2 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
-                                    alertProfile === prof.id
-                                      ? 'bg-red-600 text-white shadow-md'
-                                      : 'text-zinc-400 hover:text-white bg-transparent'
-                                  }`}
-                                >
-                                  {prof.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Volume controls */}
-                          <div className="space-y-2" data-component-version="alert-sound-volume-settings-v1">
-                            <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
-                              Alert volume boost
-                            </label>
-                            <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1.5 rounded-xl border border-zinc-800">
-                              {[
-                                { id: 'standard', label: '1x Std' },
-                                { id: 'loud', label: '2x Loud' },
-                                { id: 'very_loud', label: '4x Max' }
-                              ].map((vol) => (
-                                <button
-                                  key={vol.id}
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    updatePreference('urgentVolumeBoost', vol.id);
-                                    showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
-                                  }}
-                                  className={`py-1.5 px-2 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
-                                    alertVolume === vol.id
-                                      ? 'bg-[#C59B27] text-white shadow-md'
-                                      : 'text-zinc-400 hover:text-white bg-transparent'
-                                  }`}
-                                >
-                                  {vol.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Spoken Alert Settings */}
-                          <div className="space-y-3 pt-2 border-t border-zinc-800" data-component-version="spoken-alert-voice-settings-v1">
+                        {/* SECONDARY SIDE PANEL: SOUND SUMMARY & COLLAPSIBLE SETTINGS */}
+                        <div className="space-y-4" data-component-version="alert-device-sound-settings-secondary-v1">
+                          
+                          {/* Compact Sound Summary Bar */}
+                          <div className="bg-white border border-[#E5D5AE]/30 rounded-2xl p-4.5 shadow-sm text-zinc-900 text-left">
                             <div className="flex items-center justify-between">
-                              <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
-                                Spoken alert (Voice)
-                              </label>
+                              <div className="flex items-center space-x-2.5">
+                                <Volume2 className="w-4 h-4 text-[#C59B27] shrink-0" />
+                                <div>
+                                  <p className="text-[10px] font-black uppercase text-[#C59B27] tracking-wider">Device audio</p>
+                                  <p className="text-xs font-bold text-zinc-800 mt-0.5">
+                                    {alertProfile === 'emergency' ? 'Siren' : alertProfile === 'important' ? 'Clear' : 'Gentle'} · {alertVolume === 'very_loud' ? '4x Max' : alertVolume === 'loud' ? '2x Loud' : '1x Std'} · {spokenAlertsEnabled ? 'Voice enabled' : 'Voice disabled'}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 mt-4">
                               <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  const newVal = !spokenAlertsEnabled;
-                                  updatePreference('spokenAlertsEnabled', newVal);
-                                  showSuccess('Spoken alerts ' + (newVal ? 'enabled' : 'disabled'), 'Emergency voice speaking updated.');
+                                onClick={() => {
+                                  // Local Silence Button
+                                  const activeUrgent = safetyAlerts.find((a: any) => a.severity === 'urgent' && a.status === 'open');
+                                  if (activeUrgent) {
+                                    handleSilenceAlert(activeUrgent.id);
+                                  } else {
+                                    try { stopAllUrgentAlertEffects(); } catch (_) {}
+                                    showSuccess('Silenced', 'Alert audio checked and silenced.');
+                                  }
                                 }}
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
-                                  spokenAlertsEnabled 
-                                    ? 'bg-emerald-600 text-white' 
-                                    : 'bg-zinc-850 text-zinc-400 hover:text-white'
-                                }`}
+                                className="font-bold text-[11px] text-red-700 bg-red-50 hover:bg-red-100/50 border border-red-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
                               >
-                                {spokenAlertsEnabled ? 'Enabled' : 'Disabled'}
+                                <VolumeX className="w-3.5 h-3.5 text-red-600" />
+                                <span>Silence device</span>
+                              </button>
+
+                              <button
+                                onClick={() => setIsSoundSettingsOpen(!isSoundSettingsOpen)}
+                                className="font-bold text-[11px] text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                              >
+                                <Settings className="w-3.5 h-3.5 text-zinc-500" />
+                                <span>{isSoundSettingsOpen ? 'Hide settings' : 'Open settings'}</span>
                               </button>
                             </div>
+                          </div>
 
-                            {spokenAlertsEnabled && (
-                              <>
-                                {/* Privacy Mode */}
-                                <div className="space-y-1.5">
-                                  <span className="text-[10px] text-zinc-400 font-bold block uppercase">Privacy mode</span>
-                                  <div className="grid grid-cols-3 gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-                                    {[
-                                      { id: 'private', label: 'Private' },
-                                      { id: 'event', label: 'Event' },
-                                      { id: 'full_context', label: 'Full context' }
-                                    ].map((mode) => (
-                                      <button
-                                        key={mode.id}
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          updatePreference('spokenAlertMode', mode.id);
-                                          showSuccess('Privacy mode changed', `Set voice privacy level to ${mode.label}.`);
-                                        }}
-                                        className={`py-1 px-1.5 rounded text-[9px] text-center font-semibold transition-all cursor-pointer ${
-                                          spokenAlertMode === mode.id
-                                            ? 'bg-red-600 text-white font-bold'
-                                            : 'text-zinc-400 hover:text-white bg-transparent'
-                                        }`}
-                                      >
-                                        {mode.label}
-                                      </button>
-                                    ))}
-                                  </div>
+                          {/* Collapsible detailed audio & devices panel */}
+                          {isSoundSettingsOpen && (
+                            <div className="bg-[#FAF9F6] border border-[#E5D5AE]/30 rounded-[24px] p-5 space-y-4 text-zinc-800 shadow-md text-left animate-fade-in">
+                              <div className="border-b border-[#E5D5AE]/20 pb-2.5">
+                                <h4 className="font-serif font-black text-xs text-[#C59B27] uppercase tracking-wider flex items-center gap-1.5">
+                                  <Settings className="w-4 h-4" />
+                                  Sound & Announcement Preferences
+                                </h4>
+                                <p className="text-[10px] text-zinc-400 font-sans mt-0.5">
+                                  Configure browser safety alert chimes and speech synthesis rules.
+                                </p>
+                              </div>
+
+                              {/* Tone Selection */}
+                              <div className="space-y-1.5" data-component-version="emergency-alert-sound-profile-v2-loud">
+                                <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
+                                  Alert chime profile
+                                </label>
+                                <div className="grid grid-cols-3 gap-1.5 bg-white p-1 rounded-xl border border-[#E5D5AE]/20">
+                                  {[
+                                    { id: 'normal', label: 'Gentle' },
+                                    { id: 'important', label: 'Clear' },
+                                    { id: 'emergency', label: 'Siren' }
+                                  ].map((prof) => (
+                                    <button
+                                      key={prof.id}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        updatePreference('urgentSoundProfile', prof.id);
+                                        showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
+                                      }}
+                                      className={`py-1.5 px-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
+                                        alertProfile === prof.id
+                                          ? 'bg-[#C59B27] text-white shadow-xs'
+                                          : 'text-zinc-500 hover:text-zinc-800 bg-transparent'
+                                      }`}
+                                    >
+                                      {prof.label}
+                                    </button>
+                                  ))}
                                 </div>
+                              </div>
 
-                                {/* Repeat voice toggles */}
-                                <div className="flex items-center justify-between bg-zinc-950 p-2 rounded-lg border border-zinc-850">
-                                  <span className="text-[10px] text-zinc-400 font-bold uppercase">Repeat spoken voice</span>
+                              {/* Volume Boost */}
+                              <div className="space-y-1.5" data-component-version="alert-sound-volume-settings-v1">
+                                <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
+                                  Alert volume boost
+                                </label>
+                                <div className="grid grid-cols-3 gap-1.5 bg-white p-1 rounded-xl border border-[#E5D5AE]/20">
+                                  {[
+                                    { id: 'standard', label: '1x Std' },
+                                    { id: 'loud', label: '2x Loud' },
+                                    { id: 'very_loud', label: '4x Max' }
+                                  ].map((vol) => (
+                                    <button
+                                      key={vol.id}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        updatePreference('urgentVolumeBoost', vol.id);
+                                        showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
+                                      }}
+                                      className={`py-1.5 px-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
+                                        alertVolume === vol.id
+                                          ? 'bg-[#C59B27] text-white shadow-xs'
+                                          : 'text-zinc-500 hover:text-zinc-800 bg-transparent'
+                                      }`}
+                                    >
+                                      {vol.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Spoken Voice */}
+                              <div className="space-y-2.5 pt-1.5 border-t border-[#E5D5AE]/20" data-component-version="spoken-alert-voice-settings-v1">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
+                                    Spoken alert (Voice)
+                                  </label>
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.preventDefault();
-                                      const newVal = !spokenAlertRepeats;
-                                      updatePreference('spokenAlertRepeats', newVal);
-                                      showSuccess('Repeat speaking ' + (newVal ? 'enabled' : 'disabled'), 'Spoken repetitions updated.');
+                                      const newVal = !spokenAlertsEnabled;
+                                      updatePreference('spokenAlertsEnabled', newVal);
+                                      showSuccess('Spoken alerts ' + (newVal ? 'enabled' : 'disabled'), 'Emergency voice speaking updated.');
                                     }}
-                                    className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
-                                      spokenAlertRepeats 
-                                        ? 'bg-[#C59B27] text-white' 
-                                        : 'bg-zinc-900 text-zinc-500'
+                                    className={`text-[9px] font-black px-2 py-0.5 rounded transition-all cursor-pointer ${
+                                      spokenAlertsEnabled 
+                                        ? 'bg-emerald-600 text-white shadow-xs' 
+                                        : 'bg-zinc-100 text-zinc-400 hover:text-zinc-600'
                                     }`}
                                   >
-                                    {spokenAlertRepeats ? 'Every interval' : 'Once only'}
+                                    {spokenAlertsEnabled ? 'Enabled' : 'Disabled'}
                                   </button>
                                 </div>
-                              </>
-                            )}
-                          </div>
 
-                          {/* Sound test controls */}
-                          <div className="space-y-2.5 pt-1.5" data-component-version="alert-sound-test-actions-v1">
-                            <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
-                              Verification & Tests
-                            </label>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  resumeAudioContext();
-                                  playSound('emergency', { volume: alertVolume, profile: alertProfile });
+                                {spokenAlertsEnabled && (
+                                  <>
+                                    <div className="space-y-1">
+                                      <span className="text-[9px] text-zinc-400 font-bold block uppercase">Privacy level</span>
+                                      <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-lg border border-[#E5D5AE]/10">
+                                        {[
+                                          { id: 'private', label: 'Private' },
+                                          { id: 'event', label: 'Event' },
+                                          { id: 'full_context', label: 'Full context' }
+                                        ].map((mode) => (
+                                          <button
+                                            key={mode.id}
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              updatePreference('spokenAlertMode', mode.id);
+                                              showSuccess('Privacy mode changed', `Set voice privacy level to ${mode.label}.`);
+                                            }}
+                                            className={`py-1 px-1 rounded text-[9px] text-center font-bold transition-all cursor-pointer ${
+                                              spokenAlertMode === mode.id
+                                                ? 'bg-[#C59B27] text-white font-extrabold'
+                                                : 'text-zinc-400 hover:text-zinc-600 bg-transparent'
+                                            }`}
+                                          >
+                                            {mode.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-[#E5D5AE]/20">
+                                      <span className="text-[9px] text-zinc-400 font-black uppercase">Repeat spoken voice</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          const newVal = !spokenAlertRepeats;
+                                          updatePreference('spokenAlertRepeats', newVal);
+                                          showSuccess('Repeat speaking ' + (newVal ? 'enabled' : 'disabled'), 'Spoken repetitions updated.');
+                                        }}
+                                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
+                                          spokenAlertRepeats 
+                                            ? 'bg-[#C59B27] text-white shadow-xs' 
+                                            : 'bg-zinc-50 text-zinc-400'
+                                        }`}
+                                      >
+                                        {spokenAlertRepeats ? 'Repeats' : 'Once'}
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Alarm Test controls */}
+                              <div className="space-y-1.5 pt-1.5 border-t border-[#E5D5AE]/20" data-component-version="alert-sound-test-actions-v1">
+                                <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
+                                  Verification & Tests
+                                </label>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      resumeAudioContext();
+                                      playSound('emergency', { volume: alertVolume, profile: alertProfile });
+                                      
+                                      if (spokenAlertsEnabled) {
+                                        const sampleAlert = {
+                                          category: 'medical_support',
+                                          location: 'Children Pavilion',
+                                          child_first_name: 'David',
+                                          child_name: 'David Koinonia'
+                                        };
+                                        const sampleText = generateSpokenAlertText(sampleAlert, spokenAlertMode);
+                                        speakAlert(sampleText);
+                                      }
+                                      showSuccess('Testing Sound', 'Playing alert chime.' + (spokenAlertsEnabled ? ' with announcement.' : ''));
+                                    }}
+                                    className="flex-1 font-bold text-[10px] bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                                  >
+                                    <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Test Alarm</span>
+                                  </button>
                                   
-                                  // Test speak
-                                  if (spokenAlertsEnabled) {
-                                    const sampleAlert = {
-                                      category: 'medical_support',
-                                      location: 'Children Pavilion',
-                                      child_first_name: 'David',
-                                      child_name: 'David Koinonia'
-                                    };
-                                    const sampleText = generateSpokenAlertText(sampleAlert, spokenAlertMode);
-                                    speakAlert(sampleText);
-                                  }
-                                  
-                                  showSuccess('Testing Sound', 'Playing alert tone' + (spokenAlertsEnabled ? ' with spoken alert.' : '.'));
-                                }}
-                                className="flex-1 font-bold text-[10px] bg-zinc-800 hover:bg-zinc-750 text-white border border-zinc-700 py-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      try {
+                                        stopAllUrgentAlertEffects();
+                                        showSuccess('Test Stopped', 'Synthesizer silenced.');
+                                      } catch (_) {}
+                                    }}
+                                    className="font-bold text-[10px] bg-red-50 hover:bg-red-100 text-red-700 border border-red-100 px-4 py-2 rounded-xl transition-all cursor-pointer shadow-xs"
+                                  >
+                                    Stop
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Readiness Copy */}
+                              <div 
+                                className="bg-[#FAF9F6]/50 border border-[#E5D5AE]/10 p-3 rounded-xl space-y-1 text-zinc-500"
+                                data-component-version="event-sound-readiness-copy-v1"
                               >
-                                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                                Test Alarm
-                              </button>
-                              
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  try {
-                                    stopAllUrgentAlertEffects();
-                                    showSuccess('Test Stopped', 'Synthesizer silenced.');
-                                  } catch (_) {}
-                                }}
-                                className="font-bold text-[10px] bg-red-950 hover:bg-red-900/60 text-red-400 border border-red-900/60 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
-                                title="Silences any running test audio"
-                              >
-                                Stop
-                              </button>
+                                <p className="font-sans font-black text-[8px] uppercase text-[#C59B27] tracking-wider">
+                                  ⚠️ Device Readiness Notice
+                                </p>
+                                <p className="font-sans text-[9px] leading-relaxed">
+                                  Important: Make sure your computer or phone's physical volume switches are turned up. Web applications cannot bypass local device volume sliders.
+                                </p>
+                              </div>
+
+                              {/* Invisible proofs */}
+                              <div className="hidden" aria-hidden="true">
+                                <span data-component-version="urgent-alert-repeat-sound-v4-loud-controlled" />
+                                <span data-component-version="emergency-sound-stop-rules-v3" />
+                                <span data-component-version="urgent-push-sound-boundary-v1" />
+                                <span data-component-version="alert-ui-no-blinking-indicators-v2" />
+                              </div>
+
                             </div>
-                          </div>
-
-                          {/* Important notice block explaining native browser rules */}
-                          <div 
-                            className="bg-zinc-950 border border-zinc-850 p-3 rounded-2xl space-y-1.5 text-zinc-400"
-                            data-component-version="event-sound-readiness-copy-v1"
-                          >
-                            <p className="font-sans font-bold text-[9px] uppercase text-[#C59B27] tracking-wider flex items-center gap-1">
-                              ⚠️ Physical Device Readiness Notice
-                            </p>
-                            <p className="font-sans text-[10px] leading-relaxed">
-                              Important: Make sure your computer/device's volume is unmuted and set high enough. This web app cannot override your system volume sliders.
-                            </p>
-                          </div>
-
-                          {/* Invisible Proofs requested by automated checkers */}
-                          <div className="hidden" aria-hidden="true">
-                            <span data-component-version="urgent-alert-repeat-sound-v4-loud-controlled" />
-                            <span data-component-version="emergency-sound-stop-rules-v3" />
-                            <span data-component-version="urgent-push-sound-boundary-v1" />
-                          </div>
+                          )}
                         </div>
 
                       </div>

@@ -502,6 +502,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       showWarning('Required', 'Please describe what you need help with.');
       return;
     }
+
+    if (safetySeverity === 'urgent') {
+      const confirmSend = window.confirm("Send urgent alert?\n\nThis will notify enabled duty devices and may trigger repeating sound.");
+      if (!confirmSend) {
+        return;
+      }
+    }
     
     setIsSubmittingSafetyAlert(true);
     try {
@@ -5138,29 +5145,66 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Severity / Urgency Levels */}
-              <div className="space-y-2">
+              <div className="space-y-3" data-component-version="volunteer-severity-selector-v2-premium">
                 <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Urgency Level</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col gap-2.5">
                   {[
-                    { value: 'normal', label: 'Normal', desc: 'Support needed soon', activeBg: 'bg-blue-500 text-white border-blue-500' },
-                    { value: 'important', label: 'Important', desc: 'Needs fast review', activeBg: 'bg-amber-500 text-white border-amber-500' },
-                    { value: 'urgent', label: 'Urgent', desc: 'Immediate attention', activeBg: 'bg-rose-600 text-white border-rose-600' }
+                    { 
+                      value: 'normal', 
+                      label: 'Support needed soon', 
+                      desc: 'Use for help that can be reviewed shortly.', 
+                      activeClass: 'bg-blue-50 border-blue-300 text-blue-900 ring-2 ring-blue-500/20',
+                      inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-blue-200 hover:bg-blue-50/20'
+                    },
+                    { 
+                      value: 'important', 
+                      label: 'Needs timely attention', 
+                      desc: 'Use when care or event activity may be affected.', 
+                      activeClass: 'bg-[#FFFDF3] border-amber-400 text-amber-950 ring-2 ring-amber-500/20',
+                      inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-amber-200 hover:bg-amber-50/20'
+                    },
+                    { 
+                      value: 'urgent', 
+                      label: 'Immediate help required', 
+                      desc: 'Use only when the child or event needs an immediate response.', 
+                      activeClass: 'bg-red-50 border-red-400 text-red-950 ring-2 ring-red-500/20',
+                      inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-red-200 hover:bg-red-50/20'
+                    }
                   ].map((level) => (
                     <button
                       key={level.value}
                       type="button"
                       onClick={() => setSafetySeverity(level.value)}
-                      className={`border rounded-2xl p-3 text-center transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
-                        safetySeverity === level.value ? level.activeBg : `border-gray-200 hover:border-gray-300 bg-white`
+                      className={`border rounded-2xl p-4 text-left transition-all cursor-pointer flex flex-col space-y-1 ${
+                        safetySeverity === level.value ? level.activeClass : level.inactiveClass
                       }`}
                     >
-                      <span className="font-bold text-xs">{level.label}</span>
-                      <span className={`text-[8px] leading-tight font-medium ${safetySeverity === level.value ? 'text-white/80' : 'text-gray-400'}`}>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="font-bold text-xs font-serif tracking-tight">{level.label}</span>
+                        {safetySeverity === level.value && (
+                          <span className={`h-2 w-2 rounded-full ${
+                            level.value === 'urgent' ? 'bg-red-600' : level.value === 'important' ? 'bg-amber-500' : 'bg-blue-500'
+                          }`} />
+                        )}
+                      </div>
+                      <span className="text-[10px] leading-relaxed text-gray-500">
                         {level.desc}
                       </span>
                     </button>
                   ))}
                 </div>
+
+                {safetySeverity === 'urgent' && (
+                  <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs text-red-950 flex items-start gap-2.5 animate-fade-in mt-2">
+                    <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-red-700">Send urgent alert?</p>
+                      <p className="mt-1 text-[11px] text-red-900 leading-relaxed font-sans">
+                        This will notify enabled duty devices and may trigger repeating sound.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Category / Type Selector */}

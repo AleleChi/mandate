@@ -249,11 +249,12 @@ export const urgentAlertEffectsManager = {
       if (newAlerts.length > 0 && rxUrgentPref) {
         const hasUrgent = newAlerts.some(a => a.severity === 'urgent');
         const hasImportant = newAlerts.some(a => a.severity === 'important');
+        const hasNormal = newAlerts.some(a => a.severity === 'normal' || !a.severity);
 
         if (hasUrgent) {
-          // Play the first urgent alarm pattern
+          // Play repeating siren/alarm and optional spoken voice for Urgent alerts
           if (sndPref) {
-            try { playSound('emergency'); } catch (_) {}
+            try { playSound('emergency', { profile: 'emergency' }); } catch (_) {}
           }
           if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (_) {}
@@ -292,11 +293,18 @@ export const urgentAlertEffectsManager = {
           // Register these alerts as sounded so they don't trigger immediate sound again
           newAlerts.forEach(a => soundedAlertIds.add(a.id));
         } else if (hasImportant) {
+          // Important: One clear chime, optional limited repeat, stop on ack
           if (sndPref) {
-            try { playSound('notification_gentle'); } catch (_) {}
+            try { playSound('emergency', { profile: 'important' }); } catch (_) {}
           }
           if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             try { navigator.vibrate([150]); } catch (_) {}
+          }
+          newAlerts.forEach(a => soundedAlertIds.add(a.id));
+        } else if (hasNormal) {
+          // Normal: Single soft chime if enabled, never repeat
+          if (sndPref) {
+            try { playSound('emergency', { profile: 'normal' }); } catch (_) {}
           }
           newAlerts.forEach(a => soundedAlertIds.add(a.id));
         }

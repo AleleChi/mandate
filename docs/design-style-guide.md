@@ -235,6 +235,22 @@ To ensure the administrative event management pages match Koinonia's premium bra
 - **Scrollable Details Area**: Houses secondary details—including emergency description, child picture summaries, care sheets, and parent profile links—inside a fluid scrolling interior section (`overflow-y-auto`), ensuring instant readability.
 - **Sticky Actions Footer**: High-contrast action trigger containers (Acknowledge, Resolve, Silence) must be anchored at the bottom (`sticky bottom-0`) on a solid warm backdrop (`bg-[#FAF9F6] pt-4 border-t border-[#EAE8E1]`), ensuring critical safety controls are always clickable without scrolling.
 
+### Severity-Based Bento Grid Care Response Layout (Premium Care Model)
+- **Ivory/Gold Bento Surface**: The active emergency monitoring screen is replaced with an elegant, light ivory-themed bento-grid layout (`data-component-version="care-response-surface-v1-premium"`). Full-screen black backdrops, blinking lights, and robotic telemetry tickers are strictly forbidden to minimize operator fatigue and visual clutter.
+- **Severity-Level Adaptivity**: Active requests dynamically scale across three distinct severity treatments to communicate appropriate levels of care, urgency, and direct action:
+  - **Normal (`normal-care-alert-v1-premium`)**: Styled as a gentle *Support Request* in soft ivory/cream (`bg-white` with a gold border `#C59B27`). Accompanied by low-priority chime sounds.
+  - **Important (`important-care-alert-v1-premium`)**: Styled as an *Important Care Update* in light warm yellow/amber (`bg-[#FFFDF3]` with a medium amber border). Sounds a clear double-chime alarm pattern.
+  - **Urgent (`urgent-child-care-response-v1-premium`)**: Styled as a high-priority *Emergency Help Needed* request with prominent red left border accents (`border-l-red-600` on a pure white background) and a subtle crimson focus shadow. Emits a repetitive siren-style alarm sequence.
+- **Child-First Identity Prominence**: Every active care card prioritizes the child's photo and core identity using a high-fidelity container (`data-component-version="alert-child-identity-card-v3-premium"`). Displays large circular/square portrait photo frames, bold serif headers for names, and clean labels for age group and gender to keep caretakers focused on the child in need.
+- **Human-Centered Response Status**: Rather than technical workflow states, alerts represent progress with a compassionate, human-centered step-by-step sequence labeled *Response status*:
+  - **Step 1**: Help requested
+  - **Step 2**: Care team notified
+  - **Step 3**: Response acknowledged
+  - **Step 4**: Child being assisted
+  - **Step 5**: Request resolved
+- **Secondary Audio & Devices Placement**: Standard audio preference panels must never dominate the active care layout. The operator console presents a compact Sound Summary Bar at the edge of the layout, exposing full volume, chime profile, and spoken voice controls inside a collapsible drawer or popover (`isSoundSettingsOpen`).
+- **Urgent Action Confirmation**: When volunteers submit an *Urgent* level alert, they are presented with an elegant browser confirmation dialogue to prevent accidental emergency triggers.
+
 
 
 
