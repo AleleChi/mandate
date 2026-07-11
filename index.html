@@ -3,6 +3,55 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Safe environment check to prevent test/headless/extension-injection crash on undefined matchMedia or chrome runtime APIs
+      (function() {
+        if (typeof window !== 'undefined') {
+          // Narrow matchMedia polyfill: only define or expand if missing/incomplete
+          if (!window.matchMedia) {
+            window.matchMedia = function(query) {
+              return {
+                matches: false,
+                media: query || '',
+                onchange: null,
+                addListener: function() {},
+                removeListener: function() {},
+                addEventListener: function() {},
+                removeEventListener: function() {},
+                dispatchEvent: function() { return false; }
+              };
+            };
+          } else {
+            // Ensure compatibility without overwriting the native implementation
+            try {
+              const testMedia = window.matchMedia('(max-width: 0px)');
+              if (testMedia) {
+                if (typeof testMedia.addListener !== 'function') {
+                  testMedia.addListener = function() {};
+                }
+                if (typeof testMedia.removeListener !== 'function') {
+                  testMedia.removeListener = function() {};
+                }
+              }
+            } catch (e) {}
+          }
+
+          // Defensive guard against incomplete runtime or onMessage under headless/automation testing
+          if (typeof window.chrome !== 'undefined' && window.chrome) {
+            if (window.chrome.runtime) {
+              if (window.chrome.runtime.onMessage) {
+                if (typeof window.chrome.runtime.onMessage.addListener !== 'function') {
+                  window.chrome.runtime.onMessage.addListener = function() {};
+                }
+                if (typeof window.chrome.runtime.onMessage.emit !== 'function') {
+                  window.chrome.runtime.onMessage.emit = function() {};
+                }
+              }
+            }
+          }
+        }
+      })();
+    </script>
     <title>Koinonia Children and Teens Event Registration</title>
     <meta name="description" content="Register, manage child details, receive event updates, and access secure check-in and pickup support for Koinonia Children and Teens events." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

@@ -471,3 +471,37 @@ The Messages & Updates Centre has been integrated with a real-time live statisti
 - **Message List Sync Badge**: `data-component-version="admin-message-list-stats-sync-v1"`
 
 
+## 20. Personalised Spoken Emergency Alert Synthesis
+
+To guarantee immediate operational response on busy event days, child-linked safety alerts synthesize personalized spoken warnings.
+
+### A. Dynamic Sound/Voice Sequencing
+- **Description**: Incorporates a strict, non-overlapping audio schedule where the primary alarm (triple-tone 660Hz/880Hz/1200Hz synthesizer) is paused, a 2-second silent buffer is scheduled, and the personalized spoken warning is read via Web Speech API (`speechSynthesis`). The alarm resume timer automatically picks up afterwards.
+- **Privacy Mode Handling**: Text is generated dynamically based on active privacy setups:
+  - *Full Context*: "Urgent help needed for [Child's First Name]. [Category] is required at [Location]. Open the app now."
+  - *Event Privacy*: "Urgent [Category] is required at [Location]. Open the app now."
+  - *Private Mode*: "Urgent help needed. Open the app now."
+- **Proof Identifiers**:
+  - `data-component-version="emergency-voice-message-builder-v1"`
+  - `data-component-version="spoken-alert-category-map-v1"`
+  - `data-component-version="spoken-alert-child-name-privacy-v1"`
+  - `data-component-version="emergency-alarm-voice-sequence-v1"`
+
+
+## 21. Responsive Scrollable Active Emergency Overlay Takeover
+
+The active emergency takeover card ensures that all details remain legible and interactive across small mobile devices and desktop screens alike.
+
+### A. Layout Structure
+- **Mobile-Safe Flex-Column Frame**: Uses an outer flex structure (`flex flex-col`) with a safe height limit (`max-h-[90dvh]`) to completely prevent screen cutoff and allow comfortable scrolling.
+- **Auto-Scrolling Body**: Inner contents—such as simulated duty controls, child photos, medical summaries, parent links, and authorized pickups—are wrapped inside a dedicated scrollable div (`overflow-y-auto`).
+- **Sticky Actions Footer**: High-contrast action buttons ("Acknowledge Alert", "Open Command Center", "Silence Device") are anchored at the bottom (`sticky bottom-0 bg-[#FAF9F6] pt-4 border-t`), keeping them immediately clickable.
+- **Proof Identifiers**:
+  - `data-view-version="urgent-alert-takeover-v7-personalised-scrollable"`
+  - `data-component-version="urgent-alert-scroll-container-v2"`
+  - `data-component-version="emergency-sticky-action-footer-v1"`
+  - `data-component-version="emergency-mobile-viewport-safe-v1"`
+  - `data-component-version="emergency-scrollable-child-summary-v1"`
+
+
+

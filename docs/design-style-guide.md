@@ -225,6 +225,18 @@ To ensure the administrative event management pages match Koinonia's premium bra
 - **Proof Indicators**: Employs `data-component-version="admin-updates-summary-api-v1-live"`, `data-component-version="admin-messages-summary-v2-live"`, and `data-component-version="admin-message-list-stats-sync-v1"` to verify real-time aggregates.
 
 
+### Personalised Spoken Emergency Alert Sound Coordination
+- **Interlocking Audio Lifecycle**: Alarm sound loops and speech synthesis must never conflict. The design requires an explicit sequence: trigger triple-tone alarm -> pause loop and wait 2 seconds -> speak the personalized safety message clearly -> resume standard alarm loop interval.
+- **Privacy-Safe Speech Patterns**: In-app vocal messaging must respect user/child privacy configurations strictly. When private mode is active, the speech synthesizer must read generic texts ("Urgent help needed. Open the app now.") rather than details. When full context is permitted, it must integrate the child's dynamic first name, category label, and location dynamically.
+- **Tone & Cadence**: Voice rate is calibrated at a professional 1.0 pace with a stable 1.0 pitch, avoiding fast-paced robotic sounds.
+
+### Scrollable Takeover Card Responsive Layout
+- **Dynamic Viewport Bounding**: The emergency takeover must fit cleanly inside a standard mobile screen height. It utilizes dynamic viewport heights (`100dvh` / `max-h-[90dvh]` inner card) with vertical flex styling (`flex flex-col`) to completely prevent top/bottom content clipping.
+- **Scrollable Details Area**: Houses secondary details—including emergency description, child picture summaries, care sheets, and parent profile links—inside a fluid scrolling interior section (`overflow-y-auto`), ensuring instant readability.
+- **Sticky Actions Footer**: High-contrast action trigger containers (Acknowledge, Resolve, Silence) must be anchored at the bottom (`sticky bottom-0`) on a solid warm backdrop (`bg-[#FAF9F6] pt-4 border-t border-[#EAE8E1]`), ensuring critical safety controls are always clickable without scrolling.
+
+
+
 
 
 

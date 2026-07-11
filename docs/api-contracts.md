@@ -2036,6 +2036,7 @@ Retrieves live aggregate message totals and safety concern states across the act
 
 ### 17.11 POST `/api/admin/safety-alerts/:id/acknowledge`
 Marks an active safety alert as acknowledged.
+- **Side-Effects on Client**: Once acknowledged, the server updates the alert status. The client instantly terminates any ongoing triple-tone audio loops, ceases haptic vibrations via `navigator.vibrate(0)`, and cancels any active `speechSynthesis` spoken alerts.
 - **Response** (`200 OK`):
   ```json
   {
@@ -2053,6 +2054,7 @@ Marks an active safety alert as acknowledged.
 
 ### 17.12 POST `/api/admin/safety-alerts/:id/resolve`
 Marks a safety alert as resolved with a detailed resolution note.
+- **Side-Effects on Client**: Clears the emergency takeover overlay completely on all connected devices, resets device audio context, and terminates haptic motors immediately.
 - **Response** (`200 OK`):
   ```json
   {
@@ -2067,6 +2069,7 @@ Marks a safety alert as resolved with a detailed resolution note.
     }
   }
   ```
+
 
 ### 17.13 POST `/api/admin/parents/:id/permanent-delete`
 Permanently deletes and anonymizes a soft-removed parent's profile and disables their user login credentials.

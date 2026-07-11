@@ -696,3 +696,26 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Verification for Sensitive Actions**: Whenever a volunteer triggers a sensitive action (such as confirming a pickup release), the interface requests a secure biometric passkey check to prevent unauthorized child handovers.
 
 
+## 49. Personalised Spoken Emergency Alerts
+- **Dynamic Speech Synthesis**: When a new child-linked urgent alert is active, the system synthesizes dynamic voice messages using the Web Speech API (`speechSynthesis`) to command immediate team focus.
+- **Privacy-Aware Content Builder**: Spoken text is built using real alert data tailored strictly by active privacy configurations:
+  - *Full Context (Default)*: "Urgent help needed for [Child's First Name]. [Category Label] is required at [Location Label]. Open the app now." If location is unassigned: "Urgent help needed for [Child's First Name]. [Category Label] is required. Open the app now."
+  - *Event Privacy*: "Urgent [Category Label] is required at [Location Label]. Open the app now."
+  - *Private Mode*: "Urgent help needed. Open the app now."
+  - *No Child Linked / Custom Name*: "Urgent help needed for [Reported Name]. [Category Label] is required at [Location Label]. Open the app now."
+- **Coordinated Audio Sequence**: Prevents the clash of concurrent sound alerts by managing transitions sequentially:
+  - Initial 3-frequency triple-tone alarm plays.
+  - Alarm is paused for a 2-second buffer.
+  - Spoken text is read clearly.
+  - Once speech concludes, the repeating audio alarm resumes on its standard interval cadence.
+- **Repeating Reminders**: The personalized spoken alerts automatically repeat every 30 seconds as long as the safety concern remains open and unacknowledged.
+- **Immediate Voice Stop Rules**: All Speech Synthesis cues, repeating audio intervals, and handset vibrations are completely stopped the instant any authorized staff member acknowledges or resolves the alert.
+
+## 50. Scrollable Emergency Takeover Layout
+- **Mobile Viewport-Safe Wrapper**: The full-screen emergency takeover overlay utilizes a responsive flex-column layout with a safe dynamic height bounding (`100dvh` viewport / `max-h-[90dvh]` inner card) preventing layout cutoff or screen clipping on small handheld devices.
+- **Sticky Actions Footer**: Critical action triggers—including "Acknowledge Alert" (stops device sound), "Open Command Center", "Resolve Directly", "Silence Device", and "Submit Resolution"—are anchored in a static, sticky footer container at the bottom of the card, remaining instantly accessible at all times without scrolling.
+- **Scrollable Details Body**: The entire interior of the takeover card—encompassing active simulation controls, raised-by metrics, location details, child identity summary cards, medical summaries, parent contact details, and authorized pickup pictures—is placed inside a dedicated scrolling container (`overflow-y-auto`) for flawless desktop, tablet, and mobile readability.
+- **Controlled Scroll Lock**: Parent container background scrolling is controlled when the takeover modal is active, focusing the administrator's undivided interaction on the scrolling emergency details card.
+
+
+

@@ -4149,16 +4149,56 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       metadataJson
     ]);
 
+    // Populate safety_alert_recipients for all on-duty admins and team leads
+    let eligibleRecipients = [];
     try {
-      const admins = await query("SELECT id FROM users WHERE role IN ('admin', 'super_admin')");
+      eligibleRecipients = await query(`
+        SELECT u.id, u.role, COALESCE(d.on_duty, 1) as on_duty, COALESCE(d.active, 1) as active, COALESCE(d.alert_enabled, 1) as alert_enabled
+        FROM users u
+        LEFT JOIN user_duty_status d ON u.id = d.user_id
+        WHERE u.role IN ('admin', 'super_admin', 'team')
+          AND COALESCE(d.active, 1) = 1
+          AND COALESCE(d.on_duty, 1) = 1
+      `);
+
+      for (const rec of eligibleRecipients) {
+        const recipientId = `recip-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO safety_alert_recipients (
+            id, alert_id, recipient_user_id, recipient_role,
+            sound_started_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          recipientId,
+          alertId,
+          rec.id,
+          rec.role,
+          severity === 'urgent' && rec.alert_enabled === 1 ? now : null,
+          now,
+          now
+        ]);
+      }
+    } catch (recipErr) {
+      console.error('[Safety Alert] Failed to register recipients:', recipErr);
+    }
+
+    try {
       const pushTitle = severity === 'urgent' ? 'Urgent help needed' : 'Support requested';
       const pushBody = `A volunteer requested admin support.`;
-      for (const admin of admins) {
-        await sendWebPush(admin.id, {
-          title: pushTitle,
-          body: pushBody,
-          metadata: { alertId, severity }
-        });
+      for (const rec of eligibleRecipients) {
+        if (rec.alert_enabled === 1) {
+          await sendWebPush(rec.id, {
+            title: pushTitle,
+            body: pushBody,
+            metadata: { alertId, severity }
+          });
+          // Update recipient record with push info
+          await execute(`
+            UPDATE safety_alert_recipients
+            SET push_sent_at = ?, push_status = 'sent'
+            WHERE alert_id = ? AND recipient_user_id = ?
+          `, [now, alertId, rec.id]);
+        }
       }
     } catch (pushErr) {
       console.error('[Safety Alert] Failed to send push notifications to admins:', pushErr);

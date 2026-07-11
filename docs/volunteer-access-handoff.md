@@ -714,6 +714,35 @@ To prevent distracting or noisy interruptions on event day, the volunteer team a
 - **Audience Role Preferences**: Restricts noise triggers based on individual device preferences (`koinonia_device_receive_urgent` and `koinonia_device_sound`).
 
 
+## 18. Volunteer Personalised Spoken Emergency Alerts
+
+To guarantee immediate action without looking at the screen, active safety alerts in Volunteer Team Alerts (`/volunteer/team-alerts`) synthesize spoken messages using Web Speech API.
+
+### A. Spoken Alert Content & Tone
+- **Personalized First Name**: The first spoken message identifies the child's name directly to speed up volunteer-day response times.
+- **Privacy Mode Adaptive**: Generates safety-critical spoken instructions depending on privacy configurations:
+  - *Full Context*: "Urgent help needed for [Child's First Name]. [Category] is required at [Location]. Open the app now."
+  - *Event Privacy*: "Urgent [Category] is required at [Location]. Open the app now."
+  - *Private Mode*: "Urgent help needed. Open the app now."
+- **Non-Overlapping Sequence**: Automatically pauses the repeating 3-frequency alarm sound before speaking, pauses for 2 seconds, reads the spoken alert, and resumes the alarm pattern without audio overlap.
+- **Stop Controls**: Instantly stops all Speech Synthesis cues and vibration loops when an administrator or care lead acknowledges the emergency.
+
+
+## 19. Volunteer Team Alerts Takeover Layout
+
+In the Volunteer Desk / Team Alerts section, the urgent alert details are displayed using a fully responsive, scrollable design.
+
+### A. Mobile Scrollability & Layout
+- **Dynamic Outer Bounds**: Designed with a safe viewport boundary (`max-h-[90dvh]` on mobile / `max-h-[85dvh]` on desktop) to fit inside any handheld viewport without clipping.
+- **Scrollable Details Container**: Houses the complete safety alert history, location guides, child summaries, care/medical warnings, and parent contact references in a scrollable inner division (`overflow-y-auto`).
+- **Sticky Actions Footer**: High-contrast, touch-safe (minimum 44px touch target) buttons are anchored to the bottom, ensuring that the team can instantly Acknowledge, Resolve, or Silence the alert.
+- **Proof Identifiers**:
+  - `data-view-version="urgent-alert-takeover-v7-personalised-scrollable"`
+  - `data-component-version="urgent-alert-scroll-container-v2"`
+  - `data-component-version="emergency-sticky-action-footer-v1"`
+
+
+
 
 
 

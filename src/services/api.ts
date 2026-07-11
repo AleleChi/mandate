@@ -1084,6 +1084,11 @@ export const api = {
         method: 'POST'
       });
     },
+    async silenceSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/silence`, {
+        method: 'POST'
+      });
+    },
     async testDeviceAlert() {
       return api.request<{ success: boolean; message: string; alert: any }>('/api/admin/alert-delivery/test-device', {
         method: 'POST'

@@ -580,6 +580,39 @@ function initSqliteSchema(db: Database.Database) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS safety_alert_recipients (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      recipient_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_role TEXT NOT NULL,
+      recipient_group TEXT,
+      delivered_in_app_at TEXT,
+      push_sent_at TEXT,
+      push_status TEXT,
+      read_at TEXT,
+      sound_started_at TEXT,
+      sound_stopped_at TEXT,
+      acknowledged_visibility_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(alert_id, recipient_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_duty_status (
+      id TEXT PRIMARY KEY,
+      user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      active INTEGER DEFAULT 1,
+      approved INTEGER DEFAULT 1,
+      on_duty INTEGER DEFAULT 1,
+      alert_enabled INTEGER DEFAULT 1,
+      assigned_event_id TEXT,
+      assigned_team TEXT,
+      shift_start TEXT,
+      shift_end TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS user_passkeys (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -846,6 +879,49 @@ function initSqliteSchema(db: Database.Database) {
       INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, home_address, preferred_contact, is_koinonia_worker, country, state_region, city, photo_file_id, profile_completed_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
     `).run(adminProfileId, adminUserId, 'Super Admin', 'admin@koinonia.org', '+2348031234567', '+2348031234567', 'Koinonia Global Headquarters, Abuja', 'WhatsApp', 'Nigeria', 'FCT', 'Abuja', 'photo-parent-default', now, now, now);
+
+    db.prepare(`
+      INSERT INTO user_duty_status (id, user_id, active, approved, on_duty, alert_enabled, assigned_event_id, assigned_team, created_at, updated_at)
+      VALUES (?, ?, 1, 1, 1, 1, ?, 'Admins', ?, ?)
+    `).run('duty-admin-2026', adminUserId, REAL_EVENT_ID, now, now);
+
+    // Seed 9 additional admins to make it 10 admins total
+    for (let i = 1; i <= 9; i++) {
+      const extraAdminUserId = `admin-user-id-2026-${i}`;
+      const extraAdminProfileId = `admin-profile-id-2026-${i}`;
+      const email = `admin${i}@koinonia.org`;
+      
+      db.prepare(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES (?, ?, ?, 'admin', 1, ?, ?)
+      `).run(extraAdminUserId, email, hashedPassword, now, now);
+
+      db.prepare(`
+        INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, home_address, preferred_contact, is_koinonia_worker, country, state_region, city, photo_file_id, profile_completed_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        extraAdminProfileId, 
+        extraAdminUserId, 
+        `Admin Specialist ${i}`, 
+        email, 
+        `+234803123456${i}`, 
+        `+234803123456${i}`, 
+        'Koinonia Headquarters', 
+        'WhatsApp', 
+        'Nigeria', 
+        'FCT', 
+        'Abuja', 
+        'photo-parent-default', 
+        now, 
+        now, 
+        now
+      );
+
+      db.prepare(`
+        INSERT INTO user_duty_status (id, user_id, active, approved, on_duty, alert_enabled, assigned_event_id, assigned_team, created_at, updated_at)
+        VALUES (?, ?, 1, 1, 1, 1, ?, 'Admins', ?, ?)
+      `).run(`duty-admin-${i}`, extraAdminUserId, REAL_EVENT_ID, now, now);
+    }
 
     // 2. Parent Account
     const parentUserId = 'parent-user-id-2026';
@@ -1374,6 +1450,39 @@ async function initPostgresSchema(pool: any) {
         updated_at TIMESTAMP NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS safety_alert_recipients (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        recipient_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        recipient_role VARCHAR(64) NOT NULL,
+        recipient_group VARCHAR(64),
+        delivered_in_app_at TIMESTAMP,
+        push_sent_at TIMESTAMP,
+        push_status VARCHAR(64),
+        read_at TIMESTAMP,
+        sound_started_at TIMESTAMP,
+        sound_stopped_at TIMESTAMP,
+        acknowledged_visibility_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        UNIQUE(alert_id, recipient_user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS user_duty_status (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        active INTEGER DEFAULT 1,
+        approved INTEGER DEFAULT 1,
+        on_duty INTEGER DEFAULT 1,
+        alert_enabled INTEGER DEFAULT 1,
+        assigned_event_id VARCHAR(255),
+        assigned_team VARCHAR(255),
+        shift_start VARCHAR(255),
+        shift_end VARCHAR(255),
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS user_passkeys (
         id VARCHAR(64) PRIMARY KEY,
         user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1657,6 +1766,49 @@ async function initPostgresSchema(pool: any) {
         INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, home_address, preferred_contact, is_koinonia_worker, country, state_region, city, photo_file_id, profile_completed_at, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, $12, $13, $14, $15)
       `, [adminProfileId, adminUserId, 'Super Admin', 'admin@koinonia.org', '+2348031234567', '+2348031234567', 'Koinonia Global Headquarters, Abuja', 'WhatsApp', 'Nigeria', 'FCT', 'Abuja', 'photo-parent-default', now, now, now]);
+
+      await pool.query(`
+        INSERT INTO user_duty_status (id, user_id, active, approved, on_duty, alert_enabled, assigned_event_id, assigned_team, created_at, updated_at)
+        VALUES ($1, $2, 1, 1, 1, 1, $3, 'Admins', $4, $5)
+      `, ['duty-admin-2026', adminUserId, REAL_EVENT_ID, now, now]);
+
+      // Seed 9 additional admins to make it 10 admins total
+      for (let i = 1; i <= 9; i++) {
+        const extraAdminUserId = `admin-user-id-2026-${i}`;
+        const extraAdminProfileId = `admin-profile-id-2026-${i}`;
+        const email = `admin${i}@koinonia.org`;
+        
+        await pool.query(`
+          INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+          VALUES ($1, $2, $3, 'admin', 1, $4, $5)
+        `, [extraAdminUserId, email, hashedPassword, now, now]);
+
+        await pool.query(`
+          INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, home_address, preferred_contact, is_koinonia_worker, country, state_region, city, photo_file_id, profile_completed_at, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11, $12, $13, $14, $15)
+        `, [
+          extraAdminProfileId, 
+          extraAdminUserId, 
+          `Admin Specialist ${i}`, 
+          email, 
+          `+234803123456${i}`, 
+          `+234803123456${i}`, 
+          'Koinonia Headquarters', 
+          'WhatsApp', 
+          'Nigeria', 
+          'FCT', 
+          'Abuja', 
+          'photo-parent-default', 
+          now, 
+          now, 
+          now
+        ]);
+
+        await pool.query(`
+          INSERT INTO user_duty_status (id, user_id, active, approved, on_duty, alert_enabled, assigned_event_id, assigned_team, created_at, updated_at)
+          VALUES ($1, $2, 1, 1, 1, 1, $3, 'Admins', $4, $5)
+        `, [`duty-admin-${i}`, extraAdminUserId, REAL_EVENT_ID, now, now]);
+      }
 
       // 2. Parent Account
       const parentUserId = 'parent-user-id-2026';

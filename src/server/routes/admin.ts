@@ -5874,16 +5874,88 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
+    const now = new Date().toISOString();
+
+    // Auto-escalation: Escalate open safety concerns to urgent after 45 seconds of no responder acknowledgement
+    try {
+      const openUnacknowledgedAlerts = await query(`
+        SELECT id, created_at, severity, title FROM event_safety_alerts 
+        WHERE status = 'open' AND severity != 'urgent' AND event_id = ?
+      `, [REAL_EVENT_ID]);
+
+      for (const alert of openUnacknowledgedAlerts) {
+        const elapsedMs = Date.now() - new Date(alert.created_at).getTime();
+        const escalationThresholdMs = 45000; // 45 seconds for reactive on-duty escalation
+        if (elapsedMs > escalationThresholdMs) {
+          const escalatedTitle = alert.title.startsWith('[ESCALATED]') ? alert.title : `[ESCALATED] ${alert.title}`;
+          await execute(`
+            UPDATE event_safety_alerts
+            SET severity = 'urgent', title = ?, updated_at = ?
+            WHERE id = ?
+          `, [escalatedTitle, now, alert.id]);
+
+          // Un-silence and trigger sound for all recipients
+          await execute(`
+            UPDATE safety_alert_recipients
+            SET sound_started_at = ?, sound_stopped_at = NULL, updated_at = ?
+            WHERE alert_id = ?
+          `, [now, now, alert.id]);
+          
+          console.log(`[Auto-Escalation] Alert ${alert.id} escalated to urgent after ${elapsedMs / 1000}s of inactivity.`);
+        }
+      }
+    } catch (escalateErr) {
+      console.error('[Auto-Escalation] Failed to run escalation check:', escalateErr);
+    }
+
+    // Auto-register this admin as a recipient for active alerts if not already tracked
+    const openAlerts = await query(`SELECT id, severity, status FROM event_safety_alerts WHERE status != 'resolved' AND event_id = ?`, [REAL_EVENT_ID]);
+    for (const alert of openAlerts) {
+      const exists = await queryOne(`SELECT id FROM safety_alert_recipients WHERE alert_id = ? AND recipient_user_id = ?`, [alert.id, req.user.id]);
+      if (!exists) {
+        const recipientId = `recip-${crypto.randomUUID()}`;
+        const dutyStatus = await queryOne(`SELECT alert_enabled FROM user_duty_status WHERE user_id = ?`, [req.user.id]);
+        const alertEnabled = dutyStatus ? dutyStatus.alert_enabled : 1;
+        await execute(`
+          INSERT INTO safety_alert_recipients (
+            id, alert_id, recipient_user_id, recipient_role,
+            sound_started_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          recipientId,
+          alert.id,
+          req.user.id,
+          req.user.role,
+          alert.status === 'open' && alert.severity === 'urgent' && alertEnabled === 1 ? now : null,
+          now,
+          now
+        ]);
+      }
+    }
+
+    // Mark as delivered in app
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET delivered_in_app_at = COALESCE(delivered_in_app_at, ?)
+      WHERE recipient_user_id = ? AND delivered_in_app_at IS NULL
+    `, [now, req.user.id]);
+
     const alerts = await query(`
       SELECT a.*,
              c.full_name as child_name,
              c.photo_file_id as child_photo_file_id,
              c.age_group as child_age_group,
+             c.calculated_age as child_calculated_age,
              p_parent.full_name as parent_name,
              p_parent.phone_number as parent_phone,
              COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
              COALESCE(p_ack.full_name, v_ack.full_name, 'Admin') as acknowledged_by_name,
-             COALESCE(p_res.full_name, v_res.full_name, 'Admin') as resolved_by_name
+             COALESCE(p_res.full_name, v_res.full_name, 'Admin') as resolved_by_name,
+             r.delivered_in_app_at,
+             r.read_at,
+             r.sound_started_at,
+             r.sound_stopped_at,
+             r.acknowledged_visibility_at
       FROM event_safety_alerts a
       LEFT JOIN children c ON a.child_id = c.id
       LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
@@ -5893,6 +5965,7 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       LEFT JOIN volunteer_profiles v_ack ON a.acknowledged_by = v_ack.user_id
       LEFT JOIN parent_profiles p_res ON a.resolved_by = p_res.user_id
       LEFT JOIN volunteer_profiles v_res ON a.resolved_by = v_res.user_id
+      LEFT JOIN safety_alert_recipients r ON (a.id = r.alert_id AND r.recipient_user_id = ?)
       WHERE a.event_id = ?
       ORDER BY 
         CASE WHEN a.status = 'open' THEN 1
@@ -5904,14 +5977,14 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
              ELSE 3
         END,
         a.created_at DESC
-    `, [REAL_EVENT_ID]);
+    `, [req.user.id, REAL_EVENT_ID]);
 
     const mappedAlerts = (alerts || []).map((a: any) => {
       const childPhoto = a.child_photo_file_id ? (String(a.child_photo_file_id).startsWith('http') || String(a.child_photo_file_id).startsWith('/') ? String(a.child_photo_file_id) : `/api/media/files/${a.child_photo_file_id}`) : '';
       return {
         ...a,
         child_photo_file_id: childPhoto,
-        soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important')
+        soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important') && (!a.sound_stopped_at || a.sound_stopped_at === '')
       };
     });
 
@@ -5934,6 +6007,13 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
     if (!alert) {
       return res.status(404).json({ error: 'Safety alert not found' });
     }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET read_at = COALESCE(read_at, ?)
+      WHERE alert_id = ? AND recipient_user_id = ? AND read_at IS NULL
+    `, [now, id, req.user.id]);
 
     const dutyRole = req.query.role as string || req.headers['x-duty-role'] as string || req.user?.role || 'admin';
 
@@ -6092,6 +6172,18 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       return res.status(404).json({ error: 'Safety alert not found' });
     }
 
+    if (alert.status !== 'open') {
+      const ackUser = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.acknowledged_by]);
+      const ackName = ackUser ? ackUser.full_name : 'another Admin';
+      return res.status(409).json({
+        success: false,
+        error: `This alert has already been acknowledged by ${ackName}.`,
+        alreadyAcknowledged: true,
+        acknowledgedBy: alert.acknowledged_by,
+        acknowledgedAt: alert.acknowledged_at
+      });
+    }
+
     const now = new Date().toISOString();
     await execute(`
       UPDATE event_safety_alerts
@@ -6099,8 +6191,22 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
           acknowledged_by = ?,
           acknowledged_at = ?,
           updated_at = ?
-      WHERE id = ?
+      WHERE id = ? AND status = 'open'
     `, [req.user.id, now, now, id]);
+
+    // Also update this recipient's specific record to show acknowledgement action
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET acknowledged_visibility_at = ?, sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ? AND recipient_user_id = ?
+    `, [now, now, now, id, req.user.id]);
+
+    // Also update all other recipients of this alert to stop their sounds!
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ?
+    `, [now, now, id]);
 
     res.json({ 
       success: true, 
@@ -6134,6 +6240,16 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
       return res.status(404).json({ error: 'Safety alert not found' });
     }
 
+    if (alert.status === 'resolved') {
+      const resUser = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.resolved_by]);
+      const resName = resUser ? resUser.full_name : 'another Admin';
+      return res.status(409).json({
+        success: false,
+        error: `This alert has already been resolved by ${resName}.`,
+        alreadyResolved: true
+      });
+    }
+
     if ((alert.severity === 'important' || alert.severity === 'urgent') && (!note || !note.trim())) {
       return res.status(400).json({ error: 'Please add a resolution note.' });
     }
@@ -6149,6 +6265,13 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
       WHERE id = ?
     `, [req.user.id, now, (note || 'Resolved by admin').trim(), now, id]);
 
+    // Ensure repeating sound is stopped for all recipients of this resolved alert
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ?
+    `, [now, now, id]);
+
     res.json({ 
       success: true, 
       message: 'Alert resolved.',
@@ -6163,6 +6286,29 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
   } catch (err) {
     console.error('Resolve safety alert error:', err);
     res.status(500).json({ error: 'Failed to resolve safety alert' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/silence
+router.post('/safety-alerts/:id/silence', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.params;
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = ?, updated_at = ?
+      WHERE alert_id = ? AND recipient_user_id = ?
+    `, [now, now, id, req.user.id]);
+
+    res.json({ success: true, message: 'Alert silenced on this device.' });
+  } catch (err) {
+    console.error('Silence safety alert error:', err);
+    res.status(500).json({ error: 'Failed to silence safety alert' });
   }
 });
 

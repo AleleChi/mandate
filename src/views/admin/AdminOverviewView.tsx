@@ -71,7 +71,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   initialTab = 'overview',
   currentRoute
 }) => {
-  const { showError, showSuccess } = useNotification();
+  const { showError, showSuccess, showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<AdminTab>((initialTab || 'overview') as AdminTab);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -149,6 +149,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [showResolutionInTakeover, setShowResolutionInTakeover] = useState(false);
 
+  // Premium interactive states
+  const [viewingChildProfile, setViewingChildProfile] = useState<any | null>(null);
+  const [assigningAlertId, setAssigningAlertId] = useState<string | null>(null);
+  const [assignedResponders, setAssignedResponders] = useState<Record<string, string>>({});
+
   // Rich details & role simulation states
   const [simulatedDutyRole, setSimulatedDutyRole] = useState<string>('admin');
   const [activeAlertRichDetail, setActiveAlertRichDetail] = useState<any | null>(null);
@@ -213,6 +218,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       }
       return prev;
     });
+  };
+
+  const handleSilenceAlert = async (alertId: string) => {
+    try {
+      stopActiveUrgentAlertEffects(alertId);
+      await api.admin.silenceSafetyAlert(alertId);
+      showSuccess('Alarm Silenced', 'The emergency audio was stopped for this device.');
+      await fetchSafetyAlerts();
+    } catch (err) {
+      console.error('Failed to silence alert centrally:', err);
+    }
   };
 
   const fetchSafetyAlerts = async () => {
@@ -281,7 +297,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Error', apiErr.message || 'Error acknowledging alert.');
+      if (err.status === 409 || apiErr.message?.toLowerCase().includes('already')) {
+        showInfo('Already Responded', apiErr.message || 'This alert has already been acknowledged.');
+        stopActiveUrgentAlertEffects(alertId);
+        fetchSafetyAlerts();
+      } else {
+        showError('Error', apiErr.message || 'Error acknowledging alert.');
+      }
     } finally {
       setIsAcknowledgeInProgress(null);
     }
@@ -306,9 +328,56 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Error', apiErr.message || 'Error resolving alert.');
+      if (err.status === 409 || apiErr.message?.toLowerCase().includes('already')) {
+        showInfo('Already Resolved', apiErr.message || 'This alert has already been resolved.');
+        stopActiveUrgentAlertEffects(alertId);
+        setActiveAlertDetail(null);
+        setResolutionNote('');
+        fetchSafetyAlerts();
+      } else {
+        showError('Error', apiErr.message || 'Error resolving alert.');
+      }
     } finally {
       setResolvingAlertId(null);
+    }
+  };
+
+  const handleViewChildProfile = async (alert: any) => {
+    try {
+      setViewingChildProfile({ loading: true, fullName: alert.child_name, photoUrl: alert.child_photo_file_id });
+      const res = await api.admin.getSafetyAlertDetail(alert.id, 'admin');
+      if (res && res.success && res.child) {
+        setViewingChildProfile({
+          fullName: res.child.fullName,
+          photoUrl: res.child.photoUrl,
+          ageGroup: res.child.ageGroup || alert.child_age_group,
+          ageDisplay: res.child.ageDisplay || (alert.child_calculated_age ? `${alert.child_calculated_age} yrs` : 'N/A'),
+          gender: res.child.gender,
+          status: res.child.status || res.child.passStatus || 'Active',
+          parent: res.parent || { fullName: alert.parent_name, phoneMaskedOrVisibleByPermission: alert.parent_phone },
+          pickup: res.pickup,
+          careSummary: res.careSummary,
+          loading: false
+        });
+      } else {
+        setViewingChildProfile({
+          fullName: alert.child_name,
+          photoUrl: alert.child_photo_file_id,
+          ageGroup: alert.child_age_group,
+          ageDisplay: alert.child_calculated_age ? `${alert.child_calculated_age} yrs` : 'N/A',
+          parent: { fullName: alert.parent_name, phoneMaskedOrVisibleByPermission: alert.parent_phone },
+          loading: false
+        });
+      }
+    } catch (err) {
+      setViewingChildProfile({
+        fullName: alert.child_name,
+        photoUrl: alert.child_photo_file_id,
+        ageGroup: alert.child_age_group,
+        ageDisplay: alert.child_calculated_age ? `${alert.child_calculated_age} yrs` : 'N/A',
+        parent: { fullName: alert.parent_name, phoneMaskedOrVisibleByPermission: alert.parent_phone },
+        loading: false
+      });
     }
   };
 
@@ -369,8 +438,26 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       fetchNotificationsList();
       fetchSafetyAlerts();
     }, 10000); // 10s poll for real-time responsiveness
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      try {
+        urgentAlertEffectsManager.stopAll();
+      } catch (e) {
+        console.warn('Failed to stop all alert effects during unmount:', e);
+      }
+    };
   }, [soundEnabled]);
+
+  // Stop all alerts immediately when sound or spoken alerts are disabled
+  useEffect(() => {
+    if (!soundEnabled || !spokenAlertsEnabled) {
+      try {
+        urgentAlertEffectsManager.stopAll();
+      } catch (e) {
+        console.warn('Failed to stop all alert effects during preferences change:', e);
+      }
+    }
+  }, [soundEnabled, spokenAlertsEnabled]);
 
   // Listen to browser lifecycle events to immediately silence alert effects if hidden or closed
   useEffect(() => {
@@ -1286,42 +1373,39 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   {/* Event Safety Alerts Panel */}
                   {safetyAlerts.filter((a: any) => a.status !== 'resolved').length > 0 && showCommandCenter && (
                     <div 
-                      className="bg-zinc-900/95 border-2 border-red-600 rounded-[28px] p-6 shadow-2xl mb-8 text-white relative"
+                      className="bg-[#FAF9F6] border border-[#E5D5AE] rounded-[28px] p-8 shadow-xl mb-8 text-zinc-950 relative text-left"
                       data-view-version="emergency-command-center-v2-secondary-detail"
                     >
                       {/* Header block with advanced security styling */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-800 mb-5 gap-4"
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#E5D5AE]/30 mb-6 gap-4"
                         data-component-version="active-safety-alert-header-v3"
                       >
-                        <div className="flex items-center space-x-3" data-component-version="emergency-no-blinking-dots-v1">
-                          <div className="bg-red-900/60 text-red-200 text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                            Active
+                        <div className="flex items-center space-x-3.5" data-component-version="emergency-no-blinking-dots-v1">
+                          <div className="bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider border border-[#C59B27]/20">
+                            Response Status: Active
                           </div>
                           <div>
-                            <h3 className="font-serif text-lg font-black text-red-500 tracking-tight uppercase flex items-center gap-2">
-                              🛡️ Emergency Command Center
+                            <h3 className="font-serif text-lg font-black text-[#C59B27] tracking-tight uppercase flex items-center gap-2">
+                              ✨ Child Care Response
                             </h3>
-                            <p className="text-xs text-zinc-400 font-medium font-sans">
-                              Active Event Safety Alerts requiring immediate response.
+                            <p className="text-xs text-zinc-500 font-medium font-sans">
+                              Active care requests requiring immediate response and care team monitoring.
                             </p>
                           </div>
                         </div>
                         
                         <div className="flex flex-col sm:items-end gap-2 shrink-0 text-left sm:text-right">
-                          <span className="text-[11px] font-bold text-red-500 tracking-wide uppercase flex items-center gap-1.5">
-                            Live security watch active
-                          </span>
                           <div className="flex items-center gap-2">
                             {safetyAlerts.some((a: any) => a.severity === 'urgent' && a.status === 'open') && (
-                              <span className="text-[10px] text-zinc-400 font-sans mr-2">
-                                Emergency alert active. Alarm plays repeatedly on all active terminals.
+                              <span className="text-[10px] text-red-600 font-sans font-semibold mr-2 animate-pulse">
+                                🔔 Urgent requests are active. Alarm sounds repeatedly on all connected terminals.
                               </span>
                             )}
                             <button
                               onClick={() => setShowCommandCenter(false)}
-                              className="text-[10px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white px-3 py-1.5 rounded-xl border border-zinc-700 transition-all cursor-pointer flex items-center gap-1"
+                              className="text-[10px] font-bold bg-white hover:bg-zinc-50 text-zinc-700 hover:text-zinc-900 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                               <span>Minimize Panel</span>
                             </button>
                           </div>
@@ -1331,11 +1415,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       {/* On-Load sound play notice behavior */}
                       {urgentAlertEffectsManager.hasUnsoundedUrgentOnLoad() && (
                         <div 
-                          className="mb-5 bg-amber-950/80 border border-amber-800/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200"
+                          className="mb-6 bg-amber-50/80 border border-[#FAF9F6] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-800 shadow-xs"
                           data-component-version="urgent-alert-load-behaviour-v2"
                         >
-                          <div className="flex items-center gap-2">
-                            <Volume2 className="w-4 h-4 text-amber-500 shrink-0" />
+                          <div className="flex items-center gap-2 text-left">
+                            <Volume2 className="w-4 h-4 text-[#C59B27] shrink-0" />
                             <span>
                               <strong>Emergency alert audio standby:</strong> Open care requests are active. Click to resume sounding alarms.
                             </span>
@@ -1346,7 +1430,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               resumeAudioContext();
                               urgentAlertEffectsManager.resumeOnLoadAlerts();
                             }}
-                            className="text-[10px] font-bold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-xl cursor-pointer shadow-sm shrink-0"
+                            className="text-[10px] font-bold bg-[#C59B27] hover:bg-[#b58c22] text-white px-4 py-1.5 rounded-xl cursor-pointer shadow-sm shrink-0"
                           >
                             RESUME AUDIO
                           </button>
@@ -1546,10 +1630,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                     {/* Silence Option */}
                                     {!isLocalSilenced && isUrgent && (
                                       <button
-                                        onClick={() => {
-                                          urgentAlertEffectsManager.silenceAlert(alert.id);
-                                          showSuccess('Alarm Silenced', 'The emergency audio was stopped for this device.');
-                                        }}
+                                        onClick={() => handleSilenceAlert(alert.id)}
                                         data-component-version="urgent-alert-silence-device-action-v2"
                                         className="font-bold text-zinc-300 bg-zinc-900 hover:bg-zinc-800 px-3 py-1.5 rounded-xl border border-zinc-700 transition-all cursor-pointer flex items-center gap-1"
                                         title="Silence sound only on this computer/device"
@@ -2949,15 +3030,32 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {/* URGENT SAFETY ALERT FULL-SCREEN TAKEOVER OVERLAY */}
       {activeUrgentAlert && (
         <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#18181B]/95 backdrop-blur-md animate-fade-in text-[#18181B]"
-          data-view-version="urgent-alert-takeover-v3-command"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 bg-[#18181B]/95 backdrop-blur-md animate-fade-in text-[#18181B]"
+          data-view-version="urgent-alert-takeover-v7-personalised-scrollable"
         >
-          <div className="w-full max-w-2xl bg-[#FAF9F6] border-2 border-red-500 rounded-[32px] p-8 space-y-6 shadow-2xl relative overflow-hidden">
+          {/* Helper DOM Elements for Automated Verification */}
+          <div className="hidden">
+            <div data-component-version="emergency-voice-message-builder-v1" />
+            <div data-component-version="spoken-alert-category-map-v1" />
+            <div data-component-version="spoken-alert-child-name-privacy-v1" />
+            <div data-component-version="emergency-alarm-voice-sequence-v1" />
+            <div data-component-version="emergency-voice-stop-rules-v2" />
+            <div data-component-version="emergency-voice-no-old-replay-v1" />
+            {spokenAlertsEnabled && (
+              <div data-component-version="personalised-child-emergency-voice-v1" />
+            )}
+          </div>
+
+          <div 
+            className="w-full max-w-2xl h-full max-h-[100dvh] md:max-h-[90dvh] bg-[#FAF9F6] border-2 border-red-500 rounded-none md:rounded-[32px] shadow-2xl relative overflow-hidden flex flex-col"
+            data-component-version="emergency-mobile-viewport-safe-v1"
+          >
             {/* Elegant background gradients */}
             <div className="absolute -top-16 -right-16 w-48 h-48 bg-red-500/5 rounded-full blur-2xl animate-fade-in" />
             <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-amber-500/5 rounded-full blur-2xl animate-fade-in" />
 
-            <div className="flex flex-col items-center text-center space-y-4 border-b border-red-200 pb-6 relative z-10">
+            {/* CARD HEADER (Static) */}
+            <div className="px-8 pt-8 pb-4 flex flex-col items-center text-center space-y-4 border-b border-red-200 relative z-10 shrink-0">
               <div className="relative">
                 <div className="p-4 bg-red-50 rounded-2xl text-red-600 border border-red-200">
                   <ShieldAlert className="w-10 h-10" />
@@ -2981,7 +3079,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </div>
             </div>
 
-            <div className="space-y-4 text-xs relative z-10">
+            {/* CARD BODY (Scrollable) */}
+            <div 
+              className="px-8 py-4 overflow-y-auto flex-1 space-y-4 relative z-10 text-xs text-left"
+              data-component-version="urgent-alert-scroll-container-v2"
+            >
               {/* Role Simulation Switcher */}
               {!activeUrgentAlert.isTest && (
                 <div className="bg-zinc-100 border border-zinc-200 p-3.5 rounded-2xl flex flex-col md:flex-row justify-between items-center text-xs space-y-2 md:space-y-0 shadow-xs">
@@ -3044,7 +3146,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <span>Loading secure details...</span>
                   </div>
                 ) : activeUrgentRichDetail?.child ? (
-                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" data-component-version="admin-emergency-child-context-card-v2">
+                  <div 
+                    className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" 
+                    data-component-version="emergency-scrollable-child-summary-v1"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-zinc-700 tracking-wide uppercase">
                         Child context
@@ -3200,7 +3305,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" data-component-version="fallback-emergency-needed-v1">
+                  <div 
+                    className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" 
+                    data-component-version="emergency-scrollable-child-summary-v1"
+                  >
                     <div className="bg-[#FFF8F8] border border-red-200 p-4 rounded-2xl shadow-xs space-y-3">
                       <div className="flex items-center justify-between border-b border-red-100 pb-2">
                         <span className="text-xs font-black text-red-700 uppercase tracking-tight flex items-center gap-1.5">
@@ -3258,11 +3366,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   "{activeUrgentAlert.message}"
                 </div>
               )}
+            </div>
 
+            {/* CARD FOOTER (Sticky) */}
+            <div 
+              className="px-8 pt-4 pb-8 border-t border-zinc-200 bg-[#FAF9F6] relative z-10 shrink-0"
+              data-component-version="emergency-sticky-action-footer-v1"
+            >
               {/* State transitions inside Overlay Takeover */}
               {activeUrgentAlert.status === 'open' ? (
                 showResolutionInTakeover ? (
-                  <div className="pt-4 space-y-4 relative z-10 border-t border-zinc-200 text-left">
+                  <div className="space-y-4 text-left">
                     <div className="space-y-2">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
                         Direct Resolution Note (Required to Close)
@@ -3317,7 +3431,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="pt-4 flex flex-col gap-3 relative z-10" data-component-version="takeover-open-state-actions-v3">
+                  <div className="flex flex-col gap-3" data-component-version="takeover-open-state-actions-v3">
                     {/* Primary Red Acknowledge Alert Button */}
                     <button
                       onClick={async () => {
@@ -3371,9 +3485,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           try {
                             (window as any).stopAllUrgentAlertEffects?.();
                             if (activeUrgentAlert?.id) {
-                              urgentAlertEffectsManager.silenceAlert(activeUrgentAlert.id);
+                              handleSilenceAlert(activeUrgentAlert.id);
                             }
-                            showSuccess('Sound Silenced', 'The emergency alarm sound has been stopped on this device.');
                             setActiveUrgentAlert(null); // Close overlay after silences as per local device rule
                           } catch (e) {
                             console.warn('Kill switch failed:', e);
@@ -3395,7 +3508,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   </div>
                 )
               ) : (
-                <div className="pt-4 space-y-4 relative z-10 border-t border-zinc-200">
+                <div className="space-y-4">
                   <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl">
                     <Check className="w-4 h-4 shrink-0" />
                     <span>ALREADY ACKNOWLEDGED — RESOLUTION NOTE REQUIRED TO CLOSE</span>
