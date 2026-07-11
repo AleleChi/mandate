@@ -5878,6 +5878,7 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       SELECT a.*,
              c.full_name as child_name,
              c.photo_file_id as child_photo_file_id,
+             c.age_group as child_age_group,
              p_parent.full_name as parent_name,
              p_parent.phone_number as parent_phone,
              COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
@@ -5905,10 +5906,14 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
         a.created_at DESC
     `, [REAL_EVENT_ID]);
 
-    const mappedAlerts = (alerts || []).map((a: any) => ({
-      ...a,
-      soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important')
-    }));
+    const mappedAlerts = (alerts || []).map((a: any) => {
+      const childPhoto = a.child_photo_file_id ? (String(a.child_photo_file_id).startsWith('http') || String(a.child_photo_file_id).startsWith('/') ? String(a.child_photo_file_id) : `/api/media/files/${a.child_photo_file_id}`) : '';
+      return {
+        ...a,
+        child_photo_file_id: childPhoto,
+        soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important')
+      };
+    });
 
     res.json(mappedAlerts);
   } catch (err) {

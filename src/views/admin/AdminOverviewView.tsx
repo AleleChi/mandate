@@ -1427,21 +1427,27 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       <div className="border-t border-dashed border-zinc-800 pt-3 mt-3 flex items-center justify-between gap-4"
                                            data-component-version="emergency-command-ui-v2-premium">
                                         <div className="flex items-center space-x-2.5">
-                                          <div className="shrink-0">
+                                          <div className="shrink-0" data-component-version="admin-emergency-child-photo-v2">
                                             <SafeImage
                                               src={alert.child_photo_file_id}
                                               className="w-10 h-10 rounded-xl object-cover border border-zinc-700 shadow-sm"
                                               fallbackComponent={
-                                                <div className="w-10 h-10 rounded-xl bg-zinc-850 border border-zinc-800 flex items-center justify-center text-zinc-500">
-                                                  <User className="w-4 h-4" />
+                                                <div className="w-10 h-10 rounded-xl bg-[#24221C] border border-[#E5D5AE]/20 flex flex-col items-center justify-center text-center p-1">
+                                                  <span className="text-[6px] font-extrabold uppercase tracking-tight text-[#C59B27] leading-none">Photo</span>
+                                                  <span className="text-[5px] font-bold uppercase tracking-tight text-[#9A7326]/60 leading-none mt-0.5">unavail.</span>
                                                 </div>
                                               }
                                             />
                                           </div>
                                           <div>
-                                            <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Associated Child</p>
+                                            <p className="text-[8px] font-bold text-[#C59B27] uppercase tracking-wider mb-0.5">Associated Child</p>
                                             <p className="text-zinc-100 font-black text-xs leading-tight">{alert.child_name}</p>
-                                            <p className="text-[9px] text-zinc-400 font-medium">{alert.parent_name || 'No parent profile'}</p>
+                                            {alert.child_age_group && (
+                                              <p className="text-[10px] text-zinc-300 font-bold mt-0.5">{alert.child_age_group}</p>
+                                            )}
+                                            <p className="text-[10px] text-zinc-400 font-medium mt-0.5">
+                                              Parent: <span className="text-zinc-300 font-semibold">{alert.parent_name || 'No parent profile'}</span>
+                                            </p>
                                           </div>
                                         </div>
                                         {alert.parent_phone && (
@@ -3050,22 +3056,20 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                     <div className="flex items-start space-x-4 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs">
                       {/* Child Photo */}
-                      <div className="relative shrink-0">
-                        {activeUrgentRichDetail.child.photoUrl ? (
-                          <img
-                            src={activeUrgentRichDetail.child.photoUrl}
-                            alt={activeUrgentRichDetail.child.fullName}
-                            referrerPolicy="no-referrer"
-                            className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex flex-col items-center justify-center text-zinc-400 shrink-0 text-center p-1">
-                            <User className="w-6 h-6" />
-                            <span className="text-[8px] font-bold uppercase mt-1 leading-tight text-zinc-500">
-                              Photo unavailable
-                            </span>
-                          </div>
-                        )}
+                      <div className="relative shrink-0" data-component-version="admin-emergency-child-photo-v2">
+                        <SafeImage
+                          src={activeUrgentRichDetail.child.photoUrl}
+                          alt={activeUrgentRichDetail.child.fullName}
+                          className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
+                          fallbackComponent={
+                            <div className="w-16 h-16 rounded-2xl bg-[#FAF6EB] border border-[#E5D5AE]/40 flex flex-col items-center justify-center text-center p-1">
+                              <span className="text-[9px] font-extrabold uppercase tracking-tight text-[#C59B27] leading-none">Photo</span>
+                              <span className="text-[8px] font-bold uppercase tracking-tight text-[#9A7326]/60 mt-1 leading-none">
+                                Unavailable
+                              </span>
+                            </div>
+                          }
+                        />
                         <span className="absolute -bottom-1 -right-1 bg-zinc-800 text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white uppercase">
                           {activeUrgentRichDetail.child.gender}
                         </span>
