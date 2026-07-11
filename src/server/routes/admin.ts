@@ -5917,6 +5917,163 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
   }
 });
 
+// GET /api/admin/safety-alerts/:id
+router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const dutyRole = req.query.role as string || req.headers['x-duty-role'] as string || req.user?.role || 'admin';
+
+    let raisedBy = null;
+    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [alert.raised_by_user_id]);
+    if (volunteerProfile) {
+      raisedBy = {
+        name: volunteerProfile.full_name,
+        role: alert.raised_by_role || 'volunteer',
+        photoUrl: volunteerProfile.photo_file_id ? (String(volunteerProfile.photo_file_id).startsWith('http') || String(volunteerProfile.photo_file_id).startsWith('/') ? String(volunteerProfile.photo_file_id) : `/api/media/files/${volunteerProfile.photo_file_id}`) : ''
+      };
+    } else {
+      const parentProf = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [alert.raised_by_user_id]);
+      raisedBy = {
+        name: parentProf ? parentProf.full_name : 'Staff Member',
+        role: alert.raised_by_role || 'staff',
+        photoUrl: parentProf?.photo_file_id ? `/api/media/files/${parentProf.photo_file_id}` : ''
+      };
+    }
+
+    let child = null;
+    let parent = null;
+    let pickup = null;
+    let careSummary = null;
+
+    if (alert.child_id) {
+      const dbChild = await queryOne(`
+        SELECT c.*, e.status as entry_status, e.has_medical_notes, e.medical_notes, e.needs_extra_support, e.support_notes, e.note_to_team
+        FROM children c
+        LEFT JOIN child_event_entries e ON (c.id = e.child_id AND e.event_id = ?)
+        WHERE c.id = ?
+      `, [REAL_EVENT_ID, alert.child_id]);
+
+      if (dbChild) {
+        const dbPass = await queryOne('SELECT status FROM event_passes WHERE child_event_entry_id = ?', [alert.child_event_entry_id || '']);
+        const passStatus = dbPass ? dbPass.status : 'no_pass';
+
+        const childPhoto = dbChild.photo_file_id ? (String(dbChild.photo_file_id).startsWith('http') || String(dbChild.photo_file_id).startsWith('/') ? String(dbChild.photo_file_id) : `/api/media/files/${dbChild.photo_file_id}`) : '';
+
+        child = {
+          id: dbChild.id,
+          fullName: dbChild.full_name,
+          firstName: dbChild.full_name.split(' ')[0],
+          photoUrl: childPhoto,
+          ageDisplay: dbChild.calculated_age ? `${dbChild.calculated_age} yrs` : 'Unknown',
+          ageGroup: dbChild.age_group || 'Unassigned',
+          gender: dbChild.gender,
+          status: dbChild.entry_status || 'registered',
+          passStatus
+        };
+
+        const dbParent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [dbChild.parent_profile_id]);
+        if (dbParent) {
+          parent = {
+            fullName: dbParent.full_name,
+            phoneMaskedOrVisibleByPermission: dbParent.phone_number,
+            whatsappMaskedOrVisibleByPermission: dbParent.whatsapp_number
+          };
+        }
+
+        const dbPickup = await queryOne(`
+          SELECT * FROM pickup_people
+          WHERE child_event_entry_id = ?
+          LIMIT 1
+        `, [alert.child_event_entry_id || '']);
+
+        if (dbPickup) {
+          const pickupPhoto = dbPickup.photo_file_id ? (String(dbPickup.photo_file_id).startsWith('http') || String(dbPickup.photo_file_id).startsWith('/') ? String(dbPickup.photo_file_id) : `/api/media/files/${dbPickup.photo_file_id}`) : '';
+          pickup = {
+            fullName: dbPickup.full_name,
+            relationship: dbPickup.relationship_to_child,
+            phoneMaskedOrVisibleByPermission: dbPickup.phone_number,
+            photoUrl: pickupPhoto
+          };
+        }
+
+        const hasMedicalNote = dbChild.has_medical_notes === 1;
+        const hasSupportNeed = dbChild.needs_extra_support === 1;
+        const shortSummary = [
+          hasMedicalNote ? `Medical: ${dbChild.medical_notes || 'Yes'}` : '',
+          hasSupportNeed ? `Support: ${dbChild.support_notes || 'Yes'}` : ''
+        ].filter(Boolean).join(' | ') || 'No special care flags';
+
+        careSummary = {
+          hasAllergy: hasMedicalNote && String(dbChild.medical_notes || '').toLowerCase().includes('allerg'),
+          hasMedicalNote,
+          hasSupportNeed,
+          shortSummary
+        };
+      }
+    }
+
+    if (dutyRole === 'gate_lead') {
+      if (careSummary) {
+        careSummary = {
+          hasAllergy: false,
+          hasMedicalNote: false,
+          hasSupportNeed: false,
+          shortSummary: 'Masked - Gate Access Only'
+        };
+      }
+    } else if (dutyRole === 'pickup_lead') {
+      if (careSummary) {
+        careSummary = {
+          hasAllergy: false,
+          hasMedicalNote: false,
+          hasSupportNeed: false,
+          shortSummary: 'Masked - Pickup Verification Only'
+        };
+      }
+    } else if (dutyRole === 'volunteer') {
+      if (parent) {
+        parent.phoneMaskedOrVisibleByPermission = '***-****';
+        parent.whatsappMaskedOrVisibleByPermission = '***-****';
+      }
+      if (pickup) {
+        pickup.phoneMaskedOrVisibleByPermission = '***-****';
+      }
+    }
+
+    res.json({
+      success: true,
+      alert: {
+        id: alert.id,
+        severity: alert.severity,
+        category: alert.category,
+        status: alert.status,
+        locationLabel: alert.location_label,
+        message: alert.message,
+        createdAt: alert.created_at,
+        acknowledgedAt: alert.acknowledged_at,
+        resolvedAt: alert.resolved_at
+      },
+      raisedBy,
+      child,
+      parent,
+      pickup,
+      careSummary
+    });
+  } catch (err) {
+    console.error('Get admin safety alert detail error:', err);
+    res.status(500).json({ error: 'Failed to retrieve safety alert detail' });
+  }
+});
+
 // POST /api/admin/safety-alerts/:id/acknowledge
 router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {

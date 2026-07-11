@@ -1056,6 +1056,18 @@ export const api = {
     async getSafetyAlerts() {
       return api.request<any[]>('/api/admin/safety-alerts');
     },
+    async getSafetyAlertDetail(id: string, role?: string) {
+      const url = role ? `/api/admin/safety-alerts/${id}?role=${encodeURIComponent(role)}` : `/api/admin/safety-alerts/${id}`;
+      return api.request<{
+        success: boolean;
+        alert: any;
+        raisedBy: any;
+        child: any;
+        parent: any;
+        pickup: any;
+        careSummary: any;
+      }>(url);
+    },
     async acknowledgeSafetyAlert(id: string) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/acknowledge`, {
         method: 'POST'

@@ -27,7 +27,10 @@ import {
   ChevronRight,
   Phone,
   VolumeX,
-  Volume2
+  Volume2,
+  Activity,
+  Heart,
+  User
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -148,6 +151,57 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [isAcknowledgeInProgress, setIsAcknowledgeInProgress] = useState<string | null>(null);
   const [activeUrgentAlertCount, setActiveUrgentAlertCount] = useState(0);
   const [activeUrgentAlert, setActiveUrgentAlert] = useState<any | null>(null);
+
+  // Rich details & role simulation states
+  const [simulatedDutyRole, setSimulatedDutyRole] = useState<string>('admin');
+  const [activeAlertRichDetail, setActiveAlertRichDetail] = useState<any | null>(null);
+  const [activeAlertRichDetailLoading, setActiveAlertRichDetailLoading] = useState(false);
+  const [activeUrgentRichDetail, setActiveUrgentRichDetail] = useState<any | null>(null);
+  const [activeUrgentRichDetailLoading, setActiveUrgentRichDetailLoading] = useState(false);
+
+  // Load rich details for activeAlertDetail
+  useEffect(() => {
+    if (activeAlertDetail) {
+      const fetchDetail = async () => {
+        try {
+          setActiveAlertRichDetailLoading(true);
+          const res = await api.admin.getSafetyAlertDetail(activeAlertDetail.id, simulatedDutyRole);
+          if (res && res.success) {
+            setActiveAlertRichDetail(res);
+          }
+        } catch (err) {
+          console.error('Error fetching rich alert detail:', err);
+        } finally {
+          setActiveAlertRichDetailLoading(false);
+        }
+      };
+      fetchDetail();
+    } else {
+      setActiveAlertRichDetail(null);
+    }
+  }, [activeAlertDetail?.id, simulatedDutyRole]);
+
+  // Load rich details for activeUrgentAlert
+  useEffect(() => {
+    if (activeUrgentAlert && !activeUrgentAlert.isTest) {
+      const fetchDetail = async () => {
+        try {
+          setActiveUrgentRichDetailLoading(true);
+          const res = await api.admin.getSafetyAlertDetail(activeUrgentAlert.id, simulatedDutyRole);
+          if (res && res.success) {
+            setActiveUrgentRichDetail(res);
+          }
+        } catch (err) {
+          console.error('Error fetching rich urgent detail:', err);
+        } finally {
+          setActiveUrgentRichDetailLoading(false);
+        }
+      };
+      fetchDetail();
+    } else {
+      setActiveUrgentRichDetail(null);
+    }
+  }, [activeUrgentAlert?.id, simulatedDutyRole]);
 
   // Centralized cleanup handler (Phase 2, Phase 3, Phase 5)
   const stopActiveUrgentAlertEffects = (alertId: string) => {
@@ -2438,6 +2492,27 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
               
+              {/* Role Simulation Switcher for Testing Masking */}
+              <div className="bg-zinc-100 border border-zinc-200 p-3 rounded-2xl flex flex-col md:flex-row justify-between items-center text-xs space-y-2 md:space-y-0 shadow-xs">
+                <span className="font-bold text-zinc-600">Simulate Role View (Testing Masking):</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {['admin', 'care_lead', 'gate_lead', 'pickup_lead', 'volunteer'].map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setSimulatedDutyRole(r)}
+                      className={`px-2.5 py-1 rounded-lg font-semibold border transition-all text-[10px] cursor-pointer ${
+                        simulatedDutyRole === r
+                          ? 'bg-red-600 border-red-700 text-white shadow-xs'
+                          : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
+                      }`}
+                    >
+                      {r.replace('_', ' ').toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Alert Meta Tags */}
               <div className="flex flex-wrap gap-2">
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border ${
@@ -2486,16 +2561,162 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </div>
 
               {/* Associated Child & Parent Details */}
-              {activeAlertDetail.child_name && (
+              {activeAlertRichDetailLoading ? (
+                <div className="flex justify-center py-6 text-zinc-400 border border-zinc-200 rounded-xl bg-white">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  <span>Loading secure details...</span>
+                </div>
+              ) : activeAlertRichDetail?.child ? (
+                <div className="space-y-4">
+                  <div className="flex items-start space-x-4 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs">
+                    {/* Child Photo */}
+                    <div className="relative shrink-0">
+                      {activeAlertRichDetail.child.photoUrl ? (
+                        <img
+                          src={activeAlertRichDetail.child.photoUrl}
+                          alt={activeAlertRichDetail.child.fullName}
+                          referrerPolicy="no-referrer"
+                          className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400">
+                          <User className="w-8 h-8" />
+                        </div>
+                      )}
+                      <span className="absolute -bottom-1 -right-1 bg-zinc-800 text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white uppercase">
+                        {activeAlertRichDetail.child.gender}
+                      </span>
+                    </div>
+
+                    {/* Child Identity Details */}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
+                      <h4 className="font-black text-zinc-900 text-base leading-tight truncate">
+                        {activeAlertRichDetail.child.fullName}
+                      </h4>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-md border border-red-100 text-[10px] font-bold">
+                          {activeAlertRichDetail.child.ageGroup}
+                        </span>
+                        <span className="px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-md border border-zinc-200 text-[10px] font-medium font-mono">
+                          {activeAlertRichDetail.child.ageDisplay}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                          activeAlertRichDetail.child.passStatus === 'checked_in' || activeAlertRichDetail.child.status === 'checked_in'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                          {(activeAlertRichDetail.child.passStatus || activeAlertRichDetail.child.status).toUpperCase().replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Care & Medical Summary */}
+                  {activeAlertRichDetail.careSummary && (
+                    <div className={`p-4 rounded-2xl border ${
+                      activeAlertRichDetail.careSummary.hasMedicalNote || activeAlertRichDetail.careSummary.hasSupportNeed
+                        ? 'bg-red-50/50 border-red-200'
+                        : 'bg-zinc-50 border-zinc-200'
+                    }`}>
+                      <div className="flex items-center space-x-2 pb-1.5 border-b border-zinc-100 mb-2">
+                        <Activity className={`w-4 h-4 ${activeAlertRichDetail.careSummary.hasMedicalNote ? 'text-red-600' : 'text-zinc-600'}`} />
+                        <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-wider">Care & Medical Summary</span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-zinc-800 leading-relaxed">
+                        {activeAlertRichDetail.careSummary.shortSummary}
+                      </p>
+                      {activeAlertRichDetail.careSummary.hasAllergy && (
+                        <span className="mt-1.5 inline-flex items-center text-[9px] font-bold uppercase tracking-wider text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-lg">
+                          ⚠️ ALLERGY ALERT DETECTED
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Parent & Pickup Context Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Parent Contact Card */}
+                    {activeAlertRichDetail.parent && (
+                      <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs space-y-2">
+                        <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                          <Heart className="w-3.5 h-3.5 text-zinc-400" />
+                          <span>Linked Parent</span>
+                        </div>
+                        <div>
+                          <p className="font-bold text-zinc-900 text-xs">{activeAlertRichDetail.parent.fullName}</p>
+                          <div className="flex items-center space-x-3 mt-1.5 font-mono text-[10px] text-zinc-600">
+                            <a
+                              href={`tel:${activeAlertRichDetail.parent.phoneMaskedOrVisibleByPermission}`}
+                              className="hover:underline flex items-center space-x-1"
+                            >
+                              <span>📞 {activeAlertRichDetail.parent.phoneMaskedOrVisibleByPermission}</span>
+                            </a>
+                            {activeAlertRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
+                              <span className="text-zinc-400">|</span>
+                            )}
+                            {activeAlertRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
+                              <a
+                                href={`https://wa.me/${activeAlertRichDetail.parent.whatsappMaskedOrVisibleByPermission.replace(/[^0-9]/g, '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:underline text-emerald-600 flex items-center space-x-1"
+                              >
+                                <span>💬 WhatsApp</span>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Authorized Pickup Card */}
+                    {activeAlertRichDetail.pickup ? (
+                      <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center space-x-3">
+                        {activeAlertRichDetail.pickup.photoUrl ? (
+                          <img
+                            src={activeAlertRichDetail.pickup.photoUrl}
+                            alt={activeAlertRichDetail.pickup.fullName}
+                            referrerPolicy="no-referrer"
+                            className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0">
+                            <UserCheck className="w-6 h-6" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                            <span>Authorized Pickup</span>
+                          </div>
+                          <p className="font-bold text-zinc-900 text-xs truncate">
+                            {activeAlertRichDetail.pickup.fullName}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 font-medium">
+                            Relationship: <strong className="text-zinc-700">{activeAlertRichDetail.pickup.relationship}</strong>
+                          </p>
+                          {activeAlertRichDetail.pickup.phoneMaskedOrVisibleByPermission && (
+                            <p className="text-[9px] font-mono text-zinc-500 mt-0.5">
+                              Phone: {activeAlertRichDetail.pickup.phoneMaskedOrVisibleByPermission}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center justify-center text-zinc-400">
+                        <span className="text-[10px] font-medium">No custom pickup person registered</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : activeAlertDetail.child_name ? (
                 <div className="border border-[#EAE8E1] rounded-xl p-4 space-y-3 bg-white">
                   <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">ASSOCIATED CHILD & CONTACTS</p>
-                  
                   <div className="flex items-center justify-between">
                     <div>
                       <h5 className="font-serif font-bold text-sm text-[#18181B]">{activeAlertDetail.child_name}</h5>
                       <p className="text-[10px] text-zinc-500 mt-0.5">Active registration check-in record linked</p>
                     </div>
-
                     {activeAlertDetail.parent_phone && (
                       <div className="flex gap-2">
                         <a 
@@ -2509,7 +2730,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     )}
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Action Resolution Form */}
               {activeAlertDetail.status !== 'resolved' ? (
@@ -2634,6 +2855,29 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             </div>
 
             <div className="space-y-4 text-xs relative z-10">
+              {/* Role Simulation Switcher */}
+              {!activeUrgentAlert.isTest && (
+                <div className="bg-zinc-100 border border-zinc-200 p-3.5 rounded-2xl flex flex-col md:flex-row justify-between items-center text-xs space-y-2 md:space-y-0 shadow-xs">
+                  <span className="font-bold text-zinc-600">Simulate Role View (Testing Masking):</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {['admin', 'care_lead', 'gate_lead', 'pickup_lead', 'volunteer'].map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setSimulatedDutyRole(r)}
+                        className={`px-3 py-1 rounded-lg font-semibold border transition-all text-[10px] cursor-pointer ${
+                          simulatedDutyRole === r
+                            ? 'bg-red-600 border-red-700 text-white shadow-sm'
+                            : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
+                        }`}
+                      >
+                        {r.replace('_', ' ').toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4 bg-white border border-zinc-200 p-4 rounded-2xl shadow-sm">
                 <div>
                   <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Raised by</span>
@@ -2661,16 +2905,170 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <span className="font-bold text-zinc-800 text-xs">{formatTimeAgo(activeUrgentAlert.created_at)}</span>
                   </div>
                 )}
-                {activeUrgentAlert.child_name && (
+
+                {/* Rich Secure Child Details */}
+                {activeUrgentAlert.isTest ? (
+                  <div className="col-span-2 border-t border-zinc-100 pt-3 mt-1 text-center py-2 text-zinc-500">
+                    🛡️ This is a device readiness simulation test alert. No child details linked.
+                  </div>
+                ) : activeUrgentRichDetailLoading ? (
+                  <div className="col-span-2 flex justify-center py-6 text-zinc-400 border-t border-zinc-100 mt-2">
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                    <span>Loading secure details...</span>
+                  </div>
+                ) : activeUrgentRichDetail?.child ? (
+                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left">
+                    <div className="flex items-start space-x-4 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs">
+                      {/* Child Photo */}
+                      <div className="relative shrink-0">
+                        {activeUrgentRichDetail.child.photoUrl ? (
+                          <img
+                            src={activeUrgentRichDetail.child.photoUrl}
+                            alt={activeUrgentRichDetail.child.fullName}
+                            referrerPolicy="no-referrer"
+                            className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400">
+                            <User className="w-8 h-8" />
+                          </div>
+                        )}
+                        <span className="absolute -bottom-1 -right-1 bg-zinc-800 text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white uppercase">
+                          {activeUrgentRichDetail.child.gender}
+                        </span>
+                      </div>
+
+                      {/* Child Identity Details */}
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
+                        <h4 className="font-black text-zinc-900 text-base leading-tight truncate">
+                          {activeUrgentRichDetail.child.fullName}
+                        </h4>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-md border border-red-100 text-[10px] font-bold">
+                            {activeUrgentRichDetail.child.ageGroup}
+                          </span>
+                          <span className="px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-md border border-zinc-200 text-[10px] font-medium font-mono">
+                            {activeUrgentRichDetail.child.ageDisplay}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                            activeUrgentRichDetail.child.passStatus === 'checked_in' || activeUrgentRichDetail.child.status === 'checked_in'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {(activeUrgentRichDetail.child.passStatus || activeUrgentRichDetail.child.status).toUpperCase().replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Care & Medical Summary */}
+                    {activeUrgentRichDetail.careSummary && (
+                      <div className={`p-4 rounded-2xl border ${
+                        activeUrgentRichDetail.careSummary.hasMedicalNote || activeUrgentRichDetail.careSummary.hasSupportNeed
+                          ? 'bg-red-50/50 border-red-200'
+                          : 'bg-zinc-50 border-zinc-200'
+                      }`}>
+                        <div className="flex items-center space-x-2 pb-1.5 border-b border-zinc-100 mb-2">
+                          <Activity className={`w-4 h-4 ${activeUrgentRichDetail.careSummary.hasMedicalNote ? 'text-red-600' : 'text-zinc-600'}`} />
+                          <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-wider">Care & Medical Summary</span>
+                        </div>
+                        <p className="text-[11px] font-semibold text-zinc-800 leading-relaxed">
+                          {activeUrgentRichDetail.careSummary.shortSummary}
+                        </p>
+                        {activeUrgentRichDetail.careSummary.hasAllergy && (
+                          <span className="mt-1.5 inline-flex items-center text-[9px] font-bold uppercase tracking-wider text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-lg">
+                            ⚠️ ALLERGY ALERT DETECTED
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Parent & Pickup Context Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Parent Contact Card */}
+                      {activeUrgentRichDetail.parent && (
+                        <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs space-y-2">
+                          <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                            <Heart className="w-3.5 h-3.5 text-zinc-400" />
+                            <span>Linked Parent</span>
+                          </div>
+                          <div>
+                            <p className="font-bold text-zinc-900 text-xs">{activeUrgentRichDetail.parent.fullName}</p>
+                            <div className="flex items-center space-x-3 mt-1.5 font-mono text-[10px] text-zinc-600">
+                              <a
+                                href={`tel:${activeUrgentRichDetail.parent.phoneMaskedOrVisibleByPermission}`}
+                                className="hover:underline flex items-center space-x-1"
+                              >
+                                <span>📞 {activeUrgentRichDetail.parent.phoneMaskedOrVisibleByPermission}</span>
+                              </a>
+                              {activeUrgentRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
+                                <span className="text-zinc-400">|</span>
+                              )}
+                              {activeUrgentRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
+                                <a
+                                  href={`https://wa.me/${activeUrgentRichDetail.parent.whatsappMaskedOrVisibleByPermission.replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline text-emerald-600 flex items-center space-x-1"
+                                >
+                                  <span>💬 WhatsApp</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Authorized Pickup Card */}
+                      {activeUrgentRichDetail.pickup ? (
+                        <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center space-x-3">
+                          {activeUrgentRichDetail.pickup.photoUrl ? (
+                            <img
+                              src={activeUrgentRichDetail.pickup.photoUrl}
+                              alt={activeUrgentRichDetail.pickup.fullName}
+                              referrerPolicy="no-referrer"
+                              className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0">
+                              <UserCheck className="w-6 h-6" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                              <span>Authorized Pickup</span>
+                            </div>
+                            <p className="font-bold text-zinc-900 text-xs truncate">
+                              {activeUrgentRichDetail.pickup.fullName}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 font-medium">
+                              Relationship: <strong className="text-zinc-700">{activeUrgentRichDetail.pickup.relationship}</strong>
+                            </p>
+                            {activeUrgentRichDetail.pickup.phoneMaskedOrVisibleByPermission && (
+                              <p className="text-[9px] font-mono text-zinc-500 mt-0.5">
+                                Phone: {activeUrgentRichDetail.pickup.phoneMaskedOrVisibleByPermission}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center justify-center text-zinc-400">
+                          <span className="text-[10px] font-medium">No custom pickup person registered</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : activeUrgentAlert.child_name ? (
                   <div className="col-span-2 border-t border-zinc-100 pt-3 mt-1">
                     <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
                     <span className="font-black text-red-600 text-sm">{activeUrgentAlert.child_name}</span>
                   </div>
-                )}
+                ) : null}
               </div>
 
               {activeUrgentAlert.message && (
-                <div className="bg-red-50 border border-red-100 p-4 rounded-2xl font-sans text-xs leading-relaxed text-red-950 italic shadow-xs">
+                <div className="bg-red-50 border border-red-100 p-4 rounded-2xl font-sans text-xs leading-relaxed text-red-950 italic shadow-xs text-left">
                   "{activeUrgentAlert.message}"
                 </div>
               )}
