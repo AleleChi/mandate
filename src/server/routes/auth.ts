@@ -530,7 +530,7 @@ const challengesStore = new Map<string, { challenge: string; expires: number }>(
 router.get('/passkeys', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const passkeys = await query(
-      'SELECT id, device_name as "deviceName", created_at as "createdAt", last_used_at as "lastUsedAt" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL',
+      'SELECT id, credential_id as "credentialId", device_name as "deviceName", created_at as "createdAt", last_used_at as "lastUsedAt" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL',
       [req.user.id]
     );
     res.json({ success: true, passkeys });

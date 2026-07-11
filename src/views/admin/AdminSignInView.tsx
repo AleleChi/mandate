@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { AppRoute } from '../../types';
-import { Info, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { Info, Eye, EyeOff, Lock, Mail, Fingerprint } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { validateEmailSyntax } from '../../utils/validation';
 import { Button } from '../../components/common/Button';
 import { AuthScreenShell } from '../../components/common/AuthScreenShell';
+import { DeviceSecurityModal } from '../../components/common/DeviceSecurityModal';
 
 interface AdminSignInViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -24,6 +25,56 @@ export const AdminSignInView: React.FC<AdminSignInViewProps> = ({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Passkey Authentication States
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyModalOpen, setPasskeyModalOpen] = useState(false);
+  const [passkeyOptions, setPasskeyOptions] = useState<any>(null);
+  const [passkeyChallengeKey, setPasskeyChallengeKey] = useState('');
+
+  const handlePasskeySignIn = async () => {
+    const emailErr = validateEmail(email);
+    setEmailError(emailErr);
+    if (emailErr || !email.trim()) {
+      setError('Please enter your administrator email to sign in with your device key.');
+      return;
+    }
+
+    setError(null);
+    setPasskeyLoading(true);
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const res = await api.auth.passkeys.loginOptions(cleanEmail);
+      if (res.success && res.options) {
+        if (!res.options.allowCredentials || res.options.allowCredentials.length === 0) {
+          setError('No secure device key is registered for this administrator account.');
+          return;
+        }
+        setPasskeyOptions(res.options);
+        setPasskeyChallengeKey(res.challengeKey);
+        setPasskeyModalOpen(true);
+      } else {
+        setError('Could not prepare device verification options.');
+      }
+    } catch (err: any) {
+      setError('No secure device key found or device verification failed.');
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
+  const handlePasskeySuccess = async (credentialId?: string) => {
+    try {
+      const meRes = await api.auth.getMe();
+      showSuccess('Access Granted', 'Signed in successfully.');
+      if (onSignInSuccess) {
+        onSignInSuccess(meRes.user, null);
+      }
+      onNavigate('/admin/overview');
+    } catch (err) {
+      setError('Failed to load profile after device verification.');
+    }
+  };
 
   const validateEmail = (val: string) => {
     const res = validateEmailSyntax(val);
@@ -188,11 +239,51 @@ export const AdminSignInView: React.FC<AdminSignInViewProps> = ({
         <Button
           type="submit"
           loading={loading}
+          disabled={passkeyLoading}
           className="w-full bg-[#18181B] text-white py-3.5 rounded-xl hover:bg-[#27272A] transition-colors font-medium flex items-center justify-center space-x-2 text-base shrink-0"
         >
           Sign in to Admin Access
         </Button>
+
+        {/* Passkey Sign In */}
+        <div className="relative flex py-2 items-center">
+          <div className="flex-grow border-t border-[#EAE8E1]"></div>
+          <span className="flex-shrink mx-4 text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">or</span>
+          <div className="flex-grow border-t border-[#EAE8E1]"></div>
+        </div>
+
+        <Button
+          type="button"
+          onClick={handlePasskeySignIn}
+          disabled={loading || passkeyLoading}
+          variant="outline"
+          fullWidth
+          data-component-version="passkey-native-auth-prompt-v2"
+          className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] py-3 text-sm font-semibold rounded-xl flex items-center justify-center space-x-1.5"
+        >
+          {passkeyLoading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="animate-spin rounded-full h-4 w-4 border-2 border-[#C59B27] border-t-transparent"></span>
+              <span>Preparing...</span>
+            </span>
+          ) : (
+            <span className="flex items-center justify-center gap-1.5">
+              <Fingerprint className="w-4 h-4 text-[#C59B27]" />
+              <span>Sign in with secure device key</span>
+            </span>
+          )}
+        </Button>
       </form>
+
+      <DeviceSecurityModal
+        isOpen={passkeyModalOpen}
+        onClose={() => setPasskeyModalOpen(false)}
+        onSuccess={handlePasskeySuccess}
+        actionName="Sign in with device key"
+        emailForLogin={email}
+        challengeKey={passkeyChallengeKey}
+        loginOptions={passkeyOptions}
+      />
     </AuthScreenShell>
   );
 };

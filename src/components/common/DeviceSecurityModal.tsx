@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Fingerprint, Lock, ShieldAlert, X, ShieldCheck, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import { api, ParentApiError } from '../../services/api';
-import { isWebAuthnSupported } from '../../utils/passkey';
+import { isWebAuthnSupported, base64URLToBuffer, bufferToBase64URL } from '../../utils/passkey';
 
 interface DeviceSecurityModalProps {
   isOpen: boolean;
@@ -46,11 +46,16 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setMode('prompt');
-      setPassword('');
-      setPasswordError('');
-      setVerifying(false);
-      setErrorMessage('');
+      if (!isWebAuthnSupported()) {
+        setMode('error');
+        setErrorMessage('Secure device unlock is not supported on this browser.');
+      } else {
+        setMode('prompt');
+        setPassword('');
+        setPasswordError('');
+        setVerifying(false);
+        setErrorMessage('');
+      }
     }
   }, [isOpen]);
 
@@ -59,129 +64,173 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
     setVerifying(true);
     setErrorMessage('');
 
-    // Prepare 1-second animation for premium experience
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    // Prepare a subtle 800ms animation for premium experience
+    await new Promise((resolve) => setTimeout(resolve, 800));
 
     try {
-      if (isRegistration) {
-        // Fallback-ready WebAuthn registration
-        let credentialId = 'cred_' + Math.random().toString(36).substring(2, 10);
-        let pubKey = 'mock-public-key-data';
+      if (!isWebAuthnSupported()) {
+        throw new Error('Secure device unlock is not supported on this browser.');
+      }
 
-        try {
-          if (window.navigator?.credentials?.create) {
-            const optionsRes = await api.auth.passkeys.registerOptions();
-            if (optionsRes.success && optionsRes.options) {
-              const opts = optionsRes.options;
-              const formattedOpts = {
-                publicKey: {
-                  ...opts,
-                  challenge: new TextEncoder().encode(opts.challenge),
-                  user: {
-                    ...opts.user,
-                    id: new TextEncoder().encode(opts.user.id)
-                  }
-                }
-              };
-              const credential = await window.navigator.credentials.create(formattedOpts) as any;
-              if (credential) {
-                credentialId = credential.id;
-                pubKey = credential.rawId ? btoa(String.fromCharCode(...new Uint8Array(credential.rawId))) : credentialId;
-              }
-            }
-          }
-        } catch (webauthnErr: any) {
-          console.warn('[WebAuthn] Browser credential APIs blocked or unavailable inside sandbox environment, executing secure device-level simulation:', webauthnErr.message);
+      if (isRegistration) {
+        if (!window.navigator?.credentials?.create) {
+          throw new Error('Secure device unlock registration is not supported on this browser.');
         }
 
-        // Register on backend
+        const optionsRes = await api.auth.passkeys.registerOptions();
+        if (!optionsRes.success || !optionsRes.options) {
+          throw new Error(optionsRes.error || 'Failed to prepare device registration options.');
+        }
+
+        const opts = optionsRes.options;
+        const formattedOpts = {
+          publicKey: {
+            ...opts,
+            challenge: base64URLToBuffer(opts.challenge),
+            user: {
+              ...opts.user,
+              id: new TextEncoder().encode(opts.user.id)
+            }
+          }
+        };
+
+        const credential = await window.navigator.credentials.create(formattedOpts) as any;
+        if (!credential) {
+          throw new Error('No credential details returned from the device.');
+        }
+
+        let pubKey = 'encoded-public-key-placeholder';
+        if (credential.response) {
+          const resp = credential.response;
+          if (typeof resp.getPublicKey === 'function') {
+            try {
+              const pkBuf = resp.getPublicKey();
+              if (pkBuf) {
+                pubKey = bufferToBase64URL(pkBuf);
+              }
+            } catch (pkErr) {
+              console.warn('Could not extract public key buffer:', pkErr);
+            }
+          } else if (credential.rawId) {
+            pubKey = bufferToBase64URL(credential.rawId);
+          }
+        }
+
         const regRes = await api.auth.passkeys.registerVerify(
-          { id: credentialId, response: { publicKey: pubKey } },
+          { 
+            id: credential.id, 
+            response: { publicKey: pubKey } 
+          },
           deviceName
         );
 
         if (regRes.success) {
+          // Set a marker in local storage so other components know a passkey is registered
+          localStorage.setItem('koinonia_passkey_registered', 'true');
           setMode('success');
           setTimeout(() => {
-            onSuccess(credentialId);
+            onSuccess(credential.id);
             onClose();
-          }, 1000);
+          }, 1500);
         } else {
-          throw new Error('Registration failed on server');
+          throw new Error(regRes.error || 'Registration failed on server');
         }
 
       } else if (emailForLogin && challengeKey) {
-        // Fallback-ready passkey sign-in
-        let credentialId = loginOptions?.allowCredentials?.[0]?.id || 'cred_simulated';
+        if (!window.navigator?.credentials?.get || !loginOptions) {
+          throw new Error('Secure device authentication is not supported or configuration is missing.');
+        }
 
-        try {
-          if (window.navigator?.credentials?.get && loginOptions) {
-            const formattedOpts = {
-              publicKey: {
-                ...loginOptions,
-                challenge: new TextEncoder().encode(loginOptions.challenge),
-                allowCredentials: loginOptions.allowCredentials.map((c: any) => ({
-                  type: c.type,
-                  id: new TextEncoder().encode(c.id)
-                }))
-              }
-            };
-            const assertion = await window.navigator.credentials.get(formattedOpts) as any;
-            if (assertion) {
-              credentialId = assertion.id;
-            }
+        const formattedOpts = {
+          publicKey: {
+            ...loginOptions,
+            challenge: base64URLToBuffer(loginOptions.challenge),
+            allowCredentials: (loginOptions.allowCredentials || []).map((c: any) => ({
+              type: c.type,
+              id: base64URLToBuffer(c.id)
+            }))
           }
-        } catch (webauthnErr: any) {
-          console.warn('[WebAuthn] Sign-in credentials block detected, executing secure device-level simulation:', webauthnErr.message);
+        };
+
+        const assertion = await window.navigator.credentials.get(formattedOpts) as any;
+        if (!assertion) {
+          throw new Error('Device verification was not completed.');
         }
 
         const loginRes = await api.auth.passkeys.loginVerify(
-          { id: credentialId },
+          { id: assertion.id },
           challengeKey
         );
 
         if (loginRes.success) {
           setMode('success');
           setTimeout(() => {
-            onSuccess(credentialId);
+            onSuccess(assertion.id);
             onClose();
-          }, 1000);
+          }, 1500);
         } else {
-          throw new Error('Verification failed on server');
+          throw new Error(loginRes.error || 'Device verification failed on server');
         }
 
       } else {
         // Action verification
-        let credentialId = 'cred_simulation_action';
-
-        try {
-          if (window.navigator?.credentials?.get) {
-            // Quick verify options check
-            const optRes = await api.auth.passkeys.getList();
-            if (optRes.success && optRes.passkeys?.length > 0) {
-              // Real action verify check (simplified)
-              credentialId = optRes.passkeys[0].id;
-            }
-          }
-        } catch (e) {
-          console.warn('[WebAuthn] Standard verification action fallback:', e);
+        if (!window.navigator?.credentials?.get) {
+          throw new Error('Device verification is not supported on this browser.');
         }
 
-        const verifyRes = await api.auth.passkeys.verifyAction({ id: credentialId }, actionName);
+        const optRes = await api.auth.passkeys.getList();
+        if (!optRes.success || !optRes.passkeys || optRes.passkeys.length === 0) {
+          throw new Error('No registered device keys found on this account. Please register your device first.');
+        }
+
+        const randomChallenge = new Uint8Array(32);
+        window.crypto.getRandomValues(randomChallenge);
+
+        const formattedOpts = {
+          publicKey: {
+            challenge: randomChallenge,
+            timeout: 60000,
+            rpId: window.location.hostname,
+            allowCredentials: optRes.passkeys.map((pk: any) => ({
+              type: 'public-key',
+              id: base64URLToBuffer(pk.credentialId || pk.id)
+            })),
+            userVerification: 'required' as UserVerificationRequirement
+          }
+        };
+
+        const assertion = await window.navigator.credentials.get(formattedOpts) as any;
+        if (!assertion) {
+          throw new Error('Device verification was not completed.');
+        }
+
+        const verifyRes = await api.auth.passkeys.verifyAction({ id: assertion.id }, actionName);
         if (verifyRes.success) {
           setMode('success');
           setTimeout(() => {
-            onSuccess(credentialId);
+            onSuccess(assertion.id);
             onClose();
-          }, 1000);
+          }, 1500);
         } else {
-          throw new Error('Action verification failed');
+          throw new Error(verifyRes.error || 'Action verification failed on server');
         }
       }
     } catch (err: any) {
       console.error('Device security failure:', err);
       setMode('error');
-      setErrorMessage(err?.message || 'Device verification could not be completed.');
+      
+      const isCancel = err?.name === 'NotAllowedError' || err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('abort');
+      
+      if (isCancel) {
+        setErrorMessage(isRegistration ? 'Device setup was cancelled.' : 'Device verification was cancelled.');
+      } else {
+        const isUnsupported = err?.name === 'SecurityError' || err?.message?.toLowerCase().includes('not supported') || !isWebAuthnSupported();
+        if (isUnsupported) {
+          setErrorMessage('Secure device unlock is not supported on this browser.');
+        } else {
+          setErrorMessage(err?.message || 'Device verification could not be completed.');
+        }
+      }
     } finally {
       setVerifying(false);
     }
@@ -400,10 +449,12 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                   <ShieldCheck className="w-12 h-12 stroke-[1.5]" />
                 </div>
                 <h4 className="text-base font-serif-koinonia font-bold text-zinc-900 mb-1.5">
-                  Verification successful
+                  {isRegistration ? 'Device ready' : 'Verification successful'}
                 </h4>
                 <p className="text-xs text-emerald-600/80 leading-relaxed max-w-xs">
-                  Your device credentials matched successfully. Authorized to proceed.
+                  {isRegistration 
+                    ? 'This device is ready for secure unlock.' 
+                    : 'Secure unlock confirmed.'}
                 </p>
               </>
             )}
@@ -420,17 +471,19 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                   {errorMessage}
                 </p>
                 <div className="w-full space-y-2">
-                  <Button
-                    onClick={() => setMode('prompt')}
-                    className="w-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 py-2.5 rounded-xl text-xs font-semibold shadow-xs"
-                  >
-                    Try again
-                  </Button>
+                  {isWebAuthnSupported() && (
+                    <Button
+                      onClick={() => setMode('prompt')}
+                      className="w-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 py-2.5 rounded-xl text-xs font-semibold shadow-xs"
+                    >
+                      Try secure unlock again
+                    </Button>
+                  )}
                   <button
                     onClick={() => setMode('password')}
                     className="w-full py-2 text-xs font-medium text-[#C59B27] hover:text-[#A37E1C] transition-colors focus:outline-none cursor-pointer"
                   >
-                    Use account password
+                    Use password instead
                   </button>
                 </div>
               </>

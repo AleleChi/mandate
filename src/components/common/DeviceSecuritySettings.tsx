@@ -3,6 +3,7 @@ import { Fingerprint, Trash2, ShieldAlert, CheckCircle2, ShieldCheck, Loader2, P
 import { Button } from './Button';
 import { api } from '../../services/api';
 import { DeviceSecurityModal } from './DeviceSecurityModal';
+import { isWebAuthnSupported } from '../../utils/passkey';
 
 interface DeviceSecuritySettingsProps {
   isAdmin?: boolean;
@@ -84,10 +85,12 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
     );
   };
 
+  const webAuthnSupported = isWebAuthnSupported();
+
   return (
     <div 
       className="space-y-6"
-      data-component-version="device-security-settings-v1"
+      data-view-version="device-security-v2-real-passkey"
     >
       {/* Device security card */}
       <div className="bg-[#FCFAF7] rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
@@ -103,6 +106,32 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
               Use fingerprint, Face ID, Windows Hello, or a passkey on this device.
             </p>
           </div>
+        </div>
+
+        {/* Secure Unlock Status Banner */}
+        <div 
+          className="mt-5 p-4 rounded-xl border bg-white space-y-1"
+          data-component-version="mobile-passkey-device-prompt-v1"
+        >
+          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+            Secure unlock status
+          </p>
+          {!webAuthnSupported ? (
+            <div>
+              <p className="text-xs font-bold text-red-600">Unavailable</p>
+              <p className="text-[11px] text-zinc-500 leading-normal">Secure device unlock is not supported here.</p>
+            </div>
+          ) : passkeys.length === 0 ? (
+            <div>
+              <p className="text-xs font-bold text-amber-600">Not configured</p>
+              <p className="text-[11px] text-zinc-500 leading-normal">This device has not been added yet.</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs font-bold text-emerald-600">Ready</p>
+              <p className="text-[11px] text-zinc-500 leading-normal">This device can use fingerprint, Face ID, Windows Hello, or its security PIN.</p>
+            </div>
+          )}
         </div>
 
         {/* List of registered devices */}
@@ -159,6 +188,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                 setModalAction('register');
                 setModalOpen(true);
               }}
+              data-component-version="passkey-add-device-action-v2"
               className="flex-1 bg-[#C59B27] hover:bg-[#A37E1C] text-white text-xs font-semibold py-2.5 rounded-xl shadow-xs flex items-center justify-center space-x-1.5"
             >
               <Fingerprint className="w-4 h-4" />
@@ -171,6 +201,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                   setModalAction('test');
                   setModalOpen(true);
                 }}
+                data-component-version="test-passkey-unlock-action-v1"
                 className="flex-1 border border-[#EAE8E1] text-zinc-600 hover:bg-zinc-50 text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center space-x-1.5"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
