@@ -8,6 +8,7 @@ import {
   ShieldAlert, 
   FileCheck2, 
   Loader2, 
+  ChevronLeft,
   ChevronRight, 
   AlertCircle,
   Phone,
@@ -35,6 +36,20 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   // Tab Filters matching Screenshot A specs
   const [activeTab, setActiveTab] = useState<'review' | 'event_review' | 'needs_attention' | 'selected' | 'waiting_list' | 'not_selected'>('review');
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Dynamic stats loaded from backend
+  const [stats, setStats] = useState({
+    sentReview: 0,
+    selected: 0,
+    waitingList: 0,
+    notSelected: 0
+  });
+
   // Drawer / Side Sheet state
   const [selectedApp, setSelectedApp] = useState<any | null>(null);
   const [reviewStatus, setReviewStatus] = useState<string>('under_review');
@@ -42,14 +57,27 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   const [savingReview, setSavingReview] = useState(false);
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
 
-  const fetchApplications = async (isRefresh = false) => {
+  const fetchApplications = async (pageToFetch = currentPage, isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
 
     try {
-      const res = await api.admin.getApplications();
+      const res = await api.admin.getApplications({
+        page: pageToFetch,
+        limit,
+        q: searchQuery,
+        status: activeTab
+      });
       if (res.success) {
         setApplications(res.applications || []);
+        if (res.stats) {
+          setStats(res.stats);
+        }
+        if (res.pagination) {
+          setCurrentPage(res.pagination.page);
+          setTotalPages(res.pagination.pages || 1);
+          setTotalCount(res.pagination.total || 0);
+        }
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -60,31 +88,24 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
     }
   };
 
+  // Trigger fetch when activeTab or currentPage changes
   useEffect(() => {
-    fetchApplications();
-  }, []);
+    fetchApplications(currentPage);
+  }, [activeTab, currentPage]);
 
-  // Compute live statistics based on real backend applications dataset
-  const stats = useMemo(() => {
-    let sentReview = 0;
-    let selected = 0;
-    let waitingList = 0;
-    let notSelected = 0;
+  // Debounce search input to avoid hammering the server
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchApplications(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
-    applications.forEach((app) => {
-      if (app.status === 'under_review') {
-        sentReview++;
-      } else if (app.status === 'selected' || app.status === 'pass_ready' || app.status === 'checked_in' || app.status === 'picked_up') {
-        selected++;
-      } else if (app.status === 'waiting_list') {
-        waitingList++;
-      } else if (app.status === 'not_selected') {
-        notSelected++;
-      }
-    });
-
-    return { sentReview, selected, waitingList, notSelected };
-  }, [applications]);
+  // Reset page when switching tabs
+  const handleTabChange = (tab: any) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
 
   // Open detailed side sheet drawer for child triage
   const handleOpenTriage = (app: any) => {
@@ -105,7 +126,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
         showSuccess('Review Confirmed', `Successfully updated ${selectedApp.child?.fullName}'s registration status.`);
         setSelectedApp(null);
         // Refresh local dataset
-        await fetchApplications(true);
+        await fetchApplications(currentPage, true);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -117,42 +138,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
 
   // Filter application rows based on active category and search query
   const filteredApplications = useMemo(() => {
-    let result = [...applications];
-
-    // 1. Terminology category filters
-    if (activeTab === 'review') {
-      result = result.filter((app) => app.status === 'under_review');
-    } else if (activeTab === 'event_review') {
-      result = result.filter((app) => ['under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected'].includes(app.status));
-    } else if (activeTab === 'needs_attention') {
-      result = result.filter((app) => 
-        app.hasMedicalNotes || 
-        app.needsExtraSupport || 
-        app.child?.needsAgeReview ||
-        app.pickupPeople.length === 0
-      );
-    } else if (activeTab === 'selected') {
-      result = result.filter((app) => ['selected', 'pass_ready', 'checked_in', 'picked_up'].includes(app.status));
-    } else if (activeTab === 'waiting_list') {
-      result = result.filter((app) => app.status === 'waiting_list');
-    } else if (activeTab === 'not_selected') {
-      result = result.filter((app) => app.status === 'not_selected');
-    }
-
-    // 2. Search query matching
-    if (searchQuery.trim() !== '') {
-      const query = searchQuery.toLowerCase().trim();
-      result = result.filter((app) => 
-        (app.child?.fullName || '').toLowerCase().includes(query) ||
-        (app.parent?.fullName || '').toLowerCase().includes(query) ||
-        (app.parent?.phone || '').includes(query) ||
-        (app.schoolClass || '').toLowerCase().includes(query) ||
-        (app.schoolName || '').toLowerCase().includes(query)
-      );
-    }
-
-    return result;
-  }, [applications, activeTab, searchQuery]);
+    return applications;
+  }, [applications]);
 
   if (selectedApplicationId) {
     return (
@@ -284,7 +271,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => handleTabChange(tab.id as any)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all focus:outline-none ${
                 activeTab === tab.id
                   ? 'bg-[#C59B27] text-white'
@@ -337,7 +324,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
@@ -503,6 +491,73 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* PAGINATION CONTROLS */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-[#EAE8E1] px-4 py-4 sm:px-6 bg-white rounded-b-2xl">
+              <div className="flex flex-1 justify-between sm:hidden">
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="text-xs bg-white text-zinc-700 hover:bg-zinc-50 border border-[#EAE8E1]"
+                >
+                  Previous
+                </Button>
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages || loading}
+                  className="text-xs bg-white text-zinc-700 hover:bg-zinc-50 border border-[#EAE8E1]"
+                >
+                  Next
+                </Button>
+              </div>
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs text-zinc-500">
+                    Showing <span className="font-semibold text-zinc-800">{((currentPage - 1) * limit) + 1}</span> to{' '}
+                    <span className="font-semibold text-zinc-800">
+                      {Math.min(currentPage * limit, totalCount)}
+                    </span>{' '}
+                    of <span className="font-semibold text-zinc-800">{totalCount}</span> results
+                  </p>
+                </div>
+                <div>
+                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-xs" aria-label="Pagination">
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1 || loading}
+                      className="relative inline-flex items-center rounded-l-md px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Previous</span>
+                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        className={`relative inline-flex items-center px-4 py-2 text-xs font-semibold focus:z-20 ${
+                          currentPage === p
+                            ? 'z-10 bg-[#C59B27] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C59B27]'
+                            : 'text-zinc-600 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:outline-offset-0'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages || loading}
+                      className="relative inline-flex items-center rounded-r-md px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Next</span>
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
 

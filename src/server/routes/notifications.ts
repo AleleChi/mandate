@@ -3,9 +3,20 @@ import crypto from 'crypto';
 import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { getVapidPublicKey } from '../services/push';
+import { addSSEClient } from '../services/sse';
 
 const router = Router();
 router.use(authMiddleware);
+
+// GET /api/notifications/stream (Server-Sent Events)
+router.get('/stream', (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id;
+  const role = req.user?.role;
+  if (!userId || (role !== 'admin' && role !== 'super_admin' && role !== 'team')) {
+    return res.status(403).json({ error: 'Access denied: Admin/Team role required' });
+  }
+  addSSEClient(userId, role, res);
+});
 
 // GET /api/notifications
 router.get('/', async (req: AuthenticatedRequest, res: Response) => {

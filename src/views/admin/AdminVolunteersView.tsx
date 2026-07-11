@@ -10,6 +10,7 @@ import {
   Phone, 
   MessageSquare, 
   CheckSquare, 
+  ChevronLeft,
   ChevronRight,
   Filter,
   Check,
@@ -63,6 +64,12 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
   const [submittingDelete, setSubmittingDelete] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
   // Backend stats state
   const [stats, setStats] = useState<any>({
     totalVolunteers: 0,
@@ -85,10 +92,12 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     { value: 'Media', label: 'Media Team' }
   ];
 
-  const fetchVolunteers = async () => {
+  const fetchVolunteers = async (pageToFetch = currentPage) => {
     setLoading(true);
     try {
       const res = await api.admin.getVolunteers({
+        page: pageToFetch,
+        limit,
         q: searchQuery,
         status: statusFilter || activeTab,
         team: teamFilter
@@ -97,6 +106,11 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         setVolunteers(res.volunteers || []);
         if (res.stats) {
           setStats(res.stats);
+        }
+        if (res.pagination) {
+          setCurrentPage(res.pagination.page);
+          setTotalPages(res.pagination.pages || 1);
+          setTotalCount(res.pagination.total || 0);
         }
       }
     } catch (err: any) {
@@ -107,9 +121,23 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     }
   };
 
+  // Reset page to 1 when changing filters or activeTab
+  const handleTabChange = (tab: any) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
+
   useEffect(() => {
-    fetchVolunteers();
-  }, [searchQuery, statusFilter, teamFilter, activeTab]);
+    fetchVolunteers(currentPage);
+  }, [statusFilter, teamFilter, activeTab, currentPage]);
+
+  // Debounced search logic to avoid hammering server
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchVolunteers(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   const handleRemoveVolSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,7 +348,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       <div className="flex flex-wrap border-b border-[#EAE8E1]" id="volunteers-list-tabs">
         <button
           onClick={() => {
-            setActiveTab('active');
+            handleTabChange('active');
             setStatusFilter('');
           }}
           className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
@@ -334,7 +362,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         </button>
         <button
           onClick={() => {
-            setActiveTab('pending');
+            handleTabChange('pending');
             setStatusFilter('');
           }}
           className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
@@ -348,7 +376,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         </button>
         <button
           onClick={() => {
-            setActiveTab('declined');
+            handleTabChange('declined');
             setStatusFilter('');
           }}
           className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
@@ -362,7 +390,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         </button>
         <button
           onClick={() => {
-            setActiveTab('removed');
+            handleTabChange('removed');
             setStatusFilter('');
           }}
           className={`px-4 py-2.5 text-xs font-serif font-bold transition-all border-b-2 cursor-pointer focus:outline-none ${
@@ -450,7 +478,8 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
             <p className="text-[11px] text-zinc-400 max-w-sm mx-auto">There are no volunteer applications matching your query in the current records.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs">
               <thead>
                 <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-[#18181B] font-serif font-semibold">
@@ -610,6 +639,73 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               </tbody>
             </table>
           </div>
+
+          {/* PAGINATION CONTROLS */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-[#EAE8E1] px-4 py-4 sm:px-6 bg-white rounded-b-2xl">
+              <div className="flex flex-1 justify-between sm:hidden">
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="text-xs bg-white text-zinc-700 hover:bg-zinc-50 border border-[#EAE8E1]"
+                >
+                  Previous
+                </Button>
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages || loading}
+                  className="text-xs bg-white text-zinc-700 hover:bg-zinc-50 border border-[#EAE8E1]"
+                >
+                  Next
+                </Button>
+              </div>
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs text-zinc-500">
+                    Showing <span className="font-semibold text-zinc-800">{((currentPage - 1) * limit) + 1}</span> to{' '}
+                    <span className="font-semibold text-zinc-800">
+                      {Math.min(currentPage * limit, totalCount)}
+                    </span>{' '}
+                    of <span className="font-semibold text-zinc-800">{totalCount}</span> results
+                  </p>
+                </div>
+                <div>
+                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-xs" aria-label="Pagination">
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1 || loading}
+                      className="relative inline-flex items-center rounded-l-md px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Previous</span>
+                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        className={`relative inline-flex items-center px-4 py-2 text-xs font-semibold focus:z-20 ${
+                          currentPage === p
+                            ? 'z-10 bg-[#C59B27] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C59B27]'
+                            : 'text-zinc-600 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:outline-offset-0'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages || loading}
+                      className="relative inline-flex items-center rounded-r-md px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Next</span>
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
 

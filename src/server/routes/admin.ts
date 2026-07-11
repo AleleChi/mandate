@@ -10,6 +10,7 @@ import { sendEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
+import { broadcastSSEEvent } from '../services/sse';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -458,7 +459,55 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
 router.get('/applications', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const eventId = 'event-ga-2026';
-    // Query child applications with parent and child details
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const offset = (page - 1) * limit;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+
+    // Build WHERE clauses
+    const whereClauses = ['e.event_id = ?'];
+    const params: any[] = [eventId];
+
+    if (q) {
+      whereClauses.push(`(c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ? OR e.school_class LIKE ? OR e.school_name LIKE ?)`);
+      const likeParam = `%${q}%`;
+      params.push(likeParam, likeParam, likeParam, likeParam, likeParam);
+    }
+
+    if (status && status !== 'all' && status !== 'event_review') {
+      if (status === 'review' || status === 'under_review') {
+        whereClauses.push(`e.status = 'under_review'`);
+      } else if (status === 'needs_attention') {
+        whereClauses.push(`(e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id))`);
+      } else if (status === 'selected') {
+        whereClauses.push(`e.status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')`);
+      } else if (status === 'waiting_list') {
+        whereClauses.push(`e.status = 'waiting_list'`);
+      } else if (status === 'not_selected') {
+        whereClauses.push(`e.status = 'not_selected'`);
+      } else {
+        whereClauses.push(`e.status = ?`);
+        params.push(status);
+      }
+    } else if (status === 'event_review') {
+      whereClauses.push(`e.status IN ('under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected')`);
+    }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    // Count total matching
+    const countRes = await queryOne(`
+      SELECT COUNT(*) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE ${whereSql}
+    `, params);
+    const totalCount = countRes ? countRes.count : 0;
+
+    // Fetch the slice of applications
+    const queryParams = [...params, limit, offset];
     const applications = await query(`
       SELECT 
         e.id as entry_id,
@@ -495,68 +544,93 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       LEFT JOIN media_files m ON m.id = c.photo_file_id
       LEFT JOIN media_files pm ON pm.id = p.photo_file_id
-      WHERE e.event_id = ?
+      WHERE ${whereSql}
       ORDER BY e.submitted_at DESC, e.created_at DESC
-    `, [eventId]);
+      LIMIT ? OFFSET ?
+    `, queryParams);
 
-    // Query all pickup people
-    const pickupPeople = await query(`
-      SELECT p.*, m.secure_url as photo_url
-      FROM pickup_people p
-      LEFT JOIN media_files m ON m.id = p.photo_file_id
-    `);
+    let formatted: any[] = [];
+    if (applications.length > 0) {
+      const entryIds = applications.map((app: any) => app.entry_id);
+      const placeholders = entryIds.map(() => '?').join(',');
+      const pickupPeople = await query(`
+        SELECT p.*, m.secure_url as photo_url
+        FROM pickup_people p
+        LEFT JOIN media_files m ON m.id = p.photo_file_id
+        WHERE p.child_event_entry_id IN (${placeholders})
+      `, entryIds);
 
-    // Format response items
-    const formatted = applications.map((app: any) => {
-      const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
-        .map((p: any) => ({
-          id: p.id,
-          fullName: p.full_name,
-          relationship: p.relationship_to_child,
-          phone: p.phone_number,
-          whatsapp: p.whatsapp_number,
-          photoUrl: p.photo_url,
-          approved: p.approved_by_parent === 1
-        }));
+      formatted = applications.map((app: any) => {
+        const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
+          .map((p: any) => ({
+            id: p.id,
+            fullName: p.full_name,
+            relationship: p.relationship_to_child,
+            phone: p.phone_number,
+            whatsapp: p.whatsapp_number,
+            photoUrl: p.photo_url,
+            approved: p.approved_by_parent === 1
+          }));
 
-      return {
-        id: app.entry_id,
-        childId: app.child_id,
-        status: app.status,
-        schoolClass: app.school_class,
-        schoolName: app.school_name,
-        previousProgramme: app.previous_children_programme,
-        noteToTeam: app.note_to_team,
-        hasMedicalNotes: app.has_medical_notes === 1,
-        medicalNotes: app.medical_notes,
-        needsExtraSupport: app.needs_extra_support === 1,
-        supportNotes: app.support_notes,
-        submittedAt: app.submitted_at,
-        child: {
-          fullName: app.child_name,
-          gender: app.gender,
-          dob: app.date_of_birth,
-          age: app.calculated_age,
-          ageGroup: app.age_group,
-          relationship: app.relationship_to_child,
-          needsAgeReview: app.needs_age_review === 1,
-          photoUrl: app.child_photo_url
-        },
-        parent: {
-          id: app.parent_id,
-          fullName: app.parent_name,
-          phone: app.phone_number,
-          whatsapp: app.whatsapp_number,
-          email: app.parent_email,
-          isWorker: app.is_koinonia_worker === 1,
-          department: app.parent_department,
-          photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (String(app.parent_photo_file_id).startsWith('http') || String(app.parent_photo_file_id).startsWith('/') ? String(app.parent_photo_file_id) : `/api/media/files/${app.parent_photo_file_id}`) : '')
-        },
-        pickupPeople: entryPickups
-      };
+        return {
+          id: app.entry_id,
+          childId: app.child_id,
+          status: app.status,
+          schoolClass: app.school_class,
+          schoolName: app.school_name,
+          previousProgramme: app.previous_children_programme,
+          noteToTeam: app.note_to_team,
+          hasMedicalNotes: app.has_medical_notes === 1,
+          medicalNotes: app.medical_notes,
+          needsExtraSupport: app.needs_extra_support === 1,
+          supportNotes: app.support_notes,
+          submittedAt: app.submitted_at,
+          child: {
+            fullName: app.child_name,
+            gender: app.gender,
+            dob: app.date_of_birth,
+            age: app.calculated_age,
+            ageGroup: app.age_group,
+            relationship: app.relationship_to_child,
+            needsAgeReview: app.needs_age_review === 1,
+            photoUrl: app.child_photo_url
+          },
+          parent: {
+            id: app.parent_id,
+            fullName: app.parent_name,
+            phone: app.phone_number,
+            whatsapp: app.whatsapp_number,
+            email: app.parent_email,
+            isWorker: app.is_koinonia_worker === 1,
+            department: app.parent_department,
+            photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (String(app.parent_photo_file_id).startsWith('http') || String(app.parent_photo_file_id).startsWith('/') ? String(app.parent_photo_file_id) : `/api/media/files/${app.parent_photo_file_id}`) : '')
+          },
+          pickupPeople: entryPickups
+        };
+      });
+    }
+
+    const statSentReview = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'`, [eventId]))?.count || 0;
+    const statSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')`, [eventId]))?.count || 0;
+    const statWaitingList = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list'`, [eventId]))?.count || 0;
+    const statNotSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'not_selected'`, [eventId]))?.count || 0;
+
+    return res.json({ 
+      success: true, 
+      applications: formatted,
+      stats: {
+        sentReview: statSentReview,
+        selected: statSelected,
+        waitingList: statWaitingList,
+        notSelected: statNotSelected
+      },
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        pages: Math.ceil(totalCount / limit)
+      }
     });
-
-    return res.json({ success: true, applications: formatted });
   } catch (err: any) {
     console.error('Error fetching applications list:', err);
     return res.status(500).json({ error: 'Failed to fetch child applications.' });
@@ -571,10 +645,13 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const eventId = 'event-ga-2026';
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const filter = typeof req.query.filter === 'string' ? req.query.filter : '';
 
-    // 1. Fetch stats
+    // 1. Fetch overall stats
     const totalRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [eventId]);
     const selectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
     const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
@@ -589,7 +666,58 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
     `, [eventId]);
 
     // 2. Fetch Children Records
-    let queryStr = `
+    let filterClauses = 'e.event_id = ?';
+    const queryParams: any[] = [eventId];
+
+    if (filter === 'removed') {
+      filterClauses += ` AND (e.is_deleted = 1 OR c.is_deleted = 1)`;
+    } else {
+      filterClauses += ` AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)`;
+    }
+
+    if (q) {
+      filterClauses += ` AND (
+        c.full_name LIKE ? OR 
+        p.full_name LIKE ? OR 
+        p.phone_number LIKE ?
+      )`;
+      const searchPattern = `%${q}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (filter === 'inside') {
+      filterClauses += ` AND e.status IN ('checked_in', 'inside')`;
+    } else if (filter === 'not_arrived') {
+      filterClauses += ` AND e.status NOT IN ('checked_in', 'inside', 'picked_up')`;
+    } else if (filter === 'picked_up') {
+      filterClauses += ` AND e.status = 'picked_up'`;
+    } else if (filter === 'medical_note') {
+      filterClauses += ` AND e.has_medical_notes = 1`;
+    } else if (filter === 'missing_pickup_photo') {
+      filterClauses += ` AND EXISTS (
+        SELECT 1 FROM pickup_people pp 
+        WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '')
+      )`;
+    } else if (filter === 'below_event_age') {
+      filterClauses += ` AND c.needs_age_review = 1`;
+    } else if (filter === 'special_support') {
+      filterClauses += ` AND e.needs_extra_support = 1`;
+    }
+
+    // Get total count of filtered children
+    const countSql = `
+      SELECT COUNT(*) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE ${filterClauses}
+    `;
+    const countRow = await queryOne(countSql, queryParams);
+    const totalFiltered = countRow ? countRow.count : 0;
+
+    // Fetch paginated slice of children
+    const paginatedParams = [...queryParams, limit, offset];
+    const queryStr = `
       SELECT 
         e.id as entry_id,
         e.child_id,
@@ -621,110 +749,79 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       LEFT JOIN media_files m ON m.id = c.photo_file_id
       LEFT JOIN media_files pm ON pm.id = p.photo_file_id
-      WHERE e.event_id = ?
+      WHERE ${filterClauses}
+      ORDER BY c.full_name ASC
+      LIMIT ? OFFSET ?
     `;
 
-    if (filter === 'removed') {
-      queryStr += ` AND (e.is_deleted = 1 OR c.is_deleted = 1)`;
-    } else {
-      queryStr += ` AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)`;
+    const childrenRows = await query(queryStr, paginatedParams);
+
+    let formatted: any[] = [];
+    if (childrenRows.length > 0) {
+      const entryIds = childrenRows.map((app: any) => app.entry_id);
+      const placeholders = entryIds.map(() => '?').join(',');
+      const pickupPeople = await query(`
+        SELECT p.*, m.secure_url as photo_url
+        FROM pickup_people p
+        LEFT JOIN media_files m ON m.id = p.photo_file_id
+        WHERE p.child_event_entry_id IN (${placeholders})
+      `, entryIds);
+
+      formatted = childrenRows.map((app: any) => {
+        const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
+          .map((p: any) => ({
+            id: p.id,
+            fullName: p.full_name,
+            relationship: p.relationship_to_child,
+            phone: p.phone_number,
+            whatsapp: p.whatsapp_number,
+            photoUrl: p.photo_url,
+            approved: p.approved_by_parent === 1
+          }));
+
+        const flags: string[] = [];
+        if (app.has_medical_notes === 1) flags.push('medical_notes');
+        if (app.needs_extra_support === 1) flags.push('special_support');
+        if (app.needs_age_review === 1) flags.push('needs_age_review');
+        if (entryPickups.length === 0) {
+          flags.push('missing_pickup_person');
+        } else if (entryPickups.some((pp: any) => !pp.photoUrl)) {
+          flags.push('missing_pickup_photo');
+        }
+
+        let entryStatus: 'checked_in' | 'not_arrived' = 'not_arrived';
+        let pickupStatus: 'inside' | 'picked_up' | 'not_picked_up' = 'not_picked_up';
+
+        if (app.status === 'checked_in' || app.status === 'inside') {
+          entryStatus = 'checked_in';
+          pickupStatus = 'inside';
+        } else if (app.status === 'picked_up') {
+          entryStatus = 'checked_in';
+          pickupStatus = 'picked_up';
+        }
+
+        return {
+          id: app.entry_id,
+          applicationId: app.entry_id,
+          childId: app.child_id,
+          fullName: app.child_name,
+          photoUrl: app.child_photo_url,
+          ageLabel: `${app.calculated_age}y`,
+          gender: app.gender,
+          ageGroup: app.age_group,
+          parentName: app.parent_name,
+          parentPhone: app.phone_number,
+          pickupPersonName: entryPickups[0]?.fullName || null,
+          pickupPersonPhotoUrl: entryPickups[0]?.photoUrl || null,
+          reviewStatus: app.status,
+          entryStatus,
+          pickupStatus,
+          isDeleted: !!app.entry_deleted || !!app.child_deleted,
+          deleteReason: app.delete_reason || null,
+          flags
+        };
+      });
     }
-
-    const queryParams: any[] = [eventId];
-
-    if (q) {
-      queryStr += ` AND (
-        c.full_name LIKE ? OR 
-        p.full_name LIKE ? OR 
-        p.phone_number LIKE ?
-      )`;
-      const searchPattern = `%${q}%`;
-      queryParams.push(searchPattern, searchPattern, searchPattern);
-    }
-
-    if (filter === 'inside') {
-      queryStr += ` AND e.status IN ('checked_in', 'inside')`;
-    } else if (filter === 'not_arrived') {
-      queryStr += ` AND e.status NOT IN ('checked_in', 'inside', 'picked_up')`;
-    } else if (filter === 'picked_up') {
-      queryStr += ` AND e.status = 'picked_up'`;
-    } else if (filter === 'medical_note') {
-      queryStr += ` AND e.has_medical_notes = 1`;
-    } else if (filter === 'missing_pickup_photo') {
-      queryStr += ` AND EXISTS (
-        SELECT 1 FROM pickup_people pp 
-        WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '')
-      )`;
-    } else if (filter === 'below_event_age') {
-      queryStr += ` AND c.needs_age_review = 1`;
-    } else if (filter === 'special_support') {
-      queryStr += ` AND e.needs_extra_support = 1`;
-    }
-
-    queryStr += ` ORDER BY c.full_name ASC`;
-
-    const childrenRows = await query(queryStr, queryParams);
-
-    const pickupPeople = await query(`
-      SELECT p.*, m.secure_url as photo_url
-      FROM pickup_people p
-      LEFT JOIN media_files m ON m.id = p.photo_file_id
-    `);
-
-    const formatted = childrenRows.map((app: any) => {
-      const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
-        .map((p: any) => ({
-          id: p.id,
-          fullName: p.full_name,
-          relationship: p.relationship_to_child,
-          phone: p.phone_number,
-          whatsapp: p.whatsapp_number,
-          photoUrl: p.photo_url,
-          approved: p.approved_by_parent === 1
-        }));
-
-      const flags: string[] = [];
-      if (app.has_medical_notes === 1) flags.push('medical_notes');
-      if (app.needs_extra_support === 1) flags.push('special_support');
-      if (app.needs_age_review === 1) flags.push('needs_age_review');
-      if (entryPickups.length === 0) {
-        flags.push('missing_pickup_person');
-      } else if (entryPickups.some((pp: any) => !pp.photoUrl)) {
-        flags.push('missing_pickup_photo');
-      }
-
-      let entryStatus: 'checked_in' | 'not_arrived' = 'not_arrived';
-      let pickupStatus: 'inside' | 'picked_up' | 'not_picked_up' = 'not_picked_up';
-
-      if (app.status === 'checked_in' || app.status === 'inside') {
-        entryStatus = 'checked_in';
-        pickupStatus = 'inside';
-      } else if (app.status === 'picked_up') {
-        entryStatus = 'checked_in';
-        pickupStatus = 'picked_up';
-      }
-
-      return {
-        id: app.entry_id,
-        applicationId: app.entry_id,
-        childId: app.child_id,
-        fullName: app.child_name,
-        photoUrl: app.child_photo_url,
-        ageLabel: `${app.calculated_age}y`,
-        gender: app.gender,
-        ageGroup: app.age_group,
-        parentName: app.parent_name,
-        parentPhone: app.phone_number,
-        pickupPersonName: entryPickups[0]?.fullName || null,
-        pickupPersonPhotoUrl: entryPickups[0]?.photoUrl || null,
-        reviewStatus: app.status,
-        entryStatus,
-        pickupStatus,
-        isDeleted: !!app.entry_deleted || !!app.child_deleted,
-        deleteReason: app.delete_reason || null,
-        flags
-      };
-    });
 
     return res.json({
       success: true,
@@ -737,7 +834,13 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
         needsAttention: needsAttentionRes?.count || 0
       },
       children: formatted,
-      total: formatted.length,
+      total: totalFiltered,
+      pagination: {
+        total: totalFiltered,
+        page,
+        limit,
+        pages: Math.ceil(totalFiltered / limit)
+      },
       nextCursor: null
     });
   } catch (err: any) {
@@ -4413,11 +4516,53 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
     if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
     const team = typeof req.query.team === 'string' ? req.query.team : '';
 
-    let queryStr = `
+    let filterClauses = '1=1';
+    const queryParams: any[] = [];
+
+    if (q) {
+      filterClauses += ` AND (v.full_name LIKE ? OR u.email LIKE ? OR v.phone LIKE ?)`;
+      const searchPattern = `%${q}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (status === 'removed') {
+      filterClauses += ` AND v.is_deleted = 1`;
+    } else if (status === 'active') {
+      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('approved', 'active')`;
+    } else if (status === 'pending_review' || status === 'pending') {
+      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('pending_review', 'pending')`;
+    } else if (status === 'declined' || status === 'rejected') {
+      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('rejected', 'declined')`;
+    } else {
+      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL)`;
+      if (status) {
+        filterClauses += ` AND v.status = ?`;
+        queryParams.push(status);
+      }
+    }
+
+    if (team) {
+      filterClauses += ` AND v.preferred_team = ?`;
+      queryParams.push(team);
+    }
+
+    // Count total filtered
+    const countRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE ${filterClauses}
+    `, queryParams);
+    const totalCount = countRes ? countRes.count : 0;
+
+    const queryStr = `
       SELECT 
         v.*,
         u.email,
@@ -4429,40 +4574,13 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       FROM volunteer_profiles v
       JOIN users u ON u.id = v.user_id
       LEFT JOIN media_files m ON m.id = v.photo_file_id
-      WHERE 1=1
+      WHERE ${filterClauses}
+      ORDER BY v.created_at DESC
+      LIMIT ? OFFSET ?
     `;
-    const queryParams: any[] = [];
+    const paginatedParams = [...queryParams, limit, offset];
 
-    if (q) {
-      queryStr += ` AND (v.full_name LIKE ? OR u.email LIKE ? OR v.phone LIKE ?)`;
-      const searchPattern = `%${q}%`;
-      queryParams.push(searchPattern, searchPattern, searchPattern);
-    }
-
-    if (status === 'removed') {
-      queryStr += ` AND v.is_deleted = 1`;
-    } else if (status === 'active') {
-      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('approved', 'active')`;
-    } else if (status === 'pending_review' || status === 'pending') {
-      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('pending_review', 'pending')`;
-    } else if (status === 'declined' || status === 'rejected') {
-      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('rejected', 'declined')`;
-    } else {
-      queryStr += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL)`;
-      if (status) {
-        queryStr += ` AND v.status = ?`;
-        queryParams.push(status);
-      }
-    }
-
-    if (team) {
-      queryStr += ` AND v.preferred_team = ?`;
-      queryParams.push(team);
-    }
-
-    queryStr += ` ORDER BY v.created_at DESC`;
-
-    const rows = await query(queryStr, queryParams);
+    const rows = await query(queryStr, paginatedParams);
     const formatted = rows.map((v: any) => ({
       id: v.id,
       userId: v.user_id,
@@ -4512,7 +4630,13 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
         assignedTeams: assignedTeamsCount,
         removedVolunteers
       },
-      volunteers: formatted 
+      volunteers: formatted,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        pages: Math.ceil(totalCount / limit)
+      }
     });
   } catch (err: any) {
     console.error('Error fetching admin volunteers:', err);
@@ -5900,6 +6024,17 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
             SET sound_started_at = ?, sound_stopped_at = NULL, updated_at = ?
             WHERE alert_id = ?
           `, [now, now, alert.id]);
+
+          try {
+            broadcastSSEEvent('safety_alert_escalated', {
+              alertId: alert.id,
+              severity: 'urgent',
+              escalatedAt: now,
+              title: escalatedTitle
+            });
+          } catch (sseErr) {
+            console.error('[SSE Broadcast] Failed to send sse alert auto-escalate:', sseErr);
+          }
           
           console.log(`[Auto-Escalation] Alert ${alert.id} escalated to urgent after ${elapsedMs / 1000}s of inactivity.`);
         }
@@ -5940,7 +6075,15 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       WHERE recipient_user_id = ? AND delivered_in_app_at IS NULL
     `, [now, req.user.id]);
 
-    const alerts = await query(`
+    const page = parseInt(req.query.page as string, 10);
+    const limit = parseInt(req.query.limit as string, 10);
+    const offset = page && limit ? (page - 1) * limit : 0;
+
+    let countRes = await queryOne(`SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ?`, [REAL_EVENT_ID]);
+    const totalCount = countRes ? countRes.count : 0;
+
+    const queryParams: any[] = [req.user.id, REAL_EVENT_ID];
+    let sql = `
       SELECT a.*,
              c.full_name as child_name,
              c.photo_file_id as child_photo_file_id,
@@ -5977,7 +6120,14 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
              ELSE 3
         END,
         a.created_at DESC
-    `, [req.user.id, REAL_EVENT_ID]);
+    `;
+
+    if (page && limit) {
+      sql += ` LIMIT ? OFFSET ?`;
+      queryParams.push(limit, offset);
+    }
+
+    const alerts = await query(sql, queryParams);
 
     const mappedAlerts = (alerts || []).map((a: any) => {
       const childPhoto = a.child_photo_file_id ? (String(a.child_photo_file_id).startsWith('http') || String(a.child_photo_file_id).startsWith('/') ? String(a.child_photo_file_id) : `/api/media/files/${a.child_photo_file_id}`) : '';
@@ -5988,7 +6138,20 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       };
     });
 
-    res.json(mappedAlerts);
+    if (page && limit) {
+      res.json({
+        success: true,
+        alerts: mappedAlerts,
+        pagination: {
+          total: totalCount,
+          page,
+          limit,
+          pages: Math.ceil(totalCount / limit)
+        }
+      });
+    } else {
+      res.json(mappedAlerts);
+    }
   } catch (err) {
     console.error('Get admin safety alerts error:', err);
     res.status(500).json({ error: 'Failed to retrieve safety alerts' });
@@ -6208,6 +6371,16 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       WHERE alert_id = ?
     `, [now, now, id]);
 
+    try {
+      broadcastSSEEvent('safety_alert_acknowledged', {
+        alertId: id,
+        acknowledgedBy: req.user.id,
+        acknowledgedAt: now
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert acknowledge:', sseErr);
+    }
+
     res.json({ 
       success: true, 
       message: 'Alert acknowledged.',
@@ -6272,6 +6445,17 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
       WHERE alert_id = ?
     `, [now, now, id]);
 
+    try {
+      broadcastSSEEvent('safety_alert_resolved', {
+        alertId: id,
+        resolvedBy: req.user.id,
+        resolvedAt: now,
+        resolutionNote: (note || 'Resolved by admin').trim()
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert resolve:', sseErr);
+    }
+
     res.json({ 
       success: true, 
       message: 'Alert resolved.',
@@ -6332,6 +6516,16 @@ router.post('/safety-alerts/:id/escalate', authMiddleware, async (req: Authentic
           updated_at = ?
       WHERE id = ?
     `, [now, id]);
+
+    try {
+      broadcastSSEEvent('safety_alert_escalated', {
+        alertId: id,
+        severity: 'urgent',
+        escalatedAt: now
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert escalate:', sseErr);
+    }
 
     res.json({ success: true, message: 'Alert escalated to urgent severity.' });
   } catch (err) {

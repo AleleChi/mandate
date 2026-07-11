@@ -88,6 +88,9 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   if (!token && req.cookies && req.cookies.token) {
     token = req.cookies.token;
   }
+  if (!token && req.query && req.query.token) {
+    token = req.query.token as string;
+  }
 
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });

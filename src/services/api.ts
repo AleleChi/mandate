@@ -644,15 +644,23 @@ export const api = {
     async getOverview() {
       return api.request<any>('/api/admin/overview');
     },
-    async getChildren(params?: { q?: string; filter?: string }) {
+    async getChildren(params?: { q?: string; filter?: string; page?: number; limit?: number }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
       if (params?.filter) queryParams.append('filter', params.filter);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
       const queryString = queryParams.toString();
       return api.request<{
         success: boolean;
         stats: any;
         children: any[];
+        pagination?: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
       }>(`/api/admin/children${queryString ? `?${queryString}` : ''}`);
     },
     async getAttendance(params?: { q?: string; status?: string }) {
@@ -677,8 +685,24 @@ export const api = {
         total: number;
       }>(`/api/admin/attendance${queryString ? `?${queryString}` : ''}`);
     },
-    async getApplications() {
-      return api.request<{ success: boolean; applications: any[] }>('/api/admin/applications');
+    async getApplications(params?: { q?: string; status?: string; page?: number; limit?: number }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      const queryString = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        applications: any[];
+        stats?: any;
+        pagination?: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
+      }>(`/api/admin/applications${queryString ? `?${queryString}` : ''}`);
     },
     async getApplicationDetails(id: string) {
       return api.request<{ success: boolean; application: any }>(`/api/admin/applications/${id}`);
@@ -930,13 +954,25 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
-    async getVolunteers(params?: { q?: string; status?: string; team?: string }) {
+    async getVolunteers(params?: { q?: string; status?: string; team?: string; page?: number; limit?: number }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
       if (params?.status) queryParams.append('status', params.status);
       if (params?.team) queryParams.append('team', params.team);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
       const queryString = queryParams.toString();
-      return api.request<{ success: boolean; volunteers: any[]; stats?: any }>(`/api/admin/volunteers${queryString ? `?${queryString}` : ''}`);
+      return api.request<{ 
+        success: boolean; 
+        volunteers: any[]; 
+        stats?: any;
+        pagination?: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
+      }>(`/api/admin/volunteers${queryString ? `?${queryString}` : ''}`);
     },
     async getVolunteerDetails(id: string) {
       return api.request<{ success: boolean; volunteer: any }>(`/api/admin/volunteers/${id}`);

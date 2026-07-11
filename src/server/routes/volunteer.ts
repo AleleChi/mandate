@@ -7,6 +7,7 @@ import { sendEmail, sendVolunteerVerificationEmail, sendVolunteerPasswordResetEm
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { uploadMedia } from '../services/media/cloudinary';
 import { sendWebPush } from '../services/push';
+import { broadcastSSEEvent } from '../services/sse';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -4202,6 +4203,20 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       }
     } catch (pushErr) {
       console.error('[Safety Alert] Failed to send push notifications to admins:', pushErr);
+    }
+
+    try {
+      broadcastSSEEvent('safety_alert_created', {
+        alertId,
+        severity,
+        category,
+        title: alertTitle,
+        message: cleanMessage,
+        location: locationLabel || '',
+        created_at: now
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert:', sseErr);
     }
 
     res.json({

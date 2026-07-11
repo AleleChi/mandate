@@ -92,6 +92,97 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
     }
   };
 
+  // SSE Real-time instant safety alert updates
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: any = null;
+
+    const connectSSE = () => {
+      const token = localStorage.getItem('koinonia_token');
+      if (!token) return;
+
+      const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+      const sseUrl = `${apiBaseUrl}/api/notifications/stream?token=${token}`;
+
+      console.log('[SSE Client TeamAlerts] Connecting to:', sseUrl);
+      eventSource = new EventSource(sseUrl);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          console.log('[SSE Client TeamAlerts] Received message:', payload);
+
+          if (payload.type === 'handshake') {
+            console.log('[SSE Client TeamAlerts] Handshake successful, clientId:', payload.clientId);
+            return;
+          }
+
+          if (
+            payload.type === 'safety_alert_created' ||
+            payload.type === 'safety_alert_acknowledged' ||
+            payload.type === 'safety_alert_resolved' ||
+            payload.type === 'safety_alert_escalated'
+          ) {
+            const clientReceiptTime = new Date();
+            const createdTime = new Date(payload.timestamp || (payload.data && payload.data.created_at) || new Date());
+            const latencyMs = clientReceiptTime.getTime() - createdTime.getTime();
+            
+            console.log('%c[EMERGENCY ALERT TIMING DIAGNOSTIC (TEAM)]', 'background: #DC2626; color: white; font-weight: bold; padding: 6px; border-radius: 4px;', {
+              'Event Type': payload.type,
+              'Submission/DB Timestamp (Server)': createdTime.toISOString(),
+              'Client Receipt Timestamp': clientReceiptTime.toISOString(),
+              'Measured Net Delivery Latency': `${latencyMs}ms (${(latencyMs / 1000).toFixed(3)}s)`,
+              'Priority Route Status': 'SSE Priority Channel Active (Polling Bypassed)',
+              'Sound Trigger Time': new Date().toISOString()
+            });
+
+            fetchAlerts(true);
+          }
+        } catch (err) {
+          console.error('[SSE Client TeamAlerts] Failed to parse message:', err);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.error('[SSE Client TeamAlerts] Error or disconnected, retrying in 3s:', err);
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        reconnectTimeout = setTimeout(connectSSE, 3000);
+      };
+    };
+
+    connectSSE();
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+        console.log('[SSE Client TeamAlerts] Connection closed.');
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+    };
+  }, []);
+
+  // Global browser autoplay restriction bypass via user interaction
+  useEffect(() => {
+    const handleGlobalInteraction = () => {
+      try {
+        resumeAudioContext();
+      } catch (e) {
+        console.warn('Failed to resume AudioContext globally:', e);
+      }
+    };
+    document.addEventListener('click', handleGlobalInteraction);
+    document.addEventListener('touchstart', handleGlobalInteraction);
+    return () => {
+      document.removeEventListener('click', handleGlobalInteraction);
+      document.removeEventListener('touchstart', handleGlobalInteraction);
+    };
+  }, []);
+
   useEffect(() => {
     fetchAlerts();
     

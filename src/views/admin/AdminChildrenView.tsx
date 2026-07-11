@@ -24,7 +24,9 @@ import {
   FileClock,
   RefreshCw,
   UserX,
-  ChevronDown
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -55,6 +57,12 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [tempFilter, setTempFilter] = useState<string>('all');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   // More actions states
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
@@ -93,11 +101,18 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  const fetchChildren = async () => {
+  // Reset page to 1 when filtering or searching
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedQuery, activeFilter]);
+
+  const fetchChildren = async (pageToFetch = currentPage) => {
     setLoading(true);
     setError(null);
     try {
       const res = await api.admin.getChildren({
+        page: pageToFetch,
+        limit,
         q: debouncedQuery,
         filter: activeFilter === 'all' ? '' : activeFilter
       });
@@ -105,6 +120,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
         setChildren(res.children || []);
         if (res.stats) {
           setStats(res.stats);
+        }
+        if (res.pagination) {
+          setCurrentPage(res.pagination.page);
+          setTotalPages(res.pagination.pages || 1);
+          setTotalCount(res.pagination.total || 0);
         }
       } else {
         setError('We could not load child records right now. Please try again.');
@@ -118,8 +138,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   };
 
   useEffect(() => {
-    fetchChildren();
-  }, [debouncedQuery, activeFilter]);
+    fetchChildren(currentPage);
+  }, [debouncedQuery, activeFilter, currentPage]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -951,6 +971,72 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
               </div>
             ))}
           </div>
+
+          {/* PAGINATION CONTROLS */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-[#EAE8E1] px-4 py-4 sm:px-6 bg-white rounded-b-2xl mt-4">
+              <div className="flex flex-1 justify-between sm:hidden">
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="text-xs bg-white text-zinc-700 hover:bg-zinc-50 border border-[#EAE8E1]"
+                >
+                  Previous
+                </Button>
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages || loading}
+                  className="text-xs bg-white text-zinc-700 hover:bg-zinc-50 border border-[#EAE8E1]"
+                >
+                  Next
+                </Button>
+              </div>
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs text-zinc-500">
+                    Showing <span className="font-semibold text-zinc-800">{((currentPage - 1) * limit) + 1}</span> to{' '}
+                    <span className="font-semibold text-zinc-800">
+                      {Math.min(currentPage * limit, totalCount)}
+                    </span>{' '}
+                    of <span className="font-semibold text-zinc-800">{totalCount}</span> results
+                  </p>
+                </div>
+                <div>
+                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-xs" aria-label="Pagination">
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1 || loading}
+                      className="relative inline-flex items-center rounded-l-md px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Previous</span>
+                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        className={`relative inline-flex items-center px-4 py-2 text-xs font-semibold focus:z-20 ${
+                          currentPage === p
+                            ? 'z-10 bg-[#C59B27] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C59B27]'
+                            : 'text-zinc-600 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:outline-offset-0'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages || loading}
+                      className="relative inline-flex items-center rounded-r-md px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Next</span>
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
