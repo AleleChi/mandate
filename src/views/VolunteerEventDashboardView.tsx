@@ -335,10 +335,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [safetyCategory, setSafetyCategory] = useState('child_care');
   const [safetyMessage, setSafetyMessage] = useState('');
   const [safetyLocationLabel, setSafetyLocationLabel] = useState('');
-  const [safetyChildContext, setSafetyChildContext] = useState<{ id: string; fullName: string } | null>(null);
+  const [safetyChildContext, setSafetyChildContext] = useState<{ id: string; fullName: string; ageGroup?: string; status?: string; photoUrl?: string } | null>(null);
   const [isSubmittingSafetyAlert, setIsSubmittingSafetyAlert] = useState(false);
   const [mySafetyAlerts, setMySafetyAlerts] = useState<any[]>([]);
   const [showMyAlertsView, setShowMyAlertsView] = useState(false);
+  const [safetyLinkOption, setSafetyLinkOption] = useState<'general' | 'link'>('general');
+  const [safetySearchQuery, setSafetySearchQuery] = useState('');
+  const [safetySearchResults, setSafetySearchResults] = useState<any[]>([]);
+  const [safetySearching, setSafetySearching] = useState(false);
 
   // Team Safety Alert states
   const [teamAlerts, setTeamAlerts] = useState<any[]>([]);
@@ -432,15 +436,37 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
-  const handleOpenSafetyAlertModal = (childContext?: { id: string; fullName: string }) => {
+  const handleOpenSafetyAlertModal = (childContext?: { id: string; fullName: string; ageGroup?: string; status?: string; photoUrl?: string }) => {
     if (childContext) {
-      setSafetyChildContext(childContext);
+      setSafetyChildContext({
+        id: childContext.id,
+        fullName: childContext.fullName,
+        ageGroup: childContext.ageGroup,
+        status: childContext.status,
+        photoUrl: childContext.photoUrl
+      });
+      setSafetyLinkOption('link');
     } else if (lookedUpChild) {
-      setSafetyChildContext({ id: lookedUpChild.id, fullName: lookedUpChild.fullName });
+      setSafetyChildContext({
+        id: lookedUpChild.id,
+        fullName: lookedUpChild.fullName,
+        ageGroup: lookedUpChild.ageGroup || lookedUpChild.className,
+        status: lookedUpChild.entryStatus || lookedUpChild.status,
+        photoUrl: lookedUpChild.photoUrl
+      });
+      setSafetyLinkOption('link');
     } else if (pickupChild) {
-      setSafetyChildContext({ id: pickupChild.id, fullName: pickupChild.fullName });
+      setSafetyChildContext({
+        id: pickupChild.id,
+        fullName: pickupChild.fullName,
+        ageGroup: pickupChild.ageGroup || pickupChild.className,
+        status: pickupChild.entryStatus || pickupChild.status,
+        photoUrl: pickupChild.photoUrl
+      });
+      setSafetyLinkOption('link');
     } else {
       setSafetyChildContext(null);
+      setSafetyLinkOption('general');
     }
     
     // Default values
@@ -448,7 +474,27 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setSafetyCategory('child_care');
     setSafetyMessage('');
     setSafetyLocationLabel('');
+    setSafetySearchQuery('');
+    setSafetySearchResults([]);
+    setSafetySearching(false);
     setIsSafetyModalOpen(true);
+  };
+
+  const handleSafetyChildSearch = async (query: string) => {
+    setSafetySearchQuery(query);
+    if (!query.trim()) {
+      setSafetySearchResults([]);
+      return;
+    }
+    setSafetySearching(true);
+    try {
+      const results = await api.volunteer.searchChildren(query.trim());
+      setSafetySearchResults(results || []);
+    } catch (err) {
+      console.error('Safety alert child search failed:', err);
+    } finally {
+      setSafetySearching(false);
+    }
   };
 
   const handleRaiseSafetyAlert = async () => {
@@ -460,7 +506,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setIsSubmittingSafetyAlert(true);
     try {
       const res = await api.volunteer.raiseSafetyAlert({
-        childId: safetyChildContext?.id,
+        childId: safetyLinkOption === 'link' ? (safetyChildContext?.id || null) : null,
         category: safetyCategory,
         severity: safetySeverity,
         locationLabel: safetyLocationLabel,
@@ -2330,11 +2376,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </button>
 
                     <button
-                      onClick={() => handleOpenSafetyAlertModal({ id: lookedUpChild.id, fullName: lookedUpChild.fullName })}
+                      onClick={() => handleOpenSafetyAlertModal({
+                        id: lookedUpChild.id,
+                        fullName: lookedUpChild.fullName,
+                        ageGroup: lookedUpChild.ageGroup || lookedUpChild.className,
+                        status: lookedUpChild.entryStatus || lookedUpChild.status,
+                        photoUrl: lookedUpChild.photoUrl
+                      })}
+                      data-component-version="volunteer-alert-auto-linked-child-v1"
                       className="w-full bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <Bell className="h-4 w-4 animate-pulse" />
-                      <span>Request Help for {lookedUpChild.fullName.split(' ')[0]}</span>
+                      <span>Request help for this child</span>
                     </button>
                   </div>
 
@@ -3167,11 +3220,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </button>
 
                 <button
-                  onClick={() => handleOpenSafetyAlertModal({ id: pickupChild.id, fullName: pickupChild.fullName })}
+                  onClick={() => handleOpenSafetyAlertModal({
+                    id: pickupChild.id,
+                    fullName: pickupChild.fullName,
+                    ageGroup: pickupChild.ageGroup || pickupChild.className,
+                    status: pickupChild.entryStatus || pickupChild.status,
+                    photoUrl: pickupChild.photoUrl
+                  })}
+                  data-component-version="volunteer-alert-auto-linked-child-v1"
                   className="w-full bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
                 >
                   <Bell className="h-4 w-4 animate-pulse" />
-                  <span>Request Admin Help</span>
+                  <span>Request help for this child</span>
                 </button>
               </div>
             </div>
@@ -3592,6 +3652,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   >
                     <QrCode className="h-4 w-4 text-[#C59B27]" />
                     <span>Scan another pass</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSafetyAlertModal({
+                      id: childProfileData.child.id,
+                      fullName: childProfileData.child.fullName || childProfileData.child.name,
+                      ageGroup: childProfileData.child.ageGroup,
+                      status: childProfileData.child.status,
+                      photoUrl: childProfileData.child.photoUrl
+                    })}
+                    data-component-version="volunteer-alert-auto-linked-child-v1"
+                    className="w-full py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs tracking-wider rounded-2xl transition-all border border-rose-200 uppercase flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                  >
+                    <Bell className="h-4 w-4 animate-pulse text-rose-600" />
+                    <span>Request help for this child</span>
                   </button>
                 </div>
 
@@ -4809,6 +4885,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               />
             </div>
 
+            {/* Request help for this child button */}
+            {selectedAttentionItem && (selectedAttentionItem.child_id || selectedAttentionItem.childId) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttentionDetailModal(false);
+                  handleOpenSafetyAlertModal({
+                    id: selectedAttentionItem.child_id || selectedAttentionItem.childId,
+                    fullName: selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child',
+                    ageGroup: selectedAttentionItem.child_age_group || selectedAttentionItem.childAgeGroup,
+                    status: selectedAttentionItem.status || 'needs attention',
+                    photoUrl: selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId
+                  });
+                }}
+                data-component-version="volunteer-alert-auto-linked-child-v1"
+                className="w-full py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs tracking-wider rounded-xl transition-all border border-rose-200 uppercase flex items-center justify-center space-x-2 cursor-pointer mt-3"
+              >
+                <Bell className="h-4 w-4 animate-pulse text-rose-600" />
+                <span>Request help for this child</span>
+              </button>
+            )}
+
             {/* Actions Row */}
             <div 
               className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-[#EAE8E1]/60"
@@ -4870,7 +4968,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       {/* 4. VOLUNTEER EVENT SAFETY ALERT FORM MODAL */}
       {isSafetyModalOpen && (
         <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
+          <div 
+            className="bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]"
+            data-view-version="volunteer-safety-alert-form-v3-child-link"
+          >
             {/* Header */}
             <div className="bg-gradient-to-r from-rose-950 to-[#5C1D24] text-white px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2.5">
@@ -4890,18 +4991,151 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             {/* Form Scrollable Body */}
             <div className="p-6 overflow-y-auto space-y-5 text-gray-800 text-xs">
-              {/* Optional Child Context Info */}
-              {safetyChildContext && (
-                <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-4 flex items-center space-x-3">
-                  <div className="p-2 bg-[#C59B27]/10 text-[#C59B27] rounded-xl">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <span className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block">Assoc. Child Record</span>
-                    <span className="font-serif font-bold text-gray-900 text-sm">{safetyChildContext.fullName}</span>
-                  </div>
+              {/* Child Involved Section */}
+              <div className="space-y-3" data-component-version="volunteer-alert-child-selector-v1">
+                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Child involved</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSafetyLinkOption('general');
+                    }}
+                    className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
+                      safetyLinkOption === 'general'
+                        ? 'bg-rose-50 border-rose-200 text-rose-800'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    General alert
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSafetyLinkOption('link');
+                    }}
+                    className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
+                      safetyLinkOption === 'link'
+                        ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Link a child
+                  </button>
                 </div>
-              )}
+
+                {safetyLinkOption === 'general' && (
+                  <p className="text-[10px] text-gray-500 italic mt-1 bg-gray-50 p-2.5 rounded-xl border border-gray-150">
+                    Use this when the request is not about a specific child.
+                  </p>
+                )}
+
+                {safetyLinkOption === 'link' && (
+                  <div className="space-y-3 mt-1">
+                    {safetyChildContext ? (
+                      /* Selected Child Card */
+                      <div 
+                        className="bg-neutral-50 border border-neutral-200 rounded-2xl p-3.5 flex items-center justify-between"
+                        data-component-version="volunteer-alert-selected-child-card-v1"
+                      >
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-gray-150 shrink-0 flex items-center justify-center">
+                            {safetyChildContext.photoUrl ? (
+                              <img
+                                src={safetyChildContext.photoUrl}
+                                alt={safetyChildContext.fullName}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <User className="h-5 w-5 text-gray-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-gray-950 text-xs truncate">{safetyChildContext.fullName}</h4>
+                            <p className="text-[10px] text-gray-500 font-medium">
+                              {safetyChildContext.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{safetyChildContext.status || 'not arrived'}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSafetyChildContext(null)}
+                          className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      /* Child Search & Result List */
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Type child or parent name..."
+                            value={safetySearchQuery}
+                            onChange={(e) => handleSafetyChildSearch(e.target.value)}
+                            className="w-full bg-white border border-gray-250 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                          />
+                          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                          {safetySearching && (
+                            <div className="absolute right-3 top-3">
+                              <div className="w-4 h-4 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
+                            </div>
+                          )}
+                        </div>
+
+                        {safetySearchResults.length > 0 && (
+                          <div className="bg-white border border-gray-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-gray-100 shadow-sm">
+                            {safetySearchResults.map((child: any) => (
+                              <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
+                                    {child.photoUrl ? (
+                                      <img
+                                        src={child.photoUrl}
+                                        alt={child.childName}
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    ) : (
+                                      <User className="h-4 w-4 text-gray-400" />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h5 className="font-bold text-gray-900 text-xs truncate">{child.childName || child.fullName}</h5>
+                                    <p className="text-[9px] text-gray-500 font-medium">
+                                      {child.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{child.status || 'not arrived'}</span>
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSafetyChildContext({
+                                      id: child.childId,
+                                      fullName: child.childName || child.fullName,
+                                      ageGroup: child.ageGroup,
+                                      status: child.status,
+                                      photoUrl: child.photoUrl
+                                    });
+                                  }}
+                                  className="text-[10px] font-bold text-[#A47E1F] bg-[#C59B27]/10 border border-[#C59B27]/20 px-2 py-1 rounded-md hover:bg-[#C59B27]/20 transition-colors cursor-pointer"
+                                >
+                                  Select
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {safetySearchQuery.trim() && safetySearchResults.length === 0 && !safetySearching && (
+                          <p className="text-[10px] text-gray-400 italic text-center py-2">No matching children found.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Severity / Urgency Levels */}
               <div className="space-y-2">
@@ -4947,7 +5181,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </select>
               </div>
 
-              {/* Room / Location label */}
+              {/* Your Location / Room Name */}
               <div className="space-y-2">
                 <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Your Location / Room Name</label>
                 <input
@@ -4994,6 +5228,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 type="button"
                 onClick={handleRaiseSafetyAlert}
                 disabled={isSubmittingSafetyAlert}
+                data-component-version="volunteer-safety-alert-child-payload-v1"
                 className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md"
               >
                 {isSubmittingSafetyAlert ? (

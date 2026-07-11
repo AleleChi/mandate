@@ -2985,7 +2985,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <span>Loading secure details...</span>
                   </div>
                 ) : activeUrgentRichDetail?.child ? (
-                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" data-component-version="child-context-details-v1">
+                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" data-component-version="admin-emergency-child-context-card-v2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-zinc-700 tracking-wide uppercase">
                         Child context
