@@ -223,7 +223,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       if (res && res.success) {
         showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
         stopActiveUrgentAlertEffects(alertId);
-        fetchSafetyAlerts();
+        setSafetyAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'acknowledged', acknowledged_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
       } else {
         showError('Acknowledge Failed', 'Could not acknowledge alert at this moment.');
       }
@@ -246,9 +246,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       if (res && res.success) {
         showSuccess('Resolved', 'Safety concern has been successfully resolved and logged.');
         stopActiveUrgentAlertEffects(alertId);
+        setSafetyAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'resolved', resolution_note: resolutionNote, resolved_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
         setActiveAlertDetail(null);
         setResolutionNote('');
-        fetchSafetyAlerts();
       } else {
         showError('Resolution Failed', 'Could not mark alert as resolved.');
       }
@@ -533,6 +533,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     if (activeTab === 'settings') {
@@ -1293,7 +1299,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               🛡️ Emergency Command Center
                             </h3>
                             <p className="text-xs text-zinc-400 font-medium font-sans">
-                              Active Event Safety Alerts requiring immediate operational response.
+                              Active Event Safety Alerts requiring immediate response.
                             </p>
                           </div>
                         </div>
@@ -1593,7 +1599,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           {/* Volume controls */}
                           <div className="space-y-2" data-component-version="alert-sound-volume-settings-v1">
                             <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
-                              Operational Volume Boost
+                              Alert volume boost
                             </label>
                             <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1.5 rounded-xl border border-zinc-800">
                               {[
@@ -2125,7 +2131,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 SECURITY AUDIO READINESS
                               </span>
                               <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
-                                System Check
+                                Device check
                               </span>
                             </div>
 
@@ -2166,7 +2172,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               {/* Volume Controls */}
                               <div className="space-y-1.5" data-component-version="persistent-volume-settings-v1">
                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wide block">
-                                  Operational Volume Boost
+                                  Alert volume boost
                                 </label>
                                 <div className="grid grid-cols-3 gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-100">
                                   {[
@@ -2222,7 +2228,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                               {/* Physical Device Notice */}
                               <div className="text-[10px] leading-relaxed text-zinc-500 bg-[#FFFDF5] border border-[#F5E6BE] p-3 rounded-xl">
-                                <span className="font-bold text-amber-800 block mb-0.5">⚠️ OPERATIONAL NOTE</span>
+                                <span className="font-bold text-amber-800 block mb-0.5">⚠️ Alert sound</span>
                                 This web terminal operates within browser safety limits. To prevent missed emergency alerts during busy events, verify that the physical device volume is unmuted and set high.
                               </div>
                             </div>
@@ -2778,8 +2784,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           if (res && res.success) {
                             showSuccess('Resolved', 'Safety concern has been successfully resolved.');
                             stopActiveUrgentAlertEffects(activeUrgentAlert.id);
+                            setSafetyAlerts(prev => prev.map(a => a.id === activeUrgentAlert.id ? { ...a, status: 'resolved', resolution_note: resolutionNote, resolved_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
                             setResolutionNote('');
-                            fetchSafetyAlerts();
                           }
                         } catch (err) {
                           console.error('Error resolving inside overlay:', err);

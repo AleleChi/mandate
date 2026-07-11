@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -12,6 +12,8 @@ import { soundUtility } from '../utils/sound';
 import { subscribeUserToPush } from '../utils/pushSubscription';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { SafeImage } from '../components/common/SafeImage';
+import { DeviceSecuritySettings } from '../components/common/DeviceSecuritySettings';
+import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
 
 interface ParentHomeViewProps {
@@ -101,6 +103,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
+  const [showDeviceSecurityDrawer, setShowDeviceSecurityDrawer] = useState(false);
+  const [passUnlockedChildId, setPassUnlockedChildId] = useState<string | null>(null);
+  const [unlockModalOpen, setUnlockModalOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
   const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
@@ -1299,6 +1304,23 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-2xs divide-y divide-[#FAF8F4] overflow-hidden">
         <button
           type="button"
+          onClick={() => {
+            setShowDeviceSecurityDrawer(true);
+            try {
+              window.history.pushState(null, '', '#/parent/device-security');
+            } catch {}
+          }}
+          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+        >
+          <div className="flex items-center space-x-3.5">
+            <Fingerprint className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
+            <span className="text-sm font-medium text-[#18181B]">Device security</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+        </button>
+
+        <button
+          type="button"
           onClick={() => onNavigate('/parent/new-password')}
           className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
         >
@@ -2081,6 +2103,60 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         </div>
       )}
 
+      {/* Device security Drawer Bottom Sheet */}
+      {showDeviceSecurityDrawer && (
+        <div 
+          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          onClick={() => setShowDeviceSecurityDrawer(false)}
+        >
+          <div 
+            className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3.5">
+                <div className="p-2.5 bg-[#FAF6EB] rounded-2xl border border-[#E5D5AE]/60 text-[#C59B27]">
+                  <Fingerprint className="w-5 h-5 stroke-[1.75]" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
+                    Device security
+                  </h3>
+                  <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
+                    Fast confirmation and secure access settings.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeviceSecurityDrawer(false)}
+                className="p-2 rounded-xl hover:bg-[#FAF6EB] text-[#6B7280] hover:text-[#18181B] cursor-pointer transition-colors focus:outline-none"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="p-5 overflow-y-auto space-y-4 max-h-[50vh]">
+              <DeviceSecuritySettings 
+                showSuccess={(t, m) => showSuccess(t, m)}
+                showError={(t, m) => showError(t, m)}
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="p-4.5 bg-white border-t border-[#EAE8E1]/60 flex justify-center shrink-0">
+              <button
+                onClick={() => setShowDeviceSecurityDrawer(false)}
+                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
+              >
+                Close device settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detailed Pass Modal */}
       {selectedDetailChild && (selectedDetailChild.passReference || selectedDetailChild.status === 'Pass ready') && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2186,18 +2262,35 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
             {/* QR Code */}
             <div className="flex flex-col items-center justify-center space-y-2 py-1">
-              <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
-                <div className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#C59B27]/40 pointer-events-none" />
-                <div className="absolute top-1.5 right-1.5 w-2 h-2 border-t border-r border-[#C59B27]/40 pointer-events-none" />
-                <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
-                <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(selectedDetailChild.passReference || selectedDetailChild.id)}`}
-                  alt="QR Code"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+              {(() => {
+                const requiresUnlock = localStorage.getItem('koinonia_pass_biometric_unlock') === 'true' && passUnlockedChildId !== selectedDetailChild.id;
+                if (requiresUnlock) {
+                  return (
+                    <div 
+                      className="bg-[#FAF8F3] border border-dashed border-[#E5D5AE] rounded-2xl w-40 h-40 flex flex-col items-center justify-center p-4 text-center cursor-pointer hover:bg-zinc-100/50 transition-colors relative"
+                      onClick={() => setUnlockModalOpen(true)}
+                    >
+                      <Fingerprint className="w-10 h-10 text-[#C59B27] stroke-[1.25] mb-2 animate-pulse" />
+                      <span className="text-[10px] font-bold text-zinc-700 block">Pass is locked</span>
+                      <span className="text-[8px] text-[#8E8B82] mt-1">Tap to secure unlock</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
+                    <div className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#C59B27]/40 pointer-events-none" />
+                    <div className="absolute top-1.5 right-1.5 w-2 h-2 border-t border-r border-[#C59B27]/40 pointer-events-none" />
+                    <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
+                    <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(selectedDetailChild.passReference || selectedDetailChild.id)}`}
+                      alt="QR Code"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                );
+              })()}
               <span className="text-[9px] font-mono font-bold tracking-[0.2em] text-[#C59B27] uppercase">
                 SHOW PASS FOR AT-GATE SECURITY
               </span>
@@ -2280,6 +2373,19 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Pass Biometrics Unlock Modal */}
+      <DeviceSecurityModal
+        isOpen={unlockModalOpen}
+        onClose={() => setUnlockModalOpen(false)}
+        onSuccess={() => {
+          if (selectedDetailChild) {
+            setPassUnlockedChildId(selectedDetailChild.id);
+            showSuccess('Pass unlocked', 'Security verified successfully.');
+          }
+        }}
+        actionName="Unlocking secure child pass"
+      />
     </div>
   );
 };

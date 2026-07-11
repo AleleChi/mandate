@@ -203,6 +203,47 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ email })
       });
+    },
+    passkeys: {
+      async getList() {
+        return api.request<any>('/api/auth/passkeys');
+      },
+      async revoke(passkeyId: string) {
+        return api.request<any>(`/api/auth/passkeys/${passkeyId}`, {
+          method: 'DELETE'
+        });
+      },
+      async registerOptions() {
+        return api.request<any>('/api/auth/passkeys/register/options', {
+          method: 'POST'
+        });
+      },
+      async registerVerify(credential: any, deviceName: string) {
+        return api.request<any>('/api/auth/passkeys/register/verify', {
+          method: 'POST',
+          body: JSON.stringify({ credential, deviceName })
+        });
+      },
+      async loginOptions(email: string) {
+        return api.request<any>('/api/auth/passkeys/login/options', {
+          method: 'POST',
+          body: JSON.stringify({ email })
+        });
+      },
+      async loginVerify(credential: any, challengeKey: string) {
+        const res = await api.request<any>('/api/auth/passkeys/login/verify', {
+          method: 'POST',
+          body: JSON.stringify({ credential, challengeKey })
+        });
+        if (res.token) api.setToken(res.token);
+        return res;
+      },
+      async verifyAction(credential: any, actionName: string) {
+        return api.request<any>('/api/auth/passkeys/verify-action', {
+          method: 'POST',
+          body: JSON.stringify({ credential, actionName })
+        });
+      }
     }
   },
 

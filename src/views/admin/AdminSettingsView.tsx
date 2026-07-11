@@ -33,6 +33,7 @@ import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
 import { AdminLandingView } from './AdminLandingView';
 import { SafeImage } from '../../components/common/SafeImage';
+import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
 import { playSound, resumeAudioContext } from '../../utils/sound';
 import { subscribeUserToPush } from '../../utils/pushSubscription';
 
@@ -78,7 +79,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [isTestingDevice, setIsTestingDevice] = useState(false);
   
   // Tab/Active Panel State inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media'>('parent-access');
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security'>('parent-access');
 
   // Feedback State
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -767,7 +768,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           { id: 'message-channels', label: 'Message channels', icon: MessageSquare },
           { id: 'alert-delivery', label: 'Alert delivery & device preferences', icon: ShieldAlert },
           { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon },
-          { id: 'app-media', label: 'App media', icon: Image }
+          { id: 'app-media', label: 'App media', icon: Image },
+          { id: 'device-security', label: 'Device security', icon: Lock }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -801,7 +803,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* MAIN SETTINGS LEFT COLUMN (7 or 12 columns depending on selection) */}
-          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' || activeSubTab === 'alert-delivery' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
+          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' || activeSubTab === 'alert-delivery' || activeSubTab === 'device-security' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
             
             {/* SUB-TAB 1: PARENT ACCESS */}
             {activeSubTab === 'parent-access' && (
@@ -2342,10 +2344,21 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               </div>
             )}
 
+            {/* SUB-TAB: DEVICE SECURITY */}
+            {activeSubTab === 'device-security' && (
+              <div className="space-y-6">
+                <DeviceSecuritySettings 
+                  isAdmin={true}
+                  showSuccess={(t, m) => showFeedback(`${t}: ${m}`, 'success')}
+                  showError={(t, m) => showFeedback(`${t}: ${m}`, 'error')}
+                />
+              </div>
+            )}
+
           </div>
 
           {/* MAIN SETTINGS RIGHT COLUMN: PROFILE SECURITY CARD (Only visible for Parent Access and Message Channels) */}
-          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && activeSubTab !== 'alert-delivery' && (
+          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && activeSubTab !== 'alert-delivery' && activeSubTab !== 'device-security' && (
             <div className="lg:col-span-5 space-y-6">
               
               {/* Profile Security Update Password */}

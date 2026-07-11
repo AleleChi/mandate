@@ -681,13 +681,18 @@ The attendance registry module offers real-time, high-fidelity metrics and track
 - **Sound Isolation**: To prevent audio alerts from firing on page refresh or initial sign-in, any open or unacknowledged alerts already recorded in the system on first load are added directly to the sounded/silenced tracking set, blocking retroactive alarms.
 - **Emergency Standby & Resume**: Displays a clear standby warning and a "Resume Audio" activation prompt if unacknowledged urgent alerts exist on load, allowing users to manually resume audio effects within browser-enforced security rules.
 - **Unified Category Mapping**: Standardizes internal technical alert categories (e.g., `medical_support`, `pickup_issue`, `security_concern`) to clear, human-readable labels (e.g., "Medical support", "Pickup concern", "Security concern").
-- **Premium Alarm Sound**: Employs an explicit `emergency` synthesizer sound sequence rather than standard alerts, repeated dynamically at 8-second intervals to command staff attention.
+- **Premium Alarm Sound**: Employs an explicit `emergency` synthesizer sound sequence using a highly audible, triple-tone professional frequency layout (tuned at 660Hz, 880Hz, and 1200Hz frequencies for optimal noisy environment clarity) repeating dynamically at 5-second intervals to command staff attention.
 
 ## 47. Live Messages & Updates Centre Statistics Engine
 - **Live Aggregation**: The dashboard and statistics panel in the Messages & Updates Centre use real live data gathered from active notifications, reads, archives, and safety alert tables.
-- **Total Counting Rule**: Counts all system and role-based updates, including unread, read, and active safety alerts.
+- **Total Counting Rule**: Counts all user and role-based updates, including unread, read, and active safety alerts.
 - **Read/Unread Differentiation**: Cross-references individual notification records against the notification read transactions table to provide real-time unread versus read counts.
 - **Exclusion of Archived Content**: Counts represent active administrative concerns. Archived records are excluded from standard active totals and read/unread counters, keeping metrics clean.
 - **Proof Alignment**: Uses `data-component-version="admin-updates-summary-api-v1-live"` and `data-component-version="admin-messages-summary-v2-live"` to verify live-synchronized endpoints are operational.
+
+## 48. Device Security, Passkey, and Secure Unlock Features
+- **Passkey Access**: Parents, volunteers, and admins can register cryptographic passkeys on this device using Fingerprint or Face ID for secure sign-in, eliminating password dependency.
+- **Secure Unlock for Passes**: Enables parents to lock their children's active passes. When activated, the parent pass detailed view replaces the QR pass barcode with a "Pass is locked" prompt, requiring secure unlock confirmation via Fingerprint or Face ID before the barcode renders.
+- **Verification for Sensitive Actions**: Whenever a volunteer triggers a sensitive action (such as confirming a pickup release), the interface requests a secure biometric passkey check to prevent unauthorized child handovers.
 
 

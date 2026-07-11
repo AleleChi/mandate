@@ -314,8 +314,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
     }
   };
 
-  const fetchUpdates = async (page = 1) => {
-    setUpdatesLoading(true);
+  const fetchUpdates = async (page = 1, silent = false) => {
+    if (!silent) {
+      setUpdatesLoading(true);
+    }
     try {
       const res = await api.adminUpdates.getUpdates({
         limit: 15,
@@ -332,14 +334,26 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
         setUpdates(res.updates);
         setPagination(res.pagination);
         setCurrentPage(res.pagination.page);
+        
+        // Preserve selectedUpdate in-place
+        if (selectedUpdate) {
+          const matching = res.updates.find((u: any) => u.rawId === selectedUpdate.rawId);
+          if (matching) {
+            setSelectedUpdate(matching);
+          }
+        }
       }
       // Also fetch stats
       fetchSummaryStats();
     } catch (err) {
       console.error('Error loading updates:', err);
-      showError('Failed to load updates.');
+      if (!silent) {
+        showError('Failed to load updates.');
+      }
     } finally {
-      setUpdatesLoading(false);
+      if (!silent) {
+        setUpdatesLoading(false);
+      }
     }
   };
 
@@ -428,6 +442,18 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       fetchUpdates(1);
     }
   }, [activeTab, statusFilter, typeFilter, senderRoleFilter, priorityFilter, dateFrom, dateTo]);
+
+  useEffect(() => {
+    let intervalId: any;
+    if (activeTab === 'updates') {
+      intervalId = setInterval(() => {
+        fetchUpdates(currentPage, true);
+      }, 10000); // 10s silent poll
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [activeTab, statusFilter, typeFilter, senderRoleFilter, priorityFilter, dateFrom, dateTo, currentPage, selectedUpdate?.rawId]);
 
   useEffect(() => {
     fetchMessagesData();

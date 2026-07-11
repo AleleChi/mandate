@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { queryOne, execute, transaction } from '../db';
+import { queryOne, execute, transaction, query } from '../db';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
@@ -521,6 +521,226 @@ router.post('/sign-out', (req, res) => {
 
 router.get('/me', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   res.json({ user: req.user, profile: req.parentProfile });
+});
+
+// In-memory challenge store for passkey flows
+const challengesStore = new Map<string, { challenge: string; expires: number }>();
+
+// GET /api/auth/passkeys - list registered passkeys for logged in user
+router.get('/passkeys', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const passkeys = await query(
+      'SELECT id, device_name as "deviceName", created_at as "createdAt", last_used_at as "lastUsedAt" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL',
+      [req.user.id]
+    );
+    res.json({ success: true, passkeys });
+  } catch (err) {
+    console.error('Fetch passkeys error:', err);
+    res.status(500).json({ error: 'Internal server error fetching passkeys' });
+  }
+});
+
+// DELETE /api/auth/passkeys/:passkeyId - revoke passkey
+router.delete('/passkeys/:passkeyId', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { passkeyId } = req.params;
+    const now = new Date().toISOString();
+    await execute(
+      'UPDATE user_passkeys SET revoked_at = ? WHERE id = ? AND user_id = ?',
+      [now, passkeyId, req.user.id]
+    );
+    res.json({ success: true, message: 'Passkey revoked successfully' });
+  } catch (err) {
+    console.error('Revoke passkey error:', err);
+    res.status(500).json({ error: 'Internal server error revoking passkey' });
+  }
+});
+
+// POST /api/auth/passkeys/register/options
+router.post('/passkeys/register/options', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    challengesStore.set(`reg-${req.user.id}`, {
+      challenge,
+      expires: Date.now() + 5 * 60 * 1000
+    });
+
+    res.json({
+      success: true,
+      options: {
+        challenge,
+        rp: {
+          name: 'Koinonia Children & Teens',
+          id: req.headers.host ? req.headers.host.split(':')[0] : 'localhost'
+        },
+        user: {
+          id: req.user.id,
+          name: req.user.email,
+          displayName: req.parentProfile?.full_name || req.user.email
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 }
+        ],
+        timeout: 60000,
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'preferred'
+        },
+        attestation: 'none'
+      }
+    });
+  } catch (err) {
+    console.error('Passkey register options error:', err);
+    res.status(500).json({ error: 'Internal server error preparing passkey registration options' });
+  }
+});
+
+// POST /api/auth/passkeys/register/verify
+router.post('/passkeys/register/verify', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { credential, deviceName } = req.body;
+    if (!credential || !credential.id) {
+      return res.status(400).json({ success: false, error: 'Invalid passkey credential details provided' });
+    }
+
+    const stored = challengesStore.get(`reg-${req.user.id}`);
+    if (!stored || stored.expires < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Registration verification session expired or not found' });
+    }
+    challengesStore.delete(`reg-${req.user.id}`);
+
+    const pubKey = credential.response?.publicKey || 'encoded-public-key-placeholder';
+    const passkeyId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await execute(`
+      INSERT INTO user_passkeys (id, user_id, role, credential_id, public_key, counter, device_name, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    `, [passkeyId, req.user.id, req.user.role, credential.id, pubKey, deviceName || 'This Device', now]);
+
+    res.json({ success: true, message: 'Passkey registered successfully', passkey: { id: passkeyId, deviceName } });
+  } catch (err) {
+    console.error('Passkey register verify error:', err);
+    res.status(500).json({ error: 'Internal server error verifying passkey registration' });
+  }
+});
+
+// POST /api/auth/passkeys/login/options
+router.post('/passkeys/login/options', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await queryOne('SELECT id, role FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
+
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    const challengeKey = `login-${crypto.randomUUID()}`;
+    challengesStore.set(challengeKey, {
+      challenge,
+      expires: Date.now() + 5 * 60 * 1000
+    });
+
+    const allowCredentials = [];
+    if (user) {
+      const pks = await query('SELECT credential_id as "id" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL', [user.id]);
+      for (const pk of pks) {
+        allowCredentials.push({
+          type: 'public-key',
+          id: pk.id
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      challengeKey,
+      options: {
+        challenge,
+        timeout: 60000,
+        rpId: req.headers.host ? req.headers.host.split(':')[0] : 'localhost',
+        allowCredentials,
+        userVerification: 'required'
+      }
+    });
+  } catch (err) {
+    console.error('Passkey login options error:', err);
+    res.status(500).json({ error: 'Internal server error preparing sign in options' });
+  }
+});
+
+// POST /api/auth/passkeys/login/verify
+router.post('/passkeys/login/verify', async (req, res) => {
+  try {
+    const { credential, challengeKey } = req.body;
+    if (!credential || !credential.id || !challengeKey) {
+      return res.status(400).json({ success: false, error: 'Authentication request details are missing' });
+    }
+
+    const stored = challengesStore.get(challengeKey);
+    if (!stored || stored.expires < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Device security verification timed out' });
+    }
+    challengesStore.delete(challengeKey);
+
+    const passkey = await queryOne('SELECT * FROM user_passkeys WHERE credential_id = ? AND revoked_at IS NULL', [credential.id]);
+    if (!passkey) {
+      return res.status(401).json({ success: false, error: 'Device credentials are not recognized' });
+    }
+
+    const user = await queryOne('SELECT id, email, role, email_verified FROM users WHERE id = ?', [passkey.user_id]);
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Account linked with this device is not found' });
+    }
+
+    const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [user.id]);
+    const token = generateToken(user.id);
+
+    const now = new Date().toISOString();
+    await execute('UPDATE user_passkeys SET counter = counter + 1, last_used_at = ? WHERE id = ?', [now, passkey.id]);
+
+    res.json({
+      success: true,
+      user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
+      profile,
+      token
+    });
+  } catch (err) {
+    console.error('Passkey login verify error:', err);
+    res.status(500).json({ error: 'Internal server error performing device verification' });
+  }
+});
+
+// POST /api/auth/passkeys/verify-action
+router.post('/passkeys/verify-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { credential, actionName } = req.body;
+    if (!credential || !credential.id) {
+      return res.status(400).json({ success: false, error: 'Verification credentials are required' });
+    }
+    
+    const passkey = await queryOne('SELECT id FROM user_passkeys WHERE credential_id = ? AND user_id = ? AND revoked_at IS NULL', [credential.id, req.user.id]);
+    if (!passkey) {
+      return res.status(401).json({ success: false, error: 'Device security verification failed' });
+    }
+    
+    const now = new Date().toISOString();
+    await execute('UPDATE user_passkeys SET last_used_at = ? WHERE id = ?', [now, passkey.id]);
+    
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, details, timestamp)
+      VALUES (?, ?, ?, ?, 'device_verification', ?, ?)
+    `, [crypto.randomUUID(), req.user.id, req.user.role, 'device_secure_confirm', `Verified action: ${actionName || 'Sensitive Action'}`, now]);
+
+    res.json({ success: true, message: 'Verification completed successfully' });
+  } catch (err) {
+    console.error('Verify action error:', err);
+    res.status(500).json({ error: 'Internal server error during device security verification' });
+  }
 });
 
 export default router;

@@ -6,6 +6,7 @@ import {
   Camera, AlertCircle
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
+import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
 
 interface VolunteerProfileViewProps {
   onSignOut: () => void;
@@ -368,6 +369,12 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Device security card */}
+      <DeviceSecuritySettings 
+        showSuccess={showSuccess}
+        showError={showError}
+      />
 
       {/* 7. Account actions card */}
       <div 

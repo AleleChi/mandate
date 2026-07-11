@@ -15,6 +15,7 @@ import { SafeImage } from '../components/common/SafeImage';
 import { BrandLogo } from '../components/common/BrandLogo';
 import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
 import { playSound, resumeAudioContext } from '../utils/sound';
+import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt && !endsAt) return '18th to 22nd November 2026';
@@ -309,6 +310,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [showPickupManualInput, setShowPickupManualInput] = useState(false);
   const [cameraUnavailable, setCameraUnavailable] = useState(false);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+
+  // Device Security verification states
+  const [deviceVerifyActionOpen, setDeviceVerifyActionOpen] = useState(false);
+  const [pendingConfirmReleaseChild, setPendingConfirmReleaseChild] = useState<any | null>(null);
 
   // Children search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -1157,7 +1162,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   // Confirm and perform release of child
-  const handleConfirmRelease = async (child: any) => {
+  const handleConfirmRelease = async (child: any, bypassVerify = false) => {
+    if (!bypassVerify && localStorage.getItem('koinonia_passkey_registered') === 'true') {
+      setPendingConfirmReleaseChild(child);
+      setDeviceVerifyActionOpen(true);
+      return;
+    }
     if (isReleasing) return;
     setIsReleasing(true);
     setScanLoading(true);
@@ -5579,6 +5589,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           <span className="text-[9px] font-medium mt-1">Profile</span>
         </button>
       </div>
+
+      <DeviceSecurityModal
+        isOpen={deviceVerifyActionOpen}
+        onClose={() => {
+          setDeviceVerifyActionOpen(false);
+          setPendingConfirmReleaseChild(null);
+        }}
+        onSuccess={() => {
+          if (pendingConfirmReleaseChild) {
+            handleConfirmRelease(pendingConfirmReleaseChild, true);
+          }
+          setDeviceVerifyActionOpen(false);
+        }}
+        actionName="pickup release confirmation"
+      />
     </div>
   );
 };

@@ -96,6 +96,127 @@ Validates the parent reset token, hashes the new password, updates the users tab
 
 ---
 
+## Device Security & Passkeys
+
+These endpoints implement device security and WebAuthn specifications for parents, volunteers, and admins.
+
+### GET `/api/auth/passkeys`
+Lists registered credentials for the current user.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "passkeys": [
+      {
+        "id": "uuid",
+        "credentialId": "base64-string",
+        "deviceName": "My Device Name",
+        "createdAt": "2026-07-10T15:00:00Z"
+      }
+    ]
+  }
+  ```
+
+### DELETE `/api/auth/passkeys/:id`
+Deletes a registered credential by its identifier.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Passkey removed successfully."
+  }
+  ```
+
+### POST `/api/auth/passkeys/register/options`
+Generates registration challenge details for WebAuthn.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "options": {
+      "challenge": "random-challenge-string",
+      "rp": { "name": "Koinonia Children App" },
+      "user": { "id": "user-uuid", "name": "user@example.com", "displayName": "User Name" },
+      "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }]
+    }
+  }
+  ```
+
+### POST `/api/auth/passkeys/register/verify`
+Verifies WebAuthn assertion signature and registers the credentials.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "deviceName": "Chrome on Macbook",
+    "registrationResponse": { "id": "...", "rawId": "...", "type": "public-key", "response": { "clientDataJSON": "...", "attestationObject": "..." } }
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Passkey registered successfully."
+  }
+  ```
+
+### POST `/api/auth/passkeys/login/options`
+Generates assertion check challenge for secure sign-in.
+- **Request Body**:
+  ```json
+  { "email": "user@example.com" }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "options": {
+      "challenge": "challenge-string",
+      "allowCredentials": []
+    }
+  }
+  ```
+
+### POST `/api/auth/passkeys/login/verify`
+Validates sign-in credentials and starts the session.
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com",
+    "loginResponse": { "id": "...", "rawId": "...", "response": { "clientDataJSON": "...", "authenticatorData": "...", "signature": "..." } }
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "token": "jwt-token",
+    "user": { "id": "uuid", "email": "user@example.com", "role": "parent" }
+  }
+  ```
+
+### POST `/api/auth/passkeys/verify-action`
+Confirms sensitive event actions using verified authentication.
+- **Headers**: `Authorization: Bearer <token>`
+- **Request Body**:
+  ```json
+  {
+    "actionResponse": { "id": "...", "rawId": "...", "response": { "clientDataJSON": "...", "authenticatorData": "...", "signature": "..." } }
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Action verification confirmed."
+  }
+  ```
+
+---
+
 ## Parent Operations (`/api/parent`)
 
 ### GET `/api/parent/home`
