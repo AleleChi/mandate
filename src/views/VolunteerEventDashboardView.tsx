@@ -5228,7 +5228,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 type="button"
                 onClick={handleRaiseSafetyAlert}
                 disabled={isSubmittingSafetyAlert}
-                data-component-version="volunteer-safety-alert-child-payload-v1"
+                data-component-version="volunteer-safety-alert-child-payload-v2-active"
                 className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md"
               >
                 {isSubmittingSafetyAlert ? (
