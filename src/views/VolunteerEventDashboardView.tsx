@@ -343,6 +343,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [safetySearchQuery, setSafetySearchQuery] = useState('');
   const [safetySearchResults, setSafetySearchResults] = useState<any[]>([]);
   const [safetySearching, setSafetySearching] = useState(false);
+  const [safetyIdempotencyKey, setSafetyIdempotencyKey] = useState('');
+  const [hasAcceptedUrgentWarning, setHasAcceptedUrgentWarning] = useState(false);
+  const [safetyValidationErrors, setSafetyValidationErrors] = useState<string[]>([]);
 
   // Team Safety Alert states
   const [teamAlerts, setTeamAlerts] = useState<any[]>([]);
@@ -477,6 +480,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setSafetySearchQuery('');
     setSafetySearchResults([]);
     setSafetySearching(false);
+    
+    // Phase 6: Generate client-side idempotencyKey on modal mount
+    setSafetyIdempotencyKey('key-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now());
+    setHasAcceptedUrgentWarning(false);
+    setSafetyValidationErrors([]);
     setIsSafetyModalOpen(true);
   };
 
@@ -497,14 +505,52 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
-  const handleRaiseSafetyAlert = async () => {
-    if ((safetySeverity === 'important' || safetySeverity === 'urgent') && !safetyMessage.trim()) {
-      showWarning('Required', 'Please describe what you need help with.');
-      return;
+  const handleRaiseSafetyAlert = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
     }
 
+    const errors: string[] = [];
+    
+    if (!safetySeverity) {
+      errors.push("Urgency level is required.");
+    }
+    if (!safetyCategory) {
+      errors.push("Alert type / category is required.");
+    }
+    if (!safetyMessage.trim()) {
+      errors.push("Please describe what you need help with in the message/details field.");
+    }
+    
+    // Check if category requires location for Important
+    const categoryRequiresLocation = safetyCategory === 'location_support' || safetyCategory === 'security_concern';
+    if (safetySeverity === 'important' && categoryRequiresLocation && !safetyLocationLabel.trim()) {
+      errors.push("Location / Room Name is required for this alert category.");
+    }
+    
+    if (safetyLinkOption === 'link' && !safetyChildContext) {
+      errors.push("Please select a child or switch to 'General alert'.");
+    }
+    
+    if (safetySeverity === 'urgent' && !hasAcceptedUrgentWarning) {
+      errors.push("Please confirm you understand that an urgent alert triggers sounds on admin devices.");
+    }
+    
+    if (errors.length > 0) {
+      setSafetyValidationErrors(errors);
+      setTimeout(() => {
+        const summary = document.getElementById('safety-validation-summary');
+        if (summary) {
+          summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 50);
+      return;
+    }
+    
+    setSafetyValidationErrors([]);
+
     if (safetySeverity === 'urgent') {
-      const confirmSend = window.confirm("Send urgent alert?\n\nThis will notify enabled duty devices and may trigger repeating sound.");
+      const confirmSend = window.confirm("Send urgent alert now?\n\nThis will trigger immediate siren alarms on all duty Care Lead devices.");
       if (!confirmSend) {
         return;
       }
@@ -517,12 +563,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         category: safetyCategory,
         severity: safetySeverity,
         locationLabel: safetyLocationLabel,
-        message: safetyMessage
-      });
+        message: safetyMessage,
+        idempotencyKey: safetyIdempotencyKey
+      } as any);
       
       if (res && res.success) {
         showSuccess('Alert Sent', res.message || 'Help request has been submitted to admins.');
         setIsSafetyModalOpen(false);
+        setSafetyIdempotencyKey(''); // Clear on successful submit
         fetchSafetyAlerts();
         try { playSound('notification_gentle'); } catch (e) {}
       } else {
@@ -4997,291 +5045,324 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* Form Scrollable Body */}
-            <div className="p-6 overflow-y-auto space-y-5 text-gray-800 text-xs">
-              {/* Child Involved Section */}
-              <div className="space-y-3" data-component-version="volunteer-alert-child-selector-v1">
-                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Child involved</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSafetyLinkOption('general');
-                    }}
-                    className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
-                      safetyLinkOption === 'general'
-                        ? 'bg-rose-50 border-rose-200 text-rose-800'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    General alert
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSafetyLinkOption('link');
-                    }}
-                    className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
-                      safetyLinkOption === 'link'
-                        ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Link a child
-                  </button>
-                </div>
-
-                {safetyLinkOption === 'general' && (
-                  <p className="text-[10px] text-gray-500 italic mt-1 bg-gray-50 p-2.5 rounded-xl border border-gray-150">
-                    Use this when the request is not about a specific child.
-                  </p>
-                )}
-
-                {safetyLinkOption === 'link' && (
-                  <div className="space-y-3 mt-1">
-                    {safetyChildContext ? (
-                      /* Selected Child Card */
-                      <div 
-                        className="bg-neutral-50 border border-neutral-200 rounded-2xl p-3.5 flex items-center justify-between"
-                        data-component-version="volunteer-alert-selected-child-card-v1"
-                      >
-                        <div className="flex items-center space-x-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-gray-150 shrink-0 flex items-center justify-center">
-                            {safetyChildContext.photoUrl ? (
-                              <img
-                                src={safetyChildContext.photoUrl}
-                                alt={safetyChildContext.fullName}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <User className="h-5 w-5 text-gray-400" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="font-bold text-gray-950 text-xs truncate">{safetyChildContext.fullName}</h4>
-                            <p className="text-[10px] text-gray-500 font-medium">
-                              {safetyChildContext.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{safetyChildContext.status || 'not arrived'}</span>
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setSafetyChildContext(null)}
-                          className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer"
-                        >
-                          Change
-                        </button>
-                      </div>
-                    ) : (
-                      /* Child Search & Result List */
-                      <div className="space-y-2">
-                        <div className="relative">
-                          <input
-                            type="text"
-                            placeholder="Type child or parent name..."
-                            value={safetySearchQuery}
-                            onChange={(e) => handleSafetyChildSearch(e.target.value)}
-                            className="w-full bg-white border border-gray-250 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
-                          />
-                          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                          {safetySearching && (
-                            <div className="absolute right-3 top-3">
-                              <div className="w-4 h-4 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
-                            </div>
-                          )}
-                        </div>
-
-                        {safetySearchResults.length > 0 && (
-                          <div className="bg-white border border-gray-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-gray-100 shadow-sm">
-                            {safetySearchResults.map((child: any) => (
-                              <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center space-x-2.5 min-w-0 pr-2">
-                                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
-                                    {child.photoUrl ? (
-                                      <img
-                                        src={child.photoUrl}
-                                        alt={child.childName}
-                                        className="w-full h-full object-cover"
-                                        referrerPolicy="no-referrer"
-                                      />
-                                    ) : (
-                                      <User className="h-4 w-4 text-gray-400" />
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <h5 className="font-bold text-gray-900 text-xs truncate">{child.childName || child.fullName}</h5>
-                                    <p className="text-[9px] text-gray-500 font-medium">
-                                      {child.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{child.status || 'not arrived'}</span>
-                                    </p>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSafetyChildContext({
-                                      id: child.childId,
-                                      fullName: child.childName || child.fullName,
-                                      ageGroup: child.ageGroup,
-                                      status: child.status,
-                                      photoUrl: child.photoUrl
-                                    });
-                                  }}
-                                  className="text-[10px] font-bold text-[#A47E1F] bg-[#C59B27]/10 border border-[#C59B27]/20 px-2 py-1 rounded-md hover:bg-[#C59B27]/20 transition-colors cursor-pointer"
-                                >
-                                  Select
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {safetySearchQuery.trim() && safetySearchResults.length === 0 && !safetySearching && (
-                          <p className="text-[10px] text-gray-400 italic text-center py-2">No matching children found.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Severity / Urgency Levels */}
-              <div className="space-y-3" data-component-version="volunteer-severity-selector-v2-premium">
-                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Urgency Level</label>
-                <div className="flex flex-col gap-2.5">
-                  {[
-                    { 
-                      value: 'normal', 
-                      label: 'Support needed soon', 
-                      desc: 'Use for help that can be reviewed shortly.', 
-                      activeClass: 'bg-blue-50 border-blue-300 text-blue-900 ring-2 ring-blue-500/20',
-                      inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-blue-200 hover:bg-blue-50/20'
-                    },
-                    { 
-                      value: 'important', 
-                      label: 'Needs timely attention', 
-                      desc: 'Use when care or event activity may be affected.', 
-                      activeClass: 'bg-[#FFFDF3] border-amber-400 text-amber-950 ring-2 ring-amber-500/20',
-                      inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-amber-200 hover:bg-amber-50/20'
-                    },
-                    { 
-                      value: 'urgent', 
-                      label: 'Immediate help required', 
-                      desc: 'Use only when the child or event needs an immediate response.', 
-                      activeClass: 'bg-red-50 border-red-400 text-red-950 ring-2 ring-red-500/20',
-                      inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-red-200 hover:bg-red-50/20'
-                    }
-                  ].map((level) => (
+            <form
+              id="volunteer-admin-help-form"
+              onSubmit={handleRaiseSafetyAlert}
+              noValidate
+              className="flex-1 flex flex-col min-h-0"
+            >
+              <div className="p-6 overflow-y-auto space-y-5 text-gray-800 text-xs flex-1">
+                {/* Child Involved Section */}
+                <div className="space-y-3" data-component-version="volunteer-alert-child-selector-v1">
+                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Child involved</label>
+                  <div className="grid grid-cols-2 gap-2">
                     <button
-                      key={level.value}
                       type="button"
-                      onClick={() => setSafetySeverity(level.value)}
-                      className={`border rounded-2xl p-4 text-left transition-all cursor-pointer flex flex-col space-y-1 ${
-                        safetySeverity === level.value ? level.activeClass : level.inactiveClass
+                      onClick={() => {
+                        setSafetyLinkOption('general');
+                      }}
+                      className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
+                        safetyLinkOption === 'general'
+                          ? 'bg-rose-50 border-rose-200 text-rose-800'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between w-full">
-                        <span className="font-bold text-xs font-serif tracking-tight">{level.label}</span>
-                        {safetySeverity === level.value && (
-                          <span className={`h-2 w-2 rounded-full ${
-                            level.value === 'urgent' ? 'bg-red-600' : level.value === 'important' ? 'bg-amber-500' : 'bg-blue-500'
-                          }`} />
-                        )}
-                      </div>
-                      <span className="text-[10px] leading-relaxed text-gray-500">
-                        {level.desc}
-                      </span>
+                      General alert
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSafetyLinkOption('link');
+                      }}
+                      className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
+                        safetyLinkOption === 'link'
+                          ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Link a child
+                    </button>
+                  </div>
+
+                  {safetyLinkOption === 'general' && (
+                    <p className="text-[10px] text-gray-500 italic mt-1 bg-gray-50 p-2.5 rounded-xl border border-gray-150">
+                      Use this when the request is not about a specific child.
+                    </p>
+                  )}
+
+                  {safetyLinkOption === 'link' && (
+                    <div className="space-y-3 mt-1">
+                      {safetyChildContext ? (
+                        /* Selected Child Card */
+                        <div 
+                          className="bg-neutral-50 border border-neutral-200 rounded-2xl p-3.5 flex items-center justify-between"
+                          data-component-version="volunteer-alert-selected-child-card-v1"
+                        >
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-gray-150 shrink-0 flex items-center justify-center">
+                              {safetyChildContext.photoUrl ? (
+                                <img
+                                  src={safetyChildContext.photoUrl}
+                                  alt={safetyChildContext.fullName}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <User className="h-5 w-5 text-gray-400" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-gray-950 text-xs truncate">{safetyChildContext.fullName}</h4>
+                              <p className="text-[10px] text-gray-500 font-medium">
+                                {safetyChildContext.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{safetyChildContext.status || 'not arrived'}</span>
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSafetyChildContext(null)}
+                            className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      ) : (
+                        /* Child Search & Result List */
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="Type child or parent name..."
+                              value={safetySearchQuery}
+                              onChange={(e) => handleSafetyChildSearch(e.target.value)}
+                              className="w-full bg-white border border-gray-250 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                            />
+                            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            {safetySearching && (
+                              <div className="absolute right-3 top-3">
+                                <div className="w-4 h-4 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
+                              </div>
+                            )}
+                          </div>
+
+                          {safetySearchResults.length > 0 && (
+                            <div className="bg-white border border-gray-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-gray-100 shadow-sm">
+                              {safetySearchResults.map((child: any) => (
+                                <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                  <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
+                                      {child.photoUrl ? (
+                                        <img
+                                          src={child.photoUrl}
+                                          alt={child.childName}
+                                          className="w-full h-full object-cover"
+                                          referrerPolicy="no-referrer"
+                                        />
+                                      ) : (
+                                        <User className="h-4 w-4 text-gray-400" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <h5 className="font-bold text-gray-900 text-xs truncate">{child.childName || child.fullName}</h5>
+                                      <p className="text-[9px] text-gray-500 font-medium">
+                                        {child.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{child.status || 'not arrived'}</span>
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSafetyChildContext({
+                                        id: child.childId,
+                                        fullName: child.childName || child.fullName,
+                                        ageGroup: child.ageGroup,
+                                        status: child.status,
+                                        photoUrl: child.photoUrl
+                                      });
+                                    }}
+                                    className="text-[10px] font-bold text-[#A47E1F] bg-[#C59B27]/10 border border-[#C59B27]/20 px-2 py-1 rounded-md hover:bg-[#C59B27]/20 transition-colors cursor-pointer"
+                                  >
+                                    Select
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {safetySearchQuery.trim() && safetySearchResults.length === 0 && !safetySearching && (
+                            <p className="text-[10px] text-gray-400 italic text-center py-2">No matching children found.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {safetySeverity === 'urgent' && (
-                  <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs text-red-950 flex items-start gap-2.5 animate-fade-in mt-2">
-                    <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-red-700">Send urgent alert?</p>
-                      <p className="mt-1 text-[11px] text-red-900 leading-relaxed font-sans">
-                        This will notify enabled duty devices and may trigger repeating sound.
-                      </p>
+                {/* Severity / Urgency Levels */}
+                <div className="space-y-3" data-component-version="volunteer-severity-selector-v2-premium">
+                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Urgency Level</label>
+                  <div className="flex flex-col gap-2.5">
+                    {[
+                      { 
+                        value: 'normal', 
+                        label: 'Support needed soon', 
+                        desc: 'Use for help that can be reviewed shortly.', 
+                        activeClass: 'bg-blue-50 border-blue-300 text-blue-900 ring-2 ring-blue-500/20',
+                        inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-blue-200 hover:bg-blue-50/20'
+                      },
+                      { 
+                        value: 'important', 
+                        label: 'Needs timely attention', 
+                        desc: 'Use when care or event activity may be affected.', 
+                        activeClass: 'bg-[#FFFDF3] border-amber-400 text-amber-950 ring-2 ring-amber-500/20',
+                        inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-amber-200 hover:bg-amber-50/20'
+                      },
+                      { 
+                        value: 'urgent', 
+                        label: 'Immediate help required', 
+                        desc: 'Use only when the child or event needs an immediate response.', 
+                        activeClass: 'bg-red-50 border-red-400 text-red-950 ring-2 ring-red-500/20',
+                        inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-red-200 hover:bg-red-50/20'
+                      }
+                    ].map((level) => (
+                      <button
+                        key={level.value}
+                        type="button"
+                        onClick={() => setSafetySeverity(level.value)}
+                        className={`border rounded-2xl p-4 text-left transition-all cursor-pointer flex flex-col space-y-1 ${
+                          safetySeverity === level.value ? level.activeClass : level.inactiveClass
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="font-bold text-xs font-serif tracking-tight">{level.label}</span>
+                          {safetySeverity === level.value && (
+                            <span className={`h-2 w-2 rounded-full ${
+                              level.value === 'urgent' ? 'bg-red-600' : level.value === 'important' ? 'bg-amber-500' : 'bg-blue-500'
+                            }`} />
+                          )}
+                        </div>
+                        <span className="text-[10px] leading-relaxed text-gray-500">
+                          {level.desc}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {safetySeverity === 'urgent' && (
+                    <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs text-red-950 flex flex-col gap-3 animate-fade-in mt-2">
+                      <div className="flex items-start gap-2.5">
+                        <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-red-700">Send urgent alert?</p>
+                          <p className="mt-1 text-[11px] text-red-900 leading-relaxed font-sans">
+                            This will notify enabled duty devices and may trigger repeating sound.
+                          </p>
+                        </div>
+                      </div>
+                      <label className="flex items-center space-x-2.5 mt-1 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={hasAcceptedUrgentWarning}
+                          onChange={(e) => setHasAcceptedUrgentWarning(e.target.checked)}
+                          className="h-4 w-4 rounded-lg border-red-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                        />
+                        <span className="font-semibold text-red-900 text-[11px]">
+                          I understand this triggers sound & vibration on duty devices. <span className="text-red-600">*</span>
+                        </span>
+                      </label>
                     </div>
+                  )}
+                </div>
+
+                {/* Category / Type Selector */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Alert Type / Category</label>
+                  <select
+                    value={safetyCategory}
+                    onChange={(e) => setSafetyCategory(e.target.value)}
+                    className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
+                  >
+                    <option value="child_care">General Child Care Concern</option>
+                    <option value="pickup_issue">Pickup Authorization Issue</option>
+                    <option value="pass_issue">Pass Scan or Verification Failure</option>
+                    <option value="medical_support">Medical or First Aid Support</option>
+                    <option value="security_concern">Security / Missing Child Concerns</option>
+                    <option value="location_support">Room/Classroom Assistance</option>
+                    <option value="other">Other - Care support needed</option>
+                  </select>
+                </div>
+
+                {/* Your Location / Room Name */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Your Location / Room Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Creche, Back Row, Gate 2"
+                    value={safetyLocationLabel}
+                    onChange={(e) => setSafetyLocationLabel(e.target.value.substring(0, 100))}
+                    className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                  />
+                </div>
+
+                {/* Description Message */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                    Details / Message {(safetySeverity === 'important' || safetySeverity === 'urgent') && <span className="text-rose-500">*</span>}
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder={
+                      safetySeverity === 'urgent' 
+                        ? "Please describe the urgent situation immediately so the care team can respond..." 
+                        : "Add details to help the admin team understand your request..."
+                    }
+                    value={safetyMessage}
+                    onChange={(e) => setSafetyMessage(e.target.value)}
+                    className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none"
+                  />
+                  <p className="text-[9px] text-gray-400 leading-normal">
+                    Limit message to 500 characters. Admin team receives these alerts in real-time.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons & Validation Summary */}
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col space-y-3 shrink-0">
+                {safetyValidationErrors.length > 0 && (
+                  <div id="safety-validation-summary" className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl space-y-1 text-[11px] animate-fade-in">
+                    <p className="font-bold">Missing or invalid required fields:</p>
+                    <ul className="list-disc pl-4 space-y-0.5 font-medium">
+                      {safetyValidationErrors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
-              </div>
 
-              {/* Category / Type Selector */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Alert Type / Category</label>
-                <select
-                  value={safetyCategory}
-                  onChange={(e) => setSafetyCategory(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
-                >
-                  <option value="child_care">General Child Care Concern</option>
-                  <option value="pickup_issue">Pickup Authorization Issue</option>
-                  <option value="pass_issue">Pass Scan or Verification Failure</option>
-                  <option value="medical_support">Medical or First Aid Support</option>
-                  <option value="security_concern">Security / Missing Child Concerns</option>
-                  <option value="location_support">Room/Classroom Assistance</option>
-                  <option value="other">Other - Care support needed</option>
-                </select>
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsSafetyModalOpen(false)}
+                    className="flex-1 py-3 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer bg-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="volunteer-admin-help-form"
+                    disabled={isSubmittingSafetyAlert}
+                    data-component-version="volunteer-safety-alert-child-payload-v2-active"
+                    className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md"
+                  >
+                    {isSubmittingSafetyAlert ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      <span>Send Request</span>
+                    )}
+                  </button>
+                </div>
               </div>
-
-              {/* Your Location / Room Name */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Your Location / Room Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Creche, Back Row, Gate 2"
-                  value={safetyLocationLabel}
-                  onChange={(e) => setSafetyLocationLabel(e.target.value.substring(0, 100))}
-                  className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
-                />
-              </div>
-
-              {/* Description Message */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">
-                  Details / Message {(safetySeverity === 'important' || safetySeverity === 'urgent') && <span className="text-rose-500">*</span>}
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder={
-                    safetySeverity === 'urgent' 
-                      ? "Please describe the urgent situation immediately so the care team can respond..." 
-                      : "Add details to help the admin team understand your request..."
-                  }
-                  value={safetyMessage}
-                  onChange={(e) => setSafetyMessage(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none"
-                />
-                <p className="text-[9px] text-gray-400 leading-normal">
-                  Limit message to 500 characters. Admin team receives these alerts in real-time.
-                </p>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center space-x-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsSafetyModalOpen(false)}
-                className="flex-1 py-3 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer bg-white"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleRaiseSafetyAlert}
-                disabled={isSubmittingSafetyAlert}
-                data-component-version="volunteer-safety-alert-child-payload-v2-active"
-                className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md"
-              >
-                {isSubmittingSafetyAlert ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : (
-                  <span>Send Request</span>
-                )}
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
