@@ -650,14 +650,26 @@ router.get('/preferences', async (req: AuthenticatedRequest, res: Response) => {
       return res.json({
         soundEnabled: true,
         pushEnabled: false,
-        emailEnabled: true
+        emailEnabled: true,
+        urgentSoundProfile: 'emergency',
+        urgentVolumeBoost: 'standard',
+        repeatUrgentAlerts: true,
+        spokenAlertsEnabled: false,
+        spokenAlertMode: 'private',
+        spokenAlertRepeats: true
       });
     }
 
     return res.json({
       soundEnabled: pref.sound_enabled === 1,
       pushEnabled: pref.push_enabled === 1,
-      emailEnabled: pref.email_enabled === 1
+      emailEnabled: pref.email_enabled === 1,
+      urgentSoundProfile: pref.urgent_sound_profile || 'emergency',
+      urgentVolumeBoost: pref.urgent_volume_boost || 'standard',
+      repeatUrgentAlerts: pref.repeat_urgent_alerts === 1,
+      spokenAlertsEnabled: pref.spoken_alerts_enabled === 1,
+      spokenAlertMode: pref.spoken_alert_mode || 'private',
+      spokenAlertRepeats: pref.spoken_alert_repeats === 1
     });
   } catch (err: any) {
     console.error('Error fetching notification preferences:', err);
@@ -673,7 +685,17 @@ router.patch('/preferences', async (req: AuthenticatedRequest, res: Response) =>
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { soundEnabled, pushEnabled, emailEnabled } = req.body;
+    const {
+      soundEnabled,
+      pushEnabled,
+      emailEnabled,
+      urgentSoundProfile,
+      urgentVolumeBoost,
+      repeatUrgentAlerts,
+      spokenAlertsEnabled,
+      spokenAlertMode,
+      spokenAlertRepeats
+    } = req.body;
     const now = new Date().toISOString();
 
     const existing = await queryOne('SELECT user_id FROM notification_preferences WHERE user_id = ?', [userId]);
@@ -694,6 +716,30 @@ router.patch('/preferences', async (req: AuthenticatedRequest, res: Response) =>
         updates.push('email_enabled = ?');
         params.push(emailEnabled ? 1 : 0);
       }
+      if (urgentSoundProfile !== undefined) {
+        updates.push('urgent_sound_profile = ?');
+        params.push(urgentSoundProfile);
+      }
+      if (urgentVolumeBoost !== undefined) {
+        updates.push('urgent_volume_boost = ?');
+        params.push(urgentVolumeBoost);
+      }
+      if (repeatUrgentAlerts !== undefined) {
+        updates.push('repeat_urgent_alerts = ?');
+        params.push(repeatUrgentAlerts ? 1 : 0);
+      }
+      if (spokenAlertsEnabled !== undefined) {
+        updates.push('spoken_alerts_enabled = ?');
+        params.push(spokenAlertsEnabled ? 1 : 0);
+      }
+      if (spokenAlertMode !== undefined) {
+        updates.push('spoken_alert_mode = ?');
+        params.push(spokenAlertMode);
+      }
+      if (spokenAlertRepeats !== undefined) {
+        updates.push('spoken_alert_repeats = ?');
+        params.push(spokenAlertRepeats ? 1 : 0);
+      }
 
       if (updates.length > 0) {
         updates.push('updated_at = ?');
@@ -710,19 +756,39 @@ router.patch('/preferences', async (req: AuthenticatedRequest, res: Response) =>
       const se = soundEnabled !== undefined ? (soundEnabled ? 1 : 0) : 1;
       const pe = pushEnabled !== undefined ? (pushEnabled ? 1 : 0) : 0;
       const ee = emailEnabled !== undefined ? (emailEnabled ? 1 : 0) : 1;
+      const usp = urgentSoundProfile !== undefined ? urgentSoundProfile : 'emergency';
+      const uvb = urgentVolumeBoost !== undefined ? urgentVolumeBoost : 'standard';
+      const rua = repeatUrgentAlerts !== undefined ? (repeatUrgentAlerts ? 1 : 0) : 1;
+      const sae = spokenAlertsEnabled !== undefined ? (spokenAlertsEnabled ? 1 : 0) : 0;
+      const sam = spokenAlertMode !== undefined ? spokenAlertMode : 'private';
+      const sar = spokenAlertRepeats !== undefined ? (spokenAlertRepeats ? 1 : 0) : 1;
       const role = req.user?.role || 'parent';
 
       await execute(`
-        INSERT INTO notification_preferences (user_id, role, sound_enabled, push_enabled, email_enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [userId, role, se, pe, ee, now, now]);
+        INSERT INTO notification_preferences (
+          user_id, role, sound_enabled, push_enabled, email_enabled,
+          urgent_sound_profile, urgent_volume_boost, repeat_urgent_alerts,
+          spoken_alerts_enabled, spoken_alert_mode, spoken_alert_repeats,
+          created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [userId, role, se, pe, ee, usp, uvb, rua, sae, sam, sar, now, now]);
     }
 
     const updated = await queryOne('SELECT * FROM notification_preferences WHERE user_id = ?', [userId]);
     return res.json({
       soundEnabled: updated.sound_enabled === 1,
       pushEnabled: updated.push_enabled === 1,
-      emailEnabled: updated.email_enabled === 1
+      emailEnabled: updated.email_enabled === 1,
+      urgentSoundProfile: updated.urgent_sound_profile || 'emergency',
+      urgentVolumeBoost: updated.urgent_volume_boost || 'standard',
+      repeatUrgentAlerts: updated.repeat_urgent_alerts === 1,
+      spokenAlertsEnabled: updated.spoken_alerts_enabled === 1,
+      spokenAlertMode: updated.spoken_alert_mode || 'private',
+      spokenAlertRepeats: updated.spoken_alert_repeats === 1,
+      _metadata: {
+        'data-component-version': 'alert-audio-preference-map-v2'
+      }
     });
   } catch (err: any) {
     console.error('Error updating notification preferences:', err);

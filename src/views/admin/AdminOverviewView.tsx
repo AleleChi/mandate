@@ -38,7 +38,7 @@ import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { playSound, resumeAudioContext, stopAllUrgentAlertEffects } from '../../utils/sound';
-import { urgentAlertEffectsManager, getCategoryLabel } from '../../utils/urgentAlertEffects';
+import { urgentAlertEffectsManager, getCategoryLabel, generateSpokenAlertText, speakAlert, stopSpeaking } from '../../utils/urgentAlertEffects';
 import { AdminApplicationsView } from './AdminApplicationsView';
 import { AdminReviewBoardView } from './AdminReviewBoardView';
 import { AdminChildrenView } from './AdminChildrenView';
@@ -141,6 +141,27 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       return (localStorage.getItem('koinonia_alert_profile') as any) || 'emergency';
     }
     return 'emergency';
+  });
+
+  const [spokenAlertsEnabled, setSpokenAlertsEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_spoken_alerts_enabled') === 'true';
+    }
+    return false;
+  });
+
+  const [spokenAlertMode, setSpokenAlertMode] = useState<'private' | 'event' | 'full_context'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('koinonia_spoken_alert_mode') as any) || 'private';
+    }
+    return 'private';
+  });
+
+  const [spokenAlertRepeats, setSpokenAlertRepeats] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_spoken_alert_repeats') !== 'false';
+    }
+    return true;
   });
 
   // Safety Alerts states
@@ -366,14 +387,62 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   // Fetch initial preferences
   const fetchPreferences = async () => {
     try {
-      const res = await api.request<{ soundEnabled: boolean; pushEnabled: boolean }>('/api/notifications/preferences');
+      const res = await api.request<{
+        soundEnabled: boolean;
+        pushEnabled: boolean;
+        urgentSoundProfile?: string;
+        urgentVolumeBoost?: string;
+        spokenAlertsEnabled?: boolean;
+        spokenAlertMode?: string;
+        spokenAlertRepeats?: boolean;
+      }>('/api/notifications/preferences');
       if (res) {
         setSoundEnabled(res.soundEnabled);
         setPushEnabled(res.pushEnabled);
         localStorage.setItem('koinonia_sound_enabled', String(res.soundEnabled));
+
+        if (res.urgentSoundProfile) {
+          setAlertProfile(res.urgentSoundProfile as any);
+          localStorage.setItem('koinonia_alert_profile', res.urgentSoundProfile);
+        }
+        if (res.urgentVolumeBoost) {
+          setAlertVolume(res.urgentVolumeBoost as any);
+          localStorage.setItem('koinonia_alert_volume', res.urgentVolumeBoost);
+        }
+        if (res.spokenAlertsEnabled !== undefined) {
+          setSpokenAlertsEnabled(res.spokenAlertsEnabled);
+          localStorage.setItem('koinonia_spoken_alerts_enabled', String(res.spokenAlertsEnabled));
+        }
+        if (res.spokenAlertMode) {
+          setSpokenAlertMode(res.spokenAlertMode as any);
+          localStorage.setItem('koinonia_spoken_alert_mode', res.spokenAlertMode);
+        }
+        if (res.spokenAlertRepeats !== undefined) {
+          setSpokenAlertRepeats(res.spokenAlertRepeats);
+          localStorage.setItem('koinonia_spoken_alert_repeats', String(res.spokenAlertRepeats));
+        }
       }
     } catch (err) {
       console.warn('Preferences fetch failed:', err);
+    }
+  };
+
+  const updatePreferenceOnServer = async (updates: {
+    soundEnabled?: boolean;
+    pushEnabled?: boolean;
+    urgentSoundProfile?: string;
+    urgentVolumeBoost?: string;
+    spokenAlertsEnabled?: boolean;
+    spokenAlertMode?: string;
+    spokenAlertRepeats?: boolean;
+  }) => {
+    try {
+      await api.request('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.warn('Server preference sync failed:', err);
     }
   };
 
@@ -395,6 +464,25 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       localStorage.setItem('koinonia_alert_profile', alertProfile);
     }
   }, [alertProfile]);
+
+  // Synchronize spoken alerts to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('koinonia_spoken_alerts_enabled', String(spokenAlertsEnabled));
+    }
+  }, [spokenAlertsEnabled]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('koinonia_spoken_alert_mode', spokenAlertMode);
+    }
+  }, [spokenAlertMode]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('koinonia_spoken_alert_repeats', String(spokenAlertRepeats));
+    }
+  }, [spokenAlertRepeats]);
 
   // Poll for notifications and safety alerts
   useEffect(() => {
@@ -1634,8 +1722,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               ].map((prof) => (
                                 <button
                                   key={prof.id}
+                                  type="button"
                                   onClick={() => {
                                     setAlertProfile(prof.id as any);
+                                    updatePreferenceOnServer({ urgentSoundProfile: prof.id });
                                     showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
                                   }}
                                   className={`py-1.5 px-2 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
@@ -1663,8 +1753,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               ].map((vol) => (
                                 <button
                                   key={vol.id}
+                                  type="button"
                                   onClick={() => {
                                     setAlertVolume(vol.id as any);
+                                    updatePreferenceOnServer({ urgentVolumeBoost: vol.id });
                                     showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
                                   }}
                                   className={`py-1.5 px-2 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
@@ -1679,6 +1771,85 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </div>
                           </div>
 
+                          {/* Spoken Alert Settings */}
+                          <div className="space-y-3 pt-2 border-t border-zinc-800" data-component-version="spoken-alert-voice-settings-v1">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
+                                Spoken alert (Voice)
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newVal = !spokenAlertsEnabled;
+                                  setSpokenAlertsEnabled(newVal);
+                                  updatePreferenceOnServer({ spokenAlertsEnabled: newVal });
+                                  showSuccess('Spoken alerts ' + (newVal ? 'enabled' : 'disabled'), 'Emergency voice speaking updated.');
+                                }}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
+                                  spokenAlertsEnabled 
+                                    ? 'bg-emerald-600 text-white' 
+                                    : 'bg-zinc-850 text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                {spokenAlertsEnabled ? 'Enabled' : 'Disabled'}
+                              </button>
+                            </div>
+
+                            {spokenAlertsEnabled && (
+                              <>
+                                {/* Privacy Mode */}
+                                <div className="space-y-1.5">
+                                  <span className="text-[10px] text-zinc-400 font-bold block uppercase">Privacy mode</span>
+                                  <div className="grid grid-cols-3 gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                                    {[
+                                      { id: 'private', label: 'Private' },
+                                      { id: 'event', label: 'Event' },
+                                      { id: 'full_context', label: 'Full context' }
+                                    ].map((mode) => (
+                                      <button
+                                        key={mode.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSpokenAlertMode(mode.id as any);
+                                          updatePreferenceOnServer({ spokenAlertMode: mode.id });
+                                          showSuccess('Privacy mode changed', `Set voice privacy level to ${mode.label}.`);
+                                        }}
+                                        className={`py-1 px-1.5 rounded text-[9px] text-center font-semibold transition-all cursor-pointer ${
+                                          spokenAlertMode === mode.id
+                                            ? 'bg-red-600 text-white font-bold'
+                                            : 'text-zinc-400 hover:text-white bg-transparent'
+                                        }`}
+                                      >
+                                        {mode.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Repeat voice toggles */}
+                                <div className="flex items-center justify-between bg-zinc-950 p-2 rounded-lg border border-zinc-850">
+                                  <span className="text-[10px] text-zinc-400 font-bold uppercase">Repeat spoken voice</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newVal = !spokenAlertRepeats;
+                                      setSpokenAlertRepeats(newVal);
+                                      updatePreferenceOnServer({ spokenAlertRepeats: newVal });
+                                      showSuccess('Repeat speaking ' + (newVal ? 'enabled' : 'disabled'), 'Spoken repetitions updated.');
+                                    }}
+                                    className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
+                                      spokenAlertRepeats 
+                                        ? 'bg-[#C59B27] text-white' 
+                                        : 'bg-zinc-900 text-zinc-500'
+                                    }`}
+                                  >
+                                    {spokenAlertRepeats ? 'Every interval' : 'Once only'}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
                           {/* Sound test controls */}
                           <div className="space-y-2.5 pt-1.5" data-component-version="alert-sound-test-actions-v1">
                             <label className="text-[11px] font-bold text-zinc-300 tracking-wide block uppercase">
@@ -1686,10 +1857,24 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </label>
                             <div className="flex gap-2">
                               <button
+                                type="button"
                                 onClick={() => {
                                   resumeAudioContext();
                                   playSound('emergency', { volume: alertVolume, profile: alertProfile });
-                                  showSuccess('Testing Sound', 'Playing synthesized alert tone.');
+                                  
+                                  // Test speak
+                                  if (spokenAlertsEnabled) {
+                                    const sampleAlert = {
+                                      category: 'medical_support',
+                                      location: 'Children Pavilion',
+                                      child_first_name: 'David',
+                                      child_name: 'David Koinonia'
+                                    };
+                                    const sampleText = generateSpokenAlertText(sampleAlert, spokenAlertMode);
+                                    speakAlert(sampleText);
+                                  }
+                                  
+                                  showSuccess('Testing Sound', 'Playing alert tone' + (spokenAlertsEnabled ? ' with spoken alert.' : '.'));
                                 }}
                                 className="flex-1 font-bold text-[10px] bg-zinc-800 hover:bg-zinc-750 text-white border border-zinc-700 py-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
                               >
@@ -1698,6 +1883,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </button>
                               
                               <button
+                                type="button"
                                 onClick={() => {
                                   try {
                                     stopAllUrgentAlertEffects();

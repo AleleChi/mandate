@@ -158,8 +158,15 @@ export function resumeAudioContext() {
 }
 
 export function stopAllUrgentAlertEffects() {
-  console.log('[Emergency Kill Switch] stopping all AudioContext, oscillators, timers, and vibrations.');
+  console.log('[Emergency Kill Switch] stopping all AudioContext, oscillators, timers, vibrations, and speech.');
   
+  // 0. Cancel speech synthesis
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {}
+  }
+
   // 1. Close contexts
   activeContexts.forEach(ctx => {
     try {

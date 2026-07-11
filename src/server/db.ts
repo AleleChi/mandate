@@ -387,6 +387,12 @@ function initSqliteSchema(db: Database.Database) {
       sound_enabled INTEGER DEFAULT 1,
       push_enabled INTEGER DEFAULT 0,
       email_enabled INTEGER DEFAULT 1,
+      urgent_sound_profile TEXT DEFAULT 'emergency',
+      urgent_volume_boost TEXT DEFAULT 'standard',
+      repeat_urgent_alerts INTEGER DEFAULT 1,
+      spoken_alerts_enabled INTEGER DEFAULT 0,
+      spoken_alert_mode TEXT DEFAULT 'private',
+      spoken_alert_repeats INTEGER DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -754,6 +760,21 @@ function initSqliteSchema(db: Database.Database) {
     } catch (e) {}
     try {
       db.exec(`ALTER TABLE child_event_entries ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  // Migrate notification_preferences for audio settings (SQLite)
+  const sqliteNotifPrefCols = [
+    { name: 'urgent_sound_profile', type: 'TEXT DEFAULT \'emergency\'' },
+    { name: 'urgent_volume_boost', type: 'TEXT DEFAULT \'standard\'' },
+    { name: 'repeat_urgent_alerts', type: 'INTEGER DEFAULT 1' },
+    { name: 'spoken_alerts_enabled', type: 'INTEGER DEFAULT 0' },
+    { name: 'spoken_alert_mode', type: 'TEXT DEFAULT \'private\'' },
+    { name: 'spoken_alert_repeats', type: 'INTEGER DEFAULT 1' }
+  ];
+  for (const col of sqliteNotifPrefCols) {
+    try {
+      db.exec(`ALTER TABLE notification_preferences ADD COLUMN ${col.name} ${col.type};`);
     } catch (e) {}
   }
 
@@ -1160,6 +1181,12 @@ async function initPostgresSchema(pool: any) {
         sound_enabled INTEGER DEFAULT 1,
         push_enabled INTEGER DEFAULT 0,
         email_enabled INTEGER DEFAULT 1,
+        urgent_sound_profile VARCHAR(64) DEFAULT 'emergency',
+        urgent_volume_boost VARCHAR(64) DEFAULT 'standard',
+        repeat_urgent_alerts INTEGER DEFAULT 1,
+        spoken_alerts_enabled INTEGER DEFAULT 0,
+        spoken_alert_mode VARCHAR(64) DEFAULT 'private',
+        spoken_alert_repeats INTEGER DEFAULT 1,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -1539,6 +1566,24 @@ async function initPostgresSchema(pool: any) {
         const colName = parts[0];
         const colDef = parts.slice(1).join(' ');
         await pool.query(`ALTER TABLE child_event_entries ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    // Migrate notification_preferences for audio settings (Postgres)
+    const pgNotifPrefCols = [
+      'urgent_sound_profile VARCHAR(64) DEFAULT \'emergency\'',
+      'urgent_volume_boost VARCHAR(64) DEFAULT \'standard\'',
+      'repeat_urgent_alerts INTEGER DEFAULT 1',
+      'spoken_alerts_enabled INTEGER DEFAULT 0',
+      'spoken_alert_mode VARCHAR(64) DEFAULT \'private\'',
+      'spoken_alert_repeats INTEGER DEFAULT 1'
+    ];
+    for (const col of pgNotifPrefCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
       } catch (e) {}
     }
 

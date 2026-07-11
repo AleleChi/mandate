@@ -124,6 +124,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     return { normal: 'bell_only', important: 'bell_sound', urgent: 'bell_overlay_vibe_push' };
   });
 
+  const [includeSecureInAppChildDetails, setIncludeSecureInAppChildDetails] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_include_secure_in_app_child_details') !== 'false';
+    }
+    return true;
+  });
+
+  const [deliveryChannelMode, setDeliveryChannelMode] = useState<'app_only' | 'sms_push_fallback'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('koinonia_delivery_channel_mode') as any) || 'app_only';
+    }
+    return 'app_only';
+  });
+
   // Device-specific Alert Preferences State
   const [deviceReceiveUrgent, setDeviceReceiveUrgent] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -465,6 +479,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     localStorage.setItem('koinonia_admin_alert_categories', JSON.stringify(alertCategories));
     localStorage.setItem('koinonia_admin_delivery_methods', JSON.stringify(deliveryMethods));
     localStorage.setItem('koinonia_admin_severity_rules', JSON.stringify(severityRules));
+    localStorage.setItem('koinonia_include_secure_in_app_child_details', String(includeSecureInAppChildDetails));
+    localStorage.setItem('koinonia_delivery_channel_mode', deliveryChannelMode);
     
     showFeedback('Alert delivery rules updated successfully.');
   };
@@ -1832,6 +1848,135 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             <span className="font-medium text-red-600">🔴 Urgent</span>
                             <span className="text-red-600 bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50">Bell + Full Overlay + Sound + Vibe + Push</span>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Section 5: Recipients & Delivery Panel */}
+                      <div 
+                        className="space-y-4 pt-4 border-t border-zinc-100" 
+                        data-component-version="alert-recipients-delivery-panel-v1"
+                      >
+                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">
+                          5. Secure recipients & delivery details policy
+                        </h4>
+                        
+                        {/* Channel preference */}
+                        <div className="space-y-2">
+                          <span className="text-[11px] font-bold text-zinc-500 block uppercase">
+                            Primary Transmission Channel
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setDeliveryChannelMode('app_only')}
+                              className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                deliveryChannelMode === 'app_only'
+                                  ? 'border-[#C59B27] bg-[#C59B27]/5'
+                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  deliveryChannelMode === 'app_only' ? 'border-[#C59B27]' : 'border-zinc-300'
+                                }`}>
+                                  {deliveryChannelMode === 'app_only' && <div className="w-2 h-2 rounded-full bg-[#C59B27]" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-semibold text-zinc-700 block">Secure App-Only</span>
+                                <span className="text-[10px] text-zinc-400 font-sans mt-0.5">Restricted strictly within authenticated dashboards</span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setDeliveryChannelMode('sms_push_fallback')}
+                              className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                deliveryChannelMode === 'sms_push_fallback'
+                                  ? 'border-amber-500 bg-amber-50/40'
+                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  deliveryChannelMode === 'sms_push_fallback' ? 'border-amber-500' : 'border-zinc-300'
+                                }`}>
+                                  {deliveryChannelMode === 'sms_push_fallback' && <div className="w-2 h-2 rounded-full bg-amber-500" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-semibold text-zinc-700 block">SMS & Push Fallback</span>
+                                <span className="text-[10px] text-zinc-400 font-sans mt-0.5">Allows external SMS previews with zero child details</span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Child Details Inclusion Policy */}
+                        <div className="space-y-2 pt-1">
+                          <span className="text-[11px] font-bold text-zinc-500 block uppercase">
+                            Child Context Disclosure Policy
+                          </span>
+                          
+                          <div className="space-y-3">
+                            <button
+                              type="button"
+                              onClick={() => setIncludeSecureInAppChildDetails(true)}
+                              className={`w-full p-3.5 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                includeSecureInAppChildDetails
+                                  ? 'border-emerald-500 bg-emerald-50/10'
+                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  includeSecureInAppChildDetails ? 'border-emerald-500' : 'border-zinc-300'
+                                }`}>
+                                  {includeSecureInAppChildDetails && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-bold text-zinc-800 block">
+                                  Include secure in-app child details/photo (Recommended)
+                                </span>
+                                <span className="text-[10px] text-zinc-500 leading-relaxed font-sans block mt-1">
+                                  Authorized users see names, photos, events, and medical/pickup flags securely inside the live app ONLY. Lock screen and SMS alerts remain anonymous.
+                                </span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setIncludeSecureInAppChildDetails(false)}
+                              className={`w-full p-3.5 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                !includeSecureInAppChildDetails
+                                  ? 'border-zinc-500 bg-zinc-50'
+                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  !includeSecureInAppChildDetails ? 'border-zinc-500' : 'border-zinc-300'
+                                }`}>
+                                  {!includeSecureInAppChildDetails && <div className="w-2 h-2 rounded-full bg-zinc-500" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-bold text-zinc-800 block">
+                                  Minimal alert only (No child details in push payload/lock screen)
+                                </span>
+                                <span className="text-[10px] text-zinc-500 leading-relaxed font-sans block mt-1">
+                                  Hides child identities completely across all views and alerts. Operators must query the register physically or reference pre-distributed manifests.
+                                </span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Critical Safety Disclaimer */}
+                        <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-[10px] text-red-700/80 leading-relaxed font-sans">
+                          <strong className="font-bold text-red-800 block mb-0.5">⚠️ Secure Notification Compliance Notice</strong>
+                          Full child profiles, primary guardians, photographs, and health/allergy flags are restricted strictly to authorized in-app views. SMS, WhatsApp, and external push notifications are completely masked for privacy compliance.
                         </div>
                       </div>
                     </div>

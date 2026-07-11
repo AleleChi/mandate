@@ -30,6 +30,7 @@ function saveSilencedAlertIds(ids: Set<string>) {
 
 // Keep track of which alert IDs have already triggered an initial sound feedback on this page session
 const soundedAlertIds = new Set<string>();
+const spokenOnceAlertIds = new Set<string>();
 
 let alarmInterval: any = null;
 let currentActiveAlerts: any[] = [];
@@ -46,6 +47,63 @@ export function getCategoryLabel(category: string): string {
     other: 'Other support'
   };
   return mapping[category] || category || 'Other support';
+}
+
+export function generateSpokenAlertText(alert: any, mode: 'private' | 'event' | 'full_context' = 'private'): string {
+  if (!alert) return 'Urgent help needed. Open the app now.';
+  
+  if (mode === 'private') {
+    return 'Urgent help needed. Open the app now.';
+  }
+  
+  const categoryLabel = getCategoryLabel(alert.category);
+  const location = alert.location || '';
+  const childFirstName = alert.child_first_name || alert.child_name?.split(' ')[0] || '';
+  
+  if (mode === 'full_context' && childFirstName) {
+    if (location) {
+      return `Urgent ${categoryLabel} alert for ${childFirstName} at ${location}. Open the app now.`;
+    } else {
+      return `Urgent ${categoryLabel} alert for ${childFirstName}. Open the app now.`;
+    }
+  }
+  
+  // Event mode or fallback if no child or not full context
+  if (location) {
+    return `Urgent ${categoryLabel} alert at ${location}. Open the app now.`;
+  } else {
+    return `Urgent ${categoryLabel} alert. Open the app now.`;
+  }
+}
+
+export function speakAlert(text: string) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Volume based on alertVolume preference
+    const selectedVolume = localStorage.getItem('koinonia_alert_volume') || 'standard';
+    let vol = 1.0;
+    if (selectedVolume === 'loud') {
+      vol = 1.0;
+    } else if (selectedVolume === 'very_loud') {
+      vol = 1.0;
+    }
+    utterance.volume = vol;
+    
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {
+    console.warn('Speech error:', e);
+  }
+}
+
+export function stopSpeaking() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {}
 }
 
 export const urgentAlertEffectsManager = {
@@ -118,6 +176,16 @@ export const urgentAlertEffectsManager = {
         if (hasUrgent) {
           if (sndPref) {
             try { playSound('emergency'); } catch (_) {}
+            
+            // Speak if enabled
+            const spokenEnabled = localStorage.getItem('koinonia_spoken_alerts_enabled') === 'true';
+            if (spokenEnabled) {
+              const spokenMode = (localStorage.getItem('koinonia_spoken_alert_mode') as any) || 'private';
+              const targetAlert = newAlerts.find(a => a.severity === 'urgent') || newAlerts[0];
+              const text = generateSpokenAlertText(targetAlert, spokenMode);
+              speakAlert(text);
+              spokenOnceAlertIds.add(targetAlert.id);
+            }
           }
           if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (_) {}
@@ -170,6 +238,20 @@ export const urgentAlertEffectsManager = {
 
             if (sndPref) {
               try { playSound('emergency'); } catch (_) {}
+              
+              // Speak repeat if enabled
+              const spokenEnabled = localStorage.getItem('koinonia_spoken_alerts_enabled') === 'true';
+              if (spokenEnabled && stillActive.length > 0 && typeof window !== 'undefined' && window.speechSynthesis && !window.speechSynthesis.speaking) {
+                const spokenMode = (localStorage.getItem('koinonia_spoken_alert_mode') as any) || 'private';
+                const spokenRepeats = localStorage.getItem('koinonia_spoken_alert_repeats') !== 'false';
+                const firstAlert = stillActive[0];
+                
+                if (spokenRepeats || !spokenOnceAlertIds.has(firstAlert.id)) {
+                  const text = generateSpokenAlertText(firstAlert, spokenMode);
+                  speakAlert(text);
+                  spokenOnceAlertIds.add(firstAlert.id);
+                }
+              }
             }
             if (vibePref && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
               try { navigator.vibrate([200, 100, 200, 100, 500]); } catch (_) {}
