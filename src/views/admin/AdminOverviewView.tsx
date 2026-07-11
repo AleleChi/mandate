@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
@@ -120,49 +121,20 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [notifTab, setNotifTab] = useState<'unread' | 'all'>('unread');
-  const [soundEnabled, setSoundEnabled] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('koinonia_sound_enabled');
-      return stored !== 'false';
-    }
-    return true;
-  });
   const [pushEnabled, setPushEnabled] = useState(false);
 
-  const [alertVolume, setAlertVolume] = useState<'standard' | 'loud' | 'very_loud'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('koinonia_alert_volume') as any) || 'standard';
-    }
-    return 'standard';
-  });
-
-  const [alertProfile, setAlertProfile] = useState<'normal' | 'important' | 'emergency'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('koinonia_alert_profile') as any) || 'emergency';
-    }
-    return 'emergency';
-  });
-
-  const [spokenAlertsEnabled, setSpokenAlertsEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_spoken_alerts_enabled') === 'true';
-    }
-    return false;
-  });
-
-  const [spokenAlertMode, setSpokenAlertMode] = useState<'private' | 'event' | 'full_context'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('koinonia_spoken_alert_mode') as any) || 'private';
-    }
-    return 'private';
-  });
-
-  const [spokenAlertRepeats, setSpokenAlertRepeats] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('koinonia_spoken_alert_repeats') !== 'false';
-    }
-    return true;
-  });
+  // Unified hook for alert audio and sound preferences (Phase 2)
+  const {
+    soundEnabled,
+    urgentSoundProfile: alertProfile,
+    urgentVolumeBoost: alertVolume,
+    spokenAlertsEnabled,
+    spokenAlertMode,
+    spokenAlertRepeats,
+    isSaving: isAudioPreferenceSaving,
+    updatePreference,
+    testEmergencySound
+  } = useAlertAudioPreferences();
 
   // Safety Alerts states
   const [safetyAlerts, setSafetyAlerts] = useState<any[]>([]);
@@ -384,106 +356,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   };
 
-  // Fetch initial preferences
-  const fetchPreferences = async () => {
-    try {
-      const res = await api.request<{
-        soundEnabled: boolean;
-        pushEnabled: boolean;
-        urgentSoundProfile?: string;
-        urgentVolumeBoost?: string;
-        spokenAlertsEnabled?: boolean;
-        spokenAlertMode?: string;
-        spokenAlertRepeats?: boolean;
-      }>('/api/notifications/preferences');
-      if (res) {
-        setSoundEnabled(res.soundEnabled);
-        setPushEnabled(res.pushEnabled);
-        localStorage.setItem('koinonia_sound_enabled', String(res.soundEnabled));
-
-        if (res.urgentSoundProfile) {
-          setAlertProfile(res.urgentSoundProfile as any);
-          localStorage.setItem('koinonia_alert_profile', res.urgentSoundProfile);
-        }
-        if (res.urgentVolumeBoost) {
-          setAlertVolume(res.urgentVolumeBoost as any);
-          localStorage.setItem('koinonia_alert_volume', res.urgentVolumeBoost);
-        }
-        if (res.spokenAlertsEnabled !== undefined) {
-          setSpokenAlertsEnabled(res.spokenAlertsEnabled);
-          localStorage.setItem('koinonia_spoken_alerts_enabled', String(res.spokenAlertsEnabled));
-        }
-        if (res.spokenAlertMode) {
-          setSpokenAlertMode(res.spokenAlertMode as any);
-          localStorage.setItem('koinonia_spoken_alert_mode', res.spokenAlertMode);
-        }
-        if (res.spokenAlertRepeats !== undefined) {
-          setSpokenAlertRepeats(res.spokenAlertRepeats);
-          localStorage.setItem('koinonia_spoken_alert_repeats', String(res.spokenAlertRepeats));
-        }
-      }
-    } catch (err) {
-      console.warn('Preferences fetch failed:', err);
-    }
-  };
-
-  const updatePreferenceOnServer = async (updates: {
-    soundEnabled?: boolean;
-    pushEnabled?: boolean;
-    urgentSoundProfile?: string;
-    urgentVolumeBoost?: string;
-    spokenAlertsEnabled?: boolean;
-    spokenAlertMode?: string;
-    spokenAlertRepeats?: boolean;
-  }) => {
-    try {
-      await api.request('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify(updates)
-      });
-    } catch (err) {
-      console.warn('Server preference sync failed:', err);
-    }
-  };
-
-  // Preferences effects
-  useEffect(() => {
-    fetchPreferences();
-  }, []);
-
-  // Synchronize alert volume to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('koinonia_alert_volume', alertVolume);
-    }
-  }, [alertVolume]);
-
-  // Synchronize alert profile to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('koinonia_alert_profile', alertProfile);
-    }
-  }, [alertProfile]);
-
-  // Synchronize spoken alerts to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('koinonia_spoken_alerts_enabled', String(spokenAlertsEnabled));
-    }
-  }, [spokenAlertsEnabled]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('koinonia_spoken_alert_mode', spokenAlertMode);
-    }
-  }, [spokenAlertMode]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('koinonia_spoken_alert_repeats', String(spokenAlertRepeats));
-    }
-  }, [spokenAlertRepeats]);
-
   // Poll for notifications and safety alerts
   useEffect(() => {
     fetchNotificationsList();
@@ -528,22 +400,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   const toggleSound = async () => {
     const nextVal = !soundEnabled;
-    setSoundEnabled(nextVal);
-    localStorage.setItem('koinonia_sound_enabled', String(nextVal));
-    try {
-      await api.request('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify({ soundEnabled: nextVal })
-      });
-      showSuccess(
-        nextVal ? 'Sound Alerts On' : 'Sound Alerts Off',
-        nextVal ? 'Notification sounds enabled.' : 'Notification sounds disabled.'
-      );
-      if (nextVal) {
-        playSound('success');
-      }
-    } catch (err) {
-      console.error('Failed to update sound preference:', err);
+    updatePreference('soundEnabled', nextVal);
+    showSuccess(
+      nextVal ? 'Sound Alerts On' : 'Sound Alerts Off',
+      nextVal ? 'Notification sounds enabled.' : 'Notification sounds disabled.'
+    );
+    if (nextVal) {
+      playSound('success');
     }
   };
 
@@ -1723,9 +1586,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 <button
                                   key={prof.id}
                                   type="button"
-                                  onClick={() => {
-                                    setAlertProfile(prof.id as any);
-                                    updatePreferenceOnServer({ urgentSoundProfile: prof.id });
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    updatePreference('urgentSoundProfile', prof.id);
                                     showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
                                   }}
                                   className={`py-1.5 px-2 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
@@ -1754,9 +1617,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 <button
                                   key={vol.id}
                                   type="button"
-                                  onClick={() => {
-                                    setAlertVolume(vol.id as any);
-                                    updatePreferenceOnServer({ urgentVolumeBoost: vol.id });
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    updatePreference('urgentVolumeBoost', vol.id);
                                     showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
                                   }}
                                   className={`py-1.5 px-2 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
@@ -1779,10 +1642,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </label>
                               <button
                                 type="button"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.preventDefault();
                                   const newVal = !spokenAlertsEnabled;
-                                  setSpokenAlertsEnabled(newVal);
-                                  updatePreferenceOnServer({ spokenAlertsEnabled: newVal });
+                                  updatePreference('spokenAlertsEnabled', newVal);
                                   showSuccess('Spoken alerts ' + (newVal ? 'enabled' : 'disabled'), 'Emergency voice speaking updated.');
                                 }}
                                 className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
@@ -1809,9 +1672,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       <button
                                         key={mode.id}
                                         type="button"
-                                        onClick={() => {
-                                          setSpokenAlertMode(mode.id as any);
-                                          updatePreferenceOnServer({ spokenAlertMode: mode.id });
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          updatePreference('spokenAlertMode', mode.id);
                                           showSuccess('Privacy mode changed', `Set voice privacy level to ${mode.label}.`);
                                         }}
                                         className={`py-1 px-1.5 rounded text-[9px] text-center font-semibold transition-all cursor-pointer ${
@@ -1831,10 +1694,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   <span className="text-[10px] text-zinc-400 font-bold uppercase">Repeat spoken voice</span>
                                   <button
                                     type="button"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.preventDefault();
                                       const newVal = !spokenAlertRepeats;
-                                      setSpokenAlertRepeats(newVal);
-                                      updatePreferenceOnServer({ spokenAlertRepeats: newVal });
+                                      updatePreference('spokenAlertRepeats', newVal);
                                       showSuccess('Repeat speaking ' + (newVal ? 'enabled' : 'disabled'), 'Spoken repetitions updated.');
                                     }}
                                     className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
@@ -2364,24 +2227,33 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           {/* Persistent Security & Device Audio Readiness Panel */}
                           <div 
                             className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
-                            data-component-version="persistent-device-audio-readiness-panel-v3"
+                            data-component-version="shared-audio-preferences-mobile-desktop-v1"
                           >
-                            <div className="flex items-center justify-between pb-1">
+                            <div className="flex items-center justify-between pb-1" data-component-version="mobile-audio-setting-saved-state-v1">
                               <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
                                 SECURITY AUDIO READINESS
                               </span>
-                              <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
-                                Device check
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                {isAudioPreferenceSaving ? (
+                                  <span className="text-[10px] text-zinc-400 animate-pulse">Saving...</span>
+                                ) : (
+                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                                    <Check className="w-3 h-3" /> Saved
+                                  </span>
+                                )}
+                                <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
+                                  Device check
+                                </span>
+                              </div>
                             </div>
 
                             <p className="text-xs text-zinc-500 font-sans leading-relaxed">
-                              Configure and test the alarm synthesizer of this operator terminal to ensure immediate alerts can be heard during busy events.
+                              <strong>Device sound settings</strong>: Configure and test the alarm synthesizer of this operator terminal to ensure immediate alerts can be heard during busy events.
                             </p>
 
-                            <div className="space-y-3 pt-1">
+                            <div className="space-y-3 pt-1" data-component-version="mobile-volume-boost-persist-v1">
                               {/* Sound Mode Selection */}
-                              <div className="space-y-1.5" data-component-version="persistent-sound-profile-v1">
+                              <div className="space-y-1.5" data-component-version="mobile-audio-preference-field-map-v1">
                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wide block">
                                   Chime Alarm Profile
                                 </label>
@@ -2393,8 +2265,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   ].map((prof) => (
                                     <button
                                       key={prof.id}
-                                      onClick={() => {
-                                        setAlertProfile(prof.id as any);
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        updatePreference('urgentSoundProfile', prof.id);
                                         showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
                                       }}
                                       className={`py-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
@@ -2410,7 +2285,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
 
                               {/* Volume Controls */}
-                              <div className="space-y-1.5" data-component-version="persistent-volume-settings-v1">
+                              <div className="space-y-1.5" data-component-version="mobile-emergency-volume-boost-applied-v1">
                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wide block">
                                   Alert volume boost
                                 </label>
@@ -2422,8 +2297,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   ].map((vol) => (
                                     <button
                                       key={vol.id}
-                                      onClick={() => {
-                                        setAlertVolume(vol.id as any);
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        updatePreference('urgentVolumeBoost', vol.id);
                                         showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
                                       }}
                                       className={`py-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
@@ -2439,9 +2317,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
 
                               {/* Test Buttons */}
-                              <div className="flex gap-2 pt-1" data-component-version="persistent-test-actions-v1">
+                              <div className="flex gap-2 pt-1" data-component-version="mobile-audio-buttons-no-submit-v1">
                                 <button
-                                  onClick={() => {
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
                                     resumeAudioContext();
                                     playSound('emergency', { volume: alertVolume, profile: alertProfile });
                                     showSuccess('Testing Tone', 'Playing localized check sound.');
@@ -2453,7 +2333,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 </button>
                                 
                                 <button
-                                  onClick={() => {
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
                                     try {
                                       stopAllUrgentAlertEffects();
                                       showSuccess('Audio Silenced', 'Test stopped.');
@@ -3103,7 +2985,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <span>Loading secure details...</span>
                   </div>
                 ) : activeUrgentRichDetail?.child ? (
-                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left">
+                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" data-component-version="child-context-details-v1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-zinc-700 tracking-wide uppercase">
+                        Child context
+                      </span>
+                      <span className="text-[9px] bg-zinc-800 text-white font-bold px-2 py-0.5 rounded uppercase">
+                        Secure in-app details
+                      </span>
+                    </div>
+
                     <div className="flex items-start space-x-4 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs">
                       {/* Child Photo */}
                       <div className="relative shrink-0">
@@ -3115,8 +3006,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
                           />
                         ) : (
-                          <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400">
-                            <User className="w-8 h-8" />
+                          <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex flex-col items-center justify-center text-zinc-400 shrink-0 text-center p-1">
+                            <User className="w-6 h-6" />
+                            <span className="text-[8px] font-bold uppercase mt-1 leading-tight text-zinc-500">
+                              Photo unavailable
+                            </span>
                           </div>
                         )}
                         <span className="absolute -bottom-1 -right-1 bg-zinc-800 text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white uppercase">
@@ -3217,8 +3111,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
                             />
                           ) : (
-                            <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0">
+                            <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0 text-center p-1">
                               <UserCheck className="w-6 h-6" />
+                              <span className="text-[8px] font-bold uppercase mt-1 leading-tight text-zinc-500">
+                                Photo unavailable
+                              </span>
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
@@ -3245,12 +3142,58 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       )}
                     </div>
                   </div>
-                ) : activeUrgentAlert.child_name ? (
-                  <div className="col-span-2 border-t border-zinc-100 pt-3 mt-1">
-                    <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
-                    <span className="font-black text-red-600 text-sm">{activeUrgentAlert.child_name}</span>
+                ) : (
+                  <div className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" data-component-version="fallback-emergency-needed-v1">
+                    <div className="bg-[#FFF8F8] border border-red-200 p-4 rounded-2xl shadow-xs space-y-3">
+                      <div className="flex items-center justify-between border-b border-red-100 pb-2">
+                        <span className="text-xs font-black text-red-700 uppercase tracking-tight flex items-center gap-1.5">
+                          <ShieldAlert className="w-4 h-4 text-red-600" />
+                          Emergency help needed
+                        </span>
+                        <span className="text-[9px] bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded uppercase">
+                          Secure in-app details
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-start space-x-4">
+                        {/* Photo placeholder with Photo unavailable text */}
+                        <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex flex-col items-center justify-center text-zinc-400 shrink-0 text-center p-1">
+                          <User className="w-6 h-6" />
+                          <span className="text-[8px] font-bold uppercase mt-1 leading-tight text-zinc-500">
+                            Photo unavailable
+                          </span>
+                        </div>
+
+                        <div className="flex-1 space-y-2">
+                          <p className="text-xs text-zinc-600 leading-relaxed font-sans">
+                            An active safety alert was raised without a specific child profile selection. Operators must triage using secondary channels or direct response.
+                          </p>
+
+                          {activeUrgentAlert.child_name && (
+                            <p className="text-xs">
+                              Reported Child Name: <strong className="text-red-600">{activeUrgentAlert.child_name}</strong>
+                            </p>
+                          )}
+
+                          {/* Open full details button */}
+                          <div className="pt-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setActiveAlertDetail(activeUrgentAlert);
+                              }}
+                              className="font-bold text-[10px] text-zinc-800 bg-white border border-zinc-300 hover:bg-zinc-50 px-3 py-1.5 rounded-xl transition-all inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              Open full details
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                ) : null}
+                )}
               </div>
 
               {activeUrgentAlert.message && (
