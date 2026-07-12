@@ -148,7 +148,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
         onBack={() => setSelectedApplicationId(null)}
         onSave={() => {
           setSelectedApplicationId(null);
-          fetchApplications(true);
+          fetchApplications(currentPage, true);
         }}
       />
     );
@@ -170,7 +170,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
         <div className="flex items-center space-x-3">
           <Button
             type="button"
-            onClick={() => fetchApplications(true)}
+            onClick={() => fetchApplications(currentPage, true)}
             disabled={refreshing}
             className="text-xs bg-white hover:bg-zinc-50 text-[#18181B] border border-[#EAE8E1]"
           >

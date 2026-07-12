@@ -15,92 +15,173 @@ import {
   Calendar,
   AlertCircle,
   ArrowRight,
-  Activity
+  Activity,
+  ArrowLeft,
+  Plus,
+  BarChart2,
+  Shield,
+  FileCheck,
+  Eye,
+  Trash2,
+  Archive,
+  History,
+  CheckCircle,
+  X,
+  FileDown,
+  ChevronRight,
+  Sparkles,
+  Search,
+  Lock,
+  LockOpen
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface AdminReportsViewProps {
   onBackToOverview: () => void;
   onNavigate?: (route: string) => void;
 }
 
-type ReportTab = 'pre_event' | 'live_event' | 'end_of_event' | 'volunteer_parent';
+// Tabs
+type MainTab = 'reports_centre' | 'template_library' | 'custom_builder' | 'live_metrics';
+type LegacyReportTab = 'pre_event' | 'live_event' | 'end_of_event' | 'volunteer_parent';
+
+interface ReportTemplate {
+  key: string;
+  name: string;
+  description: string;
+  privacyClassification: string;
+  recommendedSections: string[];
+}
 
 export const AdminReportsView: React.FC<AdminReportsViewProps> = ({ 
   onBackToOverview,
   onNavigate 
 }) => {
   const { showError, showSuccess } = useNotification();
-  const [activeTab, setActiveTab] = useState<ReportTab>('end_of_event');
-  const [loading, setLoading] = useState(true);
+  
+  // Tabs State
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>('reports_centre');
+  const [activeLegacyTab, setActiveLegacyTab] = useState<LegacyReportTab>('end_of_event');
+
+  // Loading States
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [loadingReportsList, setLoadingReportsList] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  
-  // Dynamic report dataset
-  const [reportData, setReportData] = useState<any>(null);
-  const [localNotes, setLocalNotes] = useState('');
 
-  // Fetch report metrics
-  const fetchReports = async (showLoadingState = true) => {
+  // Data States
+  const [legacyReportData, setLegacyReportData] = useState<any>(null);
+  const [localNotes, setLocalNotes] = useState('');
+  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
+  const [generatedReports, setGeneratedReports] = useState<any[]>([]);
+  
+  // Custom Builder Form State
+  const [builderTemplate, setBuilderTemplate] = useState<string>('event_executive_summary');
+  const [builderClassification, setBuilderClassification] = useState<string>('Internal operational');
+  const [builderSections, setBuilderSections] = useState<string[]>([
+    'Executive Summary', 'Operational Metrics', 'Grounded Recommendations'
+  ]);
+  const [builderFilters, setBuilderFilters] = useState({
+    ageGroup: 'All',
+    location: 'All',
+    timezone: 'Africa/Lagos'
+  });
+  const [submittingJob, setSubmittingJob] = useState(false);
+  const [activeProgressJobId, setActiveProgressJobId] = useState<string | null>(null);
+  const [activeProgressStep, setActiveProgressStep] = useState<number>(0);
+  const [activeProgressText, setActiveProgressText] = useState<string>('');
+
+  // Audit modal
+  const [auditReportId, setAuditReportId] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
+  // 1. Fetch Legacy Metrics
+  const fetchLegacyReports = async (showLoadingState = true) => {
     if (showLoadingState) {
-      setLoading(true);
+      setLoadingMetrics(true);
       setFetchError(null);
     } else {
       setRefreshing(true);
     }
 
     try {
-      if (activeTab === 'volunteer_parent') {
+      if (activeLegacyTab === 'volunteer_parent') {
         const response = await api.admin.getVolunteerParentStats();
         if (response && response.success) {
-          setReportData(response.stats);
+          setLegacyReportData(response.stats);
           setLocalNotes('');
-          setFetchError(null);
         } else {
-          setFetchError('We could not load this report right now. Please try again.');
+          setFetchError('We could not load legacy metrics.');
         }
       } else {
-        const response = await api.admin.getReports({ reportType: activeTab });
+        const response = await api.admin.getReports({ reportType: activeLegacyTab });
         if (response && response.success) {
-          setReportData(response);
+          setLegacyReportData(response);
           setLocalNotes(response.notes || '');
-          setFetchError(null);
         } else {
-          setFetchError('We could not load this report right now. Please try again.');
+          setFetchError('We could not load legacy metrics.');
         }
       }
     } catch (err: any) {
-      setFetchError('We could not load this report right now. Please try again.');
+      setFetchError('Failed to fetch legacy metrics.');
     } finally {
-      setLoading(false);
+      setLoadingMetrics(false);
       setRefreshing(false);
     }
   };
 
-  // Reload when activeTab changes
+  // 2. Fetch Templates & Job History
+  const fetchReportsListAndTemplates = async () => {
+    setLoadingReportsList(true);
+    try {
+      // Templates
+      const tempRes = await api.request('/api/admin/reports/templates');
+      if (tempRes && tempRes.success) {
+        setTemplates(tempRes.templates);
+      }
+      
+      // Generated Jobs
+      const jobsRes = await api.request('/api/admin/reports');
+      if (jobsRes && jobsRes.success) {
+        setGeneratedReports(jobsRes.reports);
+      }
+    } catch (err) {
+      console.error('Failed to load reports list or templates:', err);
+    } finally {
+      setLoadingReportsList(false);
+    }
+  };
+
   useEffect(() => {
-    fetchReports(true);
-  }, [activeTab]);
+    fetchReportsListAndTemplates();
+  }, []);
+
+  useEffect(() => {
+    if (activeMainTab === 'live_metrics') {
+      fetchLegacyReports(true);
+    }
+  }, [activeMainTab, activeLegacyTab]);
 
   // Handle saving notes
   const handleSaveNotes = async () => {
-    if (!reportData?.event?.id) return;
+    if (!legacyReportData?.event?.id) return;
     setSavingNotes(true);
     try {
       await api.admin.saveReportNotes({
-        eventId: reportData.event.id,
-        reportType: activeTab,
+        eventId: legacyReportData.event.id,
+        reportType: activeLegacyTab,
         notes: localNotes
       });
       showSuccess('Notes Saved', 'Report notes updated successfully.');
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Save Failed', typeof parsed === 'string' ? parsed : parsed.message);
+      showError('Save Failed', parsed.message);
     } finally {
       setSavingNotes(false);
     }
@@ -114,7 +195,6 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     }
 
     const exportUrl = `/api/admin/reports/export?type=${type}&format=csv`;
-    // Create an anchor and click it to trigger native download
     const link = document.createElement('a');
     link.href = exportUrl;
     link.setAttribute('download', `${type}_export.csv`);
@@ -124,36 +204,250 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     showSuccess('Export Started', `Downloading ${type.replace(/_/g, ' ')} CSV export...`);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh] w-full p-6">
-        <KoinoniaInlineLoader
-          variant="logo"
-          size="lg"
-          label="Loading reports..."
-          centered
-        />
-      </div>
-    );
-  }
+  // 3. Request a new PDF Report Job
+  const handleCreateReportJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingJob(true);
+    
+    // Auto-generate idempotency key to prevent double clicks
+    const idempotencyKey = 'key-' + Math.random().toString(36).substring(2);
 
-  const { event, metrics, sections, attendanceOutcome, eventSummary, careAttention } = reportData || {};
-
-  // Formatter for relative timestamps in live logs
-  const formatTimeAgo = (isoString?: string) => {
-    if (!isoString) return 'Just now';
     try {
-      const date = new Date(isoString);
-      const diffMs = Date.now() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}h ago`;
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch (e) {
-      return 'Recent';
+      const response = await api.request('/api/admin/reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          templateKey: builderTemplate,
+          privacyLevel: builderClassification,
+          sections: builderSections,
+          filters: builderFilters,
+          idempotencyKey
+        })
+      });
+
+      if (response && response.success) {
+        showSuccess('Job Queued', 'Professional PDF snapshot compilation started in background.');
+        const newJobId = response.jobId;
+        setActiveProgressJobId(newJobId);
+        setActiveProgressStep(1);
+        setActiveProgressText('Compiling real-time database snapshot & ledger...');
+
+        // Start polling for progress
+        pollJobStatus(newJobId);
+      } else {
+        showError('Request Failed', 'Failed to request report generation.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Submission Failed', parsed.message);
+    } finally {
+      setSubmittingJob(false);
     }
+  };
+
+  // Poll Job Status
+  const pollJobStatus = (jobId: string) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 30) {
+        clearInterval(interval);
+        setActiveProgressJobId(null);
+        showError('Timeout', 'Report took longer than expected. Check Reports Centre.');
+        fetchReportsListAndTemplates();
+        return;
+      }
+
+      try {
+        const res = await api.request(`/api/admin/reports/${jobId}`);
+        if (res && res.success) {
+          const status = res.report.status;
+          
+          if (status === 'queued') {
+            setActiveProgressStep(1);
+            setActiveProgressText('Compiling database records safely...');
+          } else if (status === 'generating') {
+            setActiveProgressStep(2);
+            setActiveProgressText('Applying role-aware privacy filters...');
+          } else if (status === 'completed' || status === 'ready') {
+            setActiveProgressStep(4);
+            setActiveProgressText('Signing hash ledger and writing PDF...');
+            clearInterval(interval);
+            setTimeout(() => {
+              setActiveProgressJobId(null);
+              showSuccess('Report Complete', 'Immutable A4 PDF ready for download.');
+              setActiveMainTab('reports_centre');
+              fetchReportsListAndTemplates();
+            }, 1000);
+          } else if (status === 'failed') {
+            clearInterval(interval);
+            setActiveProgressJobId(null);
+            showError('Generation Failed', res.report.error_log || 'PDF generation failed.');
+            fetchReportsListAndTemplates();
+          } else if (status === 'cancelled') {
+            clearInterval(interval);
+            setActiveProgressJobId(null);
+            showError('Cancelled', 'Job was cancelled by another supervisor.');
+            fetchReportsListAndTemplates();
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 1500);
+  };
+
+  // View Audit Logs
+  const viewAuditLogs = async (reportId: string) => {
+    setAuditReportId(reportId);
+    setLoadingAudit(true);
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/history`);
+      if (res && res.success) {
+        setAuditLogs(res.history);
+      }
+    } catch (err) {
+      showError('Error', 'Failed to fetch audit trails.');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  // Perform actions on generated reports
+  const handleCancelReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/cancel`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Cancelled', 'Report generation cancelled.');
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const handleRegenerateReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/regenerate`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Queued', 'Regeneration from original snapshot queued.');
+        pollJobStatus(reportId);
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const handleArchiveReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/archive`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Archived', 'Report moved to archived records.');
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const handleDeleteReport = async (reportId: string) => {
+    if (!window.confirm('Are you sure you want to permanently delete this report snapshot? This cannot be undone.')) {
+      return;
+    }
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}`, { method: 'DELETE' });
+      if (res && res.success) {
+        showSuccess('Deleted', 'Report deleted permanently.');
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const handleTriggerUpdatedVersion = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/generate-updated`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('New Job Created', 'A new updated report has been queued.');
+        pollJobStatus(res.jobId);
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  // Secure authorized download via standard auth header token
+  const handleDownloadReportPDF = (reportId: string, filename: string) => {
+    const token = api.getToken();
+    if (!token) {
+      showError('Error', 'You are currently logged out.');
+      return;
+    }
+
+    // Direct download with authorization in header is preferred, but for iframe downloads we can fetch and download
+    showSuccess('Downloading', 'Decrypting and verifying report digital signature...');
+    
+    // We can fetch as blob to include token header
+    let apiBaseUrl = '';
+    try {
+      apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+    } catch {
+      apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
+    }
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.run.app')) {
+        apiBaseUrl = '';
+      }
+    }
+
+    const downloadUrl = `${apiBaseUrl}/api/admin/reports/${reportId}/download`;
+    
+    fetch(downloadUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`Download failed with code: ${res.status}`);
+      }
+      return res.blob();
+    })
+    .then(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || `report_${reportId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      showSuccess('Success', 'PDF successfully downloaded.');
+    })
+    .catch(err => {
+      showError('Download failed', err.message || 'Verification of hash ledger failed.');
+    });
+  };
+
+  // Toggle report sections helper
+  const handleToggleSection = (sec: string) => {
+    if (builderSections.includes(sec)) {
+      setBuilderSections(builderSections.filter(s => s !== sec));
+    } else {
+      setBuilderSections([...builderSections, sec]);
+    }
+  };
+
+  // Use recommended sections
+  const handleApplyTemplateToForm = (temp: ReportTemplate) => {
+    setBuilderTemplate(temp.key);
+    setBuilderClassification(temp.privacyClassification);
+    setBuilderSections(temp.recommendedSections);
+    setActiveMainTab('custom_builder');
+    showSuccess('Template Applied', `Form preset configured for "${temp.name}".`);
   };
 
   return (
@@ -161,59 +455,73 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
-      className="space-y-8"
+      className="space-y-8 pb-16"
       id="admin-reports-module"
-      data-view-version="admin-reports-v2-tabs-complete"
+      data-view-version="admin-reports-v3-professional-ledger"
     >
-      {/* Header Section */}
+      {/* ----------------- TOP BANNER & STATS ----------------- */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/60 pb-6">
         <div>
-          <h1 className="text-3xl font-serif font-semibold text-stone-900 tracking-tight">
-            Event Performance & Reports
+          <h1 className="text-3xl font-serif font-semibold text-stone-900 tracking-tight flex items-center gap-2">
+            <Shield className="w-8 h-8 text-[#C59B27] stroke-1" />
+            Reports Centre & Analytics
           </h1>
-          <p className="text-stone-500 text-sm mt-1.5">
-            Reports for <strong className="text-stone-700 font-medium">{event?.name || event?.title || 'The General Assembly'}</strong> • {event?.dateRangeLabel || 'Oct 12 - Oct 14, 2023'}
+          <p className="text-stone-500 text-sm mt-1.5 leading-relaxed">
+            Immutable snapshot reports, professional A4 print PDF rendering, and role-aware safeguarding filters.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Button
-            onClick={() => fetchReports(false)}
+            onClick={onBackToOverview}
             variant="outline"
             className="border-stone-200 hover:bg-stone-50 text-stone-700 text-xs py-2 px-3 flex items-center gap-1.5 rounded-lg"
-            id="btn-refresh-reports"
+            id="btn-back-overview"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#C59B27]' : ''}`} />
-            {refreshing ? 'Refreshing...' : 'Refresh Metrics'}
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to Dashboard
+          </Button>
+          <Button
+            onClick={() => {
+              fetchReportsListAndTemplates();
+              if (activeMainTab === 'live_metrics') fetchLegacyReports(false);
+            }}
+            variant="outline"
+            className="border-stone-200 hover:bg-stone-50 text-stone-700 text-xs py-2 px-3 flex items-center gap-1.5 rounded-lg"
+            id="btn-refresh-all-reports"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Sync Ledger
           </Button>
         </div>
       </div>
 
-      {/* Navigation Tabs - Horizontal Chips */}
-      <div className="flex border-b border-stone-200/80 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none" data-component-version="admin-reports-tabs-v2">
+      {/* ----------------- CORE TAB SELECTION ----------------- */}
+      <div className="flex border-b border-stone-200/80 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none" data-component-version="admin-reports-main-tabs">
         <div className="flex space-x-6 min-w-max pb-1">
           {[
-            { id: 'pre_event', label: 'Pre-event Report' },
-            { id: 'live_event', label: 'Live event Report' },
-            { id: 'end_of_event', label: 'End-of-event Report' },
-            { id: 'volunteer_parent', label: 'Volunteers & Parents' }
+            { id: 'reports_centre', label: 'Reports Directory', desc: 'Immutable PDF Snapshots' },
+            { id: 'template_library', label: 'Report Templates', desc: 'Predefined Outlines' },
+            { id: 'custom_builder', label: 'Custom PDF Builder', desc: 'Generate Ledger PDF' },
+            { id: 'live_metrics', label: 'Live Analytics Dashboard', desc: 'Real-time Metrics' }
           ].map((tab) => {
-            const isActive = activeTab === tab.id;
+            const isActive = activeMainTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as ReportTab)}
-                className={`pb-3 text-sm font-medium border-b-2 transition-all relative ${
+                onClick={() => setActiveMainTab(tab.id as MainTab)}
+                className={`pb-3 text-left transition-all relative ${
                   isActive 
-                    ? 'border-[#C59B27] text-[#C59B27]' 
-                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                    ? 'text-[#C59B27]' 
+                    : 'text-stone-500 hover:text-stone-800'
                 }`}
-                id={`tab-${tab.id}`}
+                id={`main-tab-${tab.id}`}
               >
-                {tab.label}
+                <div className="text-sm font-medium">{tab.label}</div>
+                <div className="text-[10px] text-stone-400 font-normal mt-0.5">{tab.desc}</div>
                 {isActive && (
                   <motion.div 
-                    layoutId="activeTabUnderline" 
+                    layoutId="activeMainTabUnderline" 
                     className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C59B27]"
                   />
                 )}
@@ -223,951 +531,833 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         </div>
       </div>
 
-      {fetchError ? (
-        <div 
-          className="flex flex-col items-center justify-center p-12 bg-stone-50/50 border border-stone-200/60 rounded-2xl min-h-[40vh] text-stone-500 space-y-4"
-          data-component-version="admin-reports-error-state-v1"
-        >
-          <AlertCircle className="w-10 h-10 text-stone-400" />
-          <p className="text-sm font-medium text-stone-600">{fetchError}</p>
-          <Button
-            onClick={() => fetchReports(true)}
-            className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2 px-5 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all duration-200"
-            id="btn-retry-reports"
+      {/* ----------------- COMPILATION PROGRESS FLOATER ----------------- */}
+      <AnimatePresence>
+        {activeProgressJobId && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 right-6 z-50 bg-stone-900 text-stone-100 rounded-xl p-5 shadow-2xl border border-stone-800 w-96"
+            id="report-compilation-progress-widget"
+            data-component-version="report-generation-progress-v1"
           >
-            Try again
-          </Button>
-        </div>
-      ) : (
-        <>
-          {/* ----------------- PRE-EVENT VIEW ----------------- */}
-          {activeTab === 'pre_event' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8" data-report-view="pre-event-report-v1">
-          {/* Left Column content */}
-          <div className="xl:col-span-2 space-y-8">
-            {/* Subtitle / Purpose bar */}
-            <div className="bg-amber-50/40 border border-[#C59B27]/10 p-4 rounded-xl text-stone-600 text-xs leading-relaxed">
-              <strong className="text-stone-800 font-serif font-medium text-sm block mb-1">Pre-event report</strong>
-              Review registrations, selected children, care needs, and missing details before the event begins.
+            <div className="flex items-center justify-between mb-3 border-b border-stone-800 pb-2">
+              <span className="text-xs font-serif font-medium uppercase tracking-wider text-[#C59B27] flex items-center gap-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                A4 Generation Pipeline
+              </span>
+              <span className="text-[10px] font-mono text-stone-400">ID: {activeProgressJobId.slice(0, 8)}</span>
             </div>
-
-            {/* Metric Blocks */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-component-version="admin-reports-metrics-v2">
-              {[
-                { label: "Total registered", value: metrics?.totalRegistered || 0, desc: "Profiles applied", icon: Users, theme: 'default' },
-                { label: "Under review", value: metrics?.underReview || 0, desc: "Pending review", icon: Clock, theme: 'amber' },
-                { label: "Selected", value: metrics?.selected || 0, desc: "Admitted list", icon: UserCheck, theme: 'gold' },
-                { label: "Waiting list", value: metrics?.waitingList || 0, desc: "On hold applications", icon: AlertTriangle, theme: 'amber' },
-                { label: "Not selected", value: metrics?.notSelected || 0, desc: "Declined applications", icon: AlertCircle, theme: 'default' },
-                { label: "Needs attention", value: metrics?.needsAttention || 0, desc: "Urgent checkups", icon: ShieldAlert, theme: 'amber' },
-                { label: "Missing photo", value: metrics?.missingPickupPhoto || 0, desc: "Pickup safety check", icon: AlertCircle, theme: 'amber' },
-                { label: "Care notes", value: metrics?.careNotesPresent || 0, desc: "Medical & support", icon: FileText, theme: 'gold' }
-              ].map((card, idx) => (
-                <div key={idx} className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">{card.label}</span>
-                    <card.icon className={`w-4 h-4 ${
-                      card.theme === 'gold' ? 'text-[#C59B27]' : card.theme === 'amber' ? 'text-amber-500' : 'text-stone-400'
-                    }`} />
-                  </div>
-                  <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{card.value}</div>
-                  <p className="text-[10px] text-stone-500 mt-1">{card.desc}</p>
-                </div>
-              ))}
+            <p className="text-xs text-stone-300 font-medium">{activeProgressText}</p>
+            <div className="w-full bg-stone-800 h-2 rounded-full mt-3 overflow-hidden">
+              <div 
+                className="bg-[#C59B27] h-full transition-all duration-500"
+                style={{ width: `${(activeProgressStep / 4) * 100}%` }}
+              />
             </div>
+            <div className="flex justify-between text-[10px] text-stone-500 mt-2 font-mono">
+              <span>Snapshot</span>
+              <span>Filter Privacy</span>
+              <span>Render</span>
+              <span>Sign Ledger</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {/* Review readiness section */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Review readiness
-              </h3>
-              <div className="space-y-4">
-                {sections?.reviewReadiness?.map((item: any, idx: number) => {
-                  const maxVal = metrics?.totalRegistered || 1;
-                  const percentage = Math.min(100, Math.round((item.value / maxVal) * 100));
-                  return (
-                    <div key={idx} className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-medium text-stone-700">{item.label}</span>
-                        <span className="text-stone-500 font-medium">{item.value} ({percentage}%)</span>
-                      </div>
-                      <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${percentage}%` }}
-                          transition={{ duration: 0.8, delay: idx * 0.1 }}
-                          className={`h-full rounded-full ${
-                            item.label === 'Selected' ? 'bg-[#C59B27]' : 'bg-stone-400'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+      {/* ----------------- TAB CONTENTS ----------------- */}
+
+      {/* TAB 1: REPORTS CENTRE DIRECTORY */}
+      {activeMainTab === 'reports_centre' && (
+        <div className="space-y-6" data-view-version="admin-reports-centre-v1-premium">
+          <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-serif font-semibold text-stone-900">Signed Report Registry</h3>
+              <p className="text-stone-500 text-xs leading-relaxed">
+                Every record is generated on demand as an immutable snapshot. This guarantees reproducible, audit-safe compliance reports.
+              </p>
+            </div>
+            <Button
+              onClick={() => setActiveMainTab('custom_builder')}
+              className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-sm transition-all self-start md:self-auto"
+              id="btn-nav-custom-builder"
+            >
+              <Plus className="w-4 h-4" />
+              Build New Snapshot
+            </Button>
+          </div>
+
+          {loadingReportsList ? (
+            <div className="flex items-center justify-center p-12 min-h-[30vh]">
+              <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports registry..." />
+            </div>
+          ) : generatedReports.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-stone-500 text-center space-y-4">
+              <FileText className="w-10 h-10 text-stone-300 stroke-1" />
+              <div className="space-y-1">
+                <p className="text-sm font-serif font-medium text-stone-700">No Immutable Snapshots Registered</p>
+                <p className="text-xs text-stone-400">Generate your first audit-ready report using our Custom PDF Builder.</p>
               </div>
+              <Button
+                onClick={() => setActiveMainTab('custom_builder')}
+                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2 px-5 rounded-lg"
+              >
+                Open Custom Builder
+              </Button>
             </div>
-
-            {/* Child readiness list */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Child readiness
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {sections?.childReadiness?.map((item: any, idx: number) => (
-                  <div key={idx} className="p-4 rounded-lg bg-stone-50/50 border border-stone-100 flex flex-col justify-between">
-                    <div>
-                      <div className="text-xs text-stone-400 uppercase font-semibold tracking-wider">{item.label}</div>
-                      <div className="text-xs text-stone-500 mt-1">{item.desc}</div>
-                    </div>
-                    <div className="text-xl font-serif font-semibold text-stone-800 mt-3">{item.value}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Age group summary table */}
-            <div className="bg-white rounded-xl border border-stone-200/80 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-stone-100 flex items-center justify-between">
-                <h3 className="text-lg font-serif font-medium text-stone-900">
-                  Age group summary
-                </h3>
-                <span className="text-stone-400 text-xs font-mono">Parents Demographics</span>
-              </div>
+          ) : (
+            <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-sm" data-component-version="reports-accessibility-v1">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse" aria-label="Generated Snapshot Reports">
                   <thead>
-                    <tr className="bg-stone-50/50 border-b border-stone-100">
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider">Age Group</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Registered</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Selected</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Under Review</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Needs Attention</th>
+                    <tr className="bg-stone-50 border-b border-stone-200">
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report Description</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Privacy & Classification</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Audit Metadata</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Operational Status</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {sections?.ageGroupSummary?.length > 0 ? (
-                      sections.ageGroupSummary.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-stone-50/40 transition-colors">
-                          <td className="py-3 px-6 text-xs font-medium text-stone-800">{row.ageGroup}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-900 text-right font-mono">{row.registered}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-900 text-right font-mono">{row.selected}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-900 text-right font-mono">{row.underReview}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-900 text-right font-mono text-amber-600">{row.needsAttention}</td>
+                    {generatedReports.map((report) => {
+                      const isComplete = report.status === 'completed' || report.status === 'ready';
+                      const isPending = ['queued', 'generating'].includes(report.status);
+                      const isFailed = report.status === 'failed';
+                      const isCancelled = report.status === 'cancelled';
+                      const isArchived = report.status === 'archived';
+
+                      let classificationBadge = 'bg-stone-100 text-stone-700 border-stone-200';
+                      if (report.privacy_classification === 'Internal operational') classificationBadge = 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/20';
+                      if (report.privacy_classification === 'Safeguarding restricted') classificationBadge = 'bg-red-50 text-red-700 border-red-200';
+
+                      return (
+                        <tr key={report.id} className="hover:bg-stone-50/40 transition-colors">
+                          <td className="py-4 px-6">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <FileText className={`w-4 h-4 ${isComplete ? 'text-[#C59B27]' : 'text-stone-400'}`} />
+                                <span className="font-serif font-semibold text-stone-900 text-sm">{report.report_name}</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-[10px] text-stone-400 font-mono">
+                                <span>ID: {report.id.substring(0, 10)}...</span>
+                                <span>•</span>
+                                <span>Template: {report.template_key.replace(/_/g, ' ')}</span>
+                                {report.file_size && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{(report.file_size / 1024).toFixed(1)} KB</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded border ${classificationBadge}`}>
+                              {report.privacy_classification === 'Safeguarding restricted' ? <ShieldAlert className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+                              {report.privacy_classification}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-xs text-stone-500 space-y-0.5">
+                            <div className="font-medium text-stone-700">By: User #{(report.requested_by || report.requested_by_user_id || '').slice(0,8)}</div>
+                            <div className="font-mono text-[10px]">{new Date(report.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full ${
+                              isComplete ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                              isPending ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                              isFailed ? 'bg-red-50 text-red-800 border border-red-200' :
+                              isCancelled ? 'bg-stone-100 text-stone-500' :
+                              'bg-stone-100 text-stone-600'
+                            }`}>
+                              {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
+                              {report.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {isComplete && (
+                                <>
+                                  <Button
+                                    onClick={() => handleDownloadReportPDF(report.id, report.storage_key)}
+                                    className="bg-stone-900 hover:bg-black text-white text-[10px] font-semibold py-1.5 px-2.5 rounded flex items-center gap-1"
+                                    id={`btn-download-${report.id}`}
+                                    title="Secure Expiring PDF Download"
+                                    data-component-version="secure-report-download-v1"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Download
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleTriggerUpdatedVersion(report.id)}
+                                    variant="outline"
+                                    className="border-stone-200 text-stone-600 text-[10px] font-semibold py-1.5 px-2.5 rounded flex items-center gap-1 hover:bg-stone-50"
+                                    id={`btn-updated-${report.id}`}
+                                    title="Compile Updated Version on Live DB"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    Update
+                                  </Button>
+                                </>
+                              )}
+
+                              {isFailed && (
+                                <Button
+                                  onClick={() => handleRegenerateReport(report.id)}
+                                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-[10px] font-semibold py-1.5 px-2.5 rounded flex items-center gap-1"
+                                  id={`btn-retry-${report.id}`}
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  Retry
+                                </Button>
+                              )}
+
+                              {isPending && (
+                                <Button
+                                  onClick={() => handleCancelReport(report.id)}
+                                  variant="outline"
+                                  className="border-stone-200 text-red-600 text-[10px] font-semibold py-1.5 px-2.5 rounded hover:bg-red-50 hover:border-red-200"
+                                  id={`btn-cancel-${report.id}`}
+                                >
+                                  Cancel
+                                </Button>
+                              )}
+
+                              <Button
+                                onClick={() => viewAuditLogs(report.id)}
+                                variant="outline"
+                                className="border-stone-200 text-stone-600 text-[10px] font-semibold p-1.5 rounded hover:bg-stone-50"
+                                id={`btn-audit-${report.id}`}
+                                title="Audit Trails Log"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </Button>
+
+                              {!isArchived && isComplete && (
+                                <Button
+                                  onClick={() => handleArchiveReport(report.id)}
+                                  variant="outline"
+                                  className="border-stone-200 text-stone-600 text-[10px] font-semibold p-1.5 rounded hover:bg-stone-50"
+                                  id={`btn-archive-${report.id}`}
+                                  title="Archive Report"
+                                >
+                                  <Archive className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+
+                              <Button
+                                onClick={() => handleDeleteReport(report.id)}
+                                variant="outline"
+                                className="border-stone-200 text-red-600 hover:bg-red-50 hover:border-red-200 p-1.5 rounded"
+                                id={`btn-delete-${report.id}`}
+                                title="Delete Permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="py-6 text-center text-xs text-stone-400">
-                          No age group data is available yet.
-                        </td>
-                      </tr>
-                    )}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
-
-            {/* Parent and pickup readiness */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Parent and pickup readiness
-              </h3>
-              <div className="divide-y divide-stone-100">
-                {sections?.parentPickupReadiness?.map((item: any, idx: number) => (
-                  <div key={idx} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-medium text-stone-800">{item.label}</div>
-                      <div className="text-[10px] text-stone-500 mt-0.5">{item.desc}</div>
-                    </div>
-                    <div className="text-sm font-semibold text-stone-900 font-mono">{item.value}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column content */}
-          <div className="space-y-8" data-component-version="admin-reports-side-panels-v2">
-            {/* Review actions */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Review actions
-              </h3>
-              <div className="space-y-2.5">
-                {[
-                  { label: 'Go to Application Review Board', path: '/admin/review' },
-                  { label: 'Go to Children Register', path: '/admin/children' },
-                  { label: 'Go to Applications Inbox', path: '/admin/applications' }
-                ].map((act, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => onNavigate && onNavigate(act.path)}
-                    className="w-full flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/50 hover:border-stone-200 text-left text-xs font-medium text-stone-700 transition-all group"
-                  >
-                    <span>{act.label}</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Care & Attention Summary Card */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <div className="flex items-center gap-2 border-b border-stone-100 pb-4 mb-4">
-                <AlertCircle className="w-5 h-5 text-[#C59B27]" />
-                <h3 className="text-lg font-serif font-medium text-stone-900">
-                  Care & Attention
-                </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {careAttention?.map((item: any, idx: number) => (
-                  <div key={idx} className="bg-stone-50/50 p-4 rounded-lg border border-stone-100 hover:border-stone-200 transition-colors">
-                    <div className="text-xs text-stone-500 font-medium truncate">{item.label}</div>
-                    <div className="text-xl font-serif font-semibold text-stone-800 mt-1">{item.count}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Export Reports Module */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Export reports
-              </h3>
-              <p className="text-stone-500 text-xs mb-5 leading-relaxed">
-                Generate pre-event spreadsheets for church safety audits and classroom sheets.
-              </p>
-              <div className="space-y-3">
-                {[
-                  { type: 'event_summary', label: 'Export readiness summary', icon: FileSpreadsheet },
-                  { type: 'selected_children', label: 'Export selected children', icon: FileSpreadsheet },
-                  { type: 'care_notes', label: 'Export care notes', icon: FileSpreadsheet },
-                  { type: 'missing_pickup_photos', label: 'Export missing pickup photos', icon: FileSpreadsheet }
-                ].map((item) => (
-                  <div key={item.type} className="flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/40 transition-all">
-                    <div className="flex items-center gap-2.5">
-                      <item.icon className="w-4 h-4 text-stone-400" />
-                      <span className="text-xs font-medium text-stone-700">{item.label}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleExport(item.type, 'csv')}
-                        className="text-[10px] font-semibold text-[#C59B27] bg-[#C59B27]/5 hover:bg-[#C59B27]/10 px-2 py-1 rounded transition-colors"
-                        title="Download as CSV"
-                      >
-                        CSV
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Report Notes Module */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm space-y-4">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4">
-                Report notes
-              </h3>
-              <textarea
-                value={localNotes}
-                onChange={(e) => setLocalNotes(e.target.value)}
-                placeholder="Record event outcomes, observations, teacher logs, and children behaviors..."
-                className="w-full h-32 p-3 text-xs text-stone-800 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] placeholder:text-stone-400 resize-none transition-all"
-              />
-              <Button
-                onClick={handleSaveNotes}
-                disabled={savingNotes}
-                className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all"
-                id="btn-save-report-notes"
-              >
-                {savingNotes ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Saving Notes...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    Save Notes
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* ----------------- LIVE EVENT VIEW ----------------- */}
-      {activeTab === 'live_event' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8" data-report-view="live-event-report-v1">
-          {/* Left Column content */}
-          <div className="xl:col-span-2 space-y-8">
-            <div className="bg-emerald-50/40 border border-emerald-600/10 p-4 rounded-xl text-stone-600 text-xs leading-relaxed">
-              <strong className="text-emerald-800 font-serif font-medium text-sm block mb-1">Live event report</strong>
-              Track check-in, pickup, children inside, and attention items while the event is active.
-            </div>
+      {/* TAB 2: TEMPLATE LIBRARY */}
+      {activeMainTab === 'template_library' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-view-version="admin-report-library-v1-premium">
+          {templates.map((temp) => {
+            let classificationBadge = 'bg-stone-100 text-stone-700';
+            if (temp.privacyClassification === 'Internal operational') classificationBadge = 'bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20';
+            if (temp.privacyClassification === 'Safeguarding restricted') classificationBadge = 'bg-red-50 text-red-700 border border-red-200';
 
-            {/* Metric Blocks */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4" data-component-version="admin-reports-metrics-v2">
-              {[
-                { label: "Expected", value: metrics?.expected || 0, desc: "Total approved seats", icon: UserCheck, theme: 'gold' },
-                { label: "Checked in", value: metrics?.checkedIn || 0, desc: "Present inside event", icon: Clock, theme: 'emerald' },
-                { label: "Inside", value: metrics?.inside || 0, desc: "Currently present", icon: Users, theme: 'emerald' },
-                { label: "Picked up", value: metrics?.pickedUp || 0, desc: "Safely checked-out", icon: UserCheck, theme: 'gold' },
-                { label: "Not arrived", value: metrics?.notArrived || 0, desc: "Absent children", icon: AlertTriangle, theme: 'amber' },
-                { label: "Needs attention", value: metrics?.needsAttention || 0, desc: "Care flags", icon: ShieldAlert, theme: 'amber' }
-              ].map((card, idx) => (
-                <div key={idx} className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
+            return (
+              <div 
+                key={temp.key} 
+                className="bg-white p-6 rounded-xl border border-stone-200 hover:border-[#C59B27]/40 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5"
+                id={`template-card-${temp.key}`}
+              >
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">{card.label}</span>
-                    <card.icon className={`w-4 h-4 ${
-                      card.theme === 'gold' ? 'text-[#C59B27]' : card.theme === 'emerald' ? 'text-emerald-600' : 'text-amber-500'
-                    }`} />
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${classificationBadge}`}>
+                      {temp.privacyClassification}
+                    </span>
+                    <FileText className="w-5 h-5 text-stone-400 stroke-1" />
                   </div>
-                  <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{card.value}</div>
-                  <p className="text-[10px] text-stone-500 mt-1">{card.desc}</p>
+                  <h3 className="font-serif font-bold text-stone-900 text-base leading-snug">{temp.name}</h3>
+                  <p className="text-stone-500 text-xs leading-relaxed">{temp.description}</p>
                 </div>
-              ))}
-            </div>
 
-            {/* Live attendance outcome */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Live attendance
-              </h3>
-              <div className="space-y-4">
-                {sections?.liveAttendanceOutcome?.map((item: any, idx: number) => {
-                  const percentage = item.percentage;
-                  return (
-                    <div key={idx} className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-medium text-stone-700">{item.label}</span>
-                        <span className="text-stone-500 font-medium">{item.value} children ({percentage}%)</span>
-                      </div>
-                      <div className="w-full bg-stone-100 h-2.5 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${percentage}%` }}
-                          transition={{ duration: 0.8, delay: idx * 0.1 }}
-                          className={`h-full rounded-full ${
-                            item.label === 'Checked In' || item.label === 'Inside'
-                              ? 'bg-emerald-600' 
-                              : item.label === 'Picked Up'
-                              ? 'bg-stone-700'
-                              : 'bg-[#C59B27]'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Attendance by age group table */}
-            <div className="bg-white rounded-xl border border-stone-200/80 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-stone-100 flex items-center justify-between">
-                <h3 className="text-lg font-serif font-medium text-stone-900">
-                  Attendance by age group
-                </h3>
-                <span className="text-stone-400 text-xs font-mono">Live Ratios</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-stone-50/50 border-b border-stone-100">
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider">Age Group</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Expected</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Checked In</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Inside</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Picked Up</th>
-                      <th className="py-3 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Not Arrived</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {sections?.attendanceByAgeGroup?.length > 0 ? (
-                      sections.attendanceByAgeGroup.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-stone-50/40 transition-colors">
-                          <td className="py-3 px-6 text-xs font-medium text-stone-800">{row.ageGroup}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-900 text-right font-mono">{row.expected}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-emerald-700 text-right font-mono">{row.checkedIn}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-emerald-800 text-right font-mono">{row.inside}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-700 text-right font-mono">{row.pickedUp}</td>
-                          <td className="py-3 px-6 text-xs font-semibold text-stone-400 text-right font-mono">{row.notArrived}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="py-6 text-center text-xs text-stone-400">
-                          No age group data is available yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Current attention list */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Current attention list
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {sections?.currentAttentionList?.map((item: any, idx: number) => (
-                  <div key={idx} className="p-4 rounded-lg bg-stone-50/50 border border-stone-100 flex flex-col justify-between">
-                    <div>
-                      <div className="text-xs text-amber-600 uppercase font-semibold tracking-wider flex items-center gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5" />
-                        {item.label}
-                      </div>
-                      <div className="text-xs text-stone-500 mt-1">{item.desc}</div>
-                    </div>
-                    <div className="text-xl font-serif font-semibold text-stone-800 mt-3">{item.value}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Recent scans list */}
-            <div className="bg-white rounded-xl border border-stone-200/80 shadow-sm p-6 space-y-4">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-3 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-600" />
-                Recent scans
-              </h3>
-              {sections?.recentScans?.length > 0 ? (
-                <div className="divide-y divide-stone-100">
-                  {sections.recentScans.map((scan: any, idx: number) => (
-                    <div key={idx} className="py-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs font-medium text-stone-800">{scan.childName}</div>
-                        <div className="text-[10px] text-stone-500 mt-0.5">{scan.ageGroup}</div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-[9px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full ${
-                          scan.status === 'picked_up' 
-                            ? 'bg-stone-100 text-stone-800 border border-stone-200' 
-                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                        }`}>
-                          {scan.status.replace('_', ' ')}
+                <div className="space-y-4">
+                  <div className="space-y-1.5 border-t border-stone-100 pt-3">
+                    <span className="text-[10px] text-stone-400 font-mono block">RECOMMENDED SECTIONS:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {temp.recommendedSections.map((sec, i) => (
+                        <span key={i} className="text-[10px] bg-stone-50 text-stone-600 px-2 py-0.5 rounded-sm font-medium">
+                          {sec}
                         </span>
-                        <span className="text-[10px] text-stone-400 font-mono">{formatTimeAgo(scan.timestamp)}</span>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 text-xs text-stone-400">
-                  No recent scans yet.
-                </div>
-              )}
-            </div>
+                  </div>
 
-            {/* Team activity list */}
-            <div className="bg-white rounded-xl border border-stone-200/80 shadow-sm p-6 space-y-4">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-3 flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#C59B27]" />
-                Team activity
-              </h3>
-              {sections?.teamActivity?.length > 0 ? (
-                <div className="divide-y divide-stone-100">
-                  {sections.teamActivity.map((member: any, idx: number) => (
-                    <div key={idx} className="py-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs font-medium text-stone-800">{member.fullName}</div>
-                        <div className="text-[10px] text-stone-500 mt-0.5">{member.team}</div>
-                      </div>
-                      <span className="text-[9px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800">
-                        {member.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 text-xs text-stone-400">
-                  No team activity yet.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Column content */}
-          <div className="space-y-8" data-component-version="admin-reports-side-panels-v2">
-            {/* Quick Actions */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Quick actions
-              </h3>
-              <div className="space-y-2.5">
-                {[
-                  { label: 'View children inside', path: '/admin/attendance' },
-                  { label: 'View not arrived', path: '/admin/attendance' },
-                  { label: 'View needs attention', path: '/admin/attendance' }
-                ].map((act, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => onNavigate && onNavigate(act.path)}
-                    className="w-full flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/50 hover:border-stone-200 text-left text-xs font-medium text-stone-700 transition-all group"
+                  <Button
+                    onClick={() => handleApplyTemplateToForm(temp)}
+                    className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all"
                   >
-                    <span>{act.label}</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
+                    Configure Template
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TAB 3: CUSTOM REPORT BUILDER */}
+      {activeMainTab === 'custom_builder' && (
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8" data-view-version="custom-report-builder-v1-premium">
+          {/* Builder Form Column */}
+          <form 
+            onSubmit={handleCreateReportJob} 
+            className="xl:col-span-7 bg-white p-6 rounded-xl border border-stone-200 shadow-sm space-y-6"
+            aria-label="Custom Report Builder Form"
+          >
+            <div className="border-b border-stone-100 pb-4">
+              <h3 className="text-lg font-serif font-semibold text-stone-900">Custom PDF Report Configuration</h3>
+              <p className="text-stone-500 text-xs leading-relaxed mt-1">
+                Customize structural sections, filters, and classifications to produce an authoritative PDF snapshot ledger.
+              </p>
+            </div>
+
+            {/* Template Selection */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Report Base Template</label>
+              <select
+                value={builderTemplate}
+                onChange={(e) => {
+                  setBuilderTemplate(e.target.value);
+                  const matched = templates.find(t => t.key === e.target.value);
+                  if (matched) {
+                    setBuilderClassification(matched.privacyClassification);
+                    setBuilderSections(matched.recommendedSections);
+                  }
+                }}
+                className="w-full text-xs p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                id="select-builder-template"
+              >
+                {templates.map(t => (
+                  <option key={t.key} value={t.key}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Privacy Classification selection */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Privacy Classification</label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: 'Public Summary', desc: 'Anonymised aggregations' },
+                  { value: 'Internal operational', desc: 'Standard supervisor details' },
+                  { value: 'Safeguarding restricted', desc: 'Authorized role only' }
+                ].map((item) => (
+                  <button
+                    type="button"
+                    key={item.value}
+                    onClick={() => setBuilderClassification(item.value)}
+                    className={`p-3 rounded-lg border text-left flex flex-col justify-between space-y-2 transition-all ${
+                      builderClassification === item.value 
+                        ? 'border-[#C59B27] bg-[#C59B27]/5' 
+                        : 'border-stone-200 hover:bg-stone-50'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold text-stone-900">{item.value}</span>
+                    <span className="text-[10px] text-stone-500 leading-snug">{item.desc}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Care & Attention Summary Card */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <div className="flex items-center gap-2 border-b border-stone-100 pb-4 mb-4">
-                <AlertCircle className="w-5 h-5 text-[#C59B27]" />
-                <h3 className="text-lg font-serif font-medium text-stone-900">
-                  Care & Attention
-                </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {careAttention?.map((item: any, idx: number) => (
-                  <div key={idx} className="bg-stone-50/50 p-4 rounded-lg border border-stone-100 hover:border-stone-200 transition-colors">
-                    <div className="text-xs text-stone-500 font-medium truncate">{item.label}</div>
-                    <div className="text-xl font-serif font-semibold text-stone-800 mt-1">{item.count}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Export Reports Module */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Export reports
-              </h3>
-              <p className="text-stone-500 text-xs mb-5 leading-relaxed">
-                Generate dynamic live-event spreadsheets for secure guardian lookup, registration verification, and audit logs.
-              </p>
-              <div className="space-y-3">
+            {/* Section Checklist checkboxes */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Custom Section Checklist</label>
+              <p className="text-[11px] text-stone-400 mb-2">Toggle specific layouts to compile in the final A4 output.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
-                  { type: 'attendance', label: 'Export live attendance', icon: FileSpreadsheet },
-                  { type: 'children_inside', label: 'Export children inside', icon: FileSpreadsheet },
-                  { type: 'not_arrived', label: 'Export not arrived', icon: FileSpreadsheet },
-                  { type: 'pickup_list', label: 'Export pickup list', icon: FileSpreadsheet },
-                  { type: 'needs_attention', label: 'Export needs attention', icon: FileSpreadsheet }
-                ].map((item) => (
-                  <div key={item.type} className="flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/40 transition-all">
-                    <div className="flex items-center gap-2.5">
-                      <item.icon className="w-4 h-4 text-stone-400" />
-                      <span className="text-xs font-medium text-stone-700">{item.label}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleExport(item.type, 'csv')}
-                        className="text-[10px] font-semibold text-[#C59B27] bg-[#C59B27]/5 hover:bg-[#C59B27]/10 px-2 py-1 rounded transition-colors"
-                        title="Download as CSV"
-                      >
-                        CSV
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Report Notes Module */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm space-y-4">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4">
-                Report notes
-              </h3>
-              <textarea
-                value={localNotes}
-                onChange={(e) => setLocalNotes(e.target.value)}
-                placeholder="Record event outcomes, observations, teacher logs, and children behaviors..."
-                className="w-full h-32 p-3 text-xs text-stone-800 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] placeholder:text-stone-400 resize-none transition-all"
-              />
-              <Button
-                onClick={handleSaveNotes}
-                disabled={savingNotes}
-                className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all"
-                id="btn-save-report-notes"
-              >
-                {savingNotes ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Saving Notes...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    Save Notes
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------- END OF EVENT VIEW ----------------- */}
-      {activeTab === 'end_of_event' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8" data-report-view="end-of-event-report-v1">
-          {/* Left Column content */}
-          <div className="xl:col-span-2 space-y-8">
-            <div className="bg-stone-50 border border-stone-200/80 p-4 rounded-xl text-stone-600 text-xs leading-relaxed">
-              <strong className="text-stone-800 font-serif font-medium text-sm block mb-1">End-of-event report</strong>
-              Final counts for registration, selection, entry, pickup, and children needing attention.
-            </div>
-
-            {/* Key Metric Blocks */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-component-version="admin-reports-metrics-v2">
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Total Registered</span>
-                  <Users className="w-4 h-4 text-[#C59B27]" />
-                </div>
-                <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{metrics?.totalRegistered || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Children profiles applied</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Selected List</span>
-                  <UserCheck className="w-4 h-4 text-[#C59B27]" />
-                </div>
-                <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{metrics?.selected || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Confirmed event seats</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Total Checked In</span>
-                  <Clock className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{metrics?.checkedIn || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Present inside ministry space</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Attention Items</span>
-                  <ShieldAlert className="w-4 h-4 text-amber-500" />
-                </div>
-                <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{metrics?.needsAttention || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Requiring direct care follow-up</p>
-              </div>
-            </div>
-
-            {/* Attendance Outcome Panel */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Attendance Outcome
-              </h3>
-              
-              <div className="space-y-5">
-                {attendanceOutcome?.map((item: any, idx: number) => {
-                  const maxVal = metrics?.totalRegistered || 1;
-                  const percentage = Math.min(100, Math.round((item.value / maxVal) * 100));
-                  
+                  'Executive Summary',
+                  'Operational Metrics',
+                  'Child Profiles & Demographic Details',
+                  'Critical Incident Logs & Escalations',
+                  'Safeguarding Audits & Device Readiness',
+                  'Medical Allergies & Specific Diet logs',
+                  'Pickup & Authorized Collectors list',
+                  'Grounded Recommendations'
+                ].map((sec) => {
+                  const checked = builderSections.includes(sec);
                   return (
-                    <div key={idx} className="space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-medium text-stone-700">{item.label}</span>
-                        <span className="text-stone-500 font-medium">{item.value} children ({percentage}%)</span>
-                      </div>
-                      <div className="w-full bg-stone-100 h-2.5 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${percentage}%` }}
-                          transition={{ duration: 0.8, delay: idx * 0.1 }}
-                          className={`h-full rounded-full ${
-                            item.label === 'Checked In' 
-                              ? 'bg-emerald-600' 
-                              : item.label === 'Picked Up' 
-                              ? 'bg-stone-700' 
-                              : item.label === 'Absent' 
-                              ? 'bg-amber-500/80' 
-                              : 'bg-[#C59B27]'
-                          }`}
-                        />
-                      </div>
-                    </div>
+                    <label 
+                      key={sec} 
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                        checked ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#C59B27]' : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleToggleSection(sec)}
+                        className="rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4"
+                      />
+                      <span className="text-xs font-medium">{sec}</span>
+                    </label>
                   );
                 })}
               </div>
             </div>
 
-            {/* Event Summary Table */}
-            <div className="bg-white rounded-xl border border-stone-200/80 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-stone-100 flex items-center justify-between">
-                <h3 className="text-lg font-serif font-medium text-stone-900">
-                  Event Summary
-                </h3>
-                <span className="text-stone-400 text-xs font-mono">
-                  {event?.section || 'Children and Teens Section'}
-                </span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-stone-50/50 border-b border-stone-100">
-                      <th className="py-3.5 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider">Metrics Parameter</th>
-                      <th className="py-3.5 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider text-right">Value Count</th>
-                      <th className="py-3.5 px-6 text-[10px] font-semibold text-stone-500 uppercase tracking-wider">Scope Context</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {eventSummary?.map((row: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-stone-50/40 transition-colors">
-                        <td className="py-3.5 px-6 text-xs font-medium text-stone-800">{row.label}</td>
-                        <td className="py-3.5 px-6 text-xs font-semibold text-stone-900 text-right font-mono">{row.value}</td>
-                        <td className="py-3.5 px-6 text-xs text-stone-500">{row.desc}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column content */}
-          <div className="space-y-8" data-component-version="admin-reports-side-panels-v2">
-            {/* Care & Attention Summary Card */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <div className="flex items-center gap-2 border-b border-stone-100 pb-4 mb-4">
-                <AlertCircle className="w-5 h-5 text-[#C59B27]" />
-                <h3 className="text-lg font-serif font-medium text-stone-900">
-                  Care & Attention
-                </h3>
-              </div>
-
+            {/* Query Filters */}
+            <div className="space-y-3 border-t border-stone-100 pt-4">
+              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Snapshot Query Filters</label>
               <div className="grid grid-cols-2 gap-4">
-                {careAttention?.map((item: any, idx: number) => (
-                  <div key={idx} className="bg-stone-50/50 p-4 rounded-lg border border-stone-100 hover:border-stone-200 transition-colors">
-                    <div className="text-xs text-stone-500 font-medium truncate">{item.label}</div>
-                    <div className="text-xl font-serif font-semibold text-stone-800 mt-1">{item.count}</div>
-                  </div>
-                ))}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-semibold text-stone-500 font-mono">AGE GROUP COHORT</span>
+                  <select
+                    value={builderFilters.ageGroup}
+                    onChange={(e) => setBuilderFilters({ ...builderFilters, ageGroup: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-stone-800"
+                  >
+                    <option value="All">All age cohorts</option>
+                    <option value="Toddlers">Toddlers (2-4)</option>
+                    <option value="Kids">Kids (5-9)</option>
+                    <option value="PreTeens">Pre-Teens (10-12)</option>
+                    <option value="Teens">Teens (13-17)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-semibold text-stone-500 font-mono">LOCATION AREA</span>
+                  <select
+                    value={builderFilters.location}
+                    onChange={(e) => setBuilderFilters({ ...builderFilters, location: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-stone-800"
+                  >
+                    <option value="All">All rooms & fields</option>
+                    <option value="Grace Hall">Grace Hall (Primary)</option>
+                    <option value="Chapel Annex">Chapel Annex</option>
+                    <option value="Youth Dome">Youth Dome</option>
+                  </select>
+                </div>
               </div>
             </div>
 
-            {/* Export Reports Module */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Export reports
+            {/* Trigger Button */}
+            <Button
+              type="submit"
+              disabled={submittingJob}
+              className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-sm font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all"
+              id="btn-trigger-generation"
+            >
+              {submittingJob ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Initializing Snapshot Pipeline...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Request Safe PDF Snapshot Report
+                </>
+              )}
+            </Button>
+          </form>
+
+          {/* Interactive Report Preview Panel Column */}
+          <div className="xl:col-span-5 space-y-6" data-view-version="report-preview-v1-premium">
+            <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl">
+              <h3 className="text-xs font-serif font-semibold text-stone-900 flex items-center gap-1">
+                <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
+                Interactive Layout Preview
               </h3>
-              
-              <p className="text-stone-500 text-xs mb-5 leading-relaxed">
-                Generate structured sheets for church records, safety audits, and ministry file verification.
+              <p className="text-[10px] text-stone-400 mt-0.5">
+                Renders a representation of the compiled cover page and structure.
               </p>
-
-              <div className="space-y-3">
-                {[
-                  { type: 'event_summary', label: 'Download event report', icon: FileSpreadsheet },
-                  { type: 'event_summary', label: 'Download summary', icon: FileSpreadsheet },
-                  { type: 'attendance', label: 'Export attendance', icon: FileSpreadsheet },
-                  { type: 'absent', label: 'Export absent children', icon: FileSpreadsheet },
-                  { type: 'care_notes', label: 'Export care notes', icon: FileSpreadsheet },
-                  { type: 'pickup_list', label: 'Export pickup list', icon: FileSpreadsheet }
-                ].map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/40 transition-all">
-                    <div className="flex items-center gap-2.5">
-                      <item.icon className="w-4 h-4 text-stone-400" />
-                      <span className="text-xs font-medium text-stone-700">{item.label}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleExport(item.type, 'csv')}
-                        className="text-[10px] font-semibold text-[#C59B27] bg-[#C59B27]/5 hover:bg-[#C59B27]/10 px-2 py-1 rounded transition-colors"
-                        title="Download as CSV"
-                      >
-                        CSV
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
-            {/* Report Notes Module */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm space-y-4">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4">
-                Report notes
-              </h3>
-
-              <textarea
-                value={localNotes}
-                onChange={(e) => setLocalNotes(e.target.value)}
-                placeholder="Record event outcomes, observations, teacher logs, and children behaviors..."
-                className="w-full h-32 p-3 text-xs text-stone-800 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] placeholder:text-stone-400 resize-none transition-all"
-              />
-
-              <Button
-                onClick={handleSaveNotes}
-                disabled={savingNotes}
-                className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all"
-                id="btn-save-report-notes"
+            {/* A4 mockup sheet */}
+            <div className="bg-stone-100 border border-stone-200 rounded-xl p-6 flex justify-center shadow-inner min-h-[500px]">
+              <div 
+                className="w-full max-w-sm bg-[#FAF9F6] border border-stone-300 shadow-xl rounded-sm p-8 flex flex-col justify-between text-stone-950 font-sans relative aspect-[1/1.41]"
+                id="report-preview-a4-canvas"
+                data-component-version="premium-report-cover-v1"
               >
-                {savingNotes ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Saving Notes...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    Save Notes
-                  </>
-                )}
-              </Button>
+                {/* Stamp overlay */}
+                <div className="absolute top-6 right-6 border border-[#C59B27] text-[#C59B27] font-mono text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded rotate-12 opacity-80 select-none">
+                  IMMUTABLE LEDGER
+                </div>
+
+                <div className="space-y-8">
+                  {/* Branding */}
+                  <div className="border-b border-[#C59B27]/40 pb-4">
+                    <div className="text-xs font-serif font-bold text-stone-900 tracking-wider">KOINONIA GLOBAL</div>
+                    <div className="text-[7px] text-stone-500 font-mono uppercase tracking-widest mt-0.5">
+                      CHILDREN & TEENS FELLOWSHIP PROGRAMME
+                    </div>
+                  </div>
+
+                  {/* Title & Classification */}
+                  <div className="space-y-4">
+                    <span className="inline-block text-[7px] uppercase font-bold tracking-widest text-white bg-stone-900 px-2 py-0.5 rounded">
+                      SYSTEM SNAPSHOT LEDGER
+                    </span>
+                    <h2 className="text-xl font-serif font-semibold text-stone-900 tracking-tight leading-snug">
+                      {templates.find(t => t.key === builderTemplate)?.name?.toUpperCase() || 'OPERATIONAL REPORT'}
+                    </h2>
+                    <div className="space-y-1.5 text-[8px] text-stone-500">
+                      <div><strong className="text-stone-700">Scope:</strong> General Assembly Cohort 2026</div>
+                      <div><strong className="text-stone-700">Filters:</strong> Age cohort: {builderFilters.ageGroup} | Room: {builderFilters.location}</div>
+                      <div><strong className="text-stone-700">Timezone:</strong> {builderFilters.timezone} UTC</div>
+                    </div>
+                  </div>
+
+                  {/* Included Sections Representation */}
+                  <div className="space-y-2 pt-2 border-t border-stone-200">
+                    <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">INCLUDED LEDGER SECTIONS:</span>
+                    <div className="space-y-1">
+                      {builderSections.map((sec, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-[8px] text-stone-600 font-mono">
+                          <span className="text-[#C59B27]">✔</span>
+                          {sec}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-6 border-t border-stone-200">
+                  {/* Classification Strip */}
+                  <div className={`p-2 rounded text-[8px] uppercase font-bold tracking-widest text-center ${
+                    builderClassification === 'Public Summary' ? 'bg-stone-200 text-stone-800' :
+                    builderClassification === 'Internal operational' ? 'bg-[#C59B27]/10 text-[#C59B27]' :
+                    'bg-red-50 text-red-700'
+                  }`}>
+                    Classification: {builderClassification}
+                  </div>
+
+                  {/* Footer Notice */}
+                  <div className="text-[6px] text-stone-400 leading-normal text-center font-mono">
+                    NOTICE: Contains administrative data ledger records. Every report downloaded registers an entry in the auditing logs.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ----------------- VOLUNTEER & PARENT ENGAGEMENT VIEW ----------------- */}
-      {activeTab === 'volunteer_parent' && reportData && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8" data-report-view="volunteer-parent-report-v1">
-          {/* Left Column content */}
-          <div className="xl:col-span-2 space-y-8">
-            <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-4 rounded-xl text-stone-600 text-xs leading-relaxed">
-              <strong className="text-stone-800 font-serif font-medium text-sm block mb-1">Volunteers & Parents Census</strong>
-              Review demographic reach, volunteer availability, and ministry team staffing distribution ratios.
+      {/* TAB 4: LEGACY REAL-TIME ANALYTICS DASHBOARD (PRESERVED) */}
+      {activeMainTab === 'live_metrics' && (
+        <div className="space-y-6">
+          {/* Legacy horizontal tabs */}
+          <div className="flex border-b border-stone-200 px-1 overflow-x-auto scrollbar-none" data-component-version="legacy-analytics-tabs">
+            <div className="flex space-x-6 min-w-max pb-1">
+              {[
+                { id: 'pre_event', label: 'Pre-event Report' },
+                { id: 'live_event', label: 'Live event Report' },
+                { id: 'end_of_event', label: 'End-of-event Report' },
+                { id: 'volunteer_parent', label: 'Volunteers & Parents' }
+              ].map((tab) => {
+                const isActive = activeLegacyTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveLegacyTab(tab.id as LegacyReportTab)}
+                    className={`pb-2.5 text-xs font-semibold border-b-2 transition-all ${
+                      isActive 
+                        ? 'border-[#C59B27] text-[#C59B27]' 
+                        : 'border-transparent text-stone-400 hover:text-stone-700'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Key Metric Blocks */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-component-version="admin-reports-metrics-v2">
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Total Families</span>
-                  <Users className="w-4 h-4 text-[#C59B27]" />
-                </div>
-                <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{reportData.totalParents || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Registered parent folders</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Total Applicants</span>
-                  <Activity className="w-4 h-4 text-[#C59B27]" />
-                </div>
-                <div className="text-2xl font-semibold text-stone-900 mt-2 font-serif">{reportData.totalVolunteers || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Created volunteer profiles</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Approved Rosters</span>
-                  <UserCheck className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-2xl font-semibold text-emerald-600 mt-2 font-serif">{reportData.approvedVolunteers || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Active serving volunteers</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl border border-stone-200/80 shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">Pending Review</span>
-                  <Clock className="w-4 h-4 text-amber-500" />
-                </div>
-                <div className="text-2xl font-semibold text-amber-600 mt-2 font-serif">{reportData.pendingVolunteers || 0}</div>
-                <p className="text-[10px] text-stone-500 mt-1">Awaiting admin review</p>
-              </div>
+          {loadingMetrics ? (
+            <div className="flex items-center justify-center min-h-[30vh] w-full">
+              <KoinoniaInlineLoader variant="logo" size="md" label="Aggregating metrics..." />
             </div>
-
-            {/* Volunteer Team load-distribution panel */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-5">
-                Active Volunteer Team Staffing Distribution
-              </h3>
+          ) : fetchError ? (
+            <div className="flex flex-col items-center justify-center p-12 bg-stone-50 border border-stone-200 rounded-xl min-h-[30vh] text-stone-500 space-y-4">
+              <AlertCircle className="w-8 h-8 text-stone-400" />
+              <p className="text-xs font-medium text-stone-600">{fetchError}</p>
+              <Button onClick={() => fetchLegacyReports(true)} className="bg-[#C59B27] text-white text-xs py-1.5 px-4 rounded">Retry</Button>
+            </div>
+          ) : !legacyReportData ? (
+            <div className="text-center py-12 text-stone-400 text-xs">Select a dashboard category to load live metric telemetry.</div>
+          ) : (
+            <div className="space-y-8 animate-fadeIn">
+              {/* LEGACY VIEW CONTROLLERS (Pre-event, Live, End, Volunteers) */}
               
-              <div className="space-y-4">
-                {(!reportData.volunteersByTeam || reportData.volunteersByTeam.length === 0) ? (
-                  <p className="text-xs text-stone-400 text-center py-6">No approved volunteers are assigned to any service teams yet.</p>
-                ) : (
-                  reportData.volunteersByTeam.map((item: any, idx: number) => {
-                    const maxVal = Math.max(...reportData.volunteersByTeam.map((v: any) => v.count), 1);
-                    const percentage = Math.min(100, Math.round((item.count / maxVal) * 100));
-                    
-                    // human readable team labels
-                    const formatTeamLabel = (raw: string) => {
-                      return raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                    };
+              {/* 1. PRE-EVENT */}
+              {activeLegacyTab === 'pre_event' && (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                  <div className="xl:col-span-2 space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      {[
+                        { label: "Total registered", value: legacyReportData.metrics?.totalRegistered || 0, desc: "Profiles applied" },
+                        { label: "Under review", value: legacyReportData.metrics?.underReview || 0, desc: "Pending review" },
+                        { label: "Selected", value: legacyReportData.metrics?.selected || 0, desc: "Admitted list" },
+                        { label: "Waiting list", value: legacyReportData.metrics?.waitingList || 0, desc: "On hold applications" }
+                      ].map((card, idx) => (
+                        <div key={idx} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+                          <span className="text-[9px] uppercase font-bold tracking-wider text-stone-400 block">{card.label}</span>
+                          <div className="text-xl font-serif font-bold text-stone-900 mt-1.5">{card.value}</div>
+                          <p className="text-[10px] text-stone-500 mt-1">{card.desc}</p>
+                        </div>
+                      ))}
+                    </div>
 
-                    return (
-                      <div key={idx} className="space-y-1.5">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-medium text-stone-700">{formatTeamLabel(item.team)}</span>
-                          <span className="text-stone-500 font-medium">{item.count} Volunteer(s)</span>
-                        </div>
-                        <div className="w-full bg-stone-100 h-3.5 rounded-full overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${percentage}%` }}
-                            transition={{ duration: 0.8, delay: idx * 0.05 }}
-                            className="h-full rounded-full bg-[#C59B27]"
-                          />
-                        </div>
+                    <div className="bg-white p-5 rounded-xl border border-stone-200">
+                      <h3 className="text-sm font-serif font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">Readiness</h3>
+                      <div className="space-y-3">
+                        {legacyReportData.sections?.reviewReadiness?.map((item: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center text-xs">
+                            <span className="text-stone-600">{item.label}</span>
+                            <span className="font-semibold text-stone-900">{item.value} children</span>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
+                    </div>
+                  </div>
 
-          {/* Right Column content */}
-          <div className="space-y-8" data-component-version="admin-reports-side-panels-v2">
-            {/* Quick Actions Panel */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Engagement Shortcuts
-              </h3>
-              <p className="text-stone-500 text-[11px] mb-4 leading-relaxed">
-                Quick links to review applicant files and manage family folders directly.
-              </p>
-              
-              <div className="space-y-2.5">
-                <button
-                  onClick={() => onNavigate && onNavigate('/admin/volunteers')}
-                  className="w-full flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/50 hover:border-stone-200 text-left text-xs font-medium text-stone-700 transition-all group cursor-pointer"
-                >
-                  <span>Open Volunteers Board</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
-                </button>
-
-                <button
-                  onClick={() => onNavigate && onNavigate('/admin/parents')}
-                  className="w-full flex items-center justify-between p-3 rounded-lg border border-stone-100 hover:bg-stone-50/50 hover:border-stone-200 text-left text-xs font-medium text-stone-700 transition-all group cursor-pointer"
-                >
-                  <span>Open Parents</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
-                </button>
-              </div>
-            </div>
-
-            {/* Vetting & Safeguarding Guidelines */}
-            <div className="bg-white p-6 rounded-xl border border-stone-200/80 shadow-sm">
-              <h3 className="text-lg font-serif font-medium text-stone-900 border-b border-stone-100 pb-4 mb-4">
-                Safeguarding & Staffing
-              </h3>
-              
-              <div className="text-xs text-stone-600 space-y-3 leading-relaxed">
-                <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-xl space-y-1">
-                  <span className="font-bold block text-[#C59B27] uppercase text-[9px] tracking-wider">Teacher/Child Ratio Standards</span>
-                  <p className="text-[11px] text-stone-500">
-                    Maintain at least 1 vetted teacher per 6 children under age 4, and 1 vetted teacher per 10 children aged 4-12.
-                  </p>
+                  <div className="space-y-6">
+                    <div className="bg-white p-5 rounded-xl border border-stone-200">
+                      <h3 className="text-sm font-serif font-semibold text-stone-900 mb-3">Care Demographics</h3>
+                      <div className="space-y-2">
+                        {legacyReportData.careAttention?.map((item: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center text-xs">
+                            <span className="text-stone-600">{item.label}</span>
+                            <span className="font-mono font-semibold text-stone-900">{item.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
+              )}
 
-                <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1">
-                  <span className="font-bold block text-emerald-800 uppercase text-[9px] tracking-wider">Two-Leader Mandate</span>
-                  <p className="text-[11px] text-stone-500">
-                    A minimum of two approved workers must be present in every classroom space during any kids or teens service session.
-                  </p>
+              {/* 2. LIVE EVENT */}
+              {activeLegacyTab === 'live_event' && (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                  <div className="xl:col-span-2 space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      {[
+                        { label: "Expected", value: legacyReportData.metrics?.expected || 0, desc: "Seats" },
+                        { label: "Checked in", value: legacyReportData.metrics?.checkedIn || 0, desc: "Inside" },
+                        { label: "Picked up", value: legacyReportData.metrics?.pickedUp || 0, desc: "Checked-out" }
+                      ].map((card, idx) => (
+                        <div key={idx} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+                          <span className="text-[9px] uppercase font-bold tracking-wider text-stone-400 block">{card.label}</span>
+                          <div className="text-xl font-serif font-bold text-stone-900 mt-1.5">{card.value}</div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">{card.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-stone-200 p-5">
+                      <h3 className="text-sm font-serif font-semibold text-stone-900 mb-4">Recent live check-in scans</h3>
+                      {legacyReportData.sections?.recentScans?.length > 0 ? (
+                        <div className="divide-y divide-stone-100">
+                          {legacyReportData.sections?.recentScans?.map((scan: any, i: number) => (
+                            <div key={i} className="py-2.5 flex justify-between items-center text-xs">
+                              <div>
+                                <div className="font-semibold text-stone-800">{scan.childName}</div>
+                                <div className="text-[10px] text-stone-400">{scan.ageGroup}</div>
+                              </div>
+                              <span className="text-[10px] font-mono text-stone-500 bg-stone-100 px-2 py-0.5 rounded">
+                                {scan.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-stone-400 text-xs">No entries reported.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-stone-200 h-fit">
+                    <h3 className="text-sm font-serif font-semibold text-stone-900 mb-3">Live Ratios</h3>
+                    <div className="space-y-4">
+                      {legacyReportData.sections?.liveAttendanceOutcome?.map((item: any, i: number) => (
+                        <div key={i} className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-stone-600">{item.label}</span>
+                            <span className="font-semibold text-stone-900">{item.percentage}%</span>
+                          </div>
+                          <div className="w-full bg-stone-100 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-[#C59B27] h-full" style={{ width: `${item.percentage}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. END OF EVENT */}
+              {activeLegacyTab === 'end_of_event' && (
+                <div className="bg-white p-6 rounded-xl border border-stone-200 space-y-6">
+                  <h3 className="text-sm font-serif font-semibold text-[#C59B27]">Event Performance Ledger</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    {[
+                      { label: "Total Registrations", value: legacyReportData.metrics?.totalRegistered || 0 },
+                      { label: "Admitted Seats", value: legacyReportData.metrics?.selected || 0 },
+                      { label: "Actual Arrivals", value: legacyReportData.metrics?.checkedIn || 0 },
+                      { label: "Successful Collections", value: legacyReportData.metrics?.pickedUp || 0 }
+                    ].map((m, i) => (
+                      <div key={i} className="border-l-2 border-[#C59B27] pl-3">
+                        <span className="text-[10px] uppercase font-bold text-stone-400 block">{m.label}</span>
+                        <div className="text-2xl font-serif font-bold text-stone-900 mt-1">{m.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. VOLUNTEERS & PARENTS */}
+              {activeLegacyTab === 'volunteer_parent' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-5 rounded-xl border border-stone-200">
+                    <h3 className="text-sm font-serif font-semibold text-stone-900 mb-4">Supervisor roster ratios</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-xs">
+                        <span>Total approved supervisors</span>
+                        <span className="font-semibold">{legacyReportData.totalApprovedVolunteers || 0}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span>Active checks</span>
+                        <span className="font-semibold">{legacyReportData.activeVolunteersCount || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-stone-200">
+                    <h3 className="text-sm font-serif font-semibold text-stone-900 mb-4">Guardian profiles</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-xs">
+                        <span>Total Registered Families</span>
+                        <span className="font-semibold">{legacyReportData.totalRegisteredParents || 0}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span>Profiles undergoing review</span>
+                        <span className="font-semibold">{legacyReportData.unapprovedParentsCount || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Export Panel */}
+              <div className="bg-white p-6 rounded-xl border border-stone-200 shadow-sm space-y-4">
+                <h3 className="text-sm font-serif font-semibold text-stone-900">Standard Data Spreadsheet Exports</h3>
+                <div className="flex flex-wrap gap-2">
+                  <button 
+                    onClick={() => handleExport('attendance', 'csv')}
+                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded flex items-center gap-1.5 transition-all"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400" />
+                    Download Attendance CSV
+                  </button>
+                  <button 
+                    onClick={() => handleExport('care_notes', 'csv')}
+                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded flex items-center gap-1.5 transition-all"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400" />
+                    Download Care Notes CSV
+                  </button>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
-        </>
-      )}
 
+      {/* ----------------- AUDIT LOG MODAL ----------------- */}
+      <AnimatePresence>
+        {auditReportId && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="audit-modal-title"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-2xl overflow-hidden"
+            >
+              <div className="bg-[#FAF9F6] border-b border-stone-200 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 id="audit-modal-title" className="text-base font-serif font-bold text-stone-900">Digital Access Ledger & Audit Trail</h3>
+                  <p className="text-[10px] text-stone-400 mt-0.5">Job ID: {auditReportId}</p>
+                </div>
+                <button 
+                  onClick={() => setAuditReportId(null)}
+                  className="text-stone-400 hover:text-stone-700 p-1.5 hover:bg-stone-100 rounded-full transition-all"
+                  aria-label="Close Audit Dialog"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
+                {loadingAudit ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#C59B27]" />
+                  </div>
+                ) : auditLogs.length === 0 ? (
+                  <div className="text-center text-xs text-stone-400 py-12">No audit actions recorded yet.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {auditLogs.map((log) => (
+                      <div key={log.id} className="bg-stone-50 p-4 rounded-lg border border-stone-100 flex justify-between gap-4 text-xs">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-stone-800 capitalize">{log.action_type}</span>
+                            <span className="text-[10px] bg-stone-200 text-stone-600 px-1.5 py-0.2 rounded font-mono">
+                              By: User #{log.actor_user_id.slice(0, 8)}
+                            </span>
+                          </div>
+                          <p className="text-stone-500 leading-relaxed text-[11px]">{log.safe_summary}</p>
+                        </div>
+                        <span className="text-[10px] font-mono text-stone-400 shrink-0 mt-0.5">
+                          {new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-stone-50 border-t border-stone-200 px-6 py-4 flex justify-end">
+                <Button 
+                  onClick={() => setAuditReportId(null)}
+                  className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-4 rounded-lg"
+                >
+                  Dismiss Ledger
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

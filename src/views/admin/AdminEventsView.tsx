@@ -42,7 +42,7 @@ interface EventData {
   dailyStartTime: string;
   dailyEndTime: string;
   description: string;
-  status: 'draft' | 'upcoming' | 'current' | 'closed' | 'archived';
+  status: 'draft' | 'upcoming' | 'current' | 'closed' | 'archived' | 'open' | 'active';
   parentAccessOpensAt: string;
   parentAccessClosesAt: string;
   parentsCanCreateAccount: boolean;

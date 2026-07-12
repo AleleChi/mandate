@@ -10,6 +10,14 @@ import jobsRoutes from './src/server/routes/jobs';
 import notificationsRoutes from './src/server/routes/notifications';
 import webhooksRoutes from './src/server/routes/webhooks';
 import volunteerRoutes from './src/server/routes/volunteer';
+import { dutyRouter, adminDutyRouter } from './src/server/routes/duty';
+import alertResponsesRouter from './src/server/routes/alertResponses';
+import incidentRoutes from './src/server/routes/incidents';
+import escalationRoutes from './src/server/routes/escalations';
+import trainingRoutes from './src/server/routes/training';
+import reportsRoutes from './src/server/routes/reports';
+import { initReportSchema, processQueuedReportJobs } from './src/server/services/reportService';
+import { seedDefaultEscalationPolicies, runEscalationScheduler } from './src/server/services/escalationService';
 import { getDb } from './src/server/db';
 import { processPendingNotifications } from './src/server/services/notifications';
 import { authMiddleware, AuthenticatedRequest } from './src/server/auth';
@@ -98,11 +106,23 @@ async function startServer() {
 
   app.use('/api/parent', parentRoutes);
   app.use('/api/media', mediaRoutes);
+  app.use('/api/admin/reports', reportsRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/jobs', jobsRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/webhooks', webhooksRoutes);
   app.use('/api/volunteer', volunteerRoutes);
+  app.use('/api/staff', volunteerRoutes);
+  app.use('/api/duty', dutyRouter);
+  app.use('/api/admin/duty', adminDutyRouter);
+  app.use('/api/incidents', incidentRoutes);
+  app.use('/api/admin/escalation', escalationRoutes);
+  app.use('/api/training', trainingRoutes);
+
+  // Safety Alerts response coordination
+  app.use('/api/admin/safety-alerts', alertResponsesRouter);
+  app.use('/api/volunteer/safety-alerts', alertResponsesRouter);
+  app.use('/api/volunteer', alertResponsesRouter);
 
   // GET secure /uploads/:filename
   app.get('/uploads/:filename', (req, res) => {
@@ -213,6 +233,38 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+
+    // Initialize reports database schema on boot
+    initReportSchema().then(() => {
+      console.log('[Reports] Schema initialized successfully.');
+      // Run any pending jobs on startup
+      processQueuedReportJobs();
+    }).catch(err => {
+      console.error('[Reports] Schema initialization failed:', err);
+    });
+
+    // Seed default escalation policies on boot
+    seedDefaultEscalationPolicies('event-ga-2026').catch(err => {
+      console.error('Failed to seed default escalation policies:', err);
+    });
+
+    // Run report worker poller every 5 seconds (Lower operational priority)
+    setInterval(async () => {
+      try {
+        await processQueuedReportJobs();
+      } catch (err) {
+        console.error('[Reports Worker] Error during background report polling:', err);
+      }
+    }, 5000);
+
+    // Run escalation scheduler every 10 seconds
+    setInterval(async () => {
+      try {
+        await runEscalationScheduler();
+      } catch (err) {
+        console.error('[Background Scheduler] Error running escalation scheduler:', err);
+      }
+    }, 10000);
 
     // Periodically process scheduled parent notification rules (emails, in-app notifications, and WhatsApp mockups)
     setInterval(async () => {

@@ -46,6 +46,17 @@ import { AdminOverviewView } from './views/admin/AdminOverviewView';
 import { AdminAcceptInviteView } from './views/admin/AdminAcceptInviteView';
 import { TeamAlertsView } from './views/admin/TeamAlertsView';
 import { Seo } from './components/common/Seo';
+import { LegalPagesView } from './views/LegalPagesView';
+
+// Training & Simulation Mode Views
+import { PersistentTrainingBanner } from './views/training/PersistentTrainingBanner';
+import { TrainingScenarioLibrary } from './views/training/TrainingScenarioLibrary';
+import { TrainingScenarioBuilder } from './views/training/TrainingScenarioBuilder';
+import { TrainingSessionSetup } from './views/training/TrainingSessionSetup';
+import { TrainingHome } from './views/training/TrainingHome';
+import { TrainingFacilitatorConsole } from './views/training/TrainingFacilitatorConsole';
+import { TrainingObserverMode } from './views/training/TrainingObserverMode';
+import { TrainingDebrief } from './views/training/TrainingDebrief';
 
 const getSeoPropsForRoute = (route: string) => {
   const cleanRoute = route.split('?')[0];
@@ -204,6 +215,11 @@ export default function App() {
   const [lastSubmittedChild, setLastSubmittedChild] = useState<ChildItem | null>(null);
   const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [showPreloader, setShowPreloader] = useState<boolean>(true);
+
+  // Training & Simulation Mode SPA State
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('');
+  const [activeTrainingSessionId, setActiveTrainingSessionId] = useState<string>('');
+  const [trainingRole, setTrainingRole] = useState<string>('');
 
   // Sync route with URL hash for easy browser bookmarking/testing
   useEffect(() => {
@@ -416,7 +432,11 @@ export default function App() {
       '/admin/overview',
       '/admin/settings',
       '/admin/applications',
-      '/admin/accept-invite'
+      '/admin/accept-invite',
+      '/privacy',
+      '/terms',
+      '/child-safety',
+      '/contact'
     ];
     return validRoutes.includes(cleanRoute);
   };
@@ -902,6 +922,20 @@ export default function App() {
 
   const renderCurrentRoute = () => {
     const cleanRoute = currentRoute.split('?')[0];
+
+    if (cleanRoute === '/privacy') {
+      return <LegalPagesView page="privacy" onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/terms') {
+      return <LegalPagesView page="terms" onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/child-safety') {
+      return <LegalPagesView page="child-safety" onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/contact') {
+      return <LegalPagesView page="contact" onNavigate={navigate} />;
+    }
+
     const pRoute = user ? (isProfileComplete(parentProfile) ? '/parent/home' : '/parent/profile-setup') : '/parent/create-account';
     
     let vRoute = '/volunteer/sign-in';
@@ -981,6 +1015,76 @@ export default function App() {
             adminUser={user}
             volunteerProfile={volunteerProfile}
           />
+        </AdminProtectedRoute>
+      );
+    }
+
+    if (cleanRoute.startsWith('/admin/training')) {
+      const parts = cleanRoute.split('/');
+      let viewComponent: React.ReactNode = null;
+      
+      if (cleanRoute === '/admin/training/scenarios') {
+        viewComponent = (
+          <TrainingScenarioLibrary 
+            onNavigate={navigate} 
+            onStartSessionSetup={(id) => {
+              setSelectedScenarioId(id);
+              navigate('/admin/training/setup');
+            }} 
+          />
+        );
+      } else if (cleanRoute === '/admin/training/scenarios/new') {
+        viewComponent = <TrainingScenarioBuilder onNavigate={navigate} />;
+      } else if (cleanRoute === '/admin/training/setup') {
+        viewComponent = (
+          <TrainingSessionSetup 
+            scenarioId={selectedScenarioId} 
+            onNavigate={navigate} 
+            onSessionCreated={(sid) => {
+              setActiveTrainingSessionId(sid);
+              navigate('/admin/training/active');
+            }} 
+          />
+        );
+      } else if (cleanRoute === '/admin/training/active') {
+        viewComponent = (
+          <TrainingHome 
+            sessionId={activeTrainingSessionId} 
+            onNavigate={navigate} 
+            onExit={() => {
+              setActiveTrainingSessionId('');
+              navigate('/admin/training/scenarios');
+            }} 
+            userId={user?.id} 
+          />
+        );
+      } else if (cleanRoute.includes('/facilitator')) {
+        const sid = parts[4];
+        viewComponent = <TrainingFacilitatorConsole sessionId={sid} onNavigate={navigate} userId={user?.id} />;
+      } else if (cleanRoute.includes('/observer')) {
+        const sid = parts[4];
+        viewComponent = <TrainingObserverMode sessionId={sid} onNavigate={navigate} userId={user?.id} />;
+      } else if (cleanRoute.includes('/debrief')) {
+        const sid = parts[4];
+        viewComponent = <TrainingDebrief sessionId={sid} onNavigate={navigate} userId={user?.id} />;
+      }
+
+      return (
+        <AdminProtectedRoute>
+          <div className="min-h-screen bg-[#FAF9F6] flex flex-col">
+            <PersistentTrainingBanner 
+              sessionName={activeTrainingSessionId ? "Simulated Drill Rehearsal" : "Scenario Configuration"} 
+              roleName={trainingRole || 'Check-in Team'} 
+              onExit={() => {
+                setActiveTrainingSessionId('');
+                setTrainingRole('');
+                navigate('/admin/overview');
+              }} 
+            />
+            <div className="flex-1">
+              {viewComponent}
+            </div>
+          </div>
         </AdminProtectedRoute>
       );
     }
@@ -1311,6 +1415,7 @@ export default function App() {
       case '/volunteer/profile':
       case '/volunteer/pickup':
       case '/volunteer/team-alerts':
+      case '/volunteer/readiness':
         return (
           <VolunteerProtectedRoute>
             <VolunteerEventDashboardView

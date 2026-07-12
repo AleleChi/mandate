@@ -27,7 +27,8 @@ import {
   Volume2,
   Activity,
   TrendingUp,
-  Play
+  Play,
+  FileText
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
@@ -79,7 +80,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [isTestingDevice, setIsTestingDevice] = useState(false);
   
   // Tab/Active Panel State inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security'>('parent-access');
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings'>('parent-access');
 
   // Feedback State
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -289,6 +290,32 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
+  // Footer & Copyright Settings State
+  const [copyrightYear, setCopyrightYear] = useState(2025);
+  const [copyrightText, setCopyrightText] = useState('Koinonia Children and Teens. All rights reserved.');
+  const [savingFooter, setSavingFooter] = useState(false);
+
+  const handleSaveFooterSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingFooter(true);
+    try {
+      const res = await api.admin.updateFooterSettings({
+        copyrightYear,
+        copyrightText
+      });
+      if (res.success) {
+        showFeedback('Footer copyright settings updated successfully.');
+      } else {
+        showFeedback('Failed to update footer settings.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save footer settings error:', err);
+      showFeedback('An error occurred while saving footer settings.', 'error');
+    } finally {
+      setSavingFooter(false);
+    }
+  };
+
   // Load All Settings Data
   const loadSettingsData = async () => {
     setLoading(true);
@@ -317,6 +344,17 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
       // 3. Load Team Directory
       await fetchTeamDirectory();
+
+      // 4. Fetch Footer Settings
+      try {
+        const footerRes = await api.admin.getFooterSettings();
+        if (footerRes.success && footerRes.settings) {
+          setCopyrightYear(footerRes.settings.copyrightYear);
+          setCopyrightText(footerRes.settings.copyrightText);
+        }
+      } catch (e) {
+        console.error('Failed to load footer settings in admin console:', e);
+      }
 
     } catch (err: any) {
       console.error('Failed to load settings data:', err);
@@ -664,6 +702,31 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     }
   };
 
+  // Save Team Member Access Status Assignment (Part 9)
+  const handleSaveMemberStatus = async (status: string) => {
+    if (!selectedMember) return;
+    setSavingRole(true);
+    try {
+      const res = await api.admin.updateTeamMemberStatus({
+        userId: selectedMember.id,
+        status: status
+      });
+
+      if (res.success) {
+        showFeedback(`Access status for ${selectedMember.fullName} has been updated to ${status}.`);
+        setSelectedMember(null);
+        fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || 'Failed to update access status.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save Member Status Error:', err);
+      showFeedback(err?.message || 'Failed to update status assignment.', 'error');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
   // Change Password Submission
   const handleChangePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -785,7 +848,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           { id: 'alert-delivery', label: 'Alert delivery & device preferences', icon: ShieldAlert },
           { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon },
           { id: 'app-media', label: 'App media', icon: Image },
-          { id: 'device-security', label: 'Device security', icon: Lock }
+          { id: 'device-security', label: 'Device security', icon: Lock },
+          { id: 'footer-settings', label: 'Footer & copyright settings', icon: FileText }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -819,7 +883,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* MAIN SETTINGS LEFT COLUMN (7 or 12 columns depending on selection) */}
-          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' || activeSubTab === 'alert-delivery' || activeSubTab === 'device-security' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
+          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' || activeSubTab === 'alert-delivery' || activeSubTab === 'device-security' || activeSubTab === 'footer-settings' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
             
             {/* SUB-TAB 1: PARENT ACCESS */}
             {activeSubTab === 'parent-access' && (
@@ -1285,6 +1349,65 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 {selectedMember.role === 'super_admin' ? 'Super admin' : selectedMember.role === 'admin' ? 'Admin' : 'Team member'}
                               </div>
                             )}
+                          </div>
+
+                          {/* Access Management Section (Part 9) */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-[#18181B] block">
+                              Access Status
+                            </label>
+                            <div className="bg-white border border-[#EAE8E1] rounded-xl p-3.5 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-zinc-500 font-medium">Current Status:</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                  selectedMember.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  selectedMember.status === 'suspended' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
+                                  selectedMember.status === 'revoked' ? 'bg-red-50 text-red-700 border border-red-200' :
+                                  'bg-zinc-100 text-zinc-600 border border-zinc-200'
+                                }`}>
+                                  {selectedMember.status || 'active'}
+                                </span>
+                              </div>
+
+                              {isSuperAdmin && (
+                                <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100">
+                                  {selectedMember.status !== 'suspended' && selectedMember.status !== 'revoked' ? (
+                                    <button
+                                      type="button"
+                                      disabled={savingRole}
+                                      onClick={() => handleSaveMemberStatus('suspended')}
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Suspend Account
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={savingRole}
+                                      onClick={() => handleSaveMemberStatus('active')}
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Reactivate Account
+                                    </button>
+                                  )}
+
+                                  {selectedMember.status !== 'revoked' && (
+                                    <button
+                                      type="button"
+                                      disabled={savingRole}
+                                      onClick={() => {
+                                        if (confirm(`Are you absolutely sure you want to REVOKE admin access for ${selectedMember.fullName}? This cannot be undone.`)) {
+                                          handleSaveMemberStatus('revoked');
+                                        }
+                                      }}
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Revoke Access
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {/* Interactive Permissions Overlay */}
@@ -2500,10 +2623,66 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               </div>
             )}
 
+            {/* SUB-TAB: FOOTER SETTINGS */}
+            {activeSubTab === 'footer-settings' && (
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6">
+                <div className="border-b border-[#EAE8E1] pb-4">
+                  <h3 className="font-serif font-medium text-[#18181B] text-lg">Footer & copyright settings</h3>
+                  <p className="text-xs text-zinc-500 mt-1">Configure the global copyright year and branding text displayed across all platform footers.</p>
+                </div>
+
+                <form onSubmit={handleSaveFooterSettings} className="space-y-5 max-w-2xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <label className="text-xs font-semibold text-[#18181B] block">
+                        Copyright year
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        value={copyrightYear}
+                        onChange={(e) => setCopyrightYear(parseInt(e.target.value, 10) || 2025)}
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-3">
+                      <label className="text-xs font-semibold text-[#18181B] block">
+                        Copyright branding text
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={copyrightText}
+                        onChange={(e) => setCopyrightText(e.target.value)}
+                        placeholder="e.g., Koinonia Children and Teens. All rights reserved."
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-400 leading-normal">
+                    Updating these values will immediately synchronize the footer displayed on the landing page, parent access portals, and administrative views across all active user sessions.
+                  </p>
+
+                  <div className="pt-2">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      loading={savingFooter}
+                      className="py-2 px-6 text-xs font-semibold"
+                    >
+                      Save footer settings
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
+
           </div>
 
           {/* MAIN SETTINGS RIGHT COLUMN: PROFILE SECURITY CARD (Only visible for Parent Access and Message Channels) */}
-          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && activeSubTab !== 'alert-delivery' && activeSubTab !== 'device-security' && (
+          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && activeSubTab !== 'alert-delivery' && activeSubTab !== 'device-security' && activeSubTab !== 'footer-settings' && (
             <div className="lg:col-span-5 space-y-6">
               
               {/* Profile Security Update Password */}

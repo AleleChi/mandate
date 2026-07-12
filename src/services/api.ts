@@ -107,7 +107,10 @@ export const api = {
         ...options,
         headers
       });
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw err;
+      }
       throw new ParentApiError('Connection problem', 'Please check your internet and try again.');
     }
 
@@ -507,7 +510,7 @@ export const api = {
     async getSafetyAlerts() {
       return api.request<{ success: boolean; alerts: any[] }>('/api/volunteer/safety-alerts');
     },
-    async raiseSafetyAlert(payload: { childId?: string; childEventEntryId?: string; category: string; severity: string; locationLabel?: string; message: string }) {
+    async raiseSafetyAlert(payload: { childId?: string; childEventEntryId?: string; category: string; severity: string; locationLabel?: string; message: string; locationId?: string | null; locationDetail?: string; locationSource?: string; structuredDetails?: any }) {
       return api.request<any>('/api/volunteer/safety-alerts', {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -954,6 +957,12 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async updateTeamMemberStatus(payload: { userId: string; status: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/team/edit-status', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async getVolunteers(params?: { q?: string; status?: string; team?: string; page?: number; limit?: number }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
@@ -1053,6 +1062,15 @@ export const api = {
     async getVolunteerParentStats() {
       return api.request<{ success: boolean; stats: any }>('/api/admin/reports/volunteer-parent-stats');
     },
+    async getFooterSettings() {
+      return api.request<{ success: boolean; settings: { copyrightYear: number; copyrightText: string } }>('/api/admin/footer-settings');
+    },
+    async updateFooterSettings(payload: { copyrightYear: number; copyrightText: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/footer-settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async getEvents(params?: { status?: string }) {
       const queryParams = new URLSearchParams();
       if (params?.status) queryParams.append('status', params.status);
@@ -1130,5 +1148,239 @@ export const api = {
         method: 'POST'
       });
     }
-  }
+  },
+
+  safetyAlerts: {
+    // Proof: data-component-version="alert-response-frontend-api-v1"
+    async getAlertResponse(alertId: string) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/response`);
+    },
+    async acknowledgeAndRespond(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/acknowledge-and-respond`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async joinAlertResponse(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/assist`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async leaveAlertResponse(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/assist`, {
+        method: 'DELETE',
+        body: JSON.stringify(payload)
+      });
+    },
+    async markAlertInProgress(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/in-progress`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addAlertResponseUpdate(alertId: string, payload: { updateType: string; note?: string; visibility?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/updates`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async requestAlertAssistance(alertId: string, payload: { userId?: string; responsibilityKey?: string; teamKey?: string; note?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/request-assistance`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async requestAlertHandover(alertId: string, payload: { targetUserId: string; reason: string; note?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/handover`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async respondToAlertHandover(alertId: string, handoverId: string, payload: { decision: 'accept' | 'decline'; note?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/handover/${handoverId}/respond`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async adminReassignAlertResponse(alertId: string, payload: { targetUserId: string; reason: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/reassign`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async resolveAlertResponse(alertId: string, payload: { outcome: string; resolutionNote: string; followUpRequired?: boolean; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async reopenAlertResponse(alertId: string, payload: { reason: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/reopen`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getAlertResponseTimeline(alertId: string, pagination: { page?: number; limit?: number }) {
+      const q = new URLSearchParams();
+      if (pagination.page) q.append('page', String(pagination.page));
+      if (pagination.limit) q.append('limit', String(pagination.limit));
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/history?${q.toString()}`);
+    },
+    async getVolunteerHelpRequests(filters?: any) {
+      const q = new URLSearchParams(filters);
+      return api.request<{ success: boolean; alerts: any[] }>(`/api/volunteer/safety-alerts?${q.toString()}`);
+    },
+    async getVolunteerHelpRequestProgress(alertId: string) {
+      return api.request<any>(`/api/volunteer/safety-alerts/help-requests/${alertId}/progress`);
+    },
+    async getAdminActiveResponses(filters?: any) {
+      const q = new URLSearchParams(filters);
+      return api.request<any[]>(`/api/admin/safety-alerts?${q.toString()}`);
+    },
+    async searchEligibleResponders(role: string, query: string = '') {
+      const path = role === 'admin' ? '/api/admin/volunteers' : '/api/volunteer/admin/volunteers';
+      const q = new URLSearchParams({ q: query, status: 'approved', limit: '50' });
+      try {
+        const res = await api.request<any>(`${path}?${q.toString()}`);
+        return res.volunteers || [];
+      } catch (err) {
+        console.error('[searchEligibleResponders Error]:', err);
+        return [];
+      }
+    }
+  },
+  incidents: {
+    async create(payload: any) {
+        return api.request<any>('/api/incidents', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async get(id: string) {
+        return api.request<any>(`/api/incidents/${id}`);
+      },
+      async getByAlert(alertId: string) {
+        return api.request<any>(`/api/incidents/alert/${alertId}`);
+      },
+      async updateDraft(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/draft`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      },
+      async submit(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/submit`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async submitChangeRequest(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/change-request`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async resolveChangeRequests(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/resolve-change-requests`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async addFollowUpAction(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/follow-up`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async completeFollowUpAction(id: string, actionId: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/follow-up/${actionId}/complete`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async updateClosureChecklist(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/closure-checklist`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      },
+      async close(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/close`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async reopen(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/reopen`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async void(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/void`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async list(params?: { status?: string; category?: string; page?: number; limit?: number }) {
+        const queryParams = new URLSearchParams();
+        if (params?.status) queryParams.append('status', params.status);
+        if (params?.category) queryParams.append('category', params.category);
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        const queryString = queryParams.toString();
+        return api.request<any>(`/api/incidents${queryString ? `?${queryString}` : ''}`);
+      },
+      async history(id: string) {
+        return api.request<any>(`/api/incidents/${id}/history`);
+      },
+      async stats() {
+        return api.request<any>('/api/incidents/stats/summary');
+      }
+    },
+    escalation: {
+      async getPolicies(eventId?: string) {
+        return api.request<any>(`/api/admin/escalation/policies?eventId=${eventId || 'event-ga-2026'}`);
+      },
+      async getPolicy(id: string) {
+        return api.request<any>(`/api/admin/escalation/policies/${id}`);
+      },
+      async createPolicy(policy: any) {
+        return api.request<any>('/api/admin/escalation/policies', {
+          method: 'POST',
+          body: JSON.stringify(policy)
+        });
+      },
+      async updatePolicy(id: string, policy: any) {
+        return api.request<any>(`/api/admin/escalation/policies/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(policy)
+        });
+      },
+      async deletePolicy(id: string) {
+        return api.request<any>(`/api/admin/escalation/policies/${id}`, {
+          method: 'DELETE'
+        });
+      },
+      async getHistory(eventId?: string) {
+        return api.request<any>(`/api/admin/escalation/history?eventId=${eventId || 'event-ga-2026'}`);
+      }
+    },
+    operations: {
+      async getOverview(eventId: string, profile?: string, options?: RequestInit) {
+        const queryParams = new URLSearchParams();
+        if (profile) queryParams.append('profile', profile);
+        const queryStr = queryParams.toString();
+        return api.request<any>(`/api/admin/events/${eventId}/operations/overview${queryStr ? `?${queryStr}` : ''}`, options);
+      },
+      async getActivity(eventId: string, params?: { type?: string; page?: number; limit?: number }, options?: RequestInit) {
+        const queryParams = new URLSearchParams();
+        if (params?.type) queryParams.append('type', params.type);
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        const queryStr = queryParams.toString();
+        return api.request<any>(`/api/admin/events/${eventId}/operations/activity${queryStr ? `?${queryStr}` : ''}`, options);
+      }
+    }
 };

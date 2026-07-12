@@ -570,7 +570,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
         <div className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center shadow-2xs space-y-3">
           <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
           <p className="text-xs text-rose-700 font-medium">{error}</p>
-          <Button type="button" variant="outline" size="sm" onClick={fetchChildren}>
+          <Button type="button" variant="outline" size="sm" onClick={() => fetchChildren()}>
             Try again
           </Button>
         </div>

@@ -31,12 +31,14 @@ import {
   Volume2,
   Activity,
   Heart,
-  User
+  User,
+  Smartphone
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { ActiveResponseCoordinationPanel } from '../../components/common/ActiveResponseCoordinationPanel';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { SafeImage } from '../../components/common/SafeImage';
@@ -53,8 +55,14 @@ import { AdminParentsView } from './AdminParentsView';
 import { AdminParentDetailView } from './AdminParentDetailView';
 import { AdminSettingsView } from './AdminSettingsView';
 import { AdminEventsView } from './AdminEventsView';
+import { AdminIncidentRecordsCentre } from './AdminIncidentRecordsCentre';
+import { AdminEscalationsView } from './AdminEscalationsView';
+import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
+import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
+import { DeviceReadinessView } from '../../components/volunteer/DeviceReadinessView';
+import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
 
-type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents';
+type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
 
 interface AdminOverviewViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -73,6 +81,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 }) => {
   const { showError, showSuccess, showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<AdminTab>((initialTab || 'overview') as AdminTab);
+  const [showReadinessModal, setShowReadinessModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -140,6 +149,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   // Safety Alerts states
   const [safetyAlerts, setSafetyAlerts] = useState<any[]>([]);
+  const [activeEmergencySummaryAlertId, setActiveEmergencySummaryAlertId] = useState<string | null>(null);
   const [activeAlertDetail, setActiveAlertDetail] = useState<any | null>(null);
   const [resolvingAlertId, setResolvingAlertId] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
@@ -435,8 +445,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimeout: any = null;
+    let isUnmounted = false;
 
     const connectSSE = () => {
+      if (isUnmounted) return;
       const token = localStorage.getItem('koinonia_token');
       if (!token) return;
 
@@ -447,6 +459,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       eventSource = new EventSource(sseUrl);
 
       eventSource.onmessage = (event) => {
+        if (isUnmounted) return;
         try {
           const payload = JSON.parse(event.data);
           console.log('[SSE Client] Received message:', payload);
@@ -455,6 +468,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             console.log('[SSE Client] Handshake successful, clientId:', payload.clientId);
             return;
           }
+
+          // Always dispatch for Live Event Operations Dashboard
+          window.dispatchEvent(new CustomEvent('sse-ops-refresh', { detail: payload }));
 
           if (
             payload.type === 'safety_alert_created' ||
@@ -475,6 +491,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               'Sound Trigger Time': new Date().toISOString()
             });
 
+            const alertId = payload.alertId || payload.data?.id || (payload.data && payload.data.alertId);
+            window.dispatchEvent(new CustomEvent('sse-alert-update', { detail: { alertId } }));
             fetchSafetyAlerts();
             fetchNotificationsList();
           }
@@ -484,7 +502,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       };
 
       eventSource.onerror = (err) => {
-        console.error('[SSE Client] Error or disconnected, retrying in 3s:', err);
+        if (isUnmounted) return;
+        console.warn('[SSE Client] Connection closed or transient error. Reconnecting in 3s...');
         if (eventSource) {
           eventSource.close();
           eventSource = null;
@@ -496,6 +515,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     connectSSE();
 
     return () => {
+      isUnmounted = true;
       if (eventSource) {
         eventSource.close();
         console.log('[SSE Client] Connection closed.');
@@ -764,6 +784,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       onNavigate('/admin/parents');
     } else if (tab === 'volunteers') {
       onNavigate('/admin/volunteers');
+    } else if (tab === 'training') {
+      onNavigate('/admin/training/scenarios');
     }
   };
 
@@ -884,6 +906,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           
           {[
             { id: 'overview', label: 'Overview', icon: ClipboardList },
+            { id: 'operations', label: 'Event Operations', icon: Activity },
             { id: 'events', label: 'Events', icon: Calendar },
             { id: 'applications', label: 'Applications', icon: Users },
             { id: 'volunteers', label: 'Volunteers', icon: Award },
@@ -891,8 +914,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             { id: 'review', label: 'Review', icon: ShieldAlert },
             { id: 'children', label: 'Children', icon: Users },
             { id: 'attendance', label: 'Attendance', icon: UserCheck },
+            { id: 'incidents', label: 'Incident Desk', icon: Shield },
+            { id: 'escalations', label: 'Escalation Policies', icon: ShieldAlert },
             { id: 'reports', label: 'Reports', icon: TrendingUp },
             { id: 'messages', label: 'Messages', icon: MessageSquare },
+            { id: 'duty_devices', label: 'Event Duty', icon: Smartphone },
+            { id: 'training', label: 'PWA Rehearsal', icon: Activity },
             { id: 'settings', label: 'Settings', icon: Settings },
           ].map((item) => {
             const IconComponent = item.icon;
@@ -1054,6 +1081,18 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               title="Refresh Analytics"
             >
               <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
+            </button>
+
+            {/* Device readiness compact status badge */}
+            <button
+              onClick={() => setShowReadinessModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#C59B27]/5 border border-[#C59B27]/20 hover:bg-[#C59B27]/10 text-zinc-700 text-[11px] font-bold rounded-full transition-all cursor-pointer mr-1"
+              title="Device readiness status"
+              data-component-version="event-duty-readiness-entry-v1"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-[#C59B27]" />
+              <span className="hidden sm:inline">Device:</span>
+              <span className="text-emerald-700">Ready</span>
             </button>
 
             <div className="relative" data-component-version="notification-sound-manager-v2">
@@ -1876,6 +1915,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         </button>
                                       </>
                                     )}
+
+                                    {/* Phase 7 Shared Role-Aware Emergency & Safety Summary */}
+                                    <button
+                                      onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
+                                      className="font-bold text-white bg-amber-600 hover:bg-amber-700 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                    >
+                                      <Shield className="w-3.5 h-3.5 text-white" />
+                                      <span>Safety Summary</span>
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -2851,15 +2899,59 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminEventsView onBackToOverview={() => handleTabChange('overview')} />
           )}
 
+          {/* EVENT DUTY DEVICES VIEW PANEL */}
+          {activeTab === 'duty_devices' && (
+            <AdminDutyDevicesView />
+          )}
+
+          {/* INCIDENT DESK RECORDS CENTRE */}
+          {activeTab === 'incidents' && (
+            <AdminIncidentRecordsCentre 
+              onBackToOverview={() => handleTabChange('overview')}
+              adminUser={adminUser}
+            />
+          )}
+
+          {/* ESCALATIONS VIEW PANEL */}
+          {activeTab === 'escalations' && (
+            <AdminEscalationsView />
+          )}
+
+          {/* LIVE EVENT OPERATIONS DASHBOARD */}
+          {activeTab === 'operations' && (
+            <AdminOperationsDashboardView 
+              onBackToOverview={() => handleTabChange('overview')}
+              adminUser={adminUser}
+            />
+          )}
+
           {/* OTHER ADMIN TABS: DYNAMIC PLACEHOLDER INSIDE THE SHELL */}
-          {activeTab !== 'overview' && activeTab !== 'settings' && activeTab !== 'applications' && activeTab !== 'review' && activeTab !== 'children' && activeTab !== 'attendance' && activeTab !== 'reports' && activeTab !== 'messages' && activeTab !== 'volunteers' && activeTab !== 'parents' && activeTab !== 'events' && (
+          {activeTab !== 'overview' && activeTab !== 'settings' && activeTab !== 'applications' && activeTab !== 'review' && activeTab !== 'children' && activeTab !== 'attendance' && activeTab !== 'reports' && activeTab !== 'messages' && activeTab !== 'volunteers' && activeTab !== 'parents' && activeTab !== 'events' && activeTab !== 'duty_devices' && activeTab !== 'incidents' && activeTab !== 'escalations' && activeTab !== 'operations' && (
             renderPlaceholderSection(
-              activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
+              (activeTab as string).charAt(0).toUpperCase() + (activeTab as string).slice(1)
             )
           )}
 
         </main>
       </div>
+
+      {/* Device Readiness Modal */}
+      {showReadinessModal && (
+        <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-[#FAF9F5] rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative border border-[#EAE8E1] shadow-2xl animate-fade-in">
+            <button 
+              onClick={() => setShowReadinessModal(false)}
+              className="absolute top-4 right-4 p-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-500 rounded-full cursor-pointer z-50 transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <DeviceReadinessView 
+              userRole={adminUser?.role || 'admin'} 
+              volunteerProfile={adminUser}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ATTENTION CATEGORY FILTER MODAL */}
       {activeAttentionModal && (
@@ -2936,354 +3028,21 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             onClick={() => setActiveAlertDetail(null)}
             className="fixed inset-0 bg-black/50 backdrop-blur-xs" 
           />
-          <div className="relative bg-white border border-[#EAE8E1] rounded-[28px] w-full max-w-xl p-6 shadow-2xl animate-fade-in space-y-5 max-h-[90vh] flex flex-col">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <div className="flex items-center space-x-2.5">
-                <span className="flex h-3 w-3 relative">
-                  {activeAlertDetail.status !== 'resolved' && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  )}
-                  <span className={`relative inline-flex rounded-full h-3 w-3 ${activeAlertDetail.status === 'resolved' ? 'bg-emerald-500' : 'bg-red-600'}`}></span>
-                </span>
-                <h4 className="font-serif font-bold text-lg text-[#18181B] tracking-tight">
-                  Event Care & Safety Alert
-                </h4>
-              </div>
-              <button 
-                onClick={() => setActiveAlertDetail(null)}
-                className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg cursor-pointer transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-              
-              {/* Role Simulation Switcher for Testing Masking */}
-              <div className="bg-zinc-100 border border-zinc-200 p-3 rounded-2xl flex flex-col md:flex-row justify-between items-center text-xs space-y-2 md:space-y-0 shadow-xs">
-                <span className="font-bold text-zinc-600">Simulate Role View (Testing Masking):</span>
-                <div className="flex gap-1.5 flex-wrap">
-                  {['admin', 'care_lead', 'gate_lead', 'pickup_lead', 'volunteer'].map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setSimulatedDutyRole(r)}
-                      className={`px-2.5 py-1 rounded-lg font-semibold border transition-all text-[10px] cursor-pointer ${
-                        simulatedDutyRole === r
-                          ? 'bg-red-600 border-red-700 text-white shadow-xs'
-                          : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
-                      }`}
-                    >
-                      {r.replace('_', ' ').toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Alert Meta Tags */}
-              <div className="flex flex-wrap gap-2">
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border ${
-                  activeAlertDetail.severity === 'urgent' 
-                    ? 'bg-red-50 text-red-700 border-red-100' 
-                    : 'bg-amber-50 text-amber-700 border-amber-100'
-                }`}>
-                  {activeAlertDetail.severity.toUpperCase()} PRIORITY
-                </span>
-
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border ${
-                  activeAlertDetail.status === 'resolved' 
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                    : activeAlertDetail.status === 'acknowledged'
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
-                }`}>
-                  {activeAlertDetail.status.toUpperCase()}
-                </span>
-
-                {activeAlertDetail.location && (
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-sans font-bold bg-zinc-100 text-zinc-700 border border-zinc-200">
-                    📍 {activeAlertDetail.location}
-                  </span>
-                )}
-              </div>
-
-              {/* Raised by info */}
-              <div className="bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl p-3 flex items-center justify-between text-[11px]">
-                <div>
-                  <p className="text-[10px] font-semibold text-zinc-400">RAISED BY</p>
-                  <p className="font-semibold text-zinc-800 mt-0.5">{activeAlertDetail.raised_by_name}</p>
-                </div>
-                <div className="text-right text-zinc-400 font-medium">
-                  {formatTimeAgo(activeAlertDetail.created_at)}
-                  <p className="text-[9px] mt-0.5">{new Date(activeAlertDetail.created_at).toLocaleString()}</p>
-                </div>
-              </div>
-
-              {/* Alarm Description message */}
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">CRITICAL ISSUE DESCRIPTION</p>
-                <div className="bg-red-50/30 border border-red-100/50 rounded-xl p-4 text-[11px] text-zinc-800 leading-relaxed font-sans italic">
-                  "{activeAlertDetail.message || 'No descriptive details provided by volunteer.'}"
-                </div>
-              </div>
-
-              {/* Associated Child & Parent Details */}
-              {activeAlertRichDetailLoading ? (
-                <div className="flex justify-center py-6 text-zinc-400 border border-zinc-200 rounded-xl bg-white">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                  <span>Loading secure details...</span>
-                </div>
-              ) : activeAlertRichDetail?.child ? (
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-4 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs">
-                    {/* Child Photo */}
-                    <div className="relative shrink-0">
-                      {activeAlertRichDetail.child.photoUrl ? (
-                        <img
-                          src={activeAlertRichDetail.child.photoUrl}
-                          alt={activeAlertRichDetail.child.fullName}
-                          referrerPolicy="no-referrer"
-                          className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400">
-                          <User className="w-8 h-8" />
-                        </div>
-                      )}
-                      <span className="absolute -bottom-1 -right-1 bg-zinc-800 text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white uppercase">
-                        {activeAlertRichDetail.child.gender}
-                      </span>
-                    </div>
-
-                    {/* Child Identity Details */}
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
-                      <h4 className="font-black text-zinc-900 text-base leading-tight truncate">
-                        {activeAlertRichDetail.child.fullName}
-                      </h4>
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-md border border-red-100 text-[10px] font-bold">
-                          {activeAlertRichDetail.child.ageGroup}
-                        </span>
-                        <span className="px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-md border border-zinc-200 text-[10px] font-medium font-mono">
-                          {activeAlertRichDetail.child.ageDisplay}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                          activeAlertRichDetail.child.passStatus === 'checked_in' || activeAlertRichDetail.child.status === 'checked_in'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}>
-                          {(activeAlertRichDetail.child.passStatus || activeAlertRichDetail.child.status).toUpperCase().replace('_', ' ')}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Care & Medical Summary */}
-                  {activeAlertRichDetail.careSummary && (
-                    <div className={`p-4 rounded-2xl border ${
-                      activeAlertRichDetail.careSummary.hasMedicalNote || activeAlertRichDetail.careSummary.hasSupportNeed
-                        ? 'bg-red-50/50 border-red-200'
-                        : 'bg-zinc-50 border-zinc-200'
-                    }`}>
-                      <div className="flex items-center space-x-2 pb-1.5 border-b border-zinc-100 mb-2">
-                        <Activity className={`w-4 h-4 ${activeAlertRichDetail.careSummary.hasMedicalNote ? 'text-red-600' : 'text-zinc-600'}`} />
-                        <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-wider">Care & Medical Summary</span>
-                      </div>
-                      <p className="text-[11px] font-semibold text-zinc-800 leading-relaxed">
-                        {activeAlertRichDetail.careSummary.shortSummary}
-                      </p>
-                      {activeAlertRichDetail.careSummary.hasAllergy && (
-                        <span className="mt-1.5 inline-flex items-center text-[9px] font-bold uppercase tracking-wider text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-lg">
-                          ⚠️ ALLERGY ALERT DETECTED
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Parent & Pickup Context Details */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Parent Contact Card */}
-                    {activeAlertRichDetail.parent && (
-                      <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs space-y-2">
-                        <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                          <Heart className="w-3.5 h-3.5 text-zinc-400" />
-                          <span>Linked Parent</span>
-                        </div>
-                        <div>
-                          <p className="font-bold text-zinc-900 text-xs">{activeAlertRichDetail.parent.fullName}</p>
-                          <div className="flex items-center space-x-3 mt-1.5 font-mono text-[10px] text-zinc-600">
-                            <a
-                              href={`tel:${activeAlertRichDetail.parent.phoneMaskedOrVisibleByPermission}`}
-                              className="hover:underline flex items-center space-x-1"
-                            >
-                              <span>📞 {activeAlertRichDetail.parent.phoneMaskedOrVisibleByPermission}</span>
-                            </a>
-                            {activeAlertRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
-                              <span className="text-zinc-400">|</span>
-                            )}
-                            {activeAlertRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
-                              <a
-                                href={`https://wa.me/${activeAlertRichDetail.parent.whatsappMaskedOrVisibleByPermission.replace(/[^0-9]/g, '')}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:underline text-emerald-600 flex items-center space-x-1"
-                              >
-                                <span>💬 WhatsApp</span>
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Authorized Pickup Card */}
-                    {activeAlertRichDetail.pickup ? (
-                      <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center space-x-3">
-                        {activeAlertRichDetail.pickup.photoUrl ? (
-                          <img
-                            src={activeAlertRichDetail.pickup.photoUrl}
-                            alt={activeAlertRichDetail.pickup.fullName}
-                            referrerPolicy="no-referrer"
-                            className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0">
-                            <UserCheck className="w-6 h-6" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                            <span>Authorized Pickup</span>
-                          </div>
-                          <p className="font-bold text-zinc-900 text-xs truncate">
-                            {activeAlertRichDetail.pickup.fullName}
-                          </p>
-                          <p className="text-[10px] text-zinc-500 font-medium">
-                            Relationship: <strong className="text-zinc-700">{activeAlertRichDetail.pickup.relationship}</strong>
-                          </p>
-                          {activeAlertRichDetail.pickup.phoneMaskedOrVisibleByPermission && (
-                            <p className="text-[9px] font-mono text-zinc-500 mt-0.5">
-                              Phone: {activeAlertRichDetail.pickup.phoneMaskedOrVisibleByPermission}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center justify-center text-zinc-400">
-                        <span className="text-[10px] font-medium">No custom pickup person registered</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : activeAlertDetail.child_name ? (
-                <div className="border border-[#EAE8E1] rounded-xl p-4 space-y-3 bg-white">
-                  <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">ASSOCIATED CHILD & CONTACTS</p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h5 className="font-serif font-bold text-sm text-[#18181B]">{activeAlertDetail.child_name}</h5>
-                      <p className="text-[10px] text-zinc-500 mt-0.5">Active registration check-in record linked</p>
-                    </div>
-                    {activeAlertDetail.parent_phone && (
-                      <div className="flex gap-2">
-                        <a 
-                          href={`tel:${activeAlertDetail.parent_phone}`}
-                          className="font-bold text-xs text-white bg-[#C59B27] hover:bg-[#b58c22] px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                          Call Parent
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Action Resolution Form */}
-              {activeAlertDetail.status !== 'resolved' ? (
-                <div className="border-t border-[#EAE8E1] pt-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-                      RESOLUTION ACTION NOTE <span className="text-red-500 font-bold">*</span>
-                    </label>
-                    <span className="text-[9px] text-zinc-400">Required to close safety alert</span>
-                  </div>
-                  
-                  <textarea
-                    rows={3}
-                    value={resolutionNote}
-                    onChange={(e) => setResolutionNote(e.target.value)}
-                    placeholder="Describe actions taken (e.g., 'Met volunteer in Room 2, verified wrong scan code, resolved parent verification successfully.')"
-                    className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-sans text-zinc-800 placeholder-zinc-400 resize-none leading-relaxed"
-                  />
-
-                  <div className="flex flex-col sm:flex-row gap-2 pt-1 justify-between items-center">
-                    <div>
-                      {activeAlertDetail.status === 'open' && (
-                        <button
-                          type="button"
-                          onClick={() => handleAcknowledgeAlert(activeAlertDetail.id)}
-                          disabled={isAcknowledgeInProgress === activeAlertDetail.id}
-                          className="font-bold text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
-                        >
-                          {isAcknowledgeInProgress === activeAlertDetail.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : 'Acknowledge Alert (Log Response)'}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        onClick={() => setActiveAlertDetail(null)}
-                        className="text-xs bg-zinc-100 text-[#18181B] hover:bg-zinc-200 px-4 py-2"
-                      >
-                        Cancel
-                      </Button>
-                      <button
-                        type="button"
-                        disabled={resolvingAlertId === activeAlertDetail.id}
-                        onClick={() => handleResolveAlert(activeAlertDetail.id)}
-                        className="font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-100 flex items-center gap-1.5"
-                      >
-                        {resolvingAlertId === activeAlertDetail.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : 'Resolve & Close Safety Issue'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 space-y-2 mt-2">
-                  <p className="font-bold text-xs text-emerald-800 font-serif">Resolution Log details</p>
-                  <p className="text-zinc-700 italic font-sans leading-relaxed text-[11px]">
-                    "{activeAlertDetail.resolution_note || 'No notes left during resolution.'}"
-                  </p>
-                  <div className="text-[10px] text-zinc-400 border-t border-emerald-100 pt-2 flex justify-between">
-                    <span>Resolved by: <strong className="text-zinc-600">{activeAlertDetail.resolved_by_name}</strong></span>
-                    <span>Date: {new Date(activeAlertDetail.resolved_at || activeAlertDetail.created_at).toLocaleString()}</span>
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-            {/* Footer */}
-            {activeAlertDetail.status === 'resolved' && (
-              <div className="pt-3 border-t border-[#EAE8E1] flex justify-end">
-                <Button
-                  type="button"
-                  onClick={() => setActiveAlertDetail(null)}
-                  className="text-xs bg-zinc-100 text-[#18181B] hover:bg-zinc-200 px-4 py-2"
-                >
-                  Close Window
-                </Button>
-              </div>
-            )}
+          <div className="relative bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] w-full max-w-xl shadow-2xl animate-fade-in max-h-[90vh] flex flex-col overflow-hidden" id="coordination-panel-modal">
+            <ActiveResponseCoordinationPanel
+              alertId={activeAlertDetail.id}
+              currentUser={{
+                id: adminUser?.id || 'temp-id',
+                role: adminUser?.role || 'admin',
+                fullName: adminFullName,
+                email: adminUser?.email || ''
+              }}
+              onClose={() => {
+                setActiveAlertDetail(null);
+                fetchSafetyAlerts();
+              }}
+              onRefreshParentAlerts={() => fetchSafetyAlerts()}
+            />
           </div>
         </div>
       )}
@@ -3827,6 +3586,35 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeEmergencySummaryAlertId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-[#FAF9F5] rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#EAE8E1]">
+            <div className="p-5 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-white rounded-t-2xl">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-amber-600 animate-pulse" />
+                <h3 className="text-base font-serif font-bold text-gray-900">Child Emergency & Safety Summary</h3>
+              </div>
+              <button
+                onClick={() => setActiveEmergencySummaryAlertId(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <ChildEmergencySummary 
+                alertId={activeEmergencySummaryAlertId} 
+                onClose={() => setActiveEmergencySummaryAlertId(null)}
+                isAdmin={true}
+                onRefreshAlert={() => {
+                  fetchSafetyAlerts();
+                }}
+              />
             </div>
           </div>
         </div>

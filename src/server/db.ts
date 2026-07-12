@@ -118,6 +118,8 @@ export async function execute(sql: string, params: any[] = []): Promise<{ change
   return { changes: 0 };
 }
 
+let sqliteTxQueue = Promise.resolve();
+
 export async function transaction<T>(fn: () => Promise<T> | T): Promise<T> {
   getDb();
   if (isPostgres && pgPool) {
@@ -135,10 +137,40 @@ export async function transaction<T>(fn: () => Promise<T> | T): Promise<T> {
       client.release();
     }
   } else if (sqliteDb) {
-    const trx = sqliteDb.transaction(() => {
-      return fn();
+    let resolveRef!: (val: T) => void;
+    let rejectRef!: (err: any) => void;
+    const returnPromise = new Promise<T>((resolve, reject) => {
+      resolveRef = resolve;
+      rejectRef = reject;
     });
-    return trx();
+
+    sqliteTxQueue = sqliteTxQueue.then(async () => {
+      const alreadyInTransaction = sqliteDb!.inTransaction;
+      if (alreadyInTransaction) {
+        try {
+          const res = await fn();
+          resolveRef(res);
+        } catch (e) {
+          rejectRef(e);
+        }
+        return;
+      }
+      try {
+        sqliteDb!.prepare('BEGIN').run();
+        const res = await fn();
+        sqliteDb!.prepare('COMMIT').run();
+        resolveRef(res);
+      } catch (e) {
+        try {
+          sqliteDb!.prepare('ROLLBACK').run();
+        } catch (_) {}
+        rejectRef(e);
+      }
+    }).catch(() => {
+      // Allow chain to continue safely
+    });
+
+    return returnPromise;
   }
   throw new Error('Database not initialized');
 }
@@ -151,6 +183,7 @@ function initSqliteSchema(db: Database.Database) {
       password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'parent',
       email_verified INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'active',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -288,8 +321,12 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
     CREATE INDEX IF NOT EXISTS idx_parent_profiles_user_id ON parent_profiles(user_id);
     CREATE INDEX IF NOT EXISTS idx_children_parent_id ON children(parent_profile_id);
+    CREATE INDEX IF NOT EXISTS idx_children_full_name_nocase ON children(full_name COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_parent_profiles_full_name_nocase ON parent_profiles(full_name COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_parent_profiles_phone ON parent_profiles(phone_number);
     CREATE INDEX IF NOT EXISTS idx_entries_child_id ON child_event_entries(child_id);
     CREATE INDEX IF NOT EXISTS idx_entries_event_id ON child_event_entries(event_id);
+    CREATE INDEX IF NOT EXISTS idx_entries_event_child ON child_event_entries(event_id, child_id);
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash);
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
 
@@ -492,6 +529,14 @@ function initSqliteSchema(db: Database.Database) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS admin_footer_settings (
+      id TEXT PRIMARY KEY,
+      copyright_year INTEGER DEFAULT 2025,
+      copyright_text TEXT DEFAULT 'Koinonia Children and Teens. All rights reserved.',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS admin_parent_notes (
       id TEXT PRIMARY KEY,
       parent_id TEXT NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
@@ -577,7 +622,17 @@ function initSqliteSchema(db: Database.Database) {
       resolved_at TEXT,
       resolution_note TEXT,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      idempotency_key TEXT UNIQUE,
+      owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      owner_assigned_at TEXT,
+      in_progress_at TEXT,
+      reopened_at TEXT,
+      reopened_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      reopen_note TEXT,
+      response_version INTEGER DEFAULT 1,
+      structured_details TEXT,
+      category_version INTEGER DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS safety_alert_recipients (
@@ -613,6 +668,47 @@ function initSqliteSchema(db: Database.Database) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS event_duty_devices (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      device_label TEXT NOT NULL,
+      app_generated_device_id TEXT UNIQUE NOT NULL,
+      push_subscription_id TEXT,
+      sound_enabled INTEGER DEFAULT 1,
+      voice_enabled INTEGER DEFAULT 1,
+      vibration_enabled INTEGER DEFAULT 1,
+      live_connection_status TEXT DEFAULT 'disconnected',
+      readiness_status TEXT DEFAULT 'unknown',
+      readiness_checked_at TEXT,
+      duty_started_at TEXT,
+      duty_ended_at TEXT,
+      last_seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS device_readiness_logs (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      readiness_status TEXT NOT NULL,
+      critical_passed INTEGER NOT NULL,
+      sound_ready INTEGER NOT NULL,
+      push_ready INTEGER NOT NULL,
+      voice_ready INTEGER NOT NULL,
+      vibration_supported INTEGER NOT NULL,
+      live_connection_state TEXT NOT NULL,
+      event_sync_age INTEGER,
+      check_timestamp TEXT NOT NULL,
+      duty_started_at TEXT,
+      duty_ended_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS user_passkeys (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -635,6 +731,145 @@ function initSqliteSchema(db: Database.Database) {
       target_id TEXT,
       details TEXT,
       timestamp TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS event_duty_assignments (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      responsibility_key TEXT NOT NULL,
+      team_key TEXT,
+      assignment_level TEXT DEFAULT 'primary',
+      status TEXT DEFAULT 'scheduled',
+      starts_at TEXT NOT NULL,
+      ends_at TEXT NOT NULL,
+      temporarily_unavailable_at TEXT,
+      expected_return_at TEXT,
+      note TEXT,
+      assigned_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_routing_rules (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      category_key TEXT NOT NULL,
+      severity_key TEXT NOT NULL,
+      location_scope TEXT,
+      team_scope TEXT,
+      requires_acknowledgement INTEGER DEFAULT 1,
+      escalation_delay_seconds INTEGER DEFAULT 30,
+      is_active INTEGER DEFAULT 1,
+      effective_from TEXT,
+      effective_until TEXT,
+      created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_routing_recipients (
+      id TEXT PRIMARY KEY,
+      routing_rule_id TEXT NOT NULL REFERENCES alert_routing_rules(id) ON DELETE CASCADE,
+      recipient_type TEXT NOT NULL,
+      responsibility_key TEXT,
+      team_key TEXT,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      delivery_tier TEXT NOT NULL DEFAULT 'primary',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_recipient_snapshots (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      assignment_id TEXT,
+      routing_rule_id TEXT,
+      tier TEXT NOT NULL DEFAULT 'primary',
+      eligibility_status TEXT NOT NULL,
+      exclusion_reason TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_device_deliveries (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      recipient_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      duty_device_id TEXT NOT NULL REFERENCES event_duty_devices(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL,
+      delivery_status TEXT DEFAULT 'pending',
+      attempted_at TEXT,
+      delivered_at TEXT,
+      acknowledged_at TEXT,
+      failure_code TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS event_routing_change_history (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT,
+      details TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_response_history (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      target_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      note TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_response_assignments (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      participant_role TEXT NOT NULL,
+      assignment_status TEXT NOT NULL,
+      assigned_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      assignment_reason TEXT,
+      assigned_at TEXT NOT NULL,
+      accepted_at TEXT,
+      ended_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(alert_id, user_id, participant_role)
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_response_updates (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      author_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      update_type TEXT NOT NULL,
+      note TEXT,
+      visibility TEXT NOT NULL,
+      idempotency_key TEXT UNIQUE,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_handover_requests (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+      from_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      to_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      note TEXT,
+      idempotency_key TEXT UNIQUE,
+      requested_at TEXT NOT NULL,
+      responded_at TEXT,
+      responded_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
   `);
 
@@ -811,6 +1046,464 @@ function initSqliteSchema(db: Database.Database) {
     } catch (e) {}
   }
 
+  try {
+    db.exec(`ALTER TABLE event_safety_alerts ADD COLUMN idempotency_key TEXT;`);
+  } catch (e) {}
+  try {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_safety_alerts_idempotency ON event_safety_alerts(idempotency_key);`);
+  } catch (e) {}
+
+  const sqliteAlertNewCols = [
+    "owner_user_id TEXT",
+    "owner_assigned_at TEXT",
+    "in_progress_at TEXT",
+    "reopened_at TEXT",
+    "reopened_by TEXT",
+    "reopen_note TEXT",
+    "response_version INTEGER DEFAULT 1",
+    "structured_details TEXT",
+    "category_version INTEGER DEFAULT 1"
+  ];
+  for (const col of sqliteAlertNewCols) {
+    try {
+      db.exec(`ALTER TABLE event_safety_alerts ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_response_history (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        target_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        note TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+  } catch (e) {}
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_response_assignments (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        participant_role TEXT NOT NULL,
+        assignment_status TEXT NOT NULL,
+        assigned_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        assignment_reason TEXT,
+        assigned_at TEXT NOT NULL,
+        accepted_at TEXT,
+        ended_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(alert_id, user_id, participant_role)
+      );
+    `);
+  } catch (e) {}
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_response_updates (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        author_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        update_type TEXT NOT NULL,
+        note TEXT,
+        visibility TEXT NOT NULL,
+        idempotency_key TEXT UNIQUE,
+        created_at TEXT NOT NULL
+      );
+    `);
+  } catch (e) {}
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_handover_requests (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        from_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        to_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        note TEXT,
+        idempotency_key TEXT UNIQUE,
+        requested_at TEXT NOT NULL,
+        responded_at TEXT,
+        responded_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attendance_records (
+        id TEXT PRIMARY KEY,
+        child_event_entry_id TEXT NOT NULL REFERENCES child_event_entries(id) ON DELETE CASCADE,
+        action_type TEXT NOT NULL,
+        action_time TEXT NOT NULL,
+        staff_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        verified_pickup_person_id TEXT REFERENCES pickup_people(id) ON DELETE SET NULL,
+        gate_location TEXT,
+        sync_source TEXT NOT NULL,
+        idempotency_key TEXT UNIQUE NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS offline_sync_records (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        staff_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        device_identifier TEXT NOT NULL,
+        sync_type TEXT NOT NULL,
+        record_count INTEGER NOT NULL,
+        payload_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error_summary TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_attendance_entry_id ON attendance_records(child_event_entry_id);
+      CREATE INDEX IF NOT EXISTS idx_attendance_action_type ON attendance_records(action_type);
+      CREATE INDEX IF NOT EXISTS idx_attendance_action_time ON attendance_records(action_time);
+      CREATE INDEX IF NOT EXISTS idx_offline_sync_event ON offline_sync_records(event_id);
+      CREATE INDEX IF NOT EXISTS idx_offline_sync_status ON offline_sync_records(status);
+    `);
+  } catch (e) {}
+
+  // Phase 6 Event Locations (SQLite)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_locations (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        parent_location_id TEXT REFERENCES event_locations(id) ON DELETE SET NULL,
+        location_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        short_name TEXT,
+        description TEXT,
+        instructions TEXT,
+        capacity INTEGER,
+        age_group_key TEXT,
+        team_key TEXT,
+        emergency_label TEXT,
+        sort_order INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        archived_at TEXT,
+        archived_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  } catch (e) {}
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_location_codes (
+        id TEXT PRIMARY KEY,
+        event_location_id TEXT NOT NULL REFERENCES event_locations(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL,
+        token_version INTEGER DEFAULT 1,
+        is_active INTEGER DEFAULT 1,
+        generated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        generated_at TEXT NOT NULL,
+        rotated_at TEXT,
+        disabled_at TEXT,
+        expires_at TEXT
+      );
+    `);
+  } catch (e) {}
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_duty_location_presence (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        duty_device_id TEXT REFERENCES event_duty_devices(id) ON DELETE SET NULL,
+        event_location_id TEXT NOT NULL REFERENCES event_locations(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  } catch (e) {}
+
+  // Phase 7: Child Emergency Summary tables (SQLite)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_child_context_snapshots (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+        context_type TEXT,
+        display_name_snapshot TEXT,
+        preferred_name_snapshot TEXT,
+        age_group_snapshot TEXT,
+        assigned_room_snapshot TEXT,
+        photo_reference_snapshot TEXT,
+        event_status_snapshot TEXT,
+        safety_summary_snapshot TEXT,
+        snapshot_version INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_alert_child_snapshots_alert ON alert_child_context_snapshots(alert_id);`);
+  } catch (e) {
+    console.error('Error creating alert_child_context_snapshots in SQLite:', e);
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS child_summary_access_logs (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        alert_id TEXT REFERENCES event_safety_alerts(id) ON DELETE SET NULL,
+        child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+        actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        access_profile TEXT NOT NULL,
+        accessed_section TEXT NOT NULL,
+        access_reason TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_child_summary_access_child_time ON child_summary_access_logs(child_id, created_at);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_child_summary_access_alert_time ON child_summary_access_logs(alert_id, created_at);`);
+  } catch (e) {
+    console.error('Error creating child_summary_access_logs in SQLite:', e);
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_child_link_history (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        previous_child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+        new_child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        changed_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_alert_child_link_hist_alert_time ON alert_child_link_history(alert_id, created_at);`);
+  } catch (e) {
+    console.error('Error creating alert_child_link_history in SQLite:', e);
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS child_contact_attempts (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        alert_id TEXT NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+        contact_type TEXT NOT NULL,
+        contact_reference TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        safe_note TEXT,
+        attempted_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        attempted_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_child_contact_attempts_alert_time ON child_contact_attempts(alert_id, attempted_at);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_child_event_entries_event_child ON child_event_entries(event_id, child_id);`);
+  } catch (e) {
+    console.error('Error creating child_contact_attempts in SQLite:', e);
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS incident_records (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT UNIQUE NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        creator_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'draft',
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        structured_data TEXT NOT NULL,
+        parent_contact TEXT,
+        first_aid TEXT,
+        security TEXT,
+        follow_up_actions TEXT,
+        change_requests TEXT,
+        closure_checklist TEXT,
+        version INTEGER DEFAULT 1 NOT NULL,
+        idempotency_key TEXT UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_incident_records_alert ON incident_records(alert_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_incident_records_event ON incident_records(event_id);`);
+  } catch (e) {
+    console.error('Error creating incident_records in SQLite:', e);
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS incident_history (
+        id TEXT PRIMARY KEY,
+        incident_id TEXT NOT NULL REFERENCES incident_records(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        note TEXT,
+        state_snapshot TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_incident_history_incident ON incident_history(incident_id);`);
+  } catch (e) {
+    console.error('Error creating incident_history in SQLite:', e);
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS escalation_policies (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        policy_scope TEXT NOT NULL,
+        severity TEXT,
+        category_key TEXT,
+        location_id TEXT REFERENCES event_locations(id) ON DELETE SET NULL,
+        location_type TEXT,
+        condition_key TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 0,
+        is_enabled INTEGER DEFAULT 1,
+        created_by TEXT,
+        updated_by TEXT,
+        archived_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS escalation_policy_steps (
+        id TEXT PRIMARY KEY,
+        policy_id TEXT NOT NULL REFERENCES escalation_policies(id) ON DELETE CASCADE,
+        step_order INTEGER NOT NULL,
+        wait_seconds INTEGER NOT NULL,
+        target_type TEXT NOT NULL,
+        target_user_id TEXT,
+        target_responsibility_key TEXT,
+        target_team_key TEXT,
+        target_supervisory_level TEXT,
+        channels TEXT NOT NULL,
+        repeat_effect TEXT,
+        maximum_attempts INTEGER DEFAULT 1,
+        cooldown_seconds INTEGER DEFAULT 60,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS escalation_cycles (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        subject_type TEXT NOT NULL,
+        alert_id TEXT REFERENCES event_safety_alerts(id) ON DELETE SET NULL,
+        incident_id TEXT REFERENCES incident_records(id) ON DELETE SET NULL,
+        follow_up_id TEXT,
+        policy_id TEXT REFERENCES escalation_policies(id) ON DELETE SET NULL,
+        condition_key TEXT NOT NULL,
+        cycle_number INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'scheduled',
+        current_step_order INTEGER NOT NULL DEFAULT 0,
+        next_due_at TEXT,
+        started_at TEXT NOT NULL,
+        stopped_at TEXT,
+        stop_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS escalation_executions (
+        id TEXT PRIMARY KEY,
+        cycle_id TEXT NOT NULL REFERENCES escalation_cycles(id) ON DELETE CASCADE,
+        policy_step_id TEXT REFERENCES escalation_policy_steps(id) ON DELETE SET NULL,
+        execution_key TEXT UNIQUE NOT NULL,
+        status TEXT NOT NULL DEFAULT 'scheduled',
+        scheduled_for TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        attempt_count INTEGER DEFAULT 0,
+        retry_at TEXT,
+        failure_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS escalation_deliveries (
+        id TEXT PRIMARY KEY,
+        execution_id TEXT NOT NULL REFERENCES escalation_executions(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        duty_device_id TEXT,
+        channel TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempted_at TEXT,
+        delivered_at TEXT,
+        failure_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS escalation_history (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        cycle_id TEXT REFERENCES escalation_cycles(id) ON DELETE SET NULL,
+        actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        action_type TEXT NOT NULL,
+        safe_summary TEXT NOT NULL,
+        protected_metadata TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS scheduler_leases (
+        id TEXT PRIMARY KEY,
+        leased_by TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_escalation_policies_event ON escalation_policies(event_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_escalation_cycles_due ON escalation_cycles(status, next_due_at);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_escalation_executions_due ON escalation_executions(status, scheduled_for);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_escalation_history_cycle ON escalation_history(cycle_id);`);
+  } catch (e) {
+    console.error('Error creating escalation tables in SQLite:', e);
+  }
+
+  // Safe column additions for Phase 6 in SQLite
+  const sqlitePhase6Cols = [
+    { table: 'event_duty_assignments', col: 'assigned_location_id TEXT' },
+    { table: 'event_safety_alerts', col: 'location_id TEXT' },
+    { table: 'event_safety_alerts', col: 'location_path_snapshot TEXT' },
+    { table: 'event_safety_alerts', col: 'location_detail TEXT' },
+    { table: 'event_safety_alerts', col: 'location_source TEXT' },
+    { table: 'event_safety_alerts', col: 'original_location_id TEXT' },
+    { table: 'alert_routing_rules', col: 'location_id TEXT' },
+    { table: 'alert_routing_rules', col: 'location_type_scope TEXT' },
+    { table: 'alert_routing_rules', col: 'include_sub_locations INTEGER DEFAULT 0' }
+  ];
+  for (const item of sqlitePhase6Cols) {
+    try {
+      db.exec(`ALTER TABLE ${item.table} ADD COLUMN ${item.col};`);
+    } catch (e) {}
+  }
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_locations_event_active ON event_locations(event_id, is_active);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_locations_parent ON event_locations(parent_location_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_duty_location_presence_user ON event_duty_location_presence(user_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_duty_location_presence_loc ON event_duty_location_presence(event_location_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_location_codes_hash ON event_location_codes(token_hash);`);
+  } catch (e) {}
+
   // Seed real approved event
   const now = new Date().toISOString();
   db.prepare(`
@@ -854,6 +1547,23 @@ function initSqliteSchema(db: Database.Database) {
     now,
     now
   );
+
+  db.prepare(`
+    INSERT OR IGNORE INTO admin_footer_settings (
+      id, copyright_year, copyright_text, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    'primary_footer_settings',
+    2025,
+    'Koinonia Children and Teens. All rights reserved.',
+    now,
+    now
+  );
+
+  // Run SQLite migration/alters to add status to users if it doesn't exist
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';");
+  } catch (_) {}
 
   // Check if users table is empty and auto-seed development data
   const userCountResult = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
@@ -1021,6 +1731,7 @@ async function initPostgresSchema(pool: any) {
         password_hash VARCHAR(255),
         role VARCHAR(64) NOT NULL DEFAULT 'parent',
         email_verified INTEGER DEFAULT 0,
+        status VARCHAR(64) NOT NULL DEFAULT 'active',
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -1158,8 +1869,12 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
       CREATE INDEX IF NOT EXISTS idx_parent_profiles_user_id ON parent_profiles(user_id);
       CREATE INDEX IF NOT EXISTS idx_children_parent_id ON children(parent_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_children_full_name_lower ON children(lower(full_name));
+      CREATE INDEX IF NOT EXISTS idx_parent_profiles_full_name_lower ON parent_profiles(lower(full_name));
+      CREATE INDEX IF NOT EXISTS idx_parent_profiles_phone ON parent_profiles(phone_number);
       CREATE INDEX IF NOT EXISTS idx_entries_child_id ON child_event_entries(child_id);
       CREATE INDEX IF NOT EXISTS idx_entries_event_id ON child_event_entries(event_id);
+      CREATE INDEX IF NOT EXISTS idx_entries_event_child ON child_event_entries(event_id, child_id);
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash);
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
 
@@ -1362,6 +2077,14 @@ async function initPostgresSchema(pool: any) {
         updated_at TIMESTAMP NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS admin_footer_settings (
+        id VARCHAR(64) PRIMARY KEY,
+        copyright_year INTEGER DEFAULT 2025,
+        copyright_text VARCHAR(255) DEFAULT 'Koinonia Children and Teens. All rights reserved.',
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS admin_parent_notes (
         id VARCHAR(64) PRIMARY KEY,
         parent_id VARCHAR(64) NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
@@ -1447,7 +2170,17 @@ async function initPostgresSchema(pool: any) {
         resolved_at TIMESTAMP,
         resolution_note TEXT,
         created_at TIMESTAMP NOT NULL,
-        updated_at TIMESTAMP NOT NULL
+        updated_at TIMESTAMP NOT NULL,
+        idempotency_key VARCHAR(255) UNIQUE,
+        owner_user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        owner_assigned_at TIMESTAMP,
+        in_progress_at TIMESTAMP,
+        reopened_at TIMESTAMP,
+        reopened_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        reopen_note TEXT,
+        response_version INTEGER DEFAULT 1,
+        structured_details TEXT,
+        category_version INTEGER DEFAULT 1
       );
 
       CREATE TABLE IF NOT EXISTS safety_alert_recipients (
@@ -1483,6 +2216,47 @@ async function initPostgresSchema(pool: any) {
         updated_at TIMESTAMP NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS event_duty_devices (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role VARCHAR(255) NOT NULL,
+        event_id VARCHAR(255) NOT NULL,
+        device_label VARCHAR(255) NOT NULL,
+        app_generated_device_id VARCHAR(255) UNIQUE NOT NULL,
+        push_subscription_id VARCHAR(255),
+        sound_enabled INTEGER DEFAULT 1,
+        voice_enabled INTEGER DEFAULT 1,
+        vibration_enabled INTEGER DEFAULT 1,
+        live_connection_status VARCHAR(255) DEFAULT 'disconnected',
+        readiness_status VARCHAR(255) DEFAULT 'unknown',
+        readiness_checked_at TIMESTAMP,
+        duty_started_at TIMESTAMP,
+        duty_ended_at TIMESTAMP,
+        last_seen_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS device_readiness_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
+        role VARCHAR(255) NOT NULL,
+        device_id VARCHAR(255) NOT NULL,
+        readiness_status VARCHAR(255) NOT NULL,
+        critical_passed INTEGER NOT NULL,
+        sound_ready INTEGER NOT NULL,
+        push_ready INTEGER NOT NULL,
+        voice_ready INTEGER NOT NULL,
+        vibration_supported INTEGER NOT NULL,
+        live_connection_state VARCHAR(255) NOT NULL,
+        event_sync_age INTEGER,
+        check_timestamp TIMESTAMP NOT NULL,
+        duty_started_at TIMESTAMP,
+        duty_ended_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS user_passkeys (
         id VARCHAR(64) PRIMARY KEY,
         user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1506,6 +2280,177 @@ async function initPostgresSchema(pool: any) {
         details TEXT,
         timestamp TIMESTAMP NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS event_duty_assignments (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        responsibility_key VARCHAR(255) NOT NULL,
+        team_key VARCHAR(255),
+        assignment_level VARCHAR(255) DEFAULT 'primary',
+        status VARCHAR(255) DEFAULT 'scheduled',
+        starts_at VARCHAR(255) NOT NULL,
+        ends_at VARCHAR(255) NOT NULL,
+        temporarily_unavailable_at VARCHAR(255),
+        expected_return_at VARCHAR(255),
+        note TEXT,
+        assigned_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_routing_rules (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        category_key VARCHAR(255) NOT NULL,
+        severity_key VARCHAR(255) NOT NULL,
+        location_scope VARCHAR(255),
+        team_scope VARCHAR(255),
+        requires_acknowledgement INTEGER DEFAULT 1,
+        escalation_delay_seconds INTEGER DEFAULT 30,
+        is_active INTEGER DEFAULT 1,
+        effective_from VARCHAR(255),
+        effective_until VARCHAR(255),
+        created_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        updated_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_routing_recipients (
+        id VARCHAR(255) PRIMARY KEY,
+        routing_rule_id VARCHAR(255) NOT NULL REFERENCES alert_routing_rules(id) ON DELETE CASCADE,
+        recipient_type VARCHAR(255) NOT NULL,
+        responsibility_key VARCHAR(255),
+        team_key VARCHAR(255),
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        delivery_tier VARCHAR(255) NOT NULL DEFAULT 'primary',
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_recipient_snapshots (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        assignment_id VARCHAR(255),
+        routing_rule_id VARCHAR(255),
+        tier VARCHAR(255) NOT NULL DEFAULT 'primary',
+        eligibility_status VARCHAR(255) NOT NULL,
+        exclusion_reason VARCHAR(255),
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_device_deliveries (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        recipient_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        duty_device_id VARCHAR(255) NOT NULL REFERENCES event_duty_devices(id) ON DELETE CASCADE,
+        channel VARCHAR(255) NOT NULL,
+        delivery_status VARCHAR(255) DEFAULT 'pending',
+        attempted_at VARCHAR(255),
+        delivered_at VARCHAR(255),
+        acknowledged_at VARCHAR(255),
+        failure_code VARCHAR(255),
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS event_routing_change_history (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        action VARCHAR(255) NOT NULL,
+        target_type VARCHAR(255) NOT NULL,
+        target_id VARCHAR(255),
+        details TEXT,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_response_history (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        action VARCHAR(255) NOT NULL,
+        target_user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        note TEXT,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_response_assignments (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        participant_role VARCHAR(255) NOT NULL,
+        assignment_status VARCHAR(255) NOT NULL,
+        assigned_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        assignment_reason TEXT,
+        assigned_at TIMESTAMP NOT NULL,
+        accepted_at TIMESTAMP,
+        ended_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        UNIQUE(alert_id, user_id, participant_role)
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_response_updates (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        author_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        update_type VARCHAR(255) NOT NULL,
+        note TEXT,
+        visibility VARCHAR(255) NOT NULL,
+        idempotency_key VARCHAR(255) UNIQUE,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_handover_requests (
+        id VARCHAR(255) PRIMARY KEY,
+        alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+        from_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        to_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status VARCHAR(255) NOT NULL,
+        reason TEXT NOT NULL,
+        note TEXT,
+        idempotency_key VARCHAR(255) UNIQUE,
+        requested_at TIMESTAMP NOT NULL,
+        responded_at TIMESTAMP,
+        responded_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attendance_records (
+        id VARCHAR(255) PRIMARY KEY,
+        child_event_entry_id VARCHAR(255) NOT NULL REFERENCES child_event_entries(id) ON DELETE CASCADE,
+        action_type VARCHAR(255) NOT NULL,
+        action_time TIMESTAMP NOT NULL,
+        staff_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        verified_pickup_person_id VARCHAR(255) REFERENCES pickup_people(id) ON DELETE SET NULL,
+        gate_location VARCHAR(255),
+        sync_source VARCHAR(255) NOT NULL,
+        idempotency_key VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS offline_sync_records (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        staff_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        device_identifier VARCHAR(255) NOT NULL,
+        sync_type VARCHAR(255) NOT NULL,
+        record_count INTEGER NOT NULL,
+        payload_hash VARCHAR(255) NOT NULL,
+        status VARCHAR(255) NOT NULL,
+        error_summary TEXT,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_attendance_entry_id ON attendance_records(child_event_entry_id);
+      CREATE INDEX IF NOT EXISTS idx_attendance_action_type ON attendance_records(action_type);
+      CREATE INDEX IF NOT EXISTS idx_attendance_action_time ON attendance_records(action_time);
+      CREATE INDEX IF NOT EXISTS idx_offline_sync_event ON offline_sync_records(event_id);
+      CREATE INDEX IF NOT EXISTS idx_offline_sync_status ON offline_sync_records(status);
     `);
 
     // Safe migration for column length extension
@@ -1696,6 +2641,479 @@ async function initPostgresSchema(pool: any) {
       } catch (e) {}
     }
 
+    try {
+      await pool.query(`ALTER TABLE event_safety_alerts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255);`);
+    } catch (e) {}
+    try {
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_safety_alerts_idempotency ON event_safety_alerts(idempotency_key);`);
+    } catch (e) {}
+
+    const pgAlertNewCols = [
+      "owner_user_id VARCHAR(255)",
+      "owner_assigned_at TIMESTAMP",
+      "in_progress_at TIMESTAMP",
+      "reopened_at TIMESTAMP",
+      "reopened_by VARCHAR(255)",
+      "reopen_note TEXT",
+      "response_version INTEGER DEFAULT 1",
+      "structured_details TEXT",
+      "category_version INTEGER DEFAULT 1"
+    ];
+    for (const col of pgAlertNewCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE event_safety_alerts ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS alert_response_history (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          action VARCHAR(255) NOT NULL,
+          target_user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          note TEXT,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS alert_response_assignments (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          participant_role VARCHAR(255) NOT NULL,
+          assignment_status VARCHAR(255) NOT NULL,
+          assigned_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          assignment_reason TEXT,
+          assigned_at TIMESTAMP NOT NULL,
+          accepted_at TIMESTAMP,
+          ended_at TIMESTAMP,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL,
+          UNIQUE(alert_id, user_id, participant_role)
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS alert_response_updates (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          author_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          update_type VARCHAR(255) NOT NULL,
+          note TEXT,
+          visibility VARCHAR(255) NOT NULL,
+          idempotency_key VARCHAR(255) UNIQUE,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS alert_handover_requests (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          from_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          to_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          status VARCHAR(255) NOT NULL,
+          reason TEXT NOT NULL,
+          note TEXT,
+          idempotency_key VARCHAR(255) UNIQUE,
+          requested_at TIMESTAMP NOT NULL,
+          responded_at TIMESTAMP,
+          responded_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS attendance_records (
+          id VARCHAR(255) PRIMARY KEY,
+          child_event_entry_id VARCHAR(255) NOT NULL REFERENCES child_event_entries(id) ON DELETE CASCADE,
+          action_type VARCHAR(255) NOT NULL,
+          action_time TIMESTAMP NOT NULL,
+          staff_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          verified_pickup_person_id VARCHAR(255) REFERENCES pickup_people(id) ON DELETE SET NULL,
+          gate_location VARCHAR(255),
+          sync_source VARCHAR(255) NOT NULL,
+          idempotency_key VARCHAR(255) UNIQUE NOT NULL,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS offline_sync_records (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          staff_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          device_identifier VARCHAR(255) NOT NULL,
+          sync_type VARCHAR(255) NOT NULL,
+          record_count INTEGER NOT NULL,
+          payload_hash VARCHAR(255) NOT NULL,
+          status VARCHAR(255) NOT NULL,
+          error_summary TEXT,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_attendance_entry_id ON attendance_records(child_event_entry_id);
+        CREATE INDEX IF NOT EXISTS idx_attendance_action_type ON attendance_records(action_type);
+        CREATE INDEX IF NOT EXISTS idx_attendance_action_time ON attendance_records(action_time);
+        CREATE INDEX IF NOT EXISTS idx_offline_sync_event ON offline_sync_records(event_id);
+        CREATE INDEX IF NOT EXISTS idx_offline_sync_status ON offline_sync_records(status);
+      `);
+    } catch (e) {}
+
+    // Phase 6 Event Locations (Postgres)
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS event_locations (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          parent_location_id VARCHAR(255) REFERENCES event_locations(id) ON DELETE SET NULL,
+          location_type VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          short_name VARCHAR(255),
+          description TEXT,
+          instructions TEXT,
+          capacity INTEGER,
+          age_group_key VARCHAR(255),
+          team_key VARCHAR(255),
+          emergency_label VARCHAR(255),
+          sort_order INTEGER DEFAULT 0,
+          is_active INTEGER DEFAULT 1,
+          archived_at TIMESTAMP,
+          archived_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          created_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          updated_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS event_location_codes (
+          id VARCHAR(255) PRIMARY KEY,
+          event_location_id VARCHAR(255) NOT NULL REFERENCES event_locations(id) ON DELETE CASCADE,
+          token_hash VARCHAR(255) NOT NULL,
+          token_version INTEGER DEFAULT 1,
+          is_active INTEGER DEFAULT 1,
+          generated_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          generated_at TIMESTAMP NOT NULL,
+          rotated_at TIMESTAMP,
+          disabled_at TIMESTAMP,
+          expires_at TIMESTAMP
+        );
+      `);
+    } catch (e) {}
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS event_duty_location_presence (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          duty_device_id VARCHAR(255) REFERENCES event_duty_devices(id) ON DELETE SET NULL,
+          event_location_id VARCHAR(255) NOT NULL REFERENCES event_locations(id) ON DELETE CASCADE,
+          source VARCHAR(255) NOT NULL,
+          started_at TIMESTAMP NOT NULL,
+          ended_at TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL
+        );
+      `);
+    } catch (e) {}
+
+    // Phase 7: Child Emergency Summary tables (Postgres)
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS alert_child_context_snapshots (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          child_id VARCHAR(255) REFERENCES children(id) ON DELETE SET NULL,
+          context_type VARCHAR(255),
+          display_name_snapshot VARCHAR(255),
+          preferred_name_snapshot VARCHAR(255),
+          age_group_snapshot VARCHAR(255),
+          assigned_room_snapshot VARCHAR(255),
+          photo_reference_snapshot VARCHAR(255),
+          event_status_snapshot VARCHAR(255),
+          safety_summary_snapshot TEXT,
+          snapshot_version INTEGER DEFAULT 1,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_child_snapshots_alert ON alert_child_context_snapshots(alert_id);`);
+    } catch (e) {
+      console.error('Error creating alert_child_context_snapshots in Postgres:', e);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS child_summary_access_logs (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          alert_id VARCHAR(255) REFERENCES event_safety_alerts(id) ON DELETE SET NULL,
+          child_id VARCHAR(255) NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+          actor_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          access_profile VARCHAR(255) NOT NULL,
+          accessed_section VARCHAR(255) NOT NULL,
+          access_reason VARCHAR(500),
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_child_summary_access_child_time ON child_summary_access_logs(child_id, created_at);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_child_summary_access_alert_time ON child_summary_access_logs(alert_id, created_at);`);
+    } catch (e) {
+      console.error('Error creating child_summary_access_logs in Postgres:', e);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS alert_child_link_history (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          previous_child_id VARCHAR(255) REFERENCES children(id) ON DELETE SET NULL,
+          new_child_id VARCHAR(255) REFERENCES children(id) ON DELETE SET NULL,
+          action VARCHAR(255) NOT NULL,
+          reason VARCHAR(500) NOT NULL,
+          changed_by VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_child_link_hist_alert_time ON alert_child_link_history(alert_id, created_at);`);
+    } catch (e) {
+      console.error('Error creating alert_child_link_history in Postgres:', e);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS child_contact_attempts (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          alert_id VARCHAR(255) NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          child_id VARCHAR(255) NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+          contact_type VARCHAR(255) NOT NULL,
+          contact_reference VARCHAR(255) NOT NULL,
+          outcome VARCHAR(255) NOT NULL,
+          safe_note TEXT,
+          attempted_by VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          attempted_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_child_contact_attempts_alert_time ON child_contact_attempts(alert_id, attempted_at);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_child_event_entries_event_child ON child_event_entries(event_id, child_id);`);
+    } catch (e) {
+      console.error('Error creating child_contact_attempts in Postgres:', e);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS incident_records (
+          id VARCHAR(255) PRIMARY KEY,
+          alert_id VARCHAR(255) UNIQUE NOT NULL REFERENCES event_safety_alerts(id) ON DELETE CASCADE,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          creator_user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          status VARCHAR(64) NOT NULL DEFAULT 'draft',
+          category VARCHAR(64) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          description TEXT NOT NULL,
+          structured_data TEXT NOT NULL,
+          parent_contact TEXT,
+          first_aid TEXT,
+          security TEXT,
+          follow_up_actions TEXT,
+          change_requests TEXT,
+          closure_checklist TEXT,
+          version INTEGER DEFAULT 1 NOT NULL,
+          idempotency_key VARCHAR(255) UNIQUE,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_incident_records_alert ON incident_records(alert_id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_incident_records_event ON incident_records(event_id);`);
+    } catch (e) {
+      console.error('Error creating incident_records in Postgres:', e);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS incident_history (
+          id VARCHAR(255) PRIMARY KEY,
+          incident_id VARCHAR(255) NOT NULL REFERENCES incident_records(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          action VARCHAR(64) NOT NULL,
+          note TEXT,
+          state_snapshot TEXT,
+          created_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_incident_history_incident ON incident_history(incident_id);`);
+    } catch (e) {
+      console.error('Error creating incident_history in Postgres:', e);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS escalation_policies (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          policy_scope VARCHAR(255) NOT NULL,
+          severity VARCHAR(64),
+          category_key VARCHAR(64),
+          location_id VARCHAR(255) REFERENCES event_locations(id) ON DELETE SET NULL,
+          location_type VARCHAR(64),
+          condition_key VARCHAR(128) NOT NULL,
+          priority INTEGER NOT NULL DEFAULT 0,
+          is_enabled INTEGER DEFAULT 1,
+          created_by VARCHAR(255),
+          updated_by VARCHAR(255),
+          archived_at VARCHAR(64),
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS escalation_policy_steps (
+          id VARCHAR(255) PRIMARY KEY,
+          policy_id VARCHAR(255) NOT NULL REFERENCES escalation_policies(id) ON DELETE CASCADE,
+          step_order INTEGER NOT NULL,
+          wait_seconds INTEGER NOT NULL,
+          target_type VARCHAR(64) NOT NULL,
+          target_user_id VARCHAR(255),
+          target_responsibility_key VARCHAR(128),
+          target_team_key VARCHAR(128),
+          target_supervisory_level VARCHAR(128),
+          channels VARCHAR(255) NOT NULL,
+          repeat_effect VARCHAR(128),
+          maximum_attempts INTEGER DEFAULT 1,
+          cooldown_seconds INTEGER DEFAULT 60,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS escalation_cycles (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          subject_type VARCHAR(64) NOT NULL,
+          alert_id VARCHAR(255) REFERENCES event_safety_alerts(id) ON DELETE SET NULL,
+          incident_id VARCHAR(255) REFERENCES incident_records(id) ON DELETE SET NULL,
+          follow_up_id VARCHAR(255),
+          policy_id VARCHAR(255) REFERENCES escalation_policies(id) ON DELETE SET NULL,
+          condition_key VARCHAR(128) NOT NULL,
+          cycle_number INTEGER NOT NULL DEFAULT 1,
+          status VARCHAR(64) NOT NULL DEFAULT 'scheduled',
+          current_step_order INTEGER NOT NULL DEFAULT 0,
+          next_due_at TIMESTAMP,
+          started_at TIMESTAMP NOT NULL,
+          stopped_at TIMESTAMP,
+          stop_reason TEXT,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS escalation_executions (
+          id VARCHAR(255) PRIMARY KEY,
+          cycle_id VARCHAR(255) NOT NULL REFERENCES escalation_cycles(id) ON DELETE CASCADE,
+          policy_step_id VARCHAR(255) REFERENCES escalation_policy_steps(id) ON DELETE SET NULL,
+          execution_key VARCHAR(255) UNIQUE NOT NULL,
+          status VARCHAR(64) NOT NULL DEFAULT 'scheduled',
+          scheduled_for TIMESTAMP NOT NULL,
+          started_at TIMESTAMP,
+          completed_at TIMESTAMP,
+          attempt_count INTEGER DEFAULT 0,
+          retry_at TIMESTAMP,
+          failure_code VARCHAR(128),
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS escalation_deliveries (
+          id VARCHAR(255) PRIMARY KEY,
+          execution_id VARCHAR(255) NOT NULL REFERENCES escalation_executions(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          duty_device_id VARCHAR(255),
+          channel VARCHAR(64) NOT NULL,
+          status VARCHAR(64) NOT NULL DEFAULT 'pending',
+          attempted_at TIMESTAMP,
+          delivered_at TIMESTAMP,
+          failure_code VARCHAR(128),
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS escalation_history (
+          id VARCHAR(255) PRIMARY KEY,
+          event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          cycle_id VARCHAR(255) REFERENCES escalation_cycles(id) ON DELETE SET NULL,
+          actor_user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+          action_type VARCHAR(128) NOT NULL,
+          safe_summary TEXT NOT NULL,
+          protected_metadata TEXT,
+          created_at TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS scheduler_leases (
+          id VARCHAR(255) PRIMARY KEY,
+          leased_by VARCHAR(255) NOT NULL,
+          expires_at TIMESTAMP NOT NULL,
+          created_at TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_escalation_policies_event ON escalation_policies(event_id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_escalation_cycles_due ON escalation_cycles(status, next_due_at);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_escalation_executions_due ON escalation_executions(status, scheduled_for);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_escalation_history_cycle ON escalation_history(cycle_id);`);
+    } catch (e) {
+      console.error('Error creating escalation tables in Postgres:', e);
+    }
+
+    // Safe column additions for Phase 6 in Postgres
+    const pgPhase6Cols = [
+      { table: 'event_duty_assignments', colName: 'assigned_location_id', colDef: 'VARCHAR(255)' },
+      { table: 'event_safety_alerts', colName: 'location_id', colDef: 'VARCHAR(255)' },
+      { table: 'event_safety_alerts', colName: 'location_path_snapshot', colDef: 'VARCHAR(500)' },
+      { table: 'event_safety_alerts', colName: 'location_detail', colDef: 'TEXT' },
+      { table: 'event_safety_alerts', colName: 'location_source', colDef: 'VARCHAR(64)' },
+      { table: 'event_safety_alerts', colName: 'original_location_id', colDef: 'VARCHAR(255)' },
+      { table: 'alert_routing_rules', colName: 'location_id', colDef: 'VARCHAR(255)' },
+      { table: 'alert_routing_rules', colName: 'location_type_scope', colDef: 'VARCHAR(64)' },
+      { table: 'alert_routing_rules', colName: 'include_sub_locations', colDef: 'INTEGER DEFAULT 0' }
+    ];
+    for (const item of pgPhase6Cols) {
+      try {
+        await pool.query(`ALTER TABLE ${item.table} ADD COLUMN IF NOT EXISTS ${item.colName} ${item.colDef};`);
+      } catch (e) {}
+    }
+
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_locations_event_active ON event_locations(event_id, is_active);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_locations_parent ON event_locations(parent_location_id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_duty_location_presence_user ON event_duty_location_presence(user_id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_duty_location_presence_loc ON event_duty_location_presence(event_location_id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_location_codes_hash ON event_location_codes(token_hash);`);
+    } catch (e) {}
+
     const now = new Date().toISOString();
     await pool.query(`
       INSERT INTO events (
@@ -1740,6 +3158,24 @@ async function initPostgresSchema(pool: any) {
       now,
       now
     ]);
+
+    await pool.query(`
+      INSERT INTO admin_footer_settings (
+        id, copyright_year, copyright_text, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO NOTHING
+    `, [
+      'primary_footer_settings',
+      2025,
+      'Koinonia Children and Teens. All rights reserved.',
+      now,
+      now
+    ]);
+
+    // Ensure PostgreSQL users table has status column
+    try {
+      await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(64) DEFAULT 'active';");
+    } catch (_) {}
 
     // Check if users table is empty and auto-seed development data
     const userCountResult = await pool.query('SELECT COUNT(*) as count FROM users');

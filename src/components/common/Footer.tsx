@@ -1,8 +1,30 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Heart, MapPin } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 
 export const Footer: React.FC = () => {
+  const [copyright, setCopyright] = useState({
+    copyrightYear: 2025,
+    copyrightText: 'Koinonia Children and Teens. All rights reserved.'
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/admin/footer-settings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data && data.success && data.settings) {
+          setCopyright(data.settings);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load footer copyright settings:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <footer className="bg-[#141416] text-[#A1A1AA] border-t border-[#C59B27]/20 pt-16 pb-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-10 pb-12 border-b border-white/10">
@@ -49,11 +71,12 @@ export const Footer: React.FC = () => {
         </div>
       </div>
       <div className="max-w-7xl mx-auto pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#71717A]">
-        <p>© 2025 Koinonia Children and Teens. All rights reserved.</p>
+        <p>© {copyright.copyrightYear} {copyright.copyrightText}</p>
         <div className="flex items-center space-x-6 mt-4 sm:mt-0">
-          <span>Child Safety Policy</span>
-          <span>Parent Terms</span>
-          <span>Privacy Protocol</span>
+          <a href="#/child-safety" className="hover:text-white transition-colors duration-200">Child Safety Policy</a>
+          <a href="#/terms" className="hover:text-white transition-colors duration-200">Parent Terms</a>
+          <a href="#/privacy" className="hover:text-white transition-colors duration-200">Privacy Protocol</a>
+          <a href="#/contact" className="hover:text-white transition-colors duration-200">Contact Us</a>
         </div>
       </div>
     </footer>

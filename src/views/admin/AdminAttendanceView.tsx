@@ -492,7 +492,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                           <Button
                             type="button"
                             variant="secondary"
-                            size="xs"
+                            size="sm"
                             fullWidth
                             className="py-1.5 text-[10px] font-semibold"
                           >

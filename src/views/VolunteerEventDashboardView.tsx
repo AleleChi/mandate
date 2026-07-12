@@ -3,7 +3,7 @@ import {
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
-  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert
+  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -11,11 +11,15 @@ import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { VolunteerProfileView } from './volunteer/VolunteerProfileView';
+import { DeviceReadinessView } from '../components/volunteer/DeviceReadinessView';
 import { SafeImage } from '../components/common/SafeImage';
 import { BrandLogo } from '../components/common/BrandLogo';
 import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
 import { playSound, resumeAudioContext } from '../utils/sound';
 import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
+import { EventLocationSelector } from '../components/volunteer/EventLocationSelector';
+import { ChildEmergencySummary } from '../components/ChildEmergencySummary';
+import { offlineService, OutboxAction } from '../services/offlineService';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt && !endsAt) return '18th to 22nd November 2026';
@@ -71,6 +75,71 @@ const formatChildNameAndRef = (rawName?: string) => {
   return { name: rawName, ref: '' };
 };
 
+const VolunteerDetailedAlertProgress: React.FC<{ alertId: string }> = ({ alertId }) => {
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState(false);
+
+  const fetchProgress = async () => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.safetyAlerts.getVolunteerHelpRequestProgress(alertId);
+      if (res && res.success) {
+        setProgress(res.progress || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setExpanded(true);
+    }
+  };
+
+  return (
+    <div className="mt-2 pt-2 border-t border-gray-100/60" id={`progress-det-${alertId}`}>
+      <button
+        onClick={fetchProgress}
+        className="w-full text-left text-[10px] text-[#C59B27] hover:underline font-bold flex items-center justify-between bg-transparent border-none cursor-pointer p-0"
+      >
+        <span>{expanded ? 'Hide Live Response Milestones' : 'View Live Response Milestones'}</span>
+        {loading ? (
+          <RefreshCw className="w-3 h-3 animate-spin text-[#C59B27]" />
+        ) : (
+          <ChevronDown className={`w-3.5 h-3.5 transform transition-transform text-[#C59B27] ${expanded ? 'rotate-180' : ''}`} />
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 space-y-2.5 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl p-3">
+          {progress.length > 0 ? (
+            progress.map((p, idx) => (
+              <div key={idx} className="flex space-x-2 text-[11px]" id={`milestone-${idx}`}>
+                <div className="flex flex-col items-center shrink-0">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27] mt-1" />
+                  {idx !== progress.length - 1 && <div className="w-0.5 bg-gray-200 flex-1 my-0.5" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-800 break-words">{p.updateType || p.type}</p>
+                  {p.note && <p className="text-[10px] text-gray-500 italic break-words">"{p.note}"</p>}
+                  <p className="text-[9px] text-gray-400 font-medium font-mono">
+                    {new Date(p.createdAt || p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-[10px] text-gray-400 italic">No structured milestones logged yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 let cachedCustomHeroUrl: string | null = null;
 let cachedDefaultEventHeroUrl: string | null = null;
 
@@ -97,6 +166,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [showReadinessModal, setShowReadinessModal] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('koinonia_sound_enabled');
@@ -279,6 +349,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     date: '18th to 22nd November 2026'
   });
   const [attentionItems, setAttentionItems] = useState<any[]>([]);
+  const [outbox, setOutbox] = useState<OutboxAction[]>([]);
+  const [isSyncingOutbox, setIsSyncingOutbox] = useState(false);
+  const [isDownloadingManifest, setIsDownloadingManifest] = useState(false);
 
   // Scan screen states
   const [scanMode, setScanMode] = useState<'check_in' | 'check_out'>('check_in');
@@ -331,21 +404,271 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Safety alert states
   const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
+  const [activeEmergencySummaryAlertId, setActiveEmergencySummaryAlertId] = useState<string | null>(null);
   const [safetySeverity, setSafetySeverity] = useState('normal');
   const [safetyCategory, setSafetyCategory] = useState('child_care');
   const [safetyMessage, setSafetyMessage] = useState('');
   const [safetyLocationLabel, setSafetyLocationLabel] = useState('');
+  const [safetyLocationId, setSafetyLocationId] = useState<string | null>(null);
+  const [safetyLocationDetail, setSafetyLocationDetail] = useState('');
+  const [safetyLocationSource, setSafetyLocationSource] = useState<'selected' | 'scanned' | 'manually_entered'>('selected');
   const [safetyChildContext, setSafetyChildContext] = useState<{ id: string; fullName: string; ageGroup?: string; status?: string; photoUrl?: string } | null>(null);
   const [isSubmittingSafetyAlert, setIsSubmittingSafetyAlert] = useState(false);
   const [mySafetyAlerts, setMySafetyAlerts] = useState<any[]>([]);
   const [showMyAlertsView, setShowMyAlertsView] = useState(false);
-  const [safetyLinkOption, setSafetyLinkOption] = useState<'general' | 'link'>('general');
+  const [safetyLinkOption, setSafetyLinkOption] = useState<'general' | 'link' | 'unidentified'>('general');
   const [safetySearchQuery, setSafetySearchQuery] = useState('');
   const [safetySearchResults, setSafetySearchResults] = useState<any[]>([]);
   const [safetySearching, setSafetySearching] = useState(false);
   const [safetyIdempotencyKey, setSafetyIdempotencyKey] = useState('');
   const [hasAcceptedUrgentWarning, setHasAcceptedUrgentWarning] = useState(false);
   const [safetyValidationErrors, setSafetyValidationErrors] = useState<string[]>([]);
+
+  // Category-specific safety states
+  const [safetyCcSpecificNeeds, setSafetyCcSpecificNeeds] = useState('');
+  const [safetyCcSeveritySubtype, setSafetyCcSeveritySubtype] = useState('Mild');
+  const [safetyPiReportedPickupName, setSafetyPiReportedPickupName] = useState('');
+  const [safetyPiRelationship, setSafetyPiRelationship] = useState('');
+  const [safetyPiContactPhone, setSafetyPiContactPhone] = useState('');
+  const [safetyPaPassCode, setSafetyPaPassCode] = useState('');
+  const [safetyPaErrorType, setSafetyPaErrorType] = useState('No match in roster');
+  const [safetyMsMedicalSymptom, setSafetyMsMedicalSymptom] = useState('Fever');
+  const [safetyMsRequiresMedic, setSafetyMsRequiresMedic] = useState(false);
+  const [safetyScLastSeenTime, setSafetyScLastSeenTime] = useState('Just now');
+  const [safetyScClothingDescription, setSafetyScClothingDescription] = useState('');
+  const [safetyScPhysicalAppearance, setSafetyScPhysicalAppearance] = useState('');
+  const [safetyLsAssistanceReason, setSafetyLsAssistanceReason] = useState('Teacher break relief');
+  const [safetyLsVolunteerCountNeeded, setSafetyLsVolunteerCountNeeded] = useState(1);
+  const [safetyOtCustomCareType, setSafetyOtCustomCareType] = useState('');
+
+  // Unidentified child states
+  const [safetyUcName, setSafetyUcName] = useState('');
+  const [safetyUcAgeGroup, setSafetyUcAgeGroup] = useState('Unknown');
+  const [safetyUcGender, setSafetyUcGender] = useState('Unknown');
+  const [safetyUcDescription, setSafetyUcDescription] = useState('');
+
+  // Save safety form changes to localStorage on any input
+  useEffect(() => {
+    if (!isSafetyModalOpen) return;
+    const draft = {
+      severity: safetySeverity,
+      category: safetyCategory,
+      message: safetyMessage,
+      locationLabel: safetyLocationLabel,
+      locationId: safetyLocationId,
+      locationDetail: safetyLocationDetail,
+      locationSource: safetyLocationSource,
+      linkOption: safetyLinkOption,
+      childContext: safetyChildContext,
+      ccSpecificNeeds: safetyCcSpecificNeeds,
+      ccSeveritySubtype: safetyCcSeveritySubtype,
+      piReportedPickupName: safetyPiReportedPickupName,
+      piRelationship: safetyPiRelationship,
+      piContactPhone: safetyPiContactPhone,
+      paPassCode: safetyPaPassCode,
+      paErrorType: safetyPaErrorType,
+      msMedicalSymptom: safetyMsMedicalSymptom,
+      msRequiresMedic: safetyMsRequiresMedic,
+      scLastSeenTime: safetyScLastSeenTime,
+      scClothingDescription: safetyScClothingDescription,
+      scPhysicalAppearance: safetyScPhysicalAppearance,
+      lsAssistanceReason: safetyLsAssistanceReason,
+      lsVolunteerCountNeeded: safetyLsVolunteerCountNeeded,
+      otCustomCareType: safetyOtCustomCareType,
+      ucName: safetyUcName,
+      ucAgeGroup: safetyUcAgeGroup,
+      ucGender: safetyUcGender,
+      ucDescription: safetyUcDescription
+    };
+    try {
+      localStorage.setItem('koinonia_safety_draft', JSON.stringify(draft));
+    } catch (e) {}
+  }, [
+    isSafetyModalOpen, safetySeverity, safetyCategory, safetyMessage, safetyLocationLabel, safetyLocationId,
+    safetyLocationDetail, safetyLocationSource, safetyLinkOption,
+    safetyChildContext, safetyCcSpecificNeeds, safetyCcSeveritySubtype, safetyPiReportedPickupName,
+    safetyPiRelationship, safetyPiContactPhone, safetyPaPassCode, safetyPaErrorType, safetyMsMedicalSymptom,
+    safetyMsRequiresMedic, safetyScLastSeenTime, safetyScClothingDescription, safetyScPhysicalAppearance,
+    safetyLsAssistanceReason, safetyLsVolunteerCountNeeded, safetyOtCustomCareType, safetyUcName,
+    safetyUcAgeGroup, safetyUcGender, safetyUcDescription
+  ]);
+
+  // Phase 6 duty presence states
+  const [currentDutyLocation, setCurrentDutyLocation] = useState<any>(null);
+  const [showLocationSelectModal, setShowLocationSelectModal] = useState<boolean>(false);
+  const [showLocationQRModal, setShowLocationQRModal] = useState<boolean>(false);
+  const [availableLocations, setAvailableLocations] = useState<any[]>([]);
+  const [selectedLocationPresenceId, setSelectedLocationPresenceId] = useState<string>('');
+  const [presenceActionLoading, setPresenceActionLoading] = useState<boolean>(false);
+  const [isLocationScannerActive, setIsLocationScannerActive] = useState<boolean>(false);
+  const [locationScannerError, setLocationScannerError] = useState<string | null>(null);
+
+  const fetchCurrentDutyLocation = async () => {
+    try {
+      const res = await fetch('/api/duty/current-location');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.location) {
+          setCurrentDutyLocation(data.location);
+        } else {
+          setCurrentDutyLocation(null);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching current duty location:', err);
+    }
+  };
+
+  const fetchAvailableLocations = async () => {
+    try {
+      const res = await fetch('/api/duty/locations');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setAvailableLocations(data.items || []);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching locations:', err);
+    }
+  };
+
+  const startLocationQRScanning = async () => {
+    setIsLocationScannerActive(true);
+    setLocationScannerError(null);
+    try {
+      if (!codeReaderRef.current) {
+        codeReaderRef.current = new BrowserQRCodeReader();
+      }
+      const devices = await BrowserQRCodeReader.listVideoInputDevices();
+      if (devices.length > 0) {
+        let defaultDeviceId = devices[0].deviceId;
+        const backCam = devices.find(device => 
+          device.label.toLowerCase().includes('back') || 
+          device.label.toLowerCase().includes('rear') || 
+          device.label.toLowerCase().includes('environment')
+        );
+        if (backCam) {
+          defaultDeviceId = backCam.deviceId;
+        }
+        
+        setTimeout(async () => {
+          const videoElement = document.getElementById('location-scan-video') as HTMLVideoElement;
+          if (videoElement && codeReaderRef.current) {
+            const controls = await codeReaderRef.current.decodeFromVideoDevice(
+              defaultDeviceId,
+              videoElement,
+              async (result, error) => {
+                if (result) {
+                  const token = result.getText().trim();
+                  controls.stop();
+                  await handleVerifyLocationQR(token);
+                }
+              }
+            );
+            controlsRef.current = controls;
+          }
+        }, 300);
+
+      } else {
+        setLocationScannerError('No camera devices detected.');
+      }
+    } catch (err) {
+      console.error('QR scanner error:', err);
+      setLocationScannerError('Failed to access camera.');
+    }
+  };
+
+  const stopLocationQRScanning = () => {
+    setIsLocationScannerActive(false);
+    if (controlsRef.current) {
+      try {
+        controlsRef.current.stop();
+      } catch (e) {}
+      controlsRef.current = null;
+    }
+  };
+
+  const handleVerifyLocationQR = async (token: string) => {
+    setPresenceActionLoading(true);
+    try {
+      const res = await fetch('/api/duty/location-code/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: token })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          showSuccess('Location Verified', `Presence registered at: ${data.location.name}`);
+          setCurrentDutyLocation(data.location);
+          setIsLocationScannerActive(false);
+          setShowLocationQRModal(false);
+        } else {
+          showError('Verification Failed', data.error || 'Invalid or expired QR location code.');
+          if (isLocationScannerActive) {
+            startLocationQRScanning();
+          }
+        }
+      } else {
+        showError('Verification Failed', 'Invalid location QR code.');
+      }
+    } catch (err) {
+      console.error('Error verifying location QR:', err);
+      showError('Error', 'Failed to verify location code.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const handleSelectManualLocation = async (locId: string) => {
+    if (!locId) return;
+    setPresenceActionLoading(true);
+    try {
+      const res = await fetch('/api/duty/current-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId: locId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          showSuccess('Presence Changed', `Duty location set to: ${data.location.name}`);
+          setCurrentDutyLocation(data.location);
+          setShowLocationSelectModal(false);
+        } else {
+          showError('Action Failed', data.error || 'Could not change location.');
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Error', 'Failed to register duty location.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const handleLeaveLocation = async () => {
+    if (!confirm('Are you sure you want to leave your current location? You will no longer receive location-specific response priority alerts.')) return;
+    setPresenceActionLoading(true);
+    try {
+      const res = await fetch('/api/duty/current-location', {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          showSuccess('Duty Location Cleared', 'You are no longer registered at any active location.');
+          setCurrentDutyLocation(null);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Error', 'Failed to leave location.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
 
   // Team Safety Alert states
   const [teamAlerts, setTeamAlerts] = useState<any[]>([]);
@@ -477,9 +800,71 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setSafetyCategory('child_care');
     setSafetyMessage('');
     setSafetyLocationLabel('');
+    setSafetyLocationId(null);
+    setSafetyLocationDetail('');
+    setSafetyLocationSource('selected');
     setSafetySearchQuery('');
     setSafetySearchResults([]);
     setSafetySearching(false);
+    
+    // Reset category-specific states
+    setSafetyCcSpecificNeeds('');
+    setSafetyCcSeveritySubtype('Mild');
+    setSafetyPiReportedPickupName('');
+    setSafetyPiRelationship('');
+    setSafetyPiContactPhone('');
+    setSafetyPaPassCode('');
+    setSafetyPaErrorType('No match in roster');
+    setSafetyMsMedicalSymptom('Fever');
+    setSafetyMsRequiresMedic(false);
+    setSafetyScLastSeenTime('Just now');
+    setSafetyScClothingDescription('');
+    setSafetyScPhysicalAppearance('');
+    setSafetyLsAssistanceReason('Teacher break relief');
+    setSafetyLsVolunteerCountNeeded(1);
+    setSafetyOtCustomCareType('');
+    setSafetyUcName('');
+    setSafetyUcAgeGroup('Unknown');
+    setSafetyUcGender('Unknown');
+    setSafetyUcDescription('');
+
+    // Check for draft autosave and restore it
+    try {
+      const draftJson = localStorage.getItem('koinonia_safety_draft');
+      if (draftJson) {
+        const draft = JSON.parse(draftJson);
+        if (draft.severity) setSafetySeverity(draft.severity);
+        if (draft.category) setSafetyCategory(draft.category);
+        if (draft.message) setSafetyMessage(draft.message);
+        if (draft.locationLabel) setSafetyLocationLabel(draft.locationLabel);
+        if (draft.locationId) setSafetyLocationId(draft.locationId);
+        if (draft.locationDetail) setSafetyLocationDetail(draft.locationDetail);
+        if (draft.locationSource) setSafetyLocationSource(draft.locationSource);
+        if (draft.linkOption) setSafetyLinkOption(draft.linkOption);
+        if (draft.childContext) setSafetyChildContext(draft.childContext);
+        if (draft.ccSpecificNeeds) setSafetyCcSpecificNeeds(draft.ccSpecificNeeds);
+        if (draft.ccSeveritySubtype) setSafetyCcSeveritySubtype(draft.ccSeveritySubtype);
+        if (draft.piReportedPickupName) setSafetyPiReportedPickupName(draft.piReportedPickupName);
+        if (draft.piRelationship) setSafetyPiRelationship(draft.piRelationship);
+        if (draft.piContactPhone) setSafetyPiContactPhone(draft.piContactPhone);
+        if (draft.paPassCode) setSafetyPaPassCode(draft.paPassCode);
+        if (draft.paErrorType) setSafetyPaErrorType(draft.paErrorType);
+        if (draft.msMedicalSymptom) setSafetyMsMedicalSymptom(draft.msMedicalSymptom);
+        if (draft.msRequiresMedic !== undefined) setSafetyMsRequiresMedic(draft.msRequiresMedic);
+        if (draft.scLastSeenTime) setSafetyScLastSeenTime(draft.scLastSeenTime);
+        if (draft.scClothingDescription) setSafetyScClothingDescription(draft.scClothingDescription);
+        if (draft.scPhysicalAppearance) setSafetyScPhysicalAppearance(draft.scPhysicalAppearance);
+        if (draft.lsAssistanceReason) setSafetyLsAssistanceReason(draft.lsAssistanceReason);
+        if (draft.lsVolunteerCountNeeded !== undefined) setSafetyLsVolunteerCountNeeded(draft.lsVolunteerCountNeeded);
+        if (draft.otCustomCareType) setSafetyOtCustomCareType(draft.otCustomCareType);
+        if (draft.ucName) setSafetyUcName(draft.ucName);
+        if (draft.ucAgeGroup) setSafetyUcAgeGroup(draft.ucAgeGroup);
+        if (draft.ucGender) setSafetyUcGender(draft.ucGender);
+        if (draft.ucDescription) setSafetyUcDescription(draft.ucDescription);
+      }
+    } catch (e) {
+      console.error('Failed to restore draft:', e);
+    }
     
     // Phase 6: Generate client-side idempotencyKey on modal mount
     setSafetyIdempotencyKey('key-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now());
@@ -513,27 +898,68 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     const errors: string[] = [];
     
     if (!safetySeverity) {
-      errors.push("Urgency level is required.");
+      errors.push("Select an urgency level.");
     }
     if (!safetyCategory) {
-      errors.push("Alert type / category is required.");
+      errors.push("Select an alert type / category.");
     }
-    if (!safetyMessage.trim()) {
-      errors.push("Please describe what you need help with in the message/details field.");
+
+    const isUrgent = safetySeverity === 'urgent';
+
+    // Rapid Urgent path: Bypasses message requirement or fills a default
+    let finalMessage = safetyMessage.trim();
+    if (isUrgent && !finalMessage) {
+      finalMessage = `IMMEDIATE SUPPORT REQUESTED: ${safetyCategory.toUpperCase().replace('_', ' ')}`;
+    }
+
+    if (!isUrgent && !finalMessage) {
+      errors.push("Describe what happened.");
     }
     
-    // Check if category requires location for Important
+    // Check if category requires location for Important / Urgent
     const categoryRequiresLocation = safetyCategory === 'location_support' || safetyCategory === 'security_concern';
-    if (safetySeverity === 'important' && categoryRequiresLocation && !safetyLocationLabel.trim()) {
-      errors.push("Location / Room Name is required for this alert category.");
+    const hasLocation = safetyLocationId || safetyLocationLabel.trim();
+    if ((safetySeverity === 'important' || safetySeverity === 'urgent') && categoryRequiresLocation && !hasLocation) {
+      errors.push("Add the request location.");
     }
     
     if (safetyLinkOption === 'link' && !safetyChildContext) {
-      errors.push("Please select a child or switch to 'General alert'.");
+      errors.push("Select a child to link, or switch to 'General alert'.");
     }
-    
-    if (safetySeverity === 'urgent' && !hasAcceptedUrgentWarning) {
-      errors.push("Please confirm you understand that an urgent alert triggers sounds on admin devices.");
+
+    // Category-specific validation (bypassed if urgent)
+    if (!isUrgent) {
+      if (safetyCategory === 'child_care' && !safetyCcSpecificNeeds.trim()) {
+        errors.push("Please select or describe the specific care need.");
+      }
+      if (safetyCategory === 'pickup_issue') {
+        if (!safetyPiReportedPickupName.trim()) {
+          errors.push("Please enter the reported pickup person's name.");
+        }
+        if (!safetyPiRelationship.trim()) {
+          errors.push("Please enter the relationship to the child.");
+        }
+      }
+      if (safetyCategory === 'pass_issue' && !safetyPaErrorType.trim()) {
+        errors.push("Please select the error type.");
+      }
+      if (safetyCategory === 'medical_support' && !safetyMsMedicalSymptom.trim()) {
+        errors.push("Please select or describe the medical symptom.");
+      }
+      if (safetyCategory === 'security_concern') {
+        if (!safetyScLastSeenTime.trim()) {
+          errors.push("Please select or enter when the child was last seen.");
+        }
+        if (!safetyScClothingDescription.trim()) {
+          errors.push("Please describe the child's clothing.");
+        }
+      }
+      if (safetyCategory === 'location_support' && !safetyLsAssistanceReason.trim()) {
+        errors.push("Please describe the reason assistance is needed.");
+      }
+      if (safetyCategory === 'other' && !safetyOtCustomCareType.trim()) {
+        errors.push("Please specify the custom care request details.");
+      }
     }
     
     if (errors.length > 0) {
@@ -549,11 +975,39 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     
     setSafetyValidationErrors([]);
 
-    if (safetySeverity === 'urgent') {
-      const confirmSend = window.confirm("Send urgent alert now?\n\nThis will trigger immediate siren alarms on all duty Care Lead devices.");
-      if (!confirmSend) {
-        return;
-      }
+    // Construct structured details
+    const structuredDetails: Record<string, any> = {};
+    if (safetyCategory === 'child_care') {
+      structuredDetails.specific_needs = safetyCcSpecificNeeds;
+      structuredDetails.severity_subtype = safetyCcSeveritySubtype;
+    } else if (safetyCategory === 'pickup_issue') {
+      structuredDetails.reported_pickup_name = safetyPiReportedPickupName;
+      structuredDetails.relationship = safetyPiRelationship;
+      structuredDetails.contact_phone = safetyPiContactPhone;
+    } else if (safetyCategory === 'pass_issue') {
+      structuredDetails.pass_code = safetyPaPassCode;
+      structuredDetails.error_type = safetyPaErrorType;
+    } else if (safetyCategory === 'medical_support') {
+      structuredDetails.medical_symptom = safetyMsMedicalSymptom;
+      structuredDetails.requires_medic = safetyMsRequiresMedic;
+    } else if (safetyCategory === 'security_concern') {
+      structuredDetails.last_seen_time = safetyScLastSeenTime;
+      structuredDetails.clothing_description = safetyScClothingDescription;
+      structuredDetails.physical_appearance = safetyScPhysicalAppearance;
+    } else if (safetyCategory === 'location_support') {
+      structuredDetails.assistance_reason = safetyLsAssistanceReason;
+      structuredDetails.volunteer_count_needed = safetyLsVolunteerCountNeeded;
+    } else if (safetyCategory === 'other') {
+      structuredDetails.custom_care_type = safetyOtCustomCareType;
+    }
+
+    if (safetyLinkOption === 'unidentified') {
+      structuredDetails.unidentified_child = {
+        name: safetyUcName || 'Lost Unidentified Child',
+        ageGroup: safetyUcAgeGroup,
+        gender: safetyUcGender,
+        description: safetyUcDescription
+      };
     }
     
     setIsSubmittingSafetyAlert(true);
@@ -563,14 +1017,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         category: safetyCategory,
         severity: safetySeverity,
         locationLabel: safetyLocationLabel,
-        message: safetyMessage,
-        idempotencyKey: safetyIdempotencyKey
+        locationId: safetyLocationId,
+        locationDetail: safetyLocationDetail,
+        locationSource: safetyLocationSource,
+        message: finalMessage,
+        idempotencyKey: safetyIdempotencyKey,
+        structuredDetails
       } as any);
       
       if (res && res.success) {
         showSuccess('Alert Sent', res.message || 'Help request has been submitted to admins.');
         setIsSafetyModalOpen(false);
         setSafetyIdempotencyKey(''); // Clear on successful submit
+        try { localStorage.removeItem('koinonia_safety_draft'); } catch (e) {}
         fetchSafetyAlerts();
         try { playSound('notification_gentle'); } catch (e) {}
       } else {
@@ -749,6 +1208,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Run on mount or route transition
   useEffect(() => {
+    fetchCurrentDutyLocation();
     if (cleanRoute === '/volunteer/pickup') {
       fetchPickupData();
     } else if (cleanRoute === '/volunteer/reports') {
@@ -758,6 +1218,53 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       fetchHistory();
     }
   }, [cleanRoute]);
+
+  // Outbox initialization, multi-tab coordination, and automatic sync processing
+  useEffect(() => {
+    let devId = localStorage.getItem('koinonia_device_id');
+    if (!devId) {
+      devId = 'dev-' + Math.random().toString(36).substring(2, 11);
+      localStorage.setItem('koinonia_device_id', devId);
+    }
+
+    const loadAndRefresh = async () => {
+      try {
+        const list = await offlineService.getOutbox();
+        setOutbox(list);
+      } catch (err) {
+        console.warn('Failed to load local offline outbox:', err);
+      }
+    };
+
+    loadAndRefresh();
+
+    const handleOutboxUpdate = () => {
+      loadAndRefresh();
+    };
+
+    window.addEventListener('koinonia_outbox_updated', handleOutboxUpdate);
+
+    // Setup periodic sync
+    const syncInterval = setInterval(async () => {
+      if (!offlineService.isOffline() && devId) {
+        try {
+          const res = await offlineService.syncOutbox(devId);
+          if (res.successCount > 0 || res.conflictCount > 0) {
+            showSuccess('Offline Scans Synced', `Successfully processed ${res.successCount} queued check-ins online.`);
+            fetchDashboardData(true);
+            fetchHistory();
+          }
+        } catch (e) {
+          console.warn('Periodic auto-sync failed:', e);
+        }
+      }
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('koinonia_outbox_updated', handleOutboxUpdate);
+      clearInterval(syncInterval);
+    };
+  }, []);
 
   // Handle auto-clearing selected child when navigating away from children route
   useEffect(() => {
@@ -1048,6 +1555,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
     try {
       if (cleanRoute === '/volunteer/pickup') {
+        if (offlineService.isOffline()) {
+          showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+          isLookupInFlightRef.current = false;
+          lastScannedCodeRef.current = null;
+          isLookupInFlight.current = false;
+          lastScannedCode.current = '';
+          setCameraActive(true);
+          setScanLoading(false);
+          return;
+        }
+
         let passCode = trimmedText;
         if (trimmedText.includes('/pass/')) {
           passCode = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
@@ -1089,6 +1607,47 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           passCode = trimmedText.substring(4);
         }
         passCode = passCode.trim().toUpperCase();
+
+        if (offlineService.isOffline()) {
+          const pass = await offlineService.lookupLocalPass(passCode);
+          if (pass) {
+            const mockChild = {
+              id: pass.child.id,
+              entryId: pass.childEventEntryId,
+              childEventEntryId: pass.childEventEntryId,
+              fullName: pass.child.fullName,
+              age: pass.child.calculatedAge,
+              gender: pass.child.gender,
+              classGroup: pass.child.ageGroup,
+              photoUrl: pass.child.photoUrl,
+              medicalNote: pass.child.medicalNotes,
+              allergies: pass.child.hasMedicalNotes ? 'Yes' : 'No',
+              extraSupport: pass.child.needsExtraSupport ? 'Yes' : 'No',
+              supportNotes: pass.child.supportNotes,
+              passReference: pass.passReference,
+              parentName: pass.parent.fullName,
+              parentPhone: pass.parent.phone,
+              authorizedPickup: pass.pickup,
+              entryStatus: pass.entryStatus,
+              isOfflineResult: true
+            };
+            setLookedUpChild(mockChild);
+            hasSuccessfulScanRef.current = true;
+            if (navigator.vibrate) {
+              navigator.vibrate([100]);
+            }
+            setManualCode('');
+          } else {
+            showError('Not Found (Offline)', 'This pass reference was not found in the preloaded offline roster. Please reconnect to verify.');
+            isLookupInFlightRef.current = false;
+            lastScannedCodeRef.current = null;
+            isLookupInFlight.current = false;
+            lastScannedCode.current = '';
+            setCameraActive(true);
+          }
+          setScanLoading(false);
+          return;
+        }
 
         const res = await api.volunteer.lookupPass({ passReference: passCode });
         
@@ -1147,6 +1706,39 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
 
     setSearching(true);
+
+    if (offlineService.isOffline()) {
+      try {
+        const list = await offlineService.getLocalManifest();
+        const results = list.filter(p => 
+          p.child.fullName.toLowerCase().includes(searchQuery.toLowerCase().trim()) || 
+          p.parent.fullName.toLowerCase().includes(searchQuery.toLowerCase().trim())
+        ).map(p => ({
+          childId: p.child.id,
+          entryId: p.childEventEntryId,
+          childEventEntryId: p.childEventEntryId,
+          childName: p.child.fullName,
+          parentName: p.parent.fullName,
+          status: p.entryStatus,
+          ageGroup: p.child.ageGroup,
+          medicalNotes: p.child.medicalNotes,
+          hasMedicalNotes: p.child.hasMedicalNotes,
+          needsExtraSupport: p.child.needsExtraSupport,
+          supportNotes: p.child.supportNotes,
+          passReference: p.passReference
+        }));
+        setSearchResults(results);
+        if (results.length === 0) {
+          showWarning('No match found (Offline)', 'Could not find children matching that name in local offline manifest.');
+        }
+      } catch (err) {
+        showError('Search Failed', 'Could not query offline storage.');
+      } finally {
+        setSearching(false);
+      }
+      return;
+    }
+
     try {
       const results = await api.volunteer.searchChildren(searchQuery.trim());
       setSearchResults(results || []);
@@ -1164,6 +1756,46 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   // Check in directly from children search view (with lookup and transition)
   const handleCheckInDirectly = async (child: any) => {
     setScanLoading(true);
+
+    if (offlineService.isOffline()) {
+      try {
+        const pass = await offlineService.lookupLocalPass(child.entryId || child.childEventEntryId || child.childId);
+        if (pass) {
+          const mockChild = {
+            id: pass.child.id,
+            entryId: pass.childEventEntryId,
+            childEventEntryId: pass.childEventEntryId,
+            fullName: pass.child.fullName,
+            age: pass.child.calculatedAge,
+            gender: pass.child.gender,
+            classGroup: pass.child.ageGroup,
+            photoUrl: pass.child.photoUrl,
+            medicalNote: pass.child.medicalNotes,
+            allergies: pass.child.hasMedicalNotes ? 'Yes' : 'No',
+            extraSupport: pass.child.needsExtraSupport ? 'Yes' : 'No',
+            supportNotes: pass.child.supportNotes,
+            passReference: pass.passReference,
+            parentName: pass.parent.fullName,
+            parentPhone: pass.parent.phone,
+            authorizedPickup: pass.pickup,
+            entryStatus: pass.entryStatus,
+            isOfflineResult: true
+          };
+          setLookedUpChild(mockChild);
+          setScanMode('check_in');
+          onNavigate('/volunteer/scan');
+          showSuccess('Child Found (Offline)', `Retrieved preloaded details for ${pass.child.fullName}. Please confirm check-in.`);
+        } else {
+          showError('Not Found (Offline)', 'This child is not present in the preloaded offline roster.');
+        }
+      } catch (e) {
+        showError('Lookup Failed', 'Could not access offline storage.');
+      } finally {
+        setScanLoading(false);
+      }
+      return;
+    }
+
     try {
       const res = await api.volunteer.lookupPass({ childId: child.childId });
       if (res.success && res.child) {
@@ -1204,6 +1836,55 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (isCheckingIn) return;
     setIsCheckingIn(true);
     setScanLoading(true);
+
+    if (offlineService.isOffline()) {
+      try {
+        const entryId = child.entryId || child.childEventEntryId || child.id;
+        const result = await offlineService.queueCheckIn(
+          entryId,
+          child.fullName || child.childName,
+          child.passReference || '',
+          'Entrance A'
+        );
+
+        if (result.status === 'duplicate') {
+          showWarning('Already Queued', `${child.fullName} is already queued for offline check-in.`);
+        } else {
+          showSuccess('Saved Offline', `Successfully queued check-in for ${child.fullName} offline. This will sync once connected.`);
+        }
+
+        setCheckedInSuccessChild({
+          id: child.id,
+          fullName: child.fullName || child.childName,
+          firstName: (child.fullName || child.childName || '').split(' ')[0],
+          classGroup: child.classGroup || child.ageGroup || 'General',
+          entryStatus: 'checked_in',
+          medicalNote: child.medicalNote || child.medicalNotes || '',
+          allergies: child.allergies || (child.hasMedicalNotes ? 'Yes' : 'No'),
+          extraSupport: child.extraSupport || (child.needsExtraSupport ? 'Yes' : 'No'),
+          authorizedPickup: child.authorizedPickup || (child.pickup ? [child.pickup] : [])
+        });
+
+        setCheckedInSuccessEntry({
+          checkedInAt: new Date().toISOString(),
+          checkedInBy: { fullName: volunteerProfile?.full_name || 'Volunteer' },
+          point: 'Main entrance (Offline Queue)'
+        });
+
+        setLookedUpChild(null);
+
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      } catch (err: any) {
+        showError('Offline Queue Failed', 'Failed to save action to offline storage.');
+      } finally {
+        setScanLoading(false);
+        setIsCheckingIn(false);
+      }
+      return;
+    }
+
     try {
       const payload: any = {};
       if (child.id) payload.childId = child.id;
@@ -1262,8 +1943,58 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
+  const handleDownloadManifest = async () => {
+    if (isDownloadingManifest) return;
+    setIsDownloadingManifest(true);
+    try {
+      const deviceId = localStorage.getItem('koinonia_device_id') || 'unknown';
+      const count = await offlineService.downloadManifest(deviceId);
+      showSuccess('Preload Complete', `Successfully preloaded and verified ${count} registered event passes to local secure storage.`);
+    } catch (err: any) {
+      console.error('[manifest preload failed]', err);
+      showError('Preload Failed', 'Could not download the offline event roster. Please check your connection and try again.');
+    } finally {
+      setIsDownloadingManifest(false);
+    }
+  };
+
+  const handleManualSyncOutbox = async () => {
+    if (isSyncingOutbox) return;
+    setIsSyncingOutbox(true);
+    try {
+      const deviceId = localStorage.getItem('koinonia_device_id') || 'unknown';
+      const res = await offlineService.syncOutbox(deviceId);
+      if (res.successCount > 0 || res.conflictCount > 0) {
+        showSuccess('Outbox Synced', `Successfully resolved and synced ${res.successCount} queued offline actions.`);
+        fetchDashboardData(true);
+        fetchHistory();
+      } else if (res.errors.length > 0) {
+        showError('Sync Failed', res.errors[0]);
+      } else {
+        showWarning('Sync Idle', 'No pending offline actions were found in queue.');
+      }
+    } catch (err: any) {
+      showError('Sync Error', 'An unexpected error occurred during synchronization.');
+    } finally {
+      setIsSyncingOutbox(false);
+    }
+  };
+
+  const handleCancelQueuedAction = async (idempotencyKey: string) => {
+    try {
+      await offlineService.cancelAction(idempotencyKey);
+      showSuccess('Action Cancelled', 'Queued offline scan has been successfully discarded.');
+    } catch (e) {
+      showError('Cancellation Failed', 'Failed to remove action from offline outbox.');
+    }
+  };
+
   // Confirm and perform release of child
   const handleConfirmRelease = async (child: any, bypassVerify = false) => {
+    if (offlineService.isOffline()) {
+      showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+      return;
+    }
     if (!bypassVerify && localStorage.getItem('koinonia_passkey_registered') === 'true') {
       setPendingConfirmReleaseChild(child);
       setDeviceVerifyActionOpen(true);
@@ -1300,6 +2031,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Submit manual code or handle scanner results for pickup
   const handlePickupLookup = async (code: string) => {
+    if (offlineService.isOffline()) {
+      showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+      return;
+    }
     if (!code || !code.trim()) return;
     setPickupLoading(true);
     try {
@@ -1324,6 +2059,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   const handleConfirmPickupRelease = async (child: any, pickupPersonId?: string) => {
+    if (offlineService.isOffline()) {
+      showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+      return;
+    }
     if (isMarkingPickup) return;
     setIsMarkingPickup(true);
     setPickupLoading(true);
@@ -1519,6 +2258,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </button>
             )}
 
+            {/* Device readiness compact status badge */}
+            <button
+              onClick={() => setShowReadinessModal(true)}
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-[#C59B27]/5 border border-[#C59B27]/20 hover:bg-[#C59B27]/10 text-zinc-700 text-[10px] font-bold rounded-full transition-all cursor-pointer mr-1"
+              title="Device readiness status"
+              data-component-version="event-duty-readiness-entry-v1"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-[#C59B27]" />
+              <span className="hidden sm:inline">Device:</span>
+              <span className="text-emerald-700">Ready</span>
+            </button>
+
             {/* Live Notification Bell with Dropdown */}
             <div className="relative">
               <button
@@ -1673,18 +2424,92 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       {/* Main Container */}
       <main className="max-w-4xl w-full mx-auto px-4 pt-6 space-y-6 flex-1">
         
-        {/* Offline Notice */}
-        {isOffline && (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start space-x-3 text-amber-800 animate-pulse">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-bold">Offline Operating Mode</h3>
-              <p className="text-[11px] text-amber-700 leading-relaxed">
-                Scan data is saved locally. Scans will sync automatically once internet access is restored.
-              </p>
+        {/* Connection & Synchronization Hub */}
+        <div 
+          className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] p-6 space-y-5"
+          data-component-version="volunteer-offline-hub-card-v1"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-xs font-bold text-gray-950 uppercase tracking-widest font-sans">
+                Device Connectivity & Offline Sync
+              </h3>
+              <div className="flex items-center space-x-2">
+                <span className={`inline-block w-2.5 h-2.5 rounded-full ${offlineService.isOffline() ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
+                <span className="text-xs text-gray-600 font-medium">
+                  {offlineService.isOffline() ? 'Operating Offline' : 'Live Connected Mode'}
+                </span>
+              </div>
             </div>
+
+            <Button
+              onClick={handleDownloadManifest}
+              disabled={isDownloadingManifest || offlineService.isOffline()}
+              className="px-4 py-2 bg-white hover:bg-gray-50 border border-[#EAE8E1] text-gray-800 text-xs font-bold rounded-2xl flex items-center space-x-1.5 shadow-xs shrink-0 self-start sm:self-auto"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isDownloadingManifest ? 'animate-spin text-[#C59B27]' : 'text-gray-500'}`} />
+              <span>{isDownloadingManifest ? 'Caching Manifest...' : 'Preload Offline Manifest'}</span>
+            </Button>
           </div>
-        )}
+
+          {/* Sync Queue Outbox Visualization */}
+          <div className="border-t border-gray-200/60 pt-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest font-mono">
+                  Pending Sync Outbox ({outbox.length})
+                </h4>
+                <p className="text-[11px] text-gray-500 leading-normal">
+                  {outbox.length === 0 
+                    ? 'All scans are fully synchronized with the master database.' 
+                    : `${outbox.length} offline check-ins waiting to write to server.`}
+                </p>
+              </div>
+
+              {outbox.length > 0 && (
+                <Button
+                  onClick={handleManualSyncOutbox}
+                  disabled={isSyncingOutbox || offlineService.isOffline()}
+                  className="px-4 py-2 bg-[#C59B27] hover:bg-[#A8801C] text-white text-xs font-bold rounded-2xl flex items-center space-x-1.5 shadow-sm shrink-0 self-start sm:self-auto"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncingOutbox ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingOutbox ? 'Syncing...' : 'Sync Now'}</span>
+                </Button>
+              )}
+            </div>
+
+            {outbox.length > 0 && (
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl divide-y divide-gray-100 max-h-48 overflow-y-auto shadow-xs">
+                {outbox.map((item) => (
+                  <div key={item.idempotencyKey} className="p-3 flex items-center justify-between text-xs gap-3">
+                    <div className="space-y-1 min-w-0 pr-3">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-gray-900 truncate">{item.childName}</span>
+                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[9px] font-mono uppercase tracking-wider">{item.passReference}</span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-[10px] text-gray-400 font-mono">
+                        <span>{item.gateLocation}</span>
+                        <span>•</span>
+                        <span>{new Date(item.actionTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                      </div>
+                      {item.error && (
+                        <p className="text-[9px] text-red-600 font-semibold mt-1">Error: {item.error}</p>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleCancelQueuedAction(item.idempotencyKey)}
+                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0 cursor-pointer"
+                      title="Discard queued scan"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Dynamic Route Content Router */}
         {cleanRoute === '/volunteer/event' && (
@@ -1763,6 +2588,94 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <span className="truncate">{eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Phase 6: Current Duty Location Card */}
+                <div className="mt-4 p-4 bg-zinc-50 border border-zinc-200/80 rounded-2xl space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 text-zinc-700">
+                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 animate-bounce" />
+                      <span className="text-xs font-mono font-bold tracking-wider uppercase">Current Duty Location</span>
+                    </div>
+                    {currentDutyLocation && (
+                      <span className="px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Active Coverage
+                      </span>
+                    )}
+                  </div>
+
+                  {currentDutyLocation ? (
+                    <div className="space-y-2">
+                      <div className="p-3 bg-white border border-zinc-100 rounded-xl">
+                        <div className="text-sm font-serif font-bold text-zinc-950">
+                          {currentDutyLocation.name}
+                        </div>
+                        {(currentDutyLocation.zone || currentDutyLocation.room_number) && (
+                          <div className="text-[10px] font-mono font-medium text-zinc-500 mt-0.5">
+                            {currentDutyLocation.zone ? `Zone: ${currentDutyLocation.zone}` : ''} {currentDutyLocation.room_number ? `• Room ${currentDutyLocation.room_number}` : ''}
+                          </div>
+                        )}
+                        {currentDutyLocation.guideline && (
+                          <div className="text-[11px] text-zinc-600 italic mt-1.5 bg-zinc-50 p-2 rounded-lg border border-zinc-100">
+                            Guideline: {currentDutyLocation.guideline}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fetchAvailableLocations();
+                            setShowLocationSelectModal(true);
+                          }}
+                          className="flex-1 py-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-800 font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Change Location</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleLeaveLocation}
+                          className="py-2 px-3 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-700 font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center"
+                          title="Leave current location"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-[11px] text-zinc-500 font-medium leading-relaxed">
+                        No active duty location registered. Scan a location QR code or select your area manually to receive localized alert routing and capacity notifications.
+                      </p>
+                      
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowLocationQRModal(true);
+                            startLocationQRScanning();
+                          }}
+                          className="flex-1 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-xs"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Scan Location Code</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fetchAvailableLocations();
+                            setShowLocationSelectModal(true);
+                          }}
+                          className="flex-1 py-2.5 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-800 font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-2xs"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Select Area</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2 flex flex-col space-y-2">
@@ -2576,8 +3489,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <div 
                           className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
                           style={{ 
-                            backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`,
-                            referrerPolicy: 'no-referrer' as any
+                            backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
                           }}
                         />
                       )}
@@ -3310,8 +4222,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <div 
                       className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
                       style={{ 
-                        backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`,
-                        referrerPolicy: 'no-referrer' as any
+                        backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
                       }}
                     />
                   )}
@@ -5025,7 +5936,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
           <div 
             className="bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]"
-            data-view-version="volunteer-safety-alert-form-v3-child-link"
+            data-view-version="volunteer-admin-help-v8-production-reliable"
           >
             {/* Header */}
             <div className="bg-gradient-to-r from-rose-950 to-[#5C1D24] text-white px-6 py-5 flex items-center justify-between shrink-0">
@@ -5050,18 +5961,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               onSubmit={handleRaiseSafetyAlert}
               noValidate
               className="flex-1 flex flex-col min-h-0"
+              data-component-version="volunteer-help-form-v7-production"
             >
               <div className="p-6 overflow-y-auto space-y-5 text-gray-800 text-xs flex-1">
                 {/* Child Involved Section */}
                 <div className="space-y-3" data-component-version="volunteer-alert-child-selector-v1">
                   <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Child involved</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => {
                         setSafetyLinkOption('general');
                       }}
-                      className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
+                      className={`py-2.5 rounded-2xl text-center border text-[11px] font-bold transition-all cursor-pointer ${
                         safetyLinkOption === 'general'
                           ? 'bg-rose-50 border-rose-200 text-rose-800'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
@@ -5074,7 +5986,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       onClick={() => {
                         setSafetyLinkOption('link');
                       }}
-                      className={`py-2.5 rounded-2xl text-center border text-xs font-bold transition-all cursor-pointer ${
+                      className={`py-2.5 rounded-2xl text-center border text-[11px] font-bold transition-all cursor-pointer ${
                         safetyLinkOption === 'link'
                           ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
@@ -5082,12 +5994,84 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     >
                       Link a child
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSafetyLinkOption('unidentified');
+                      }}
+                      className={`py-2.5 rounded-2xl text-center border text-[11px] font-bold transition-all cursor-pointer ${
+                        safetyLinkOption === 'unidentified'
+                          ? 'bg-amber-50 border-amber-200 text-amber-800'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Unidentified
+                    </button>
                   </div>
 
                   {safetyLinkOption === 'general' && (
                     <p className="text-[10px] text-gray-500 italic mt-1 bg-gray-50 p-2.5 rounded-xl border border-gray-150">
                       Use this when the request is not about a specific child.
                     </p>
+                  )}
+
+                  {safetyLinkOption === 'unidentified' && (
+                    <div className="space-y-3 mt-1 bg-amber-50/40 p-4 rounded-2xl border border-amber-200/50 animate-fade-in">
+                      <p className="text-[10px] text-amber-900 italic font-semibold">
+                        Provide a brief description of the unidentified child for emergency triage:
+                      </p>
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Temporary Label or Descriptive Identifier <span className="text-amber-600">*</span></label>
+                          <input
+                            type="text"
+                            placeholder="e.g. lost boy in blue dinosaur t-shirt"
+                            value={safetyUcName}
+                            onChange={(e) => setSafetyUcName(e.target.value.substring(0, 50))}
+                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Approx. Age Group</label>
+                            <select
+                              value={safetyUcAgeGroup}
+                              onChange={(e) => setSafetyUcAgeGroup(e.target.value)}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                            >
+                              <option value="Toddler (1-2)">Toddler (1-2)</option>
+                              <option value="Preschool (3-4)">Preschool (3-4)</option>
+                              <option value="Early Primary (5-6)">Early Primary (5-6)</option>
+                              <option value="Primary (7-9)">Primary (7-9)</option>
+                              <option value="Pre-Teen (10-12)">Pre-Teen (10-12)</option>
+                              <option value="Unknown">Unknown age</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Approx. Gender</label>
+                            <select
+                              value={safetyUcGender}
+                              onChange={(e) => setSafetyUcGender(e.target.value)}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                            >
+                              <option value="Female">Female</option>
+                              <option value="Male">Male</option>
+                              <option value="Unknown">Unknown / Other</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Further physical descriptions / clothing / behavior</label>
+                          <textarea
+                            rows={2}
+                            placeholder="e.g. curly brown hair, carrying a green backpack, currently calm near front door..."
+                            value={safetyUcDescription}
+                            onChange={(e) => setSafetyUcDescription(e.target.value.substring(0, 200))}
+                            className="w-full bg-white border border-gray-200 rounded-xl p-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none resize-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   )}
 
                   {safetyLinkOption === 'link' && (
@@ -5275,7 +6259,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Category / Type Selector */}
-                <div className="space-y-2">
+                <div className="space-y-2" data-component-version="alert-severity-category-contract-v1">
                   <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Alert Type / Category</label>
                   <select
                     value={safetyCategory}
@@ -5292,17 +6276,248 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </select>
                 </div>
 
-                {/* Your Location / Room Name */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Your Location / Room Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Creche, Back Row, Gate 2"
-                    value={safetyLocationLabel}
-                    onChange={(e) => setSafetyLocationLabel(e.target.value.substring(0, 100))}
-                    className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
-                  />
+                {/* Category-Specific Form Fields */}
+                <div className="bg-[#FAF9F6] border border-gray-150 rounded-2xl p-4 space-y-4 animate-fade-in" data-component-version="category-specific-fields-container">
+                  <h4 className="font-bold text-xs text-gray-900 border-b border-gray-100 pb-2 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#C59B27]" />
+                    Category Details
+                  </h4>
+
+                  {safetyCategory === 'child_care' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Specific Care Need <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyCcSpecificNeeds}
+                          onChange={(e) => setSafetyCcSpecificNeeds(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="">-- Select care need --</option>
+                          <option value="Restroom assistance">Restroom assistance</option>
+                          <option value="Feeding help">Feeding help</option>
+                          <option value="Crying/unsettled">Crying / Unsettled</option>
+                          <option value="Spill/accident">Spill / Accident</option>
+                          <option value="Other care request">Other care request</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Child Distress Level</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {['Mild', 'Moderate', 'Distressed'].map((lvl) => (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() => setSafetyCcSeveritySubtype(lvl)}
+                              className={`py-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer ${
+                                safetyCcSeveritySubtype === lvl
+                                  ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
+                                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              {lvl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'pickup_issue' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Reported Pickup Name <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="Name of person attempting pickup"
+                          value={safetyPiReportedPickupName}
+                          onChange={(e) => setSafetyPiReportedPickupName(e.target.value.substring(0, 100))}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Relationship to Child <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Uncle, Neighbor, Friend"
+                          value={safetyPiRelationship}
+                          onChange={(e) => setSafetyPiRelationship(e.target.value.substring(0, 50))}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Contact Phone (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. +1 (555) 019-2834"
+                          value={safetyPiContactPhone}
+                          onChange={(e) => setSafetyPiContactPhone(e.target.value.substring(0, 30))}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'pass_issue' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Scan Error Type <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyPaErrorType}
+                          onChange={(e) => setSafetyPaErrorType(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="No match in roster">No match in roster</option>
+                          <option value="Expired pass">Expired pass</option>
+                          <option value="Duplicate check-in attempt">Duplicate check-in attempt</option>
+                          <option value="Device scan error">Device scan error</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Pass Code (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. PASS-8921"
+                          value={safetyPaPassCode}
+                          onChange={(e) => setSafetyPaPassCode(e.target.value.substring(0, 50))}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'medical_support' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Medical Symptom / Injury <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyMsMedicalSymptom}
+                          onChange={(e) => setSafetyMsMedicalSymptom(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="">-- Select symptom --</option>
+                          <option value="Fever / Temperature">Fever / Temperature</option>
+                          <option value="Asthma / Breathing issue">Asthma / Breathing issue</option>
+                          <option value="Minor injury / cut / scrape">Minor injury / Cut / Scrape</option>
+                          <option value="Allergic reaction">Allergic reaction</option>
+                          <option value="Vomiting / Nausea">Vomiting / Nausea</option>
+                          <option value="Other medical symptom">Other medical symptom</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center space-x-2.5 p-1 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={safetyMsRequiresMedic}
+                          onChange={(e) => setSafetyMsRequiresMedic(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                        />
+                        <span className="font-semibold text-gray-800 text-[11px]">
+                          Requires on-site certified medic response
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'security_concern' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">When Last Seen <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyScLastSeenTime}
+                          onChange={(e) => setSafetyScLastSeenTime(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="Just now (under 2 mins)">Just now (under 2 mins)</option>
+                          <option value="5 mins ago">5 mins ago</option>
+                          <option value="10 mins ago">10 mins ago</option>
+                          <option value="30+ mins ago">30+ mins ago</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Clothing Description <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. yellow jumper, jeans, white sandals"
+                          value={safetyScClothingDescription}
+                          onChange={(e) => setSafetyScClothingDescription(e.target.value.substring(0, 150))}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Physical Appearance (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. height, hair style, glasses"
+                          value={safetyScPhysicalAppearance}
+                          onChange={(e) => setSafetyScPhysicalAppearance(e.target.value.substring(0, 150))}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'location_support' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Reason for Assistance <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyLsAssistanceReason}
+                          onChange={(e) => setSafetyLsAssistanceReason(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="Teacher break relief">Teacher break relief</option>
+                          <option value="Material / supply shortage">Material / supply shortage</option>
+                          <option value="Crowd control help">Crowd control help</option>
+                          <option value="Spill / clean-up needed">Spill / clean-up needed</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Extra Volunteers Needed</label>
+                        <div className="flex items-center space-x-3 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => setSafetyLsVolunteerCountNeeded(Math.max(1, safetyLsVolunteerCountNeeded - 1))}
+                            className="w-9 h-9 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-700 font-bold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono font-bold text-sm w-8 text-center text-gray-900">{safetyLsVolunteerCountNeeded}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSafetyLsVolunteerCountNeeded(Math.min(5, safetyLsVolunteerCountNeeded + 1))}
+                            className="w-9 h-9 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-700 font-bold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'other' && (
+                    <div>
+                      <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Specify Care Request <span className="text-rose-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="Please specify custom request..."
+                        value={safetyOtCustomCareType}
+                        onChange={(e) => setSafetyOtCustomCareType(e.target.value.substring(0, 100))}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {/* Your Location / Room Name - Managed Selector with Custom Fallback */}
+                <EventLocationSelector
+                  selectedLocationId={safetyLocationId}
+                  onSelectLocationId={setSafetyLocationId}
+                  customLocationLabel={safetyLocationLabel}
+                  onChangeCustomLocationLabel={setSafetyLocationLabel}
+                  locationDetail={safetyLocationDetail}
+                  onChangeLocationDetail={setSafetyLocationDetail}
+                  locationSource={safetyLocationSource}
+                  onSelectLocationSource={setSafetyLocationSource}
+                />
 
                 {/* Description Message */}
                 <div className="space-y-2">
@@ -5329,11 +6544,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               {/* Action Buttons & Validation Summary */}
               <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col space-y-3 shrink-0">
                 {safetyValidationErrors.length > 0 && (
-                  <div id="safety-validation-summary" className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl space-y-1 text-[11px] animate-fade-in">
-                    <p className="font-bold">Missing or invalid required fields:</p>
-                    <ul className="list-disc pl-4 space-y-0.5 font-medium">
+                  <div 
+                    id="safety-validation-summary" 
+                    className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl space-y-1 text-[11px] animate-fade-in"
+                    data-component-version="volunteer-alert-validation-v7-visible"
+                  >
+                    <p className="font-bold text-rose-700">Please complete these details:</p>
+                    <ul className="list-disc pl-4 space-y-0.5 font-semibold">
                       {safetyValidationErrors.map((err, idx) => (
-                        <li key={idx}>{err}</li>
+                        <li key={idx}>- {err}</li>
                       ))}
                     </ul>
                   </div>
@@ -5351,11 +6570,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     type="submit"
                     form="volunteer-admin-help-form"
                     disabled={isSubmittingSafetyAlert}
-                    data-component-version="volunteer-safety-alert-child-payload-v2-active"
-                    className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md"
+                    data-component-version="volunteer-help-submit-v7-production"
+                    data-submit-state-version="volunteer-alert-submit-state-v6"
+                    data-idempotency-version="volunteer-alert-idempotency-v4"
+                    className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md disabled:bg-gray-400"
                   >
                     {isSubmittingSafetyAlert ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span className="flex items-center space-x-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        <span>Sending request…</span>
+                      </span>
                     ) : (
                       <span>Send Request</span>
                     )}
@@ -5391,7 +6615,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* Scrollable Alerts List */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-gray-50/50">
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-gray-50/50" data-view-version="volunteer-help-request-history-v2">
               {mySafetyAlerts.length === 0 ? (
                 <div className="py-12 text-center space-y-2">
                   <span className="text-3xl block">✓</span>
@@ -5419,11 +6643,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded-full ${
                         alert.status === 'open' 
                           ? 'bg-amber-100 text-amber-800' 
-                          : alert.status === 'acknowledged'
+                          : alert.status === 'acknowledged' || alert.status === 'in_progress'
                           ? 'bg-blue-100 text-blue-800 animate-pulse'
                           : 'bg-emerald-100 text-emerald-800'
                       }`}>
-                        {alert.status === 'open' ? 'Waiting' : alert.status === 'acknowledged' ? 'Acknowledged' : 'Resolved'}
+                        {alert.status === 'open' ? 'Waiting' : alert.status === 'resolved' ? 'Resolved' : 'Active'}
                       </span>
                     </div>
 
@@ -5452,14 +6676,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     )}
 
                     {/* Real-time Delivery & Response Status Pipeline */}
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2" data-component-version="volunteer-alert-response-progress-v2">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Response Status Pipeline</div>
                       
                       <div className="space-y-2 pl-1.5 border-l border-gray-200">
                         {/* Step 1: Delivered */}
                         <div className="flex items-start space-x-2 relative">
                           <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                            alert.status === 'open' || alert.status === 'acknowledged' || alert.status === 'resolved'
+                            alert.status === 'open' || alert.status === 'acknowledged' || alert.status === 'in_progress' || alert.status === 'resolved'
                               ? 'bg-emerald-500 ring-4 ring-emerald-100'
                               : 'bg-gray-300'
                           }`} />
@@ -5474,7 +6698,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         {/* Step 2: Acknowledged */}
                         <div className="flex items-start space-x-2">
                           <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                            alert.status === 'acknowledged' || alert.status === 'resolved'
+                            ['acknowledged', 'in_progress', 'resolved'].includes(alert.status)
                               ? 'bg-blue-500 ring-4 ring-blue-100'
                               : alert.status === 'open'
                               ? 'bg-amber-400 ring-4 ring-amber-100 animate-pulse'
@@ -5482,7 +6706,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           }`} />
                           <div className="text-[11px]">
                             <span className={`font-semibold ${
-                              alert.status === 'acknowledged' || alert.status === 'resolved'
+                              ['acknowledged', 'in_progress', 'resolved'].includes(alert.status)
                                 ? 'text-gray-800'
                                 : 'text-gray-400'
                             }`}>
@@ -5533,6 +6757,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           )}
                         </div>
                       )}
+
+                      {/* Collapsible live milestones */}
+                      <VolunteerDetailedAlertProgress alertId={alert.id} />
+
+                      {/* Phase 7 Child Emergency Summary button */}
+                      <button
+                        onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
+                        className="w-full mt-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Shield className="w-4 h-4 text-white" /> View Need-To-Know Child Summary
+                      </button>
                     </div>
                   </div>
                 ))
@@ -5550,6 +6785,43 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
           </div>
         </div>
+      )}
+
+      {activeEmergencySummaryAlertId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-[#FAF9F5] rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#EAE8E1]">
+            <div className="p-5 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-white rounded-t-2xl">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-amber-600 animate-pulse" />
+                <h3 className="text-base font-serif font-bold text-gray-900">Child Emergency & Safety Summary</h3>
+              </div>
+              <button
+                onClick={() => setActiveEmergencySummaryAlertId(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <ChildEmergencySummary 
+                alertId={activeEmergencySummaryAlertId} 
+                onClose={() => setActiveEmergencySummaryAlertId(null)}
+                isAdmin={false}
+                onRefreshAlert={() => {
+                  fetchSafetyAlerts();
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cleanRoute === '/volunteer/readiness' && (
+        <DeviceReadinessView 
+          onBack={() => onNavigate('/volunteer/event')}
+          userRole="volunteer"
+          volunteerProfile={volunteerProfile}
+        />
       )}
 
       {cleanRoute === '/volunteer/profile' && (
@@ -5950,6 +7222,158 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         </button>
       </div>
 
+      {/* MANUAL LOCATION SELECT MODAL */}
+      {showLocationSelectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div 
+            onClick={() => setShowLocationSelectModal(false)}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
+          />
+          <div className="relative bg-[#FAF9F5] border border-[#EAE8E1] rounded-[24px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
+              <h4 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-[#C59B27]" />
+                Select Duty Location
+              </h4>
+            </div>
+
+            <div className="overflow-y-auto max-h-[50vh] pr-1 py-1 space-y-2">
+              {availableLocations.length === 0 ? (
+                <div className="p-4 text-center text-xs text-zinc-500 italic">
+                  No active managed locations configured yet.
+                </div>
+              ) : (
+                availableLocations.map((loc) => {
+                  const isSelected = selectedLocationPresenceId === loc.id;
+                  return (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => setSelectedLocationPresenceId(loc.id)}
+                      className={`w-full p-3 text-left rounded-xl border text-xs transition-all flex flex-col justify-between items-start gap-1 cursor-pointer ${
+                        isSelected 
+                          ? 'bg-[#C59B27]/5 border-[#C59B27] ring-1 ring-[#C59B27]' 
+                          : 'bg-white border-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center w-full">
+                        <span className="font-bold text-zinc-950 text-sm">{loc.name}</span>
+                        {loc.room_number && (
+                          <span className="text-[10px] font-mono text-zinc-500">Room {loc.room_number}</span>
+                        )}
+                      </div>
+                      {(loc.zone || loc.guideline) && (
+                        <div className="text-[11px] text-zinc-600 mt-0.5 space-y-0.5">
+                          {loc.zone && <div>Zone: <strong className="text-zinc-700">{loc.zone}</strong></div>}
+                          {loc.guideline && <div className="italic text-zinc-500 line-clamp-1">{loc.guideline}</div>}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3.5 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setShowLocationSelectModal(false)}
+                className="text-xs px-4 py-2 border border-zinc-200 hover:bg-zinc-50 rounded-xl cursor-pointer font-bold text-zinc-750"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={presenceActionLoading || !selectedLocationPresenceId}
+                onClick={() => handleSelectManualLocation(selectedLocationPresenceId)}
+                className="text-xs bg-[#C59B27] hover:bg-[#A47E1F] text-white px-4 py-2 rounded-xl cursor-pointer font-bold disabled:opacity-50 transition-all flex items-center gap-1.5"
+              >
+                {presenceActionLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : null}
+                <span>Confirm Presence</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LOCATION QR SCANNER MODAL */}
+      {showLocationQRModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" data-view-version="event-location-qr-scanner-v1">
+          <div 
+            onClick={() => {
+              stopLocationQRScanning();
+              setShowLocationQRModal(false);
+            }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs" 
+          />
+          <div className="relative bg-zinc-950 border border-zinc-800 rounded-[28px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10 text-white">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-850">
+              <h4 className="font-serif font-bold text-base text-white flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-[#C59B27]" />
+                Scan Location Code
+              </h4>
+            </div>
+
+            <div className="relative w-full aspect-square bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center">
+              {isLocationScannerActive ? (
+                <>
+                  <video 
+                    id="location-scan-video" 
+                    className="absolute inset-0 w-full h-full object-cover" 
+                    playsInline 
+                    muted 
+                  />
+                  {/* Decorative Scan Frame */}
+                  <div className="absolute inset-8 border-2 border-dashed border-[#C59B27] rounded-xl pointer-events-none animate-pulse flex items-center justify-center">
+                    <span className="text-[10px] font-mono text-white/50 bg-black/60 px-2 py-1 rounded">Align QR Code</span>
+                  </div>
+                </>
+              ) : (
+                <div className="p-6 text-center space-y-3">
+                  <div className="h-12 w-12 rounded-full bg-zinc-800/85 flex items-center justify-center mx-auto text-zinc-400">
+                    <QrCode className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                    Initializing scanner engine... Please grant camera access if prompted.
+                  </p>
+                </div>
+              )}
+              {locationScannerError && (
+                <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center text-center p-4 space-y-3">
+                  <span className="text-xs text-rose-400 font-semibold">{locationScannerError}</span>
+                  <button
+                    type="button"
+                    onClick={startLocationQRScanning}
+                    className="px-3.5 py-1.5 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                  >
+                    Retry Camera
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-zinc-400 text-center leading-relaxed max-w-xs mx-auto">
+              Scan the laminated QR token displayed at check-in desk, first-aid point, or room entryway to automatically register your active presence.
+            </p>
+
+            <div className="flex justify-end gap-3.5 pt-2 border-t border-zinc-850">
+              <button
+                type="button"
+                onClick={() => {
+                  stopLocationQRScanning();
+                  setShowLocationQRModal(false);
+                }}
+                className="text-xs px-4 py-2 border border-zinc-800 hover:bg-zinc-900 rounded-xl cursor-pointer font-bold text-zinc-300 w-full text-center transition-all"
+              >
+                Close Scanner
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DeviceSecurityModal
         isOpen={deviceVerifyActionOpen}
         onClose={() => {
@@ -5964,6 +7388,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }}
         actionName="pickup release confirmation"
       />
+
+      {/* Device Readiness Modal */}
+      {showReadinessModal && (
+        <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-[#FAF9F5] rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative border border-[#EAE8E1] shadow-2xl animate-fade-in">
+            <button 
+              onClick={() => setShowReadinessModal(false)}
+              className="absolute top-4 right-4 p-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-500 rounded-full cursor-pointer z-50 transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <DeviceReadinessView 
+              userRole="volunteer" 
+              volunteerProfile={volunteerProfile}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

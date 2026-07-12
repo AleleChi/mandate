@@ -11,6 +11,8 @@ import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
 import { broadcastSSEEvent } from '../services/sse';
+import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
+import { eventOperationsService } from '../services/eventOperationsService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -326,7 +328,7 @@ router.post('/change-password', async (req: AuthenticatedRequest, res: Response)
 router.get('/admins', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const admins = await query(`
-      SELECT u.id, u.email, u.role, u.created_at, u.password_hash,
+      SELECT u.id, u.email, u.role, u.status, u.created_at, u.password_hash,
              COALESCE(p.full_name, v.full_name, 'Admin') as full_name
       FROM users u
       LEFT JOIN parent_profiles p ON p.user_id = u.id
@@ -342,7 +344,7 @@ router.get('/admins', async (req: AuthenticatedRequest, res: Response) => {
       role: adm.role,
       fullName: adm.full_name,
       createdAt: adm.created_at,
-      status: (!adm.password_hash || adm.password_hash === 'invited_pending') ? 'invited' : 'active'
+      status: adm.status || ((!adm.password_hash || adm.password_hash === 'invited_pending') ? 'invited' : 'active')
     }));
 
     return res.json({ success: true, admins: formatted });
@@ -3868,6 +3870,78 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// GET footer copyright settings (public)
+router.get('/footer-settings', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    let settings = await queryOne(`
+      SELECT copyright_year as copyrightYear,
+             copyright_text as copyrightText
+      FROM admin_footer_settings
+      WHERE id = 'primary_footer_settings'
+    `);
+
+    if (!settings) {
+      settings = {
+        copyrightYear: 2025,
+        copyrightText: 'Koinonia Children and Teens. All rights reserved.'
+      };
+    }
+
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    console.error('Error fetching admin footer settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve footer settings.' });
+  }
+});
+
+// POST footer copyright settings (admin role restricted)
+router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized role access' });
+    }
+
+    const { copyrightYear, copyrightText } = req.body;
+    const id = 'primary_footer_settings';
+    const now = new Date().toISOString();
+
+    const existing = await queryOne('SELECT id FROM admin_footer_settings WHERE id = ?', [id]);
+    if (existing) {
+      await execute(`
+        UPDATE admin_footer_settings
+        SET copyright_year = ?,
+            copyright_text = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [
+        copyrightYear ? parseInt(copyrightYear, 10) : 2025,
+        copyrightText || '',
+        now,
+        id
+      ]);
+    } else {
+      await execute(`
+        INSERT INTO admin_footer_settings (
+          id, copyright_year, copyright_text, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        id,
+        copyrightYear ? parseInt(copyrightYear, 10) : 2025,
+        copyrightText || '',
+        now,
+        now
+      ]);
+    }
+
+    return res.json({ success: true, message: 'Footer copyright settings updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating admin footer settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update footer copyright settings.' });
+  }
+});
+
 // GET admin landing settings
 router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -4161,6 +4235,40 @@ router.post('/team/edit-role', async (req: AuthenticatedRequest, res: Response) 
   } catch (err: any) {
     console.error('Error updating team member role:', err);
     return res.status(500).json({ success: false, error: 'Failed to update team member role.' });
+  }
+});
+
+// POST edit team status (suspend, revoke, activate)
+router.post('/team/edit-status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Super Administrators can change team member status.'
+      });
+    }
+
+    const { userId, status } = req.body;
+    if (!userId || !status) {
+      return res.status(400).json({ success: false, error: 'User ID and status are required.' });
+    }
+
+    if (status !== 'active' && status !== 'suspended' && status !== 'revoked' && status !== 'invited') {
+      return res.status(400).json({ success: false, error: 'Invalid team status requested.' });
+    }
+
+    const user = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
+    const now = new Date().toISOString();
+    await execute('UPDATE users SET status = ?, updated_at = ? WHERE id = ?', [status, now, userId]);
+
+    return res.json({ success: true, message: 'Team member status updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating team member status:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update team member status.' });
   }
 });
 
@@ -5320,6 +5428,7 @@ router.get('/reports/volunteer-parent-stats', async (req: AuthenticatedRequest, 
     const approvedVolunteers = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'approved'");
     const pendingVolunteers = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'pending_review'");
     const rejectedVolunteers = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'rejected'");
+    const unapprovedParents = await queryOne("SELECT COUNT(*) as count FROM parent_profiles WHERE profile_completed_at IS NULL");
 
     const volunteersByTeamRows = await query(`
       SELECT preferred_team as team, COUNT(*) as count 
@@ -5340,6 +5449,10 @@ router.get('/reports/volunteer-parent-stats', async (req: AuthenticatedRequest, 
         approvedVolunteers: approvedVolunteers?.count || 0,
         pendingVolunteers: pendingVolunteers?.count || 0,
         rejectedVolunteers: rejectedVolunteers?.count || 0,
+        totalApprovedVolunteers: approvedVolunteers?.count || 0,
+        activeVolunteersCount: totalVolunteers?.count || 0,
+        totalRegisteredParents: totalParents?.count || 0,
+        unapprovedParentsCount: unapprovedParents?.count || 0,
         volunteersByTeam
       }
     });
@@ -6308,7 +6421,9 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
         message: alert.message,
         createdAt: alert.created_at,
         acknowledgedAt: alert.acknowledged_at,
-        resolvedAt: alert.resolved_at
+        resolvedAt: alert.resolved_at,
+        structuredDetails: alert.structured_details ? JSON.parse(alert.structured_details) : null,
+        categoryVersion: alert.category_version || 1
       },
       raisedBy,
       child,
@@ -6715,6 +6830,861 @@ router.get('/updates/summary', authMiddleware, async (req: AuthenticatedRequest,
   } catch (err: any) {
     console.error('Error fetching admin updates summary in admin.ts:', err);
     return res.status(500).json({ error: 'Failed to retrieve updates summary' });
+  }
+});
+
+// ==========================================
+// PHASE 6: ADMIN EVENT LOCATIONS ENDPOINTS
+// ==========================================
+
+async function wouldBeCircular(childId: string, parentId: string): Promise<boolean> {
+  if (childId === parentId) return true;
+  let currentParentId = parentId;
+  const visited = new Set<string>();
+  while (currentParentId) {
+    if (visited.has(currentParentId)) return true;
+    visited.add(currentParentId);
+    const parentLoc = await queryOne('SELECT parent_location_id FROM event_locations WHERE id = ?', [currentParentId]);
+    if (parentLoc && parentLoc.parent_location_id) {
+      if (parentLoc.parent_location_id === childId) return true;
+      currentParentId = parentLoc.parent_location_id;
+    } else {
+      break;
+    }
+  }
+  return false;
+}
+
+// 1. List event locations (paginated & searchable)
+router.get('/events/:eventId/locations', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId } = req.params;
+    const page = parseInt(req.query.page as string || '1');
+    const limit = parseInt(req.query.limit as string || '100');
+    const search = (req.query.search as string || '').trim().toLowerCase();
+    const type = req.query.type as string || '';
+    const isActive = req.query.isActive as string || '';
+
+    let queryStr = 'SELECT * FROM event_locations WHERE event_id = ?';
+    const params: any[] = [eventId];
+
+    if (isActive === 'true') {
+      queryStr += ' AND is_active = 1';
+    } else if (isActive === 'false') {
+      queryStr += ' AND is_active = 0';
+    }
+
+    if (type) {
+      queryStr += ' AND location_type = ?';
+      params.push(type);
+    }
+
+    const allLocations = await query(queryStr, params);
+
+    // Build a map for quick full path label construction
+    const locMap = new Map<string, any>();
+    for (const loc of allLocations) {
+      locMap.set(loc.id, loc);
+    }
+
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    let items = allLocations.map(loc => {
+      return {
+        id: loc.id,
+        eventId: loc.event_id,
+        parentLocationId: loc.parent_location_id,
+        type: loc.location_type,
+        name: loc.name,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        capacity: loc.capacity,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        emergencyLabel: loc.emergency_label,
+        sortOrder: loc.sort_order,
+        isActive: !!loc.is_active,
+        archivedAt: loc.archived_at,
+        pathLabel: getFullPath(loc.id)
+      };
+    });
+
+    if (search) {
+      items = items.filter(item => 
+        item.name.toLowerCase().includes(search) ||
+        (item.shortName && item.shortName.toLowerCase().includes(search)) ||
+        item.pathLabel.toLowerCase().includes(search) ||
+        item.type.toLowerCase().includes(search)
+      );
+    }
+
+    items.sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      return a.pathLabel.localeCompare(b.pathLabel);
+    });
+
+    const total = items.length;
+    const totalPages = Math.ceil(total / limit);
+    const startIdx = (page - 1) * limit;
+    const paginatedItems = items.slice(startIdx, startIdx + limit);
+
+    return res.json({
+      success: true,
+      items: paginatedItems,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching event locations:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve event locations' });
+  }
+});
+
+// 2. Create event location
+router.post('/events/:eventId/locations', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId } = req.params;
+    const {
+      name, shortName, type, parentLocationId, description, instructions,
+      capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Location name is required.' });
+    }
+    if (!type || !type.trim()) {
+      return res.status(400).json({ success: false, error: 'Location type is required.' });
+    }
+
+    const id = 'loc-' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+
+    const parentId = (parentLocationId && parentLocationId !== 'none') ? parentLocationId : null;
+
+    if (parentId) {
+      // Check circular parent relationship
+      if (await wouldBeCircular(id, parentId)) {
+        return res.status(400).json({ success: false, error: 'Circular parent relationship is not allowed.' });
+      }
+    }
+
+    await execute(`
+      INSERT INTO event_locations (
+        id, event_id, parent_location_id, location_type, name, short_name, description,
+        instructions, capacity, age_group_key, team_key, emergency_label, sort_order,
+        is_active, created_by, updated_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    `, [
+      id, eventId, parentId, type, name.trim(), shortName ? shortName.trim() : null,
+      description ? description.trim() : null, instructions ? instructions.trim() : null,
+      capacity ? parseInt(String(capacity)) : null, ageGroupKey || null, teamKey || null,
+      emergencyLabel ? emergencyLabel.trim() : null, sortOrder ? parseInt(String(sortOrder)) : 0,
+      req.user?.id || null, req.user?.id || null, now, now
+    ]);
+
+    // Broadcast change
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'create', locationId: id });
+
+    return res.json({ success: true, locationId: id });
+  } catch (err: any) {
+    console.error('Error creating event location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to create event location' });
+  }
+});
+
+// 3. Get event location details
+router.get('/events/:eventId/locations/:locationId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { locationId } = req.params;
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!loc) {
+      return res.status(404).json({ success: false, error: 'Location not found.' });
+    }
+
+    // Get QR codes if active
+    const codeEntry = await queryOne('SELECT id, token_hash, is_active FROM event_location_codes WHERE event_location_id = ? AND is_active = 1', [locationId]);
+
+    return res.json({
+      success: true,
+      location: {
+        id: loc.id,
+        eventId: loc.event_id,
+        parentLocationId: loc.parent_location_id,
+        type: loc.location_type,
+        name: loc.name,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        capacity: loc.capacity,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        emergencyLabel: loc.emergency_label,
+        sortOrder: loc.sort_order,
+        isActive: !!loc.is_active,
+        archivedAt: loc.archived_at,
+        qrCodeActive: !!codeEntry,
+        qrToken: codeEntry ? codeEntry.token_hash : null
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching location details:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve location details' });
+  }
+});
+
+// 4. Update event location
+router.patch('/events/:eventId/locations/:locationId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const {
+      name, shortName, type, parentLocationId, description, instructions,
+      capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, isActive
+    } = req.body;
+
+    const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!existingLoc) {
+      return res.status(404).json({ success: false, error: 'Location not found.' });
+    }
+
+    const parentId = parentLocationId === 'none' ? null : (parentLocationId !== undefined ? parentLocationId : existingLoc.parent_location_id);
+
+    if (parentId && parentId !== existingLoc.parent_location_id) {
+      if (await wouldBeCircular(locationId, parentId)) {
+        return res.status(400).json({ success: false, error: 'Circular parent relationship is not allowed.' });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE event_locations SET
+        name = COALESCE(?, name),
+        short_name = ?,
+        location_type = COALESCE(?, location_type),
+        parent_location_id = ?,
+        description = ?,
+        instructions = ?,
+        capacity = ?,
+        age_group_key = ?,
+        team_key = ?,
+        emergency_label = ?,
+        sort_order = COALESCE(?, sort_order),
+        is_active = COALESCE(?, is_active),
+        updated_by = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      name ? name.trim() : null,
+      shortName === '' ? null : (shortName ? shortName.trim() : existingLoc.short_name),
+      type || null,
+      parentId,
+      description === '' ? null : (description ? description.trim() : existingLoc.description),
+      instructions === '' ? null : (instructions ? instructions.trim() : existingLoc.instructions),
+      capacity === '' ? null : (capacity !== undefined ? parseInt(String(capacity)) : existingLoc.capacity),
+      ageGroupKey === '' ? null : (ageGroupKey ? ageGroupKey : existingLoc.age_group_key),
+      teamKey === '' ? null : (teamKey ? teamKey : existingLoc.team_key),
+      emergencyLabel === '' ? null : (emergencyLabel ? emergencyLabel.trim() : existingLoc.emergency_label),
+      sortOrder !== undefined ? parseInt(String(sortOrder)) : null,
+      isActive !== undefined ? (isActive ? 1 : 0) : null,
+      req.user?.id || null,
+      now,
+      locationId
+    ]);
+
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'update', locationId });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error updating location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update location' });
+  }
+});
+
+// 5. Archive event location
+router.post('/events/:eventId/locations/:locationId/archive', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    // Check if referenced by active routing rules
+    const rulesUsingLocation = await query('SELECT id FROM alert_routing_rules WHERE location_id = ? AND is_active = 1', [locationId]);
+    const dutyPresence = await query('SELECT id FROM event_duty_location_presence WHERE event_location_id = ? AND ended_at IS NULL', [locationId]);
+
+    const warnings: string[] = [];
+    if (rulesUsingLocation.length > 0) {
+      warnings.push('This location is currently referenced in active alert routing rules.');
+    }
+    if (dutyPresence.length > 0) {
+      warnings.push(`There are currently ${dutyPresence.length} responder(s) on active duty at this location.`);
+    }
+
+    await execute(`
+      UPDATE event_locations SET
+        is_active = 0,
+        archived_at = ?,
+        archived_by = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, req.user?.id || null, now, locationId]);
+
+    // Deactivate active QR codes for this location
+    await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'archive', locationId });
+
+    return res.json({ success: true, warnings });
+  } catch (err: any) {
+    console.error('Error archiving location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to archive location' });
+  }
+});
+
+// 6. Restore event location
+router.post('/events/:eventId/locations/:locationId/restore', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE event_locations SET
+        is_active = 1,
+        archived_at = NULL,
+        archived_by = NULL,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, locationId]);
+
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'restore', locationId });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error restoring location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore location' });
+  }
+});
+
+// 7. QR code endpoints: Generate
+router.post('/events/:eventId/locations/:locationId/code', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    // Deactivate previous active codes
+    await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+
+    // Generate signed/opaque unguessable token
+    const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+    const id = 'code-' + crypto.randomBytes(8).toString('hex');
+
+    await execute(`
+      INSERT INTO event_location_codes (
+        id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at
+      ) VALUES (?, ?, ?, 1, 1, ?, ?)
+    `, [id, locationId, token, req.user?.id || null, now]);
+
+    return res.json({ success: true, token });
+  } catch (err: any) {
+    console.error('Error generating QR code:', err);
+    return res.status(500).json({ success: false, error: 'Failed to generate QR code' });
+  }
+});
+
+// 8. QR code: Rotate
+router.post('/events/:eventId/locations/:locationId/code/rotate', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    // Deactivate existing codes
+    await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+
+    // Generate new unguessable token
+    const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+    const id = 'code-' + crypto.randomBytes(8).toString('hex');
+
+    await execute(`
+      INSERT INTO event_location_codes (
+        id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at, rotated_at
+      ) VALUES (?, ?, ?, 1, 1, ?, ?, ?)
+    `, [id, locationId, token, req.user?.id || null, now, now]);
+
+    return res.json({ success: true, token });
+  } catch (err: any) {
+    console.error('Error rotating QR code:', err);
+    return res.status(500).json({ success: false, error: 'Failed to rotate QR code' });
+  }
+});
+
+// 9. QR code: Disable
+router.post('/events/:eventId/locations/:locationId/code/disable', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { locationId } = req.params;
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE event_location_codes SET
+        is_active = 0,
+        disabled_at = ?
+      WHERE event_location_id = ? AND is_active = 1
+    `, [now, locationId]);
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error disabling QR code:', err);
+    return res.status(500).json({ success: false, error: 'Failed to disable QR code' });
+  }
+});
+
+// 10. Location Coverage detail and status
+router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!loc) {
+      return res.status(404).json({ success: false, error: 'Location not found' });
+    }
+
+    // Active present responders
+    const activePresence = await query(`
+      SELECT p.*, u.role, pr.full_name, pr.phone_number
+      FROM event_duty_location_presence p
+      JOIN users u ON p.user_id = u.id
+      JOIN parent_profiles pr ON u.id = pr.user_id
+      WHERE p.event_location_id = ? AND p.ended_at IS NULL
+    `, [locationId]);
+
+    // Assigned scheduled responders
+    const assignedResponders = await query(`
+      SELECT a.*, pr.full_name, u.role
+      FROM event_duty_assignments a
+      JOIN users u ON a.user_id = u.id
+      JOIN parent_profiles pr ON u.id = pr.user_id
+      WHERE a.event_id = ? AND a.assigned_location_id = ? AND a.status = 'scheduled'
+    `, [eventId, locationId]);
+
+    let coverageStatus = 'Not covered';
+    if (activePresence.length > 0) {
+      coverageStatus = 'Covered';
+    } else if (assignedResponders.length > 0) {
+      coverageStatus = 'Covered with backup only';
+    }
+
+    // Also get active alarms associated with this location
+    const activeAlerts = await query(`
+      SELECT id, title, category, severity, status, created_at
+      FROM event_safety_alerts
+      WHERE event_id = ? AND location_id = ? AND status IN ('open', 'acknowledged')
+    `, [eventId, locationId]);
+
+    return res.json({
+      success: true,
+      coverage: {
+        locationId,
+        locationName: loc.name,
+        coverageStatus,
+        activePresence: activePresence.map(p => ({
+          userId: p.user_id,          fullName: p.full_name,          role: p.role,          phone: p.phone_number,          source: p.source,          startedAt: p.started_at
+        })),
+        assignedResponders: assignedResponders.map(a => ({
+          id: a.id,
+          userId: a.user_id,
+          fullName: a.full_name,
+          role: a.role,
+          responsibilityKey: a.responsibility_key,
+          startsAt: a.starts_at,
+          endsAt: a.ends_at
+        })),
+        activeAlertsCount: activeAlerts.length,
+        activeAlerts
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching location coverage details:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve location coverage' });
+  }
+});
+
+// ==========================================
+// Phase 7 Admin Child Summary Endpoints
+// ==========================================
+
+// GET /api/admin/safety-alerts/:alertId/child-summary
+router.get('/safety-alerts/:alertId/child-summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      alertId,
+      accessReason: 'Admin summary overview view'
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Admin child summary error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// GET /api/admin/safety-alerts/:alertId/child-summary/protected/:section
+router.get('/safety-alerts/:alertId/child-summary/protected/:section', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId, section } = req.params;
+
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      alertId,
+      revealedSections: [section],
+      accessReason: `Admin explicit reveal of ${section}`
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Admin child summary protected reveal error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:alertId/link-child
+router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const { childId, reason } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({ error: 'childId is required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) {
+      return res.status(400).json({ error: 'Selected child profile not found.' });
+    }
+
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id || REAL_EVENT_ID]);
+    const finalEntryId = entry?.id || null;
+
+    const now = new Date().toISOString();
+    const prevChildId = alert.child_id;
+
+    await execute(`
+      UPDATE event_safety_alerts
+      SET child_id = ?,
+          child_event_entry_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [childId, finalEntryId, now, alertId]);
+
+    const historyId = 'link-hist-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_child_link_history (
+        id, alert_id, previous_child_id, new_child_id, action, reason, changed_by, created_at
+      ) VALUES (?, ?, ?, ?, 'link', ?, ?, ?)
+    `, [historyId, alertId, prevChildId, childId, reason || 'Admin child link', req.user.id, now]);
+
+    await captureChildSnapshot(alertId, childId);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'child_linked', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Admin linked child ${child.full_name}. Reason: ${reason || 'Admin override'}`, now]);
+
+    broadcastSSEEvent(REAL_EVENT_ID, {
+      type: 'alert.child_linked',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Child successfully linked by admin.' });
+  } catch (err: any) {
+    console.error('Admin link child error:', err);
+    res.status(500).json({ error: 'Failed to link child' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:alertId/correct-child-link
+router.post('/safety-alerts/:alertId/correct-child-link', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const { childId, reason } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({ error: 'childId is required' });
+    }
+
+    if (!reason) {
+      return res.status(400).json({ error: 'Reason for correction is required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) {
+      return res.status(400).json({ error: 'Selected child profile not found.' });
+    }
+
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id || REAL_EVENT_ID]);
+    const finalEntryId = entry?.id || null;
+
+    const now = new Date().toISOString();
+    const prevChildId = alert.child_id;
+
+    await execute(`
+      UPDATE event_safety_alerts
+      SET child_id = ?,
+          child_event_entry_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [childId, finalEntryId, now, alertId]);
+
+    const historyId = 'link-hist-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_child_link_history (
+        id, alert_id, previous_child_id, new_child_id, action, reason, changed_by, created_at
+      ) VALUES (?, ?, ?, ?, 'correction', ?, ?, ?)
+    `, [historyId, alertId, prevChildId, childId, reason, req.user.id, now]);
+
+    await captureChildSnapshot(alertId, childId);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'child_link_corrected', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Corrected child link to ${child.full_name}. Reason: ${reason}`, now]);
+
+    broadcastSSEEvent(REAL_EVENT_ID, {
+      type: 'alert.child_link_corrected',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Child link corrected successfully.' });
+  } catch (err: any) {
+    console.error('Correct child link error:', err);
+    res.status(500).json({ error: 'Failed to correct child link' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:alertId/contact-attempt
+router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const { contactType, contactReference, outcome, safeNote } = req.body;
+
+    if (!contactType || !contactReference || !outcome) {
+      return res.status(400).json({ error: 'contactType, contactReference and outcome are required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if (!alert.child_id) {
+      return res.status(400).json({ error: 'No child is linked to this alert.' });
+    }
+
+    const now = new Date().toISOString();
+    const id = 'attempt-' + crypto.randomUUID();
+
+    await execute(`
+      INSERT INTO child_contact_attempts (
+        id, event_id, alert_id, child_id, contact_type, contact_reference, outcome, safe_note, attempted_by, attempted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id, alert.event_id || REAL_EVENT_ID, alertId, alert.child_id, contactType,
+      contactReference, outcome, safeNote || null, req.user.id, now
+    ]);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'contact_attempted', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Contacted ${contactReference} via ${contactType}. Result: ${outcome}. Note: ${safeNote || 'None'}`, now]);
+
+    broadcastSSEEvent(REAL_EVENT_ID, {
+      type: 'child.contact_attempt_recorded',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Contact attempt logged successfully by admin.' });
+  } catch (err: any) {
+    console.error('Record contact attempt error:', err);
+    res.status(500).json({ error: 'Failed to record contact attempt' });
+  }
+});
+
+// GET /api/admin/children/:childId/emergency-summary
+router.get('/children/:childId/emergency-summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { childId } = req.params;
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      childId,
+      accessReason: 'Admin child directory lookup'
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Admin direct child summary error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// GET /api/admin/events/:eventId/operations/overview
+router.get('/events/:eventId/operations/overview', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { profile } = req.query;
+
+    const userRole = req.user?.role;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    let activeProfile: any = profile || 'admin';
+
+    if (userRole !== 'admin' && userRole !== 'super_admin') {
+      const assignment = await queryOne(`
+        SELECT responsibility_key FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
+        LIMIT 1
+      `, [eventId, userId]);
+
+      if (!assignment) {
+        return res.status(403).json({ success: false, error: 'Access denied: Scoped permissions required.' });
+      }
+
+      const key = assignment.responsibility_key;
+      if (key === 'First Aid Team') {
+        activeProfile = 'first_aid';
+      } else if (key === 'Security Lead') {
+        activeProfile = 'security';
+      } else if (key === 'Pickup Lead') {
+        activeProfile = 'pickup';
+      } else if (key === 'Care Lead' || key === 'Room/Group Lead') {
+        activeProfile = 'team_lead';
+      } else {
+        return res.status(403).json({ success: false, error: 'Access denied: Scoped permissions required.' });
+      }
+    }
+
+    const data = await eventOperationsService.getEventOperationsOverview(eventId, {
+      profile: activeProfile
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('Error fetching event operations overview:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event operations.' });
+  }
+});
+
+// GET /api/admin/events/:eventId/operations/activity
+router.get('/events/:eventId/operations/activity', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { type, page, limit } = req.query;
+
+    const userRole = req.user?.role;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    if (userRole !== 'admin' && userRole !== 'super_admin') {
+      const assignment = await queryOne(`
+        SELECT id FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
+        LIMIT 1
+      `, [eventId, userId]);
+
+      if (!assignment) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+    }
+
+    const filterType = (type || 'all') as any;
+    const pageNum = parseInt(String(page || '1')) || 1;
+    const limitNum = parseInt(String(limit || '10')) || 10;
+
+    const data = await eventOperationsService.getRecentOperationalActivity(eventId, {
+      type: filterType,
+      page: pageNum,
+      limit: limitNum
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('Error fetching event operations activity:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event activity.' });
   }
 });
 

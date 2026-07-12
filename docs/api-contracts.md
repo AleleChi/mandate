@@ -2108,4 +2108,114 @@ The mobile check-in scanner leverages the `/api/volunteer/pass/lookup` and `/api
 - **Immediate Viewfinder Shutdown**: On a successful lookup, the camera stream is halted instantly to prevent background scans.
 - **Transition Flow**: The lookup response drives transition directly to the "Child Found" screen, which contains custom action triggers pointing to `/api/volunteer/check-in` and state-cleanup handlers to safely restore operational scanning on dismiss.
 
+---
+
+## 19. Live Event Operations Dashboard (`/api/admin/events/:eventId/operations`)
+
+These endpoints provide real-time aggregation data with role-based data filtering and localized dates.
+
+### 19.1 GET `/api/admin/events/:eventId/operations/overview`
+Retrieves a consolidated operational summary for an active event.
+- **Headers**: `Authorization: Bearer <token>`
+- **Query Parameters**:
+  - `profile` (optional): View mode profile for role-based filtering (e.g. `admin`, `first_aid`, `security`, `safeguarding`, `pickup`, `team_lead`).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "event": {
+      "id": "event-ga-2026",
+      "name": "The General Assembly 2026",
+      "status": "active",
+      "timezone": "Africa/Lagos",
+      "lastUpdatedAt": "2026-07-09T00:19:05.593Z"
+    },
+    "attendance": {
+      "registered": 772,
+      "checkedIn": 350,
+      "released": 250,
+      "notCheckedIn": 422,
+      "pickupInProgress": 15,
+      "statusNeedingConfirmation": 3
+    },
+    "volunteers": {
+      "approvedVolunteers": 45,
+      "onDuty": 32,
+      "temporarilyUnavailable": 2,
+      "onBreak": 3,
+      "dutyEnded": 8,
+      "coverageGaps": 1
+    },
+    "devices": {
+      "ready": 30,
+      "limited": 2,
+      "attention": 0,
+      "noPush": 0,
+      "soundNotUnlocked": 0
+    },
+    "locations": {
+      "covered": 8,
+      "backupOnly": 1,
+      "limited": 0,
+      "uncovered": 1,
+      "capacityWarnings": 0,
+      "locations": [
+        {
+          "id": "loc-1",
+          "shortName": "Creche",
+          "assignedChildren": 10,
+          "capacity": 20,
+          "status": "Covered"
+        }
+      ]
+    },
+    "alerts": [],
+    "responses": {
+      "unacknowledged": 0,
+      "inProgress": 0,
+      "pendingHandovers": 0,
+      "assistanceRequests": 0
+    },
+    "incidents": {
+      "draft": 0,
+      "waitingReview": 0,
+      "underReview": 1,
+      "changesRequested": 0,
+      "closed": 5
+    },
+    "escalations": {
+      "activeCycles": 0,
+      "backupNotificationsSent": 0,
+      "deliveryCoverageIssues": 0
+    },
+    "priorityItems": []
+  }
+  ```
+
+### 19.2 GET `/api/admin/events/:eventId/operations/activity`
+Retrieves a paginated list of operational activity records.
+- **Headers**: `Authorization: Bearer <token>`
+- **Query Parameters**:
+  - `type`: Activity category filter (`all` | `attendance` | `volunteers` | `locations` | `safety` | `incidents`).
+  - `page`: Page index (default: `1`).
+  - `limit`: Page count limit (default: `5`).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": "act-1",
+        "category": "attendance",
+        "title": "Child Checked In",
+        "description": "Sarah Omikunle checked in at Creche",
+        "timestamp": "2026-07-09T00:19:05.593Z"
+      }
+    ],
+    "totalCount": 42,
+    "page": 1,
+    "limit": 5
+  }
+  ```
+
+
 

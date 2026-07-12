@@ -8,9 +8,83 @@ import { validateEmailAddress, validatePhoneNumber, validateName } from '../util
 import { uploadMedia } from '../services/media/cloudinary';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
+import { resolveAlertRecipients } from './duty';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+export function normalizeAlertSeverity(value: string): string {
+  const v = (value || '').toLowerCase().trim();
+  if (v === 'important' || v === 'timely') return 'important';
+  if (v === 'urgent' || v === 'immediate' || v === 'critical') return 'urgent';
+  return 'normal';
+}
+
+export function normalizeAlertCategory(value: string): string {
+  const v = (value || '').toLowerCase().trim();
+  if (v === 'child_care' || v === 'care') return 'child_care';
+  if (v === 'medical_support' || v === 'medical' || v === 'first_aid') return 'medical_support';
+  if (v === 'pickup_concern' || v === 'pickup_issue' || v === 'pickup') return 'pickup_issue';
+  if (v === 'pass_checkin_concern' || v === 'pass_issue' || v === 'pass' || v === 'checkin') return 'pass_issue';
+  if (v === 'security_missing_child' || v === 'security_concern' || v === 'security' || v === 'missing_child') return 'security_concern';
+  if (v === 'general_help' || v === 'location_support' || v === 'room' || v === 'classroom') return 'location_support';
+  return 'other';
+}
+
+export function normalizePersonSearchQuery(value: string): string {
+  if (!value) return '';
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove diacritics
+    .replace(/\s+/g, ' '); // collapse multiple spaces
+}
+
+function rankSearchResults(results: any[], queryStr: string) {
+  const normalizedQuery = normalizePersonSearchQuery(queryStr);
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+
+  return results.map(r => {
+    const childName = normalizePersonSearchQuery(r.childName || r.child_name || '');
+    const parentName = normalizePersonSearchQuery(r.parentName || r.parent_name || '');
+    
+    let score = 0;
+
+    // 1. Exact normalized full-name match (highest priority)
+    if (childName === normalizedQuery) {
+      score += 1000;
+    } else if (childName.startsWith(normalizedQuery)) {
+      // 2. Full-name prefix
+      score += 500;
+    }
+
+    // 3. Exact token match or token prefix match
+    const childTokens = childName.split(' ').filter(Boolean);
+    for (const qToken of queryTokens) {
+      // Check if any child token matches the query token exactly
+      if (childTokens.includes(qToken)) {
+        score += 100;
+      } else if (childTokens.some(t => t.startsWith(qToken))) {
+        // Token prefix
+        score += 50;
+      } else if (childName.includes(qToken)) {
+        // Broader partial match
+        score += 10;
+      }
+    }
+
+    // Match parent names as well, but with slightly lower weight
+    if (parentName === normalizedQuery) {
+      score += 200;
+    } else if (parentName.startsWith(normalizedQuery)) {
+      score += 100;
+    }
+
+    return { ...r, _score: score };
+  })
+  .sort((a, b) => b._score - a._score);
+}
 
 async function getEventStats() {
   const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
@@ -1890,10 +1964,40 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
 
     const searchQuery = (req.query.q || '').toString().trim();
     if (!searchQuery) {
+      if (req.query.paginated === 'true') {
+        return res.json({
+          success: true,
+          children: [],
+          pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false }
+        });
+      }
       return res.json([]);
     }
 
-    const likeParam = `%${searchQuery}%`;
+    const normQuery = normalizePersonSearchQuery(searchQuery);
+    const tokens = normQuery.split(' ').filter(Boolean);
+    if (tokens.length === 0) {
+      if (req.query.paginated === 'true') {
+        return res.json({
+          success: true,
+          children: [],
+          pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false }
+        });
+      }
+      return res.json([]);
+    }
+
+    const whereClauses: string[] = [];
+    const params: any[] = [REAL_EVENT_ID];
+
+    for (const token of tokens) {
+      const likeToken = `%${token}%`;
+      whereClauses.push(`(c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ?)`);
+      params.push(likeToken, likeToken, likeToken);
+    }
+
+    const whereClauseSql = whereClauses.join(' AND ');
+
     const rows = await query(`
       SELECT c.id as child_id, c.full_name as child_name, c.date_of_birth, c.gender, c.calculated_age, c.age_group, c.photo_file_id as child_photo_id,
              p.full_name as parent_name, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
@@ -1901,9 +2005,9 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       FROM children c
       JOIN parent_profiles p ON c.parent_profile_id = p.id
       LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
-      WHERE c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ?
-      LIMIT 50
-    `, [REAL_EVENT_ID, likeParam, likeParam, likeParam]);
+      WHERE ${whereClauseSql}
+      LIMIT 150
+    `, params);
 
     const results = [];
     for (const r of rows) {
@@ -1976,7 +2080,42 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       });
     }
 
-    res.json(results);
+    const sorted = rankSearchResults(results, searchQuery);
+
+    if (req.query.paginated === 'true') {
+      const page = parseInt(req.query.page as string || '1', 10);
+      const limit = parseInt(req.query.limit as string || '20', 10);
+      const startIndex = (page - 1) * limit;
+      const endIndex = page * limit;
+      const sliced = sorted.slice(startIndex, endIndex);
+
+      const paginatedChildren = sliced.map(child => {
+        return {
+          id: child.childId,
+          fullName: child.childName,
+          firstName: (child.childName || '').trim().split(' ')[0],
+          ageDisplay: child.calculatedAge ? `Age ${child.calculatedAge}` : 'Unknown age',
+          ageGroup: child.ageGroup || 'Class unknown',
+          photoUrl: child.photoUrl,
+          eventStatus: child.entryStatus || 'not_arrived',
+          passStatus: child.entryStatus || 'not_arrived'
+        };
+      });
+
+      return res.json({
+        success: true,
+        children: paginatedChildren,
+        pagination: {
+          page,
+          limit,
+          total: sorted.length,
+          totalPages: Math.ceil(sorted.length / limit),
+          hasNextPage: endIndex < sorted.length
+        }
+      });
+    }
+
+    res.json(sorted);
   } catch (err) {
     console.error('Volunteer children search error:', err);
     res.status(500).json({ error: 'Internal server error searching children' });
@@ -4042,7 +4181,10 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
     }
 
-    const { childId, childEventEntryId, category, severity, locationLabel, message } = req.body;
+    const { childId, childEventEntryId, category: rawCategory, severity: rawSeverity, locationLabel, message, idempotencyKey } = req.body;
+
+    const severity = normalizeAlertSeverity(rawSeverity);
+    const category = normalizeAlertCategory(rawCategory);
 
     const validSeverities = ['normal', 'important', 'urgent'];
     const validCategories = ['child_care', 'pickup_issue', 'pass_issue', 'medical_support', 'security_concern', 'location_support', 'other'];
@@ -4058,6 +4200,97 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       return res.status(400).json({ error: 'Please describe what you need help with.' });
     }
     const cleanMessage = (message || '').trim().substring(0, 500);
+
+    // Validate structured details per category. Support bypass of optional/required fields for Urgent alerts.
+    const structuredDetails = req.body.structuredDetails || {};
+    let validatedDetails: Record<string, any> = {};
+    const isUrgent = severity === 'urgent';
+
+    if (category === 'child_care') {
+      const specificNeeds = String(structuredDetails.specific_needs || '').trim();
+      const severitySubtype = String(structuredDetails.severity_subtype || '').trim();
+      if (!isUrgent && !specificNeeds) {
+        return res.status(400).json({ error: 'Specific care need is required' });
+      }
+      validatedDetails = {
+        specific_needs: specificNeeds || 'General Help',
+        severity_subtype: severitySubtype || 'Mild'
+      };
+    } else if (category === 'pickup_issue') {
+      const reportedPickupName = String(structuredDetails.reported_pickup_name || '').trim();
+      const relationship = String(structuredDetails.relationship || '').trim();
+      const contactPhone = String(structuredDetails.contact_phone || '').trim();
+      if (!isUrgent && (!reportedPickupName || !relationship)) {
+        return res.status(400).json({ error: 'Reported pickup person name and relationship are required' });
+      }
+      validatedDetails = {
+        reported_pickup_name: reportedPickupName || 'Unknown Pickup Attempt',
+        relationship: relationship || 'Unknown Relationship',
+        contact_phone: contactPhone || ''
+      };
+    } else if (category === 'pass_issue') {
+      const passCode = String(structuredDetails.pass_code || '').trim();
+      const errorType = String(structuredDetails.error_type || '').trim();
+      if (!isUrgent && !errorType) {
+        return res.status(400).json({ error: 'Error type is required' });
+      }
+      validatedDetails = {
+        pass_code: passCode || '',
+        error_type: errorType || 'Device scan error'
+      };
+    } else if (category === 'medical_support') {
+      const medicalSymptom = String(structuredDetails.medical_symptom || '').trim();
+      const requiresMedic = !!structuredDetails.requires_medic;
+      if (!isUrgent && !medicalSymptom) {
+        return res.status(400).json({ error: 'Medical symptom/injury type is required' });
+      }
+      validatedDetails = {
+        medical_symptom: medicalSymptom || 'Fever / Unwell',
+        requires_medic: requiresMedic
+      };
+    } else if (category === 'security_concern') {
+      const lastSeenTime = String(structuredDetails.last_seen_time || '').trim();
+      const clothingDescription = String(structuredDetails.clothing_description || '').trim();
+      const physicalAppearance = String(structuredDetails.physical_appearance || '').trim();
+      if (!isUrgent && (!lastSeenTime || !clothingDescription)) {
+        return res.status(400).json({ error: 'Last seen time and clothing description are required' });
+      }
+      validatedDetails = {
+        last_seen_time: lastSeenTime || 'Just now',
+        clothing_description: clothingDescription || 'Unspecified clothing',
+        physical_appearance: physicalAppearance || ''
+      };
+    } else if (category === 'location_support') {
+      const assistanceReason = String(structuredDetails.assistance_reason || '').trim();
+      const volunteerCountNeeded = parseInt(structuredDetails.volunteer_count_needed, 10) || 1;
+      if (!isUrgent && !assistanceReason) {
+        return res.status(400).json({ error: 'Assistance reason is required' });
+      }
+      validatedDetails = {
+        assistance_reason: assistanceReason || 'Crowd control help',
+        volunteer_count_needed: volunteerCountNeeded
+      };
+    } else if (category === 'other') {
+      const customCareType = String(structuredDetails.custom_care_type || '').trim();
+      if (!isUrgent && !customCareType) {
+        return res.status(400).json({ error: 'Custom care request detail is required' });
+      }
+      validatedDetails = {
+        custom_care_type: customCareType || 'Care support needed'
+      };
+    }
+
+    // Idempotency check
+    if (idempotencyKey) {
+      const existingAlert = await queryOne('SELECT id FROM event_safety_alerts WHERE idempotency_key = ?', [idempotencyKey]);
+      if (existingAlert) {
+        return res.json({
+          success: true,
+          message: severity === 'urgent' ? 'Urgent alert sent. An admin has been notified.' : 'Alert sent.',
+          alertId: existingAlert.id
+        });
+      }
+    }
 
     const thirtySecsAgo = new Date(Date.now() - 30 * 1000).toISOString();
     const duplicateAlert = await queryOne(`
@@ -4095,6 +4328,49 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
     const now = new Date().toISOString();
     const alertId = `alert-${crypto.randomUUID()}`;
 
+    // Phase 6 Location Snapshot resolve logic
+    let finalLocationId: string | null = req.body.locationId || null;
+    let finalLocationLabel: string | null = locationLabel || null;
+    let finalLocationPath: string | null = null;
+    let finalLocationDetail: string | null = req.body.locationDetail || null;
+    let finalLocationSource: string = req.body.locationSource || 'unknown';
+
+    if (finalLocationId) {
+      const locRecord = await queryOne('SELECT * FROM event_locations WHERE id = ?', [finalLocationId]);
+      if (locRecord) {
+        finalLocationLabel = locRecord.name;
+        // Build path label
+        const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
+        const locMap = new Map<string, any>();
+        for (const loc of allLocations) {
+          locMap.set(loc.id, loc);
+        }
+        const getFullPath = (locId: string): string => {
+          const pathParts: string[] = [];
+          let currentId: string | null = locId;
+          const visited = new Set<string>();
+          while (currentId) {
+            if (visited.has(currentId)) break;
+            visited.add(currentId);
+            const current = locMap.get(currentId);
+            if (current) {
+              pathParts.unshift(current.name);
+              currentId = current.parent_location_id;
+            } else {
+              break;
+            }
+          }
+          return pathParts.join(' › ');
+        };
+        finalLocationPath = getFullPath(finalLocationId);
+        if (finalLocationSource === 'unknown') {
+          finalLocationSource = 'selected';
+        }
+      }
+    } else if (locationLabel) {
+      finalLocationSource = 'manually_entered';
+    }
+
     const catLabels: Record<string, string> = {
       child_care: 'Child care concern',
       pickup_issue: 'Pickup issue',
@@ -4109,15 +4385,21 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
     await execute(`
       INSERT INTO event_safety_alerts (
         id, event_id, child_id, child_event_entry_id, raised_by_user_id, raised_by_role,
-        severity, category, title, message, location_label, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+        severity, category, title, message, location_label, status, created_at, updated_at, idempotency_key,
+        structured_details, category_version, location_id, location_path_snapshot, location_detail, location_source, original_location_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     `, [
       alertId, REAL_EVENT_ID, finalChildId, finalEntryId, req.user.id, 'volunteer',
-      severity, category, alertTitle, cleanMessage, locationLabel || null, now, now
+      severity, category, alertTitle, cleanMessage, finalLocationLabel || null, now, now, idempotencyKey || null,
+      JSON.stringify(validatedDetails), finalLocationId, finalLocationPath, finalLocationDetail, finalLocationSource, finalLocationId
     ]);
 
+    if (finalChildId) {
+      await captureChildSnapshot(alertId, finalChildId);
+    }
+
     const volFirstName = (volProfile.full_name || 'A volunteer').replace(/\s*\d+$/, '').trim().split(' ')[0];
-    const locText = locationLabel ? ` at ${locationLabel}` : '';
+    const locText = finalLocationLabel ? ` at ${finalLocationLabel}` : '';
     const adminMessageText = cleanMessage 
       ? `${volFirstName} requested support${locText}: "${cleanMessage}"`
       : `${volFirstName} requested support${locText}.`;
@@ -4150,73 +4432,11 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       metadataJson
     ]);
 
-    // Populate safety_alert_recipients for all on-duty admins and team leads
-    let eligibleRecipients = [];
+    // Resolve and assign recipients, devices, snapshots, and push fallbacks using Phase 3 engine
     try {
-      eligibleRecipients = await query(`
-        SELECT u.id, u.role, COALESCE(d.on_duty, 1) as on_duty, COALESCE(d.active, 1) as active, COALESCE(d.alert_enabled, 1) as alert_enabled
-        FROM users u
-        LEFT JOIN user_duty_status d ON u.id = d.user_id
-        WHERE u.role IN ('admin', 'super_admin', 'team')
-          AND COALESCE(d.active, 1) = 1
-          AND COALESCE(d.on_duty, 1) = 1
-      `);
-
-      for (const rec of eligibleRecipients) {
-        const recipientId = `recip-${crypto.randomUUID()}`;
-        await execute(`
-          INSERT INTO safety_alert_recipients (
-            id, alert_id, recipient_user_id, recipient_role,
-            sound_started_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [
-          recipientId,
-          alertId,
-          rec.id,
-          rec.role,
-          severity === 'urgent' && rec.alert_enabled === 1 ? now : null,
-          now,
-          now
-        ]);
-      }
+      await resolveAlertRecipients(alertId, category, severity, req.user.id);
     } catch (recipErr) {
-      console.error('[Safety Alert] Failed to register recipients:', recipErr);
-    }
-
-    try {
-      const pushTitle = severity === 'urgent' ? 'Urgent help needed' : 'Support requested';
-      const pushBody = `A volunteer requested admin support.`;
-      for (const rec of eligibleRecipients) {
-        if (rec.alert_enabled === 1) {
-          await sendWebPush(rec.id, {
-            title: pushTitle,
-            body: pushBody,
-            metadata: { alertId, severity }
-          });
-          // Update recipient record with push info
-          await execute(`
-            UPDATE safety_alert_recipients
-            SET push_sent_at = ?, push_status = 'sent'
-            WHERE alert_id = ? AND recipient_user_id = ?
-          `, [now, alertId, rec.id]);
-        }
-      }
-    } catch (pushErr) {
-      console.error('[Safety Alert] Failed to send push notifications to admins:', pushErr);
-    }
-
-    try {
-      broadcastSSEEvent('safety_alert_created', {
-        alertId,
-        severity,
-        category,
-        title: alertTitle,
-        message: cleanMessage,
-        location: locationLabel || '',
-        created_at: now
-      });
-    } catch (sseErr) {
-      console.error('[SSE Broadcast] Failed to send sse alert:', sseErr);
+      console.error('[Safety Alert] Failed to resolve alert routing recipients:', recipErr);
     }
 
     res.json({
@@ -4392,6 +4612,973 @@ router.post('/safety-alerts/:id/escalate', authMiddleware, async (req: Authentic
   } catch (err) {
     console.error('Escalate safety alert error:', err);
     res.status(500).json({ error: 'Failed to escalate safety alert' });
+  }
+});
+
+// ==========================================
+// Phase 7 Child Emergency Summary Core Code
+// ==========================================
+
+export async function resolveUserAccessProfile(actorId: string, actorRole: string, alertId: string | null) {
+  if (actorRole === 'super_admin' || actorRole === 'admin') {
+    return 'admin';
+  }
+  if (actorRole === 'team') {
+    return 'team_lead';
+  }
+
+  const vol = await queryOne('SELECT preferred_team, assigned_team FROM volunteer_profiles WHERE user_id = ?', [actorId]);
+  const preferredTeam = (vol?.preferred_team || '').toLowerCase();
+  const assignedTeam = (vol?.assigned_team || '').toLowerCase();
+
+  let isAssignedResponder = false;
+  if (alertId) {
+    const alert = await queryOne('SELECT owner_user_id FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (alert && alert.owner_user_id === actorId) {
+      isAssignedResponder = true;
+    } else {
+      const assignment = await queryOne(
+        `SELECT id FROM alert_response_assignments 
+         WHERE alert_id = ? AND user_id = ? AND assignment_status = 'active'`,
+        [alertId, actorId]
+      );
+      if (assignment) {
+        isAssignedResponder = true;
+      }
+    }
+  }
+
+  const isMedical = preferredTeam.includes('medical') || preferredTeam.includes('first aid') ||
+                    assignedTeam.includes('medical') || assignedTeam.includes('first aid');
+  const isPickup = preferredTeam.includes('pickup') || preferredTeam.includes('release') || preferredTeam.includes('checkout') ||
+                   assignedTeam.includes('pickup') || assignedTeam.includes('release');
+  const isSecurity = preferredTeam.includes('security') || preferredTeam.includes('safeguarding') || preferredTeam.includes('gate') || preferredTeam.includes('entry') ||
+                     assignedTeam.includes('security') || assignedTeam.includes('safeguarding') || assignedTeam.includes('gate');
+
+  if (isAssignedResponder) {
+    if (isMedical) return 'medical_responder';
+    if (isPickup) return 'pickup_responder';
+    if (isSecurity) return 'security_responder';
+    return 'basic_responder';
+  }
+
+  if (isMedical) return 'medical_duty';
+  if (isPickup) return 'pickup_duty';
+  if (isSecurity) return 'security_duty';
+
+  return 'basic_volunteer';
+}
+
+export function canViewChildSummaryField(options: {
+  actor: { id: string; role: string };
+  accessProfile: string;
+  field: string;
+  alertCategory: string | null;
+  alertStatus: string | null;
+}) {
+  const { actor, accessProfile, field, alertCategory } = options;
+
+  if (actor.role === 'admin' || actor.role === 'super_admin' || actor.role === 'team') {
+    return true;
+  }
+
+  const BASIC_FIELDS = ['identity', 'photo', 'age_group', 'assigned_room', 'checkin_status', 'alert_location', 'recent_event_activity'];
+  const MEDICAL_FIELDS = ['critical_allergy', 'medical_summary', 'mobility_support', 'communication_support', 'sensory_support', 'personal_care'];
+  const PICKUP_FIELDS = ['authorised_collectors', 'pickup_restrictions'];
+  const SAFEGUARDING_FIELDS = ['safeguarding_instruction'];
+  const CONTACT_FIELDS = ['guardian_contact', 'emergency_contact', 'contact_history'];
+
+  if (BASIC_FIELDS.includes(field)) {
+    return true;
+  }
+
+  if (accessProfile === 'medical_responder') {
+    if (MEDICAL_FIELDS.includes(field)) return true;
+    return false;
+  }
+
+  if (accessProfile === 'pickup_responder') {
+    if (PICKUP_FIELDS.includes(field)) return true;
+    return false;
+  }
+
+  if (accessProfile === 'security_responder') {
+    if (SAFEGUARDING_FIELDS.includes(field) || PICKUP_FIELDS.includes(field)) return true;
+    return false;
+  }
+
+  if (accessProfile === 'basic_responder') {
+    if (alertCategory === 'medical_support') {
+      if (['critical_allergy', 'mobility_support', 'communication_support'].includes(field)) {
+        return true;
+      }
+    }
+    if (alertCategory === 'child_care') {
+      if (['communication_support', 'sensory_support', 'personal_care'].includes(field)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return false;
+}
+
+export async function logSummaryAccess(options: {
+  eventId: string;
+  alertId: string | null;
+  childId: string;
+  actorUserId: string;
+  accessProfile: string;
+  accessedSection: string;
+  accessReason?: string | null;
+}) {
+  const id = 'access_log_' + crypto.randomUUID();
+  const now = new Date().toISOString();
+  await execute(`
+    INSERT INTO child_summary_access_logs (
+      id, event_id, alert_id, child_id, actor_user_id, access_profile, accessed_section, access_reason, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    id, options.eventId, options.alertId, options.childId, options.actorUserId,
+    options.accessProfile, options.accessedSection, options.accessReason || null, now
+  ]);
+}
+
+export async function captureChildSnapshot(alertId: string, childId: string) {
+  try {
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) return;
+
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+    const ageGroupLabel = child.age_group || 'Unspecified Age Group';
+    const assignedRoomLabel = entry?.school_class || entry?.school_name || 'Unspecified Room';
+    const statusLabel = entry?.status || 'not_checked_in';
+
+    let safetyNotes = '';
+    if (entry?.has_medical_notes && entry?.medical_notes) {
+      safetyNotes += `Medical: ${entry.medical_notes}. `;
+    }
+    if (entry?.needs_extra_support && entry?.support_notes) {
+      safetyNotes += `Support: ${entry.support_notes}. `;
+    }
+    if (entry?.note_to_team) {
+      safetyNotes += `Team Note: ${entry.note_to_team}. `;
+    }
+
+    const snapshotId = 'snapshot-' + crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const existing = await queryOne('SELECT id FROM alert_child_context_snapshots WHERE alert_id = ?', [alertId]);
+    if (existing) {
+      await execute(`
+        UPDATE alert_child_context_snapshots
+        SET child_id = ?,
+            display_name_snapshot = ?,
+            preferred_name_snapshot = ?,
+            age_group_snapshot = ?,
+            assigned_room_snapshot = ?,
+            photo_reference_snapshot = ?,
+            event_status_snapshot = ?,
+            safety_summary_snapshot = ?,
+            snapshot_version = snapshot_version + 1,
+            created_at = ?
+        WHERE alert_id = ?
+      `, [
+        childId, child.full_name, child.preferred_name || null, ageGroupLabel, assignedRoomLabel,
+        child.photo_file_id || null, statusLabel, safetyNotes.trim() || null, now, alertId
+      ]);
+    } else {
+      await execute(`
+        INSERT INTO alert_child_context_snapshots (
+          id, alert_id, child_id, context_type, display_name_snapshot, preferred_name_snapshot,
+          age_group_snapshot, assigned_room_snapshot, photo_reference_snapshot, event_status_snapshot,
+          safety_summary_snapshot, snapshot_version, created_at
+        ) VALUES (?, ?, ?, 'standard', ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      `, [
+        snapshotId, alertId, childId, child.full_name, child.preferred_name || null,
+        ageGroupLabel, assignedRoomLabel, child.photo_file_id || null, statusLabel,
+        safetyNotes.trim() || null, now
+      ]);
+    }
+  } catch (err) {
+    console.error('Failed to capture child snapshot for alert:', alertId, err);
+  }
+}
+
+export async function serializeChildEmergencySummary(options: {
+  actor: { id: string; role: string };
+  alertId?: string | null;
+  childId?: string | null;
+  revealedSections?: string[];
+  accessReason?: string;
+}) {
+  const { actor, alertId, childId: optChildId, revealedSections = [], accessReason } = options;
+
+  let alert: any = null;
+  let childId = optChildId;
+
+  if (alertId) {
+    alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      throw new Error('Safety alert not found');
+    }
+    childId = alert.child_id;
+  }
+
+  const accessProfile = await resolveUserAccessProfile(actor.id, actor.role, alertId || null);
+
+  if (!alert && !childId) {
+    throw new Error('Either alertId or childId must be provided');
+  }
+
+  if (alert && !alert.child_id) {
+    const details = alert.structured_details ? JSON.parse(alert.structured_details) : {};
+    const unidentified = details.unidentified_child || null;
+
+    if (!unidentified) {
+      return {
+        success: true,
+        summary: {
+          isUnidentified: true,
+          unidentifiedChild: null,
+          allowedActions: actor.role === 'admin' || actor.role === 'super_admin' || actor.role === 'team' || alert.owner_user_id === actor.id ? ['link_child'] : [],
+          summaryVersion: 1
+        }
+      };
+    }
+
+    return {
+      success: true,
+      summary: {
+        isUnidentified: true,
+        unidentifiedChild: {
+          temporaryLabel: 'Unidentified Child Record',
+          displayName: unidentified.name || 'Lost Unidentified Child',
+          ageGroupLabel: unidentified.ageGroup || 'Unknown Age',
+          gender: unidentified.gender || 'Unknown',
+          clothingDescription: alert.clothing_description || details.clothing_description || 'Unspecified clothing',
+          physicalDescription: alert.physical_appearance || details.physical_appearance || unidentified.description || 'Unspecified appearance',
+          lastKnownLocation: alert.location_label || 'Unspecified location',
+          lastSeenTime: details.last_seen_time || 'Unknown time'
+        },
+        allowedActions: actor.role === 'admin' || actor.role === 'super_admin' || actor.role === 'team' || alert.owner_user_id === actor.id ? ['link_child'] : [],
+        summaryVersion: 1
+      }
+    };
+  }
+
+  const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+  if (!child) {
+    throw new Error('Associated child record not found');
+  }
+
+  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert?.event_id || REAL_EVENT_ID]);
+  const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
+  const pickupPeople = entry ? await query('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : [];
+
+  const checkField = (f: string) => canViewChildSummaryField({
+    actor,
+    accessProfile,
+    field: f,
+    alertCategory: alert ? alert.category : null,
+    alertStatus: alert ? alert.status : null
+  });
+
+  const snapshot = alertId ? await queryOne('SELECT * FROM alert_child_context_snapshots WHERE alert_id = ?', [alertId]) : null;
+
+  const identity: Record<string, any> = {};
+  if (checkField('identity')) {
+    identity.displayName = child.full_name;
+    identity.preferredName = child.preferred_name || null;
+    identity.ageGroupLabel = child.age_group ? `Ages ${child.age_group}` : 'Not Specified';
+    identity.identityState = child.needs_age_review ? 'needs_confirmation' : 'confirmed';
+  }
+  if (checkField('photo')) {
+    identity.photoUrl = child.photo_file_id ? `/api/media/files/${child.photo_file_id}` : null;
+  }
+
+  const eventStatus: Record<string, any> = {};
+  if (checkField('checkin_status')) {
+    const statusMap: Record<string, string> = {
+      incomplete: 'Not checked in',
+      checked_in: 'Checked in',
+      inside: 'Checked in',
+      picked_up: 'Released',
+      checked_out: 'Released',
+      pass_ready: 'Ready for Check-in',
+      under_review: 'Status needs confirmation'
+    };
+    eventStatus.statusLabel = statusMap[entry?.status || ''] || 'Not checked in';
+    eventStatus.assignedRoomLabel = entry?.school_class || 'Not Assigned';
+    eventStatus.lastRecordedLocationLabel = alert?.location_label || 'Unspecified Location';
+  }
+
+  const alertTimeContext: Record<string, any> = {};
+  if (snapshot && checkField('identity')) {
+    alertTimeContext.displayName = snapshot.display_name_snapshot;
+    alertTimeContext.preferredName = snapshot.preferred_name_snapshot;
+    alertTimeContext.ageGroupLabel = snapshot.age_group_snapshot;
+    alertTimeContext.assignedRoomLabel = snapshot.assigned_room_snapshot;
+    alertTimeContext.statusLabel = snapshot.event_status_snapshot === 'checked_in' || snapshot.event_status_snapshot === 'inside' ? 'Checked in' : snapshot.event_status_snapshot === 'picked_up' ? 'Released' : 'Not checked in';
+  }
+
+  const safetyEssentials: any[] = [];
+  if (checkField('critical_allergy') && entry?.medical_notes) {
+    await logSummaryAccess({
+      eventId: alert?.event_id || REAL_EVENT_ID,
+      alertId: alertId || null,
+      childId: childId!,
+      actorUserId: actor.id,
+      accessProfile,
+      accessedSection: 'critical_allergy',
+      accessReason
+    });
+    safetyEssentials.push({
+      category: 'allergy',
+      title: 'Critical Allergy Warning',
+      detail: entry.medical_notes,
+      severity: 'critical',
+      lastConfirmed: entry.updated_at
+    });
+  }
+  if (checkField('medical_summary') && entry?.medical_notes) {
+    await logSummaryAccess({
+      eventId: alert?.event_id || REAL_EVENT_ID,
+      alertId: alertId || null,
+      childId: childId!,
+      actorUserId: actor.id,
+      accessProfile,
+      accessedSection: 'medical_summary',
+      accessReason
+    });
+    safetyEssentials.push({
+      category: 'medical',
+      title: 'Immediate Medical Warning',
+      detail: entry.medical_notes,
+      severity: 'important',
+      lastConfirmed: entry.updated_at
+    });
+  }
+  if (checkField('mobility_support') && entry?.support_notes) {
+    safetyEssentials.push({
+      category: 'mobility',
+      title: 'Mobility Support',
+      detail: entry.support_notes,
+      severity: 'informational',
+      lastConfirmed: entry.updated_at
+    });
+  }
+
+  const careAndCommunication: any[] = [];
+  if (checkField('communication_support') && entry?.support_notes) {
+    careAndCommunication.push({
+      category: 'communication',
+      title: 'Communication Support',
+      detail: entry.support_notes
+    });
+  }
+  if (checkField('sensory_support') && entry?.note_to_team) {
+    careAndCommunication.push({
+      category: 'sensory',
+      title: 'Sensory Support & Triggers',
+      detail: entry.note_to_team
+    });
+  }
+
+  let pickupAuthorisation = null;
+  if (checkField('authorised_collectors') && entry) {
+    await logSummaryAccess({
+      eventId: alert?.event_id || REAL_EVENT_ID,
+      alertId: alertId || null,
+      childId: childId!,
+      actorUserId: actor.id,
+      accessProfile,
+      accessedSection: 'authorised_collectors',
+      accessReason
+    });
+
+    const isRevealedRestrictions = revealedSections.includes('pickup_restrictions') || actor.role === 'admin' || actor.role === 'super_admin';
+    const collectors = pickupPeople.map((p: any) => ({
+      displayName: p.full_name,
+      relationship: p.relationship_to_child,
+      photoUrl: p.photo_file_id ? `/api/media/files/${p.photo_file_id}` : null,
+      isApproved: !!p.approved_by_parent,
+      restrictionNote: isRevealedRestrictions ? (p.relationship_to_child === 'Restricted' ? 'CRITICAL PICKUP RESTRICTION ACTIVE' : null) : '[REVEAL_REQUIRED]'
+    }));
+
+    pickupAuthorisation = {
+      collectors,
+      releaseState: entry.status === 'picked_up' ? 'released' : 'secured',
+      restrictionWarning: collectors.some((c: any) => c.relationship === 'Restricted') ? 'Safety alert: restrictive custody orders exist' : null
+    };
+  }
+
+  let guardianContact = null;
+  if (checkField('guardian_contact') && parent) {
+    const isRevealedPhone = revealedSections.includes('guardian_contact') || actor.role === 'admin' || actor.role === 'super_admin';
+    if (isRevealedPhone) {
+      await logSummaryAccess({
+        eventId: alert?.event_id || REAL_EVENT_ID,
+        alertId: alertId || null,
+        childId: childId!,
+        actorUserId: actor.id,
+        accessProfile,
+        accessedSection: 'reveal_guardian_phone',
+        accessReason
+      });
+    }
+    guardianContact = {
+      displayName: parent.full_name,
+      relationship: 'Parent / Guardian',
+      phoneNumber: isRevealedPhone ? parent.phone_number : '[PROTECTED_REVEAL]'
+    };
+  }
+
+  let emergencyContact = null;
+  const emergencyCheck = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ? AND relationship_to_child = ?', [entry?.id, 'Emergency Contact']);
+  if (checkField('emergency_contact') && emergencyCheck) {
+    const isRevealedPhone = revealedSections.includes('emergency_contact') || actor.role === 'admin' || actor.role === 'super_admin';
+    if (isRevealedPhone) {
+      await logSummaryAccess({
+        eventId: alert?.event_id || REAL_EVENT_ID,
+        alertId: alertId || null,
+        childId: childId!,
+        actorUserId: actor.id,
+        accessProfile,
+        accessedSection: 'reveal_emergency_phone',
+        accessReason
+      });
+    }
+    emergencyContact = {
+      displayName: emergencyCheck.full_name,
+      relationship: 'Emergency Contact',
+      phoneNumber: isRevealedPhone ? emergencyCheck.phone_number : '[PROTECTED_REVEAL]'
+    };
+  }
+
+  let contactHistory: any[] = [];
+  if (checkField('contact_history') && alertId) {
+    contactHistory = await query(`
+      SELECT c.*, u.email as attempted_by_email 
+      FROM child_contact_attempts c
+      LEFT JOIN users u ON c.attempted_by = u.id
+      WHERE c.alert_id = ?
+      ORDER BY c.attempted_at DESC
+    `, [alertId]);
+  }
+
+  const allowedActions: string[] = [];
+  if (actor.role === 'admin' || actor.role === 'super_admin' || actor.role === 'team' || (alert && alert.owner_user_id === actor.id)) {
+    allowedActions.push('record_contact_attempt');
+    allowedActions.push('update_location');
+    if (alert) {
+      if (alert.child_id) {
+        allowedActions.push('correct_child_link');
+      } else {
+        allowedActions.push('link_child');
+      }
+    }
+  }
+  if (checkField('guardian_contact')) {
+    allowedActions.push('reveal_guardian_phone');
+  }
+  if (checkField('emergency_contact')) {
+    allowedActions.push('reveal_emergency_phone');
+  }
+  if (checkField('authorised_collectors')) {
+    allowedActions.push('reveal_pickup_restrictions');
+  }
+
+  return {
+    success: true,
+    summary: {
+      identity,
+      alertContext: alert ? {
+        categoryLabel: alert.category.toUpperCase().replace(/_/g, ' '),
+        locationLabel: alert.location_label || 'Unspecified location',
+        locationDetail: alert.location_detail || null
+      } : {
+        categoryLabel: 'General Directory Inquiry',
+        locationLabel: 'Koinonia Pavilion',
+        locationDetail: null
+      },
+      eventStatus,
+      alertTimeContext: Object.keys(alertTimeContext).length > 0 ? alertTimeContext : null,
+      safetyEssentials,
+      careAndCommunication,
+      pickupAuthorisation,
+      guardianContact,
+      emergencyContact,
+      contactHistory: contactHistory.map((c: any) => ({
+        contactType: c.contact_type,
+        contactPerson: c.contact_reference,
+        outcome: c.outcome,
+        safeNote: c.safe_note || null,
+        timestamp: c.attempted_at,
+        attemptedByEmail: c.attempted_by_email
+      })),
+      allowedActions,
+      lastConfirmedAt: snapshot?.created_at || entry?.updated_at || alert?.created_at || new Date().toISOString(),
+      summaryVersion: 1
+    }
+  };
+}
+
+// GET /api/volunteer/safety-alerts/:alertId/child-summary
+router.get('/safety-alerts/:alertId/child-summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const { alertId } = req.params;
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      alertId,
+      accessReason: 'Initial summary view'
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Child summary error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// GET /api/volunteer/safety-alerts/:alertId/child-summary/protected/:section
+router.get('/safety-alerts/:alertId/child-summary/protected/:section', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const { alertId, section } = req.params;
+
+    const accessProfile = await resolveUserAccessProfile(req.user.id, req.user.role, alertId);
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const isAllowed = canViewChildSummaryField({
+      actor: { id: req.user.id, role: req.user.role },
+      accessProfile,
+      field: section,
+      alertCategory: alert.category,
+      alertStatus: alert.status
+    });
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'This information is available only to authorised event responders.' });
+    }
+
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      alertId,
+      revealedSections: [section],
+      accessReason: `Explicit reveal of ${section}`
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Child summary protected reveal error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// POST /api/volunteer/safety-alerts/:alertId/link-child
+router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const { alertId } = req.params;
+    const { childId, reason } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({ error: 'childId is required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if (alert.owner_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the response owner can link a child' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) {
+      return res.status(400).json({ error: 'Selected child profile not found.' });
+    }
+
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id || REAL_EVENT_ID]);
+    const finalEntryId = entry?.id || null;
+
+    const now = new Date().toISOString();
+    const prevChildId = alert.child_id;
+
+    await execute(`
+      UPDATE event_safety_alerts
+      SET child_id = ?,
+          child_event_entry_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [childId, finalEntryId, now, alertId]);
+
+    const historyId = 'link-hist-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_child_link_history (
+        id, alert_id, previous_child_id, new_child_id, action, reason, changed_by, created_at
+      ) VALUES (?, ?, ?, ?, 'link', ?, ?, ?)
+    `, [historyId, alertId, prevChildId, childId, reason || 'Initial child link confirmed', req.user.id, now]);
+
+    await captureChildSnapshot(alertId, childId);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'child_linked', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Linked child ${child.full_name}. Reason: ${reason || 'Confirmed'}`, now]);
+
+    broadcastSSEEvent(REAL_EVENT_ID, {
+      type: 'alert.child_linked',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Child successfully linked to the safety alert.' });
+  } catch (err: any) {
+    console.error('Link child error:', err);
+    res.status(500).json({ error: 'Failed to link child' });
+  }
+});
+
+// POST /api/volunteer/safety-alerts/:alertId/contact-attempt
+router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'volunteer') {
+      return res.status(403).json({ error: 'Access denied: Volunteer role required' });
+    }
+
+    const { alertId } = req.params;
+    const { contactType, contactReference, outcome, safeNote } = req.body;
+
+    if (!contactType || !contactReference || !outcome) {
+      return res.status(400).json({ error: 'contactType, contactReference and outcome are required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if (!alert.child_id) {
+      return res.status(400).json({ error: 'No child is linked to this alert.' });
+    }
+
+    const now = new Date().toISOString();
+    const id = 'attempt-' + crypto.randomUUID();
+
+    await execute(`
+      INSERT INTO child_contact_attempts (
+        id, event_id, alert_id, child_id, contact_type, contact_reference, outcome, safe_note, attempted_by, attempted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id, alert.event_id || REAL_EVENT_ID, alertId, alert.child_id, contactType,
+      contactReference, outcome, safeNote || null, req.user.id, now
+    ]);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'contact_attempted', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Contacted ${contactReference} via ${contactType}. Result: ${outcome}. Note: ${safeNote || 'None'}`, now]);
+
+    broadcastSSEEvent(REAL_EVENT_ID, {
+      type: 'child.contact_attempt_recorded',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Contact attempt logged successfully.' });
+  } catch (err: any) {
+    console.error('Record contact attempt error:', err);
+    res.status(500).json({ error: 'Failed to record contact attempt' });
+  }
+});
+
+// GET /manifest - Download encrypted offline manifest for assigned event/zone
+router.get('/manifest', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+
+    const deviceId = (req.query.deviceId as string) || 'unknown';
+
+    const entries = await query(`
+      SELECT 
+        e.id as entry_id,
+        e.status as entry_status,
+        e.medical_notes as entry_medical,
+        e.has_medical_notes as entry_has_medical,
+        e.needs_extra_support as entry_needs_support,
+        e.support_notes as entry_support_notes,
+        c.id as child_id,
+        c.full_name as child_name,
+        c.date_of_birth as child_dob,
+        c.gender as child_gender,
+        c.calculated_age as child_age,
+        c.age_group as child_age_group,
+        c.photo_file_id as child_photo,
+        p.full_name as parent_name,
+        p.phone_number as parent_phone,
+        ep.pass_reference,
+        ep.pass_hash,
+        ep.status as pass_status
+      FROM child_event_entries e
+      JOIN children c ON e.child_id = c.id
+      JOIN parent_profiles p ON c.parent_profile_id = p.id
+      LEFT JOIN event_passes ep ON ep.child_event_entry_id = e.id
+      WHERE e.event_id = ? AND e.status IN ('pass_ready', 'selected', 'checked_in', 'inside')
+    `, [REAL_EVENT_ID]);
+
+    const pickupPeople = await query(`
+      SELECT 
+        id,
+        child_event_entry_id,
+        full_name,
+        relationship_to_child,
+        phone_number,
+        photo_file_id
+      FROM pickup_people
+      WHERE child_event_entry_id IN (
+        SELECT id FROM child_event_entries WHERE event_id = ?
+      )
+    `, [REAL_EVENT_ID]);
+
+    const maskName = (name: string): string => {
+      if (!name) return '';
+      return name.split(' ').map(part => {
+        if (part.length <= 1) return part;
+        return part[0] + '*'.repeat(Math.min(4, part.length - 1));
+      }).join(' ');
+    };
+
+    // Resolve URLs & structure active passes
+    const passes = [];
+    for (const row of entries) {
+      passes.push({
+        childEventEntryId: row.entry_id,
+        passReference: row.pass_reference || '',
+        passHash: row.pass_hash || '',
+        status: row.pass_status || 'active',
+        entryStatus: row.entry_status,
+        child: {
+          id: row.child_id,
+          fullName: maskName(row.child_name),
+          dateOfBirth: '', // Removed for privacy
+          gender: row.child_gender,
+          calculatedAge: row.child_age || 0,
+          ageGroup: row.child_age_group || 'General',
+          photoUrl: '', // Removed for privacy
+          medicalNotes: '', // Removed for privacy
+          hasMedicalNotes: false, // Removed for privacy
+          needsExtraSupport: false, // Removed for privacy
+          supportNotes: '' // Removed for privacy
+        },
+        parent: {
+          fullName: maskName(row.parent_name),
+          phone: '' // Removed for privacy
+        },
+        pickup: [] // Blocked offline - removed for privacy
+      });
+    }
+
+    const payloadHash = crypto.createHash('sha256').update(JSON.stringify(passes)).digest('hex');
+
+    // Register manifest download
+    const recordId = 'osr-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO offline_sync_records (
+        id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      recordId, REAL_EVENT_ID, req.user.id, deviceId, 'manifest_download',
+      passes.length, payloadHash, 'processed', null, new Date().toISOString()
+    ]);
+
+    res.json({
+      success: true,
+      eventId: REAL_EVENT_ID,
+      timestamp: new Date().toISOString(),
+      passes
+    });
+
+  } catch (err: any) {
+    console.error('Download offline manifest error:', err);
+    res.status(500).json({ error: 'Failed to download offline manifest' });
+  }
+});
+
+// POST /sync - Batch process queued offline scans
+router.post('/sync', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+
+    const { deviceId, actions } = req.body;
+    if (!actions || !Array.isArray(actions)) {
+      return res.status(400).json({ error: 'Actions array is required' });
+    }
+
+    const results = [];
+    let processedCount = 0;
+    let conflictCount = 0;
+
+    for (const action of actions) {
+      const { idempotencyKey, actionType, actionTime, childEventEntryId, gateLocation } = action;
+      
+      if (!idempotencyKey || !actionType || !childEventEntryId) {
+        results.push({
+          idempotencyKey,
+          status: 'error',
+          error: 'Missing required action parameters'
+        });
+        continue;
+      }
+
+      // 1. Idempotency Check
+      const existingRecord = await queryOne('SELECT * FROM attendance_records WHERE idempotency_key = ?', [idempotencyKey]);
+      if (existingRecord) {
+        results.push({
+          idempotencyKey,
+          status: 'success',
+          message: 'Already processed (idempotent)'
+        });
+        processedCount++;
+        continue;
+      }
+
+      // 2. Lookup child event entry
+      const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [childEventEntryId]);
+      if (!entry) {
+        const recordId = 'osr-' + crypto.randomUUID();
+        await execute(`
+          INSERT INTO offline_sync_records (
+            id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          recordId, REAL_EVENT_ID, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
+          1, crypto.createHash('sha256').update(idempotencyKey).digest('hex'), 'conflict_detected',
+          `Child event entry ${childEventEntryId} not found`, new Date().toISOString()
+        ]);
+
+        results.push({
+          idempotencyKey,
+          status: 'conflict',
+          error: 'Child registration entry not found'
+        });
+        conflictCount++;
+        continue;
+      }
+
+      // 3. Process Check-in
+      if (actionType === 'check_in') {
+        if (entry.status === 'checked_in' || entry.status === 'inside') {
+          const recordId = 'osr-' + crypto.randomUUID();
+          const errorMsg = `Child already checked in. Existing checked_in_at: ${entry.checked_in_at}`;
+          await execute(`
+            INSERT INTO offline_sync_records (
+              id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            recordId, REAL_EVENT_ID, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
+            1, crypto.createHash('sha256').update(idempotencyKey).digest('hex'), 'conflict_detected',
+            errorMsg, new Date().toISOString()
+          ]);
+
+          const attId = 'att-' + crypto.randomUUID();
+          await execute(`
+            INSERT INTO attendance_records (
+              id, child_event_entry_id, action_type, action_time, staff_user_id, verified_pickup_person_id, gate_location, sync_source, idempotency_key, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            attId, childEventEntryId, 'check_in', actionTime, req.user.id, null, gateLocation || 'Gate', 'offline_sync', idempotencyKey, new Date().toISOString()
+          ]);
+
+          results.push({
+            idempotencyKey,
+            status: 'conflict',
+            message: 'Child already checked in'
+          });
+          conflictCount++;
+        } else {
+          const nowIso = new Date().toISOString();
+          await execute(`
+            UPDATE child_event_entries
+            SET status = 'checked_in', checked_in_at = ?, checked_in_by = ?, updated_at = ?
+            WHERE id = ?
+          `, [actionTime, req.user.id, nowIso, childEventEntryId]);
+
+          const attId = 'att-' + crypto.randomUUID();
+          await execute(`
+            INSERT INTO attendance_records (
+              id, child_event_entry_id, action_type, action_time, staff_user_id, verified_pickup_person_id, gate_location, sync_source, idempotency_key, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            attId, childEventEntryId, 'check_in', actionTime, req.user.id, null, gateLocation || 'Gate', 'offline_sync', idempotencyKey, nowIso
+          ]);
+
+          results.push({
+            idempotencyKey,
+            status: 'success',
+            message: 'Successfully checked in offline'
+          });
+          processedCount++;
+        }
+      } else {
+        results.push({
+          idempotencyKey,
+          status: 'error',
+          error: 'Offline pickup actions are not authorized'
+        });
+      }
+    }
+
+    if (actions.length > 0) {
+      const summaryId = 'osr-' + crypto.randomUUID();
+      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(actions)).digest('hex');
+      await execute(`
+        INSERT INTO offline_sync_records (
+          id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        summaryId, REAL_EVENT_ID, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
+        actions.length, payloadHash, conflictCount > 0 ? 'conflict_detected' : 'processed',
+        conflictCount > 0 ? `${conflictCount} state conflicts during processing` : null, new Date().toISOString()
+      ]);
+    }
+
+    res.json({
+      success: true,
+      results,
+      processedCount,
+      conflictCount
+    });
+
+  } catch (err: any) {
+    console.error('Offline batch sync error:', err);
+    res.status(500).json({ error: 'Internal server error performing offline sync' });
   }
 });
 

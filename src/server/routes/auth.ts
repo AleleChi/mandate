@@ -387,13 +387,21 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
 
     const cleanEmail = emailVal.normalizedEmail!;
 
-    const user = await queryOne('SELECT id, email, password_hash, role, email_verified FROM users WHERE email = ?', [cleanEmail]);
+    const user = await queryOne('SELECT id, email, password_hash, role, email_verified, status FROM users WHERE email = ?', [cleanEmail]);
     console.log(`[SIGN_IN] user lookup { email: "${cleanEmail}", userFound: ${!!user}, role: "${user?.role}" }`);
     if (!user) {
       return res.status(404).json({
         success: false,
         code: 'ACCOUNT_NOT_FOUND',
         message: 'No parent account was found for this email.'
+      });
+    }
+
+    if (user.status === 'suspended' || user.status === 'revoked') {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been suspended or revoked. Please contact event administration.'
       });
     }
 

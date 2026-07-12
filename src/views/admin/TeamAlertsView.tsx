@@ -20,7 +20,8 @@ import {
   Clock,
   UserCheck,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Users
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -28,6 +29,7 @@ import { BrandLogo } from '../../components/common/BrandLogo';
 import { Button } from '../../components/common/Button';
 import { playSound, resumeAudioContext } from '../../utils/sound';
 import { urgentAlertEffectsManager, getCategoryLabel } from '../../utils/urgentAlertEffects';
+import { ActiveResponseCoordinationPanel } from '../../components/common/ActiveResponseCoordinationPanel';
 import { AppRoute } from '../../types';
 
 interface TeamAlertsViewProps {
@@ -50,6 +52,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
   const [resolvingAlert, setResolvingAlert] = useState<any | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
 
   // Load device preferences
   const [preferences, setPreferences] = useState({
@@ -136,6 +139,8 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
               'Sound Trigger Time': new Date().toISOString()
             });
 
+            const alertId = payload.alertId || payload.data?.id || (payload.data && payload.data.alertId);
+            window.dispatchEvent(new CustomEvent('sse-alert-update', { detail: { alertId } }));
             fetchAlerts(true);
           }
         } catch (err) {
@@ -330,7 +335,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
   return (
     <div 
       className="min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans antialiased relative pb-16"
-      data-view-version="team-safety-alerts-premium-ivory-v1"
+      data-view-version="admin-active-alert-responses-v2-premium"
     >
       {/* HEADER SECTION */}
       <header className="sticky top-0 z-40 bg-[#F9F8F3]/95 backdrop-blur-md border-b border-[#EAE8E1] shadow-xs">
@@ -502,6 +507,23 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
                             </div>
                           )}
 
+                          {/* Active Responder Coordination Indicators */}
+                          {!isResolved && (
+                            <div className="flex flex-wrap gap-2 items-center mt-2" data-component-version="admin-active-alert-responses-v2-indicators">
+                              {alert.acknowledged_by ? (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#C59B27]/5 border border-[#C59B27]/20 rounded-full text-[10px] text-amber-800 font-semibold shadow-2xs">
+                                  <div className="w-1.5 h-1.5 bg-[#C59B27] rounded-full animate-ping" />
+                                  <span>Owner: {alert.acknowledged_by_name || 'Team Lead'}</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-50 border border-rose-200/60 rounded-full text-[10px] text-rose-700 font-semibold animate-pulse shadow-2xs">
+                                  <div className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
+                                  <span>Unclaimed Incident</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Resolution details if resolved */}
                           {isResolved && alert.resolution_note && (
                             <div className="text-xs bg-emerald-50/30 border border-emerald-100 text-emerald-900 p-3 rounded-xl space-y-1">
@@ -520,6 +542,16 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
                         {/* Interactive actions for active alerts */}
                         {!isResolved && (
                           <div className="flex flex-col gap-2 shrink-0 self-center">
+                            {/* Premium Response Coordination Control Center */}
+                            <button
+                              onClick={() => { resumeAudioContext(); setSelectedAlertId(alert.id); }}
+                              className="text-xs bg-zinc-900 hover:bg-black text-white px-3.5 py-2.5 rounded-xl font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer border border-zinc-800"
+                              id={`coord-btn-${alert.id}`}
+                            >
+                              <Users className="w-3.5 h-3.5 text-[#C59B27]" />
+                              <span>Coordinate Response</span>
+                            </button>
+
                             {!isAck && (
                               <button
                                 onClick={() => handleAcknowledge(alert.id)}
@@ -722,6 +754,28 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
               </div>
             </form>
           </motion.div>
+        </div>
+      )}
+
+      {/* Sliding coordination panel overlay */}
+      {selectedAlertId && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end" id="coordination-panel-overlay">
+          <div className="w-full max-w-xl h-full bg-[#FAF9F6] shadow-2xl flex flex-col relative animate-in slide-in-from-right duration-300">
+            <ActiveResponseCoordinationPanel
+              alertId={selectedAlertId}
+              currentUser={{
+                id: adminUser?.id || volunteerProfile?.user_id || 'temp-id',
+                role: adminUser?.role || (volunteerProfile?.assignedTeam ? 'team' : 'admin'),
+                fullName: userFullName,
+                email: adminUser?.email || ''
+              }}
+              onClose={() => {
+                setSelectedAlertId(null);
+                fetchAlerts(true);
+              }}
+              onRefreshParentAlerts={() => fetchAlerts(true)}
+            />
+          </div>
         </div>
       )}
     </div>
