@@ -463,7 +463,7 @@ router.post('/:id/read', async (req: AuthenticatedRequest, res: Response) => {
 router.get('/push/vapid-key', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const key = getVapidPublicKey();
+    const key = await getVapidPublicKey();
     return res.json({ publicKey: key });
   } catch (err) {
     console.error('Error fetching VAPID public key:', err);
@@ -487,13 +487,20 @@ router.post('/push/subscribe', async (req: AuthenticatedRequest, res: Response) 
 
     const subscriptionId = `sub-${crypto.randomUUID()}`;
     const userAgent = req.headers['user-agent'] || null;
+    const now = new Date().toISOString();
 
     const existing = await queryOne(
-      'SELECT id FROM push_subscriptions WHERE user_id = ? AND endpoint = ?',
-      [userId, endpoint]
+      'SELECT id, user_id FROM push_subscriptions WHERE endpoint = ?',
+      [endpoint]
     );
 
-    if (!existing) {
+    if (existing) {
+      await execute(`
+        UPDATE push_subscriptions 
+        SET user_id = ?, p256dh = ?, auth = ?, user_agent = ?, revoked_at = NULL, created_at = ?
+        WHERE endpoint = ?
+      `, [userId, keys.p256dh, keys.auth, userAgent, now, endpoint]);
+    } else {
       await execute(`
         INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -504,7 +511,7 @@ router.post('/push/subscribe', async (req: AuthenticatedRequest, res: Response) 
         keys.p256dh,
         keys.auth,
         userAgent,
-        new Date().toISOString()
+        now
       ]);
     }
 
@@ -512,6 +519,67 @@ router.post('/push/subscribe', async (req: AuthenticatedRequest, res: Response) 
   } catch (err: any) {
     console.error('Error saving push subscription:', err);
     return res.status(500).json({ error: 'Failed to save push subscription' });
+  }
+});
+
+// POST /api/notifications/push/unsubscribe
+router.post('/push/unsubscribe', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { endpoint } = req.body;
+    if (endpoint) {
+      await execute('UPDATE push_subscriptions SET revoked_at = ? WHERE endpoint = ? AND user_id = ?', [new Date().toISOString(), endpoint, userId]);
+    } else {
+      await execute('UPDATE push_subscriptions SET revoked_at = ? WHERE user_id = ?', [new Date().toISOString(), userId]);
+    }
+
+    return res.json({ success: true, message: 'Push subscription unsubscribed' });
+  } catch (err: any) {
+    console.error('Error unsubscribing push subscription:', err);
+    return res.status(500).json({ error: 'Failed to unsubscribe push subscription' });
+  }
+});
+
+// POST /api/notifications/push/test
+router.post('/push/test', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const testPayload = {
+      title: 'Koinonia Emergency Push Alert Test',
+      body: 'Your device is successfully connected and receiving live emergency push alerts.',
+      metadata: {
+        alertId: `test-${Date.now()}`,
+        targetUrl: '/volunteer/readiness?test=success',
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    const result = await sendWebPush(userId, testPayload);
+    if (!result.success && result.sentCount === 0) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'No active device subscriptions found for your account. Please repair or subscribe first.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Test push alert sent successfully to ${result.sentCount} active subscription(s).`,
+      sentCount: result.sentCount
+    });
+  } catch (err: any) {
+    console.error('Error sending test push notification:', err);
+    return res.status(500).json({ success: false, error: 'Failed to send test push alert' });
   }
 });
 

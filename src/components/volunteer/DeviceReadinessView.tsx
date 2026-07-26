@@ -25,6 +25,7 @@ import { buildApiUrl } from '../../utils/urlHelper';
 import { 
   getPushNotificationStatus, 
   subscribeUserToPush, 
+  repairPushSubscription,
   unsubscribeUserFromPush, 
   sendTestPushNotification,
   GranularPushStatus 
@@ -372,7 +373,10 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
       return;
     }
     setPushStatus('subscribing');
-    const result = await subscribeUserToPush();
+    const result = pushStatus === 'needs_attention' 
+      ? await repairPushSubscription() 
+      : await subscribeUserToPush();
+
     if (result.success) {
       setPushStatus('enabled');
       setPushFeedback('Push alerts activated successfully on this device.');

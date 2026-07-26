@@ -195,12 +195,34 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
       return { success: false, error: 'Push notification server key not found.' };
     }
 
-    // Check existing subscription
+    // Check existing subscription and handle potential key mismatches or stale browser push registrations
     let subscription = await registration.pushManager.getSubscription();
-    if (!subscription) {
+    const appServerKey = urlBase64ToUint8Array(publicKey);
+
+    if (subscription) {
+      try {
+        // Try to obtain or refresh subscription with current server VAPID key
+        await subscription.unsubscribe();
+        subscription = null;
+      } catch (e) {
+        console.warn('[PushSubscription] Could not unsubscribe old subscription:', e);
+      }
+    }
+
+    try {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey)
+        applicationServerKey: appServerKey
+      });
+    } catch (subErr: any) {
+      console.warn('[PushSubscription] PushManager.subscribe failed on first try, attempting force repair:', subErr);
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await existing.unsubscribe().catch(() => {});
+      }
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey
       });
     }
 
@@ -222,6 +244,28 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
   } catch (err: any) {
     console.error('Error during push subscription:', err);
     return { success: false, error: err.message || 'Failed to complete subscription.' };
+  }
+}
+
+/**
+ * Unsubscribes current device from PushManager and notifies backend.
+ */
+export async function repairPushSubscription(): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return { success: false, error: 'Push notifications are not supported on this browser.' };
+    }
+    const registration = await navigator.serviceWorker.ready;
+    if (registration && registration.pushManager) {
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await existing.unsubscribe().catch(() => {});
+      }
+    }
+    return await subscribeUserToPush();
+  } catch (err: any) {
+    console.error('Error repairing push subscription:', err);
+    return { success: false, error: err.message || 'Failed to repair subscription.' };
   }
 }
 

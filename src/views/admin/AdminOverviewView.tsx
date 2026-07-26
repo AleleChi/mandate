@@ -39,6 +39,7 @@ import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { subscribeUserToPush, unsubscribeUserFromPush } from '../../utils/pushSubscription';
 import { ActiveResponseCoordinationPanel } from '../../components/common/ActiveResponseCoordinationPanel';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
