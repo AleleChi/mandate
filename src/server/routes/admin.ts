@@ -4011,7 +4011,8 @@ router.get('/settings/media', async (req: AuthenticatedRequest, res: Response) =
     const mediaMap: Record<string, string> = {
       parent_dashboard_hero: '',
       volunteer_dashboard_hero: '',
-      default_event_hero: ''
+      default_event_hero: '',
+      site_favicon: ''
     };
     for (const row of rows) {
       mediaMap[row.slot] = row.url || '';
@@ -4037,7 +4038,7 @@ router.post('/settings/media', upload.single('file'), async (req: AuthenticatedR
     if (!slot) {
       return res.status(400).json({ success: false, error: 'Slot key is required.' });
     }
-    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero'];
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon'];
     if (!allowedSlots.includes(slot)) {
       return res.status(400).json({ success: false, error: 'Invalid slot key.' });
     }
@@ -4190,7 +4191,7 @@ router.post('/settings/media/reset', async (req: AuthenticatedRequest, res: Resp
     if (!slot) {
       return res.status(400).json({ success: false, error: 'Slot key is required.' });
     }
-    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero'];
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon'];
     if (!allowedSlots.includes(slot)) {
       return res.status(400).json({ success: false, error: 'Invalid slot key.' });
     }

@@ -6,7 +6,7 @@ import multer from 'multer';
 import { execute, queryOne } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { uploadMedia, MediaPurpose } from '../services/media/cloudinary';
-import { processImage } from '../services/media/imageProcessor';
+import { processImage, resizeFaviconBuffer } from '../services/media/imageProcessor';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -315,6 +315,80 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload FAILED: ${err.message}\nStack: ${err.stack}\n`);
     } catch (le) {}
     res.status(500).json({ error: err.message || 'Failed to process media upload' });
+  }
+});
+
+// GET dynamic favicon at specific dimension (e.g., 16, 32, 48, 180, 192, 512)
+router.get('/favicon/:size?', async (req: Request, res: Response) => {
+  try {
+    let sizeParam = req.params.size || (req.query.size as string) || '32';
+    sizeParam = sizeParam.replace(/\.png$/i, '').replace(/\.ico$/i, '');
+    let targetSize = parseInt(sizeParam, 10);
+    if (isNaN(targetSize) || targetSize <= 0) targetSize = 32;
+
+    const faviconSetting = await queryOne('SELECT url FROM app_media_settings WHERE slot = ?', ['site_favicon']);
+
+    if (faviconSetting && faviconSetting.url) {
+      const faviconUrl = faviconSetting.url;
+
+      // Handle local /api/media/files/:fileId URL
+      const fileIdMatch = faviconUrl.match(/\/files\/([a-f0-9-]+)/);
+      let rawBuffer: Buffer | null = null;
+
+      if (fileIdMatch) {
+        const fileId = fileIdMatch[1];
+        const subDirs = ['', 'parents', 'volunteers', 'children', 'pickup-people', 'events', 'videos', 'gallery', 'general'];
+        for (const sub of subDirs) {
+          const searchDir = path.join(MEDIA_DIR, sub);
+          if (fs.existsSync(searchDir)) {
+            const files = fs.readdirSync(searchDir);
+            const matchedFile = files.find(f => f === fileId || f.startsWith(`${fileId}.`));
+            if (matchedFile) {
+              rawBuffer = fs.readFileSync(path.join(searchDir, matchedFile));
+              break;
+            }
+          }
+        }
+      }
+
+      // If remote Cloudinary or external URL and not found locally, fetch the image buffer
+      if (!rawBuffer && (faviconUrl.startsWith('http://') || faviconUrl.startsWith('https://'))) {
+        try {
+          const response = await fetch(faviconUrl);
+          if (response.ok) {
+            const arrayBuf = await response.arrayBuffer();
+            rawBuffer = Buffer.from(arrayBuf);
+          }
+        } catch (fetchErr) {
+          console.error('Failed to fetch remote favicon image:', fetchErr);
+        }
+      }
+
+      if (rawBuffer) {
+        const resized = await resizeFaviconBuffer(rawBuffer, targetSize);
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(resized);
+      }
+    }
+
+    // Fallback: serve default SVG bird mark favicon from public/
+    const defaultSvgPath = path.join(process.cwd(), 'public', 'favicon.svg');
+    if (fs.existsSync(defaultSvgPath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return fs.createReadStream(defaultSvgPath).pipe(res);
+    }
+
+    return res.status(404).send('Favicon not found');
+  } catch (err) {
+    console.error('Error serving dynamic favicon:', err);
+    const defaultSvgPath = path.join(process.cwd(), 'public', 'favicon.svg');
+    if (fs.existsSync(defaultSvgPath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return fs.createReadStream(defaultSvgPath).pipe(res);
+    }
+    return res.status(500).json({ error: 'Failed to serve favicon' });
   }
 });
 

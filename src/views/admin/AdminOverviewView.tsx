@@ -630,44 +630,26 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     const nextVal = !pushEnabled;
     try {
       if (nextVal) {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          showError('Permission Denied', 'Please allow notifications in your browser settings to subscribe.');
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          showError('Notifications Blocked', 'Notifications are blocked in your browser settings.');
           return;
         }
 
-        const registration = await navigator.serviceWorker.ready;
-        const keyRes = await api.parent.getVapidPublicKey();
-        const vapidPublicKey = keyRes.publicKey;
+        const res = await subscribeUserToPush();
+        if (res.success) {
+          setPushEnabled(true);
+          showSuccess('Subscribed', 'You will now receive instant push alerts.');
+          playSound('success');
 
-        if (!vapidPublicKey) {
-          throw new Error('No VAPID key found');
-        }
-
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: vapidPublicKey
-        });
-
-        await api.parent.savePushSubscription(subscription);
-        setPushEnabled(true);
-        showSuccess('Subscribed', 'You will now receive instant push alerts.');
-        playSound('success');
-
-        await api.request('/api/notifications/preferences', {
-          method: 'PATCH',
-          body: JSON.stringify({ pushEnabled: true })
-        });
-      } else {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-          await subscription.unsubscribe();
-          await api.request('/api/notifications/push/unsubscribe', {
-            method: 'POST',
-            body: JSON.stringify({ endpoint: subscription.endpoint })
+          await api.request('/api/notifications/preferences', {
+            method: 'PATCH',
+            body: JSON.stringify({ pushEnabled: true })
           });
+        } else {
+          showError('Subscription Failed', res.error || 'Failed to enable push notifications.');
         }
+      } else {
+        await unsubscribeUserFromPush();
         setPushEnabled(false);
         showSuccess('Unsubscribed', 'Push alerts disabled.');
         playSound('success');

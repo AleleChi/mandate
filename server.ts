@@ -103,6 +103,37 @@ async function startServer() {
     });
   });
 
+  app.get('/favicon.ico', (req, res) => {
+    res.redirect(302, '/api/media/favicon/32.png');
+  });
+
+  app.get(['/manifest.json', '/site.webmanifest'], (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({
+      name: 'Koinonia Children & Teens',
+      short_name: 'Koinonia',
+      description: 'Event registration, child safety, check-in, and emergency response portal.',
+      start_url: '/',
+      display: 'standalone',
+      background_color: '#FAF9F6',
+      theme_color: '#C59B27',
+      icons: [
+        {
+          src: '/api/media/favicon/192.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any maskable'
+        },
+        {
+          src: '/api/media/favicon/512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any maskable'
+        }
+      ]
+    });
+  });
+
   app.use('/api/auth', authRoutes);
 
   app.get('/api/me/access', authMiddleware, async (req: AuthenticatedRequest, res) => {

@@ -237,7 +237,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({
     parent_dashboard_hero: '',
     volunteer_dashboard_hero: '',
-    default_event_hero: ''
+    default_event_hero: '',
+    site_favicon: ''
   });
   const [loadingMedia, setLoadingMedia] = useState(false);
   const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
@@ -398,7 +399,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         setMediaUrls({
           parent_dashboard_hero: res.media.parent_dashboard_hero || '',
           volunteer_dashboard_hero: res.media.volunteer_dashboard_hero || '',
-          default_event_hero: res.media.default_event_hero || ''
+          default_event_hero: res.media.default_event_hero || '',
+          site_favicon: res.media.site_favicon || ''
         });
       }
     } catch (err: any) {
@@ -1629,7 +1631,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 )}
 
                 <div 
-                  className="grid grid-cols-1 md:grid-cols-3 gap-6"
+                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6"
                   data-component-version="admin-media-preview-v3-secure-resolved"
                 >
                   {/* Parent Dashboard Hero Card */}
@@ -1811,6 +1813,80 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           onClick={() => handleResetMedia('default_event_hero')}
                           className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
                           title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Official Favicon / App Icon Card */}
+                  <div 
+                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    data-slot-key="site_favicon"
+                    data-component-version="admin-media-favicon-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-[#18181B]">Favicon / App Icon</h4>
+                        <span className="px-1.5 py-0.5 bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-bold rounded">Bird Mark Only</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Used across browser tabs, shortcuts & PWA manifest.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-900/90 flex items-center justify-center border-b border-[#EAE8E1] p-4">
+                      {/* Split / Checkerboard Preview Container for transparency clarity */}
+                      <div className="flex items-center justify-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-white p-2 shadow-sm border border-zinc-200 flex items-center justify-center overflow-hidden">
+                          <img 
+                            src={mediaUrls.site_favicon || '/api/media/favicon/180.png'} 
+                            alt="Favicon Light Preview" 
+                            className="w-full h-full object-contain"
+                            onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                          />
+                        </div>
+                        <div className="w-12 h-12 rounded-xl bg-zinc-900 p-2 shadow-sm border border-zinc-700 flex items-center justify-center overflow-hidden">
+                          <img 
+                            src={mediaUrls.site_favicon || '/api/media/favicon/180.png'} 
+                            alt="Favicon Dark Preview" 
+                            className="w-full h-full object-contain"
+                            onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                          />
+                        </div>
+                      </div>
+                      {uploadingSlot === 'site_favicon' && (
+                        <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3 bg-amber-50/50 border-b border-[#EAE8E1] text-[10px] text-amber-900 leading-tight">
+                      Auto-cropped to square and generated in 16x16, 32x32, 48x48, 180x180, 192x192, and 512x512 sizes with transparent background support.
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-site-favicon"
+                          className="sr-only"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('site_favicon', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-site-favicon"
+                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.site_favicon && (
+                        <button
+                          onClick={() => handleResetMedia('site_favicon')}
+                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default bird mark favicon"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

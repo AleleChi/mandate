@@ -30,6 +30,12 @@ export const LANDING_SLOTS: Record<string, SlotSpecification> = {
     fit: 'inside', // Contain within boundaries without stretching or cropping to keep original shape
     format: 'png',  // Transparent background support
   },
+  site_favicon: {
+    width: 512,
+    height: 512,
+    fit: 'contain', // Square fit with transparency preservation
+    format: 'png',
+  },
   heroMain: {
     width: 800,
     height: 1000,
@@ -230,4 +236,21 @@ export async function processImage(
     console.error('[processImage Error]:', error);
     throw new Error('We could not process this image. Please try another JPG, PNG, or WebP file.');
   }
+}
+
+/**
+ * Resizes a favicon buffer to exact dimensions (e.g., 16x16, 32x32, 48x48, 180x180, 192x192, 512x512)
+ */
+export async function resizeFaviconBuffer(fileBuffer: Buffer, targetSize: number): Promise<Buffer> {
+  const sharp = await getSharp();
+  const validSizes = [16, 32, 48, 180, 192, 512];
+  const dimension = validSizes.includes(targetSize) ? targetSize : 32;
+
+  return await sharp(fileBuffer)
+    .resize(dimension, dimension, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
+    .png({ compressionLevel: 8 })
+    .toBuffer();
 }

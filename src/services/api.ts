@@ -946,6 +946,7 @@ export const api = {
           parent_dashboard_hero: string;
           volunteer_dashboard_hero: string;
           default_event_hero: string;
+          site_favicon?: string;
         };
       }>('/api/admin/settings/media');
     },
