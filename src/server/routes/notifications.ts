@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
-import { getVapidPublicKey } from '../services/push';
+import { getVapidPublicKey, sendWebPush } from '../services/push';
 import { addSSEClient } from '../services/sse';
 
 const router = Router();
@@ -823,6 +823,53 @@ router.post('/push/unsubscribe', async (req: AuthenticatedRequest, res: Response
   } catch (err: any) {
     console.error('Error unsubscribing from push:', err);
     return res.status(500).json({ error: 'Failed to unsubscribe' });
+  }
+});
+
+// GET /api/notifications/push/status
+router.get('/push/status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const subs = await query('SELECT id FROM push_subscriptions WHERE user_id = ?', [userId]);
+    return res.json({
+      isSubscribed: subs.length > 0,
+      subscriptionCount: subs.length
+    });
+  } catch (err: any) {
+    console.error('Error fetching push status:', err);
+    return res.status(500).json({ error: 'Failed to fetch push status' });
+  }
+});
+
+// POST /api/notifications/push/test
+router.post('/push/test', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const result = await sendWebPush(userId, {
+      title: 'Urgent Event Duty alert',
+      body: 'Test push notification delivered successfully.',
+      metadata: { alertId: `test-push-${Date.now()}`, targetUrl: '/volunteer/event' }
+    });
+    if (result.sentCount === 0) {
+      return res.json({
+        success: false,
+        message: 'No active push subscriptions found for this account. Please enable push notifications on this device first.'
+      });
+    }
+    return res.json({
+      success: true,
+      sentCount: result.sentCount,
+      message: `Test push alert dispatched to ${result.sentCount} active subscription(s).`
+    });
+  } catch (err: any) {
+    console.error('Error sending test push:', err);
+    return res.status(500).json({ error: 'Failed to send test push notification' });
   }
 });
 

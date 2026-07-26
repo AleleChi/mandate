@@ -17,6 +17,7 @@ import { SafeImage } from '../components/common/SafeImage';
 import { BrandLogo } from '../components/common/BrandLogo';
 import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
 import { playSound, resumeAudioContext } from '../utils/sound';
+import { subscribeUserToPush, unsubscribeUserFromPush, getPushNotificationStatus } from '../utils/pushSubscription';
 import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 import { EventLocationSelector } from '../components/volunteer/EventLocationSelector';
 import { ChildEmergencySummary } from '../components/ChildEmergencySummary';
@@ -224,6 +225,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   useEffect(() => {
     fetchPreferences();
+
+    // Check for alertId and action in URL parameters (e.g. from background push notification clicks)
+    const searchStr = window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : '');
+    if (searchStr) {
+      try {
+        const params = new URLSearchParams(searchStr);
+        const urlAlertId = params.get('alertId');
+        const action = params.get('action');
+        if (urlAlertId) {
+          setActiveEmergencySummaryAlertId(urlAlertId);
+          if (action === 'acknowledge') {
+            api.safetyAlerts.acknowledgeAndRespond(urlAlertId, {}).catch(err => {
+              console.warn('[VolunteerDashboard] Background notification auto-ack error:', err);
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse URL params:', e);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -259,44 +280,27 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     const nextVal = !pushEnabled;
     try {
       if (nextVal) {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          showError('Permission Denied', 'Please allow notifications in your browser settings to subscribe.');
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          showError('Notifications Blocked', 'Notifications are blocked in your browser settings. Please allow notifications in browser settings.');
+          onNavigate('/volunteer/readiness');
           return;
         }
 
-        const registration = await navigator.serviceWorker.ready;
-        const keyRes = await api.parent.getVapidPublicKey();
-        const vapidPublicKey = keyRes.publicKey;
+        const res = await subscribeUserToPush();
+        if (res.success) {
+          setPushEnabled(true);
+          showSuccess('Subscribed', 'You will now receive instant push alerts.');
+          playSound('success');
 
-        if (!vapidPublicKey) {
-          throw new Error('No VAPID key found');
-        }
-
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: vapidPublicKey
-        });
-
-        await api.parent.savePushSubscription(subscription);
-        setPushEnabled(true);
-        showSuccess('Subscribed', 'You will now receive instant push alerts.');
-        playSound('success');
-
-        await api.request('/api/notifications/preferences', {
-          method: 'PATCH',
-          body: JSON.stringify({ pushEnabled: true })
-        });
-      } else {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-          await subscription.unsubscribe();
-          await api.request('/api/notifications/push/unsubscribe', {
-            method: 'POST',
-            body: JSON.stringify({ endpoint: subscription.endpoint })
+          await api.request('/api/notifications/preferences', {
+            method: 'PATCH',
+            body: JSON.stringify({ pushEnabled: true })
           });
+        } else {
+          showError('Subscription Failed', res.error || 'Failed to enable push notifications.');
         }
+      } else {
+        await unsubscribeUserFromPush();
         setPushEnabled(false);
         showSuccess('Unsubscribed', 'Push alerts disabled.');
         playSound('success');
@@ -2577,21 +2581,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
           </div>
-        ) : (
-          <div className="flex items-center justify-between px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-2xl text-xs shadow-2xs">
-            <div className="flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-semibold text-[#18181B]">Synced</span>
+        ) : (isOffline || outbox.length > 0) ? (
+          <div className="flex items-center justify-between px-3.5 py-2 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-xs">
+            <div className="flex items-center space-x-2 text-amber-900">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="font-semibold text-[11px]">
+                {isOffline ? 'Offline mode' : `${outbox.length} item${outbox.length > 1 ? 's' : ''} queued`}
+              </span>
             </div>
             <button
               type="button"
               onClick={() => setShowOfflineHubDetails(true)}
-              className="px-3 py-1 bg-[#FAF9F6] hover:bg-[#F4F3EF] border border-[#EAE8E1] text-[#52525B] hover:text-[#18181B] font-medium text-xs rounded-xl transition-all cursor-pointer shadow-2xs"
+              className="px-2.5 py-0.5 bg-white border border-amber-200 text-amber-900 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-2xs"
             >
               Sync options
             </button>
           </div>
-        )}
+        ) : null}
 
         {/* Dynamic Route Content Router */}
         {cleanRoute === '/volunteer/event' && (
@@ -2627,73 +2633,66 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </p>
             </div>
 
-            {/* 2. Compact Event Cover Strip */}
-            <div 
-              className="relative h-28 sm:h-32 w-full rounded-2xl overflow-hidden bg-[#18181B] shadow-xs border border-[#EAE8E1]/80"
-              data-component-version="volunteer-dashboard-event-cover-strip"
-            >
-              <SafeImage 
-                src={customHeroUrl}
-                fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
-                alt="Current Event" 
-                className="w-full h-full object-cover opacity-80"
-                containerClassName="absolute inset-0 w-full h-full"
-                loading="eager"
-                decoding="async"
-                fetchPriority="high"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent pointer-events-none" />
-              <div className="absolute top-3 left-3">
-                <span className="px-2.5 py-0.5 text-[10px] font-bold text-white bg-black/40 backdrop-blur-md rounded-full border border-white/20 uppercase tracking-wider">
-                  Current event
-                </span>
-              </div>
-              <div className="absolute bottom-3 left-3 right-3 text-white space-y-0.5">
-                <h2 className="text-base sm:text-lg font-serif font-bold text-white leading-tight drop-shadow-xs truncate">
-                  {eventDetails?.title || 'The General Assembly'}
-                </h2>
-                <p className="text-xs text-white/80 font-medium truncate">
-                  {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children and Teens'}
-                </p>
-              </div>
-            </div>
-
-            {/* 3. Current Event Summary Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-event-summary">
-              <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#F4F3EF]">
-                <div className="inline-flex items-center space-x-2 px-3 py-1 bg-[#FAF6EB] border border-[#E8DCBF] rounded-full text-xs leading-none shrink-0">
-                  <span className="font-bold text-[#8C6B18] tracking-tight">Ready for duty</span>
-                  <span className="text-[#C59B27]/40 text-[11px] font-light">|</span>
-                  <span className="text-[11px] font-medium text-[#71717A]">{teamName || 'General Team'}</span>
+            {/* 2. Unified Event Cover & Summary Card */}
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs" data-component-version="volunteer-dashboard-unified-event-card">
+              <div className="relative h-32 sm:h-36 w-full bg-[#18181B] overflow-hidden flex flex-col justify-end p-4">
+                <SafeImage 
+                  src={customHeroUrl}
+                  fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
+                  alt="Current Event" 
+                  className="w-full h-full object-cover opacity-80"
+                  containerClassName="absolute inset-0 w-full h-full"
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent pointer-events-none" />
+                <div className="relative z-10 space-y-0.5">
+                  <span className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider block">
+                    {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children and Teens'}
+                  </span>
+                  <h2 className="text-lg sm:text-xl font-serif font-bold text-white leading-tight drop-shadow-xs truncate">
+                    {eventDetails?.title || 'The General Assembly'}
+                  </h2>
                 </div>
-                <button 
-                  type="button" 
-                  onClick={() => setShowEventDetailsModal(true)} 
-                  className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] transition-colors cursor-pointer shrink-0"
-                >
-                  View event details
-                </button>
               </div>
 
-              <div className="space-y-2 text-xs text-[#52525B] pt-0.5">
-                <div className="flex items-center space-x-2.5">
-                  <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
-                  <span className="font-medium text-[#3F3F46]">
-                    {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
-                    <span className="mx-2 text-zinc-300">|</span>
-                    {eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}
-                  </span>
+              <div className="p-4 space-y-3 bg-white">
+                <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#F4F3EF]">
+                  <div className="inline-flex items-center space-x-2 px-3 py-1 bg-[#FAF6EB] border border-[#E8DCBF] rounded-full text-xs leading-none shrink-0">
+                    <span className="font-bold text-[#8C6B18] tracking-tight">Ready for duty</span>
+                    <span className="text-[#C59B27]/40 text-[11px] font-light">|</span>
+                    <span className="text-[11px] font-medium text-[#71717A]">{teamName || 'General Team'}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowEventDetailsModal(true)} 
+                    className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] transition-colors cursor-pointer shrink-0"
+                  >
+                    View event details
+                  </button>
                 </div>
-                <div className="flex items-center space-x-2.5">
-                  <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                  <span className="font-medium text-[#3F3F46] leading-relaxed truncate">
-                    {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
-                  </span>
+
+                <div className="space-y-2 text-xs text-[#52525B] pt-0.5">
+                  <div className="flex items-center space-x-2.5">
+                    <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
+                    <span className="font-medium text-[#3F3F46]">
+                      {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
+                      <span className="mx-2 text-zinc-300">|</span>
+                      {eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2.5">
+                    <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                    <span className="font-medium text-[#3F3F46] leading-relaxed truncate">
+                      {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* 4. My Duty Location Card */}
+            {/* 3. My Duty Location Card */}
             <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
               {currentDutyLocation ? (
                 /* Assigned/Confirmed Duty Location State */
@@ -2703,9 +2702,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
                       <h3 className="text-sm font-serif font-bold text-[#18181B]">My duty location</h3>
                     </div>
-                    <span className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full flex items-center gap-1">
-                      <Check className="w-3 h-3 text-emerald-600" />
-                      Arrival confirmed
+                    <span className="px-2.5 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full">
+                      Location confirmed
                     </span>
                   </div>
 

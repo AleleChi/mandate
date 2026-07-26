@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -113,6 +113,11 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [isWhatsAppOn, setIsWhatsAppOn] = useState<boolean>(true);
   const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(null);
   const [defaultEventHeroUrl, setDefaultEventHeroUrl] = useState<string | null>(null);
+
+  const [showArrivalGuideModal, setShowArrivalGuideModal] = useState(false);
+  const [selectedArrivalChild, setSelectedArrivalChild] = useState<ChildItem | null>(null);
+  const [showPickupDetailsModal, setShowPickupDetailsModal] = useState(false);
+  const [selectedPickupChild, setSelectedPickupChild] = useState<ChildItem | null>(null);
 
   useEffect(() => {
     const fetchCustomHero = async () => {
@@ -373,6 +378,135 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               Continue
             </button>
           </div>
+        </div>
+
+        {/* My Children Today Section */}
+        <div className="space-y-3 pt-1" data-component-version="parent-my-children-today-v1">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
+              My children today
+            </h3>
+            <span className="text-xs text-[#71717A] font-medium">
+              {childrenList.length} registered
+            </span>
+          </div>
+
+          {childrenList.length === 0 ? (
+            <div className="bg-white rounded-2xl p-4 border border-[#EAE8E1] text-center space-y-2 shadow-2xs">
+              <p className="text-xs text-[#52525B]">
+                No children registered for today's event yet.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {childrenList.map((child) => {
+                const isCheckedIn = child.status === 'Checked in' || child.status === 'Inside';
+                
+                // Derive dynamic location details based on age group
+                const ageGrp = (child.ageGroup || child.draftData?.ageGroup || '').toLowerCase();
+                let plannedLocation = "Pre-Primary Room";
+                let checkInPoint = "Children's Entrance B";
+                let pickupPoint = "Family Collection Desk B";
+
+                if (ageGrp.includes('0') || ageGrp.includes('1') || ageGrp.includes('2') || ageGrp.includes('3') || child.age < 4) {
+                  plannedLocation = "Infant & Toddler Care";
+                  checkInPoint = "Children's Entrance A";
+                  pickupPoint = "Family Collection Desk A";
+                } else if (ageGrp.includes('7') || ageGrp.includes('8') || ageGrp.includes('9') || (child.age >= 7 && child.age <= 9)) {
+                  plannedLocation = "Junior Hall";
+                  checkInPoint = "Children's Entrance C";
+                  pickupPoint = "Family Collection Desk C";
+                } else if (ageGrp.includes('10') || ageGrp.includes('11') || ageGrp.includes('12') || (child.age >= 10 && child.age <= 12)) {
+                  plannedLocation = "Pre-Teens Hall";
+                  checkInPoint = "Children's Entrance C";
+                  pickupPoint = "Family Collection Desk C";
+                } else if (child.age >= 13) {
+                  plannedLocation = "Teens Chapel";
+                  checkInPoint = "Main Youth Entrance";
+                  pickupPoint = "Family Collection Desk D";
+                }
+
+                return (
+                  <div key={`today-${child.id}`} className="bg-white rounded-2xl p-4 border border-[#EAE8E1] shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <FallbackAvatar src={child.photoUrl} name={child.name} className="w-10 h-10 rounded-full shrink-0" />
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] truncate leading-tight">
+                            {child.name}
+                          </h4>
+                          <p className="text-xs text-[#71717A] mt-0.5">
+                            {child.age} years • {child.ageGroup || 'Children'}
+                          </p>
+                        </div>
+                      </div>
+                      <StatusBadge status={child.status} size="sm" />
+                    </div>
+
+                    <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-2 text-xs">
+                      {!isCheckedIn ? (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#71717A]">Planned location:</span>
+                            <span className="font-semibold text-[#18181B]">{plannedLocation}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#71717A]">Check-in point:</span>
+                            <span className="font-semibold text-[#18181B]">{checkInPoint}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#71717A]">Status:</span>
+                            <span className="font-semibold text-[#B89047]">Not checked in</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#71717A]">Current location:</span>
+                            <span className="font-semibold text-[#18181B]">{plannedLocation}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#71717A]">Checked in at:</span>
+                            <span className="font-semibold text-[#18181B]">9:14 AM</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#71717A]">Pickup point:</span>
+                            <span className="font-semibold text-[#18181B]">{pickupPoint}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="pt-1">
+                      {!isCheckedIn ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedArrivalChild(child);
+                            setShowArrivalGuideModal(true);
+                          }}
+                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                        >
+                          View arrival guide
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPickupChild(child);
+                            setShowPickupDetailsModal(true);
+                          }}
+                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                        >
+                          View pickup details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* 6. Summary cards */}
@@ -2386,6 +2520,160 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         }}
         actionName="Unlocking secure child pass"
       />
+
+      {/* Family Arrival Plan Modal / Sheet */}
+      {showArrivalGuideModal && selectedArrivalChild && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-fade-in"
+          onClick={() => setShowArrivalGuideModal(false)}
+        >
+          <div 
+            className="bg-white rounded-t-[28px] sm:rounded-2xl max-h-[90%] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EAE8E1] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-[#FAF9F6]">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-[#FAF6EB] rounded-xl border border-[#E5D5AE] text-[#C59B27]">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
+                    Family arrival plan
+                  </h3>
+                  <p className="text-xs text-[#71717A]">
+                    Arrival details for {selectedArrivalChild.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowArrivalGuideModal(false)}
+                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46]">
+              <div className="flex items-start space-x-3 p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl">
+                <FallbackAvatar src={selectedArrivalChild.photoUrl} name={selectedArrivalChild.name} className="w-10 h-10 rounded-full shrink-0" />
+                <div>
+                  <h4 className="font-bold text-sm text-[#18181B]">{selectedArrivalChild.name}</h4>
+                  <p className="text-xs text-[#71717A]">{selectedArrivalChild.age} years • {selectedArrivalChild.ageGroup || 'Children'}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Entry Gate</span>
+                  <p className="text-sm font-bold text-[#18181B]">Children's Entrance B</p>
+                  <p className="text-xs text-[#71717A]">Follow directional signs at Koinonia Pavilion ground level.</p>
+                </div>
+
+                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Assigned Hall</span>
+                  <p className="text-sm font-bold text-[#18181B]">Pre-Primary Room (Zone 2)</p>
+                  <p className="text-xs text-[#71717A]">Volunteers will guide your child directly into their hall upon pass scan.</p>
+                </div>
+
+                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Recommended Arrival Window</span>
+                  <p className="text-sm font-bold text-[#18181B]">8:30 AM – 9:00 AM</p>
+                  <p className="text-xs text-[#71717A]">Main session begins at 9:00 AM sharp.</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowArrivalGuideModal(false);
+                  setSelectedPassChild(selectedArrivalChild);
+                  handleTabChange('Passes');
+                }}
+                className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-2"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Show Event Pass QR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Family Pickup Plan Modal / Sheet */}
+      {showPickupDetailsModal && selectedPickupChild && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-fade-in"
+          onClick={() => setShowPickupDetailsModal(false)}
+        >
+          <div 
+            className="bg-white rounded-t-[28px] sm:rounded-2xl max-h-[90%] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EAE8E1] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-[#FAF9F6]">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-[#FAF6EB] rounded-xl border border-[#E5D5AE] text-[#C59B27]">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
+                    Family pickup plan
+                  </h3>
+                  <p className="text-xs text-[#71717A]">
+                    Pickup details for {selectedPickupChild.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPickupDetailsModal(false)}
+                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46]">
+              <div className="flex items-start space-x-3 p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl">
+                <FallbackAvatar src={selectedPickupChild.photoUrl} name={selectedPickupChild.name} className="w-10 h-10 rounded-full shrink-0" />
+                <div>
+                  <h4 className="font-bold text-sm text-[#18181B]">{selectedPickupChild.name}</h4>
+                  <p className="text-xs text-[#71717A]">{selectedPickupChild.age} years • Checked in</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Pickup Collection Point</span>
+                  <p className="text-sm font-bold text-[#18181B]">Family Collection Desk B</p>
+                  <p className="text-xs text-[#71717A]">Please present your pickup pass or photo ID at Collection Desk B.</p>
+                </div>
+
+                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Authorized Pickup Person</span>
+                  <p className="text-sm font-bold text-[#18181B]">
+                    {selectedPickupChild.draftData?.pickup?.pickupPersonFullName || parentProfile.fullName || 'Parent / Guardian'}
+                  </p>
+                  <p className="text-xs text-[#71717A]">
+                    Relationship: {selectedPickupChild.draftData?.pickup?.pickupPersonRelationship || 'Parent'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPickupDetailsModal(false);
+                  setSelectedPassChild(selectedPickupChild);
+                  handleTabChange('Passes');
+                }}
+                className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-2"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Show Pickup Pass QR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

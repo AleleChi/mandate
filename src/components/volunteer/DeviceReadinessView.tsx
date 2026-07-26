@@ -22,6 +22,14 @@ import {
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
+import { 
+  getPushNotificationStatus, 
+  subscribeUserToPush, 
+  unsubscribeUserFromPush, 
+  sendTestPushNotification,
+  GranularPushStatus 
+} from '../../utils/pushSubscription';
+import { PushInstructionsModal } from '../common/PushInstructionsModal';
 
 // Static client-side ID to identify this specific device across reloads without fingerprinting
 const getOrCreateDeviceId = (): string => {
@@ -65,7 +73,10 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
   // Device hardware/permission states
   const [soundReady, setSoundReady] = useState<'ready' | 'needs_permission' | 'muted' | 'checking'>('needs_permission');
   const [voiceReady, setVoiceReady] = useState<'supported' | 'unsupported' | 'checking'>('checking');
-  const [pushStatus, setPushStatus] = useState<'enabled' | 'needed' | 'blocked' | 'unsupported' | 'checking'>('checking');
+  const [pushStatus, setPushStatus] = useState<GranularPushStatus | 'checking' | 'subscribing'>('checking');
+  const [showPushInstructions, setShowPushInstructions] = useState<boolean>(false);
+  const [pushFeedback, setPushFeedback] = useState<string | null>(null);
+  const [testingPush, setTestingPush] = useState<boolean>(false);
   const [vibration, setVibration] = useState<'enabled' | 'disabled' | 'unsupported' | 'checking'>('checking');
   
   // Sync state
@@ -235,16 +246,8 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
 
     // 7. Push Notifications
     setPushStatus('checking');
-    await new Promise(resolve => setTimeout(resolve, 200));
-    if (!('Notification' in window)) {
-      setPushStatus('unsupported');
-    } else if (Notification.permission === 'granted') {
-      setPushStatus('enabled');
-    } else if (Notification.permission === 'denied') {
-      setPushStatus('blocked');
-    } else {
-      setPushStatus('needed');
-    }
+    const pushDetails = await getPushNotificationStatus();
+    setPushStatus(pushDetails.status);
 
     // 8. Vibration Support
     setVibration('checking');
@@ -361,19 +364,54 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
     }
   };
 
-  // Push Permission Request (Section 3.7)
-  const enablePushAlerts = () => {
-    if (!('Notification' in window)) return;
-    Notification.requestPermission().then(permission => {
-      if (permission === 'granted') {
-        setPushStatus('enabled');
-      } else if (permission === 'denied') {
-        setPushStatus('blocked');
-      } else {
-        setPushStatus('needed');
-      }
+  // Push Permission & Action Handlers
+  const handleEnablePush = async () => {
+    setPushFeedback(null);
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+      setShowPushInstructions(true);
+      return;
+    }
+    setPushStatus('subscribing');
+    const result = await subscribeUserToPush();
+    if (result.success) {
+      setPushStatus('enabled');
+      setPushFeedback('Push alerts activated successfully on this device.');
       handleSavePreferences();
-    });
+    } else {
+      const details = await getPushNotificationStatus();
+      setPushStatus(details.status);
+      setPushFeedback(result.error || details.message || 'Failed to activate push alerts.');
+      if (details.status === 'blocked') {
+        setShowPushInstructions(true);
+      }
+    }
+  };
+
+  const handleDisablePush = async () => {
+    setPushFeedback(null);
+    await unsubscribeUserFromPush();
+    const details = await getPushNotificationStatus();
+    setPushStatus(details.status);
+    setPushFeedback('Push alerts turned off for this device.');
+  };
+
+  const handleTestPush = async () => {
+    setPushFeedback(null);
+    setTestingPush(true);
+    const result = await sendTestPushNotification();
+    setTestingPush(false);
+    if (result.success) {
+      setPushFeedback('Test push notification sent to your device!');
+    } else {
+      setPushFeedback(result.error || 'Test notification failed to dispatch.');
+    }
+  };
+
+  const handleCheckPushStatus = async () => {
+    setPushFeedback(null);
+    setPushStatus('checking');
+    const details = await getPushNotificationStatus();
+    setPushStatus(details.status);
   };
 
   // Vibration Test Action (Section 3.8)
@@ -725,28 +763,104 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
             {/* Push notifications (Check 7) */}
             <div 
               className="p-4 bg-white border border-[#EAE8E1] rounded-2xl flex flex-col space-y-3"
-              data-component-version="readiness-push-alerts-v2"
+              data-component-version="readiness-push-alerts-v3"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <Bell className="w-5 h-5 text-[#C59B27]" />
                   <div>
-                    <div className="text-xs font-bold">Push alerts</div>
-                    <div className="text-[11px] text-zinc-500">Service worker background subscriptions.</div>
+                    <div className="text-xs font-bold">
+                      {pushStatus === 'needed' ? 'Enable emergency alerts' : 'Push alerts'}
+                    </div>
+                    <div className="text-[11px] text-zinc-500">
+                      {pushStatus === 'enabled'
+                        ? 'Emergency notifications can appear when this app is not open.'
+                        : pushStatus === 'blocked'
+                        ? 'Allow notifications in your browser or device settings.'
+                        : pushStatus === 'needs_attention'
+                        ? 'Permission granted, but background alert registration needs repair.'
+                        : 'Receive urgent Event Duty notifications when the app is in the background.'}
+                    </div>
                   </div>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${pushStatus === 'enabled' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                  {pushStatus === 'enabled' ? 'Enabled' : pushStatus === 'blocked' ? 'Blocked' : 'Setup required'}
+                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md shrink-0 ${
+                  pushStatus === 'enabled' 
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' 
+                    : pushStatus === 'blocked' 
+                    ? 'bg-amber-50 text-amber-700 border border-amber-200/50' 
+                    : 'bg-zinc-100 text-zinc-700 border border-zinc-200/50'
+                }`}>
+                  {pushStatus === 'enabled' 
+                    ? 'Enabled' 
+                    : pushStatus === 'blocked' 
+                    ? 'Notifications blocked' 
+                    : pushStatus === 'needs_attention'
+                    ? 'Needs attention'
+                    : pushStatus === 'subscribing'
+                    ? 'Registering…'
+                    : 'Setup required'}
                 </span>
               </div>
-              {pushStatus !== 'enabled' && pushStatus !== 'unsupported' && (
-                <button
-                  onClick={enablePushAlerts}
-                  className="w-full flex items-center justify-center space-x-2 py-2 bg-[#C59B27]/10 hover:bg-[#C59B27]/20 text-[#8E6E1B] text-xs font-bold rounded-xl transition-all"
-                >
-                  <span>Enable push alerts</span>
-                </button>
+
+              {pushFeedback && (
+                <div className="text-[11px] font-medium px-3 py-2 bg-zinc-50 border border-zinc-200/80 rounded-xl text-zinc-700">
+                  {pushFeedback}
+                </div>
               )}
+
+              <div className="flex items-center space-x-2 pt-1">
+                {pushStatus === 'enabled' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleTestPush}
+                      disabled={testingPush}
+                      className="flex-1 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${testingPush ? 'animate-spin' : ''}`} />
+                      <span>{testingPush ? 'Sending…' : 'Send test alert'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDisablePush}
+                      className="py-2 px-3 bg-zinc-100 hover:bg-red-50 hover:text-red-600 text-zinc-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      Disable
+                    </button>
+                  </>
+                )}
+
+                {pushStatus === 'blocked' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowPushInstructions(true)}
+                      className="flex-1 py-2 bg-[#C59B27] hover:bg-[#8E6E1B] text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+                    >
+                      View instructions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCheckPushStatus}
+                      className="py-2 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      Check again
+                    </button>
+                  </>
+                )}
+
+                {(pushStatus === 'needed' || pushStatus === 'needs_attention' || pushStatus === 'subscribing') && (
+                  <button
+                    type="button"
+                    onClick={handleEnablePush}
+                    disabled={pushStatus === 'subscribing'}
+                    className="w-full py-2 bg-[#C59B27] hover:bg-[#8E6E1B] text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-50"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>{pushStatus === 'subscribing' ? 'Requesting permission…' : pushStatus === 'needs_attention' ? 'Repair subscription' : 'Allow notifications'}</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Vibration (Check 8) */}
@@ -964,6 +1078,12 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
         </div>
 
       </div>
+
+      <PushInstructionsModal
+        isOpen={showPushInstructions}
+        onClose={() => setShowPushInstructions(false)}
+        onCheckAgain={handleCheckPushStatus}
+      />
     </div>
   );
 }

@@ -250,7 +250,11 @@ self.addEventListener('push', (event) => {
       tag: tag, // Use notification tags per alert: tag: `safety-alert-${alertId}`
       renotify: false, // Set: renotify: false
       data: data.metadata || {},
-      vibrate: [200, 100, 200, 100, 500]
+      vibrate: [200, 100, 200, 100, 500],
+      actions: [
+        { action: 'open', title: 'Open alert' },
+        { action: 'ack', title: 'Acknowledge' }
+      ]
     };
 
     await self.registration.showNotification(data.title, options);
@@ -265,6 +269,14 @@ self.addEventListener('notificationclick', (event) => {
   const notificationData = event.notification.data || {};
   let targetUrl = notificationData.targetUrl || '/';
   
+  if (event.action === 'ack') {
+    if (targetUrl.includes('?')) {
+      targetUrl += '&action=acknowledge';
+    } else {
+      targetUrl += '?action=acknowledge';
+    }
+  }
+
   // Ensure targetUrl is absolute for clients.navigate/openWindow
   if (targetUrl.startsWith('/') && !targetUrl.startsWith('//')) {
     targetUrl = self.location.origin + targetUrl;

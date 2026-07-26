@@ -325,6 +325,20 @@ export const api = {
         body: JSON.stringify(subscription)
       });
     },
+    async unsubscribePushSubscription(endpoint: string) {
+      return api.request<any>('/api/notifications/push/unsubscribe', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint })
+      });
+    },
+    async getPushStatus() {
+      return api.request<{ isSubscribed: boolean; subscriptionCount: number }>('/api/notifications/push/status');
+    },
+    async sendTestPush() {
+      return api.request<{ success: boolean; sentCount: number; message: string }>('/api/notifications/push/test', {
+        method: 'POST'
+      });
+    },
     async getVapidPublicKey() {
       return api.request<{ publicKey: string }>('/api/notifications/push/vapid-key');
     },
