@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import { safeStorage } from '../utils/storage';
+import { buildApiUrl, getApiBaseUrl } from '../utils/urlHelper';
 
 const TOKEN_KEY = 'koinonia_token';
 
@@ -70,26 +71,7 @@ export const api = {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    let apiBaseUrl = '';
-    try {
-      apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-    } catch {
-      apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
-    }
-
-    let isDev = false;
-    try {
-      isDev = !!import.meta.env.DEV;
-    } catch {}
-
-    // Always use relative paths inside the browser for robust, CORS-free full-stack routing
-    if (typeof window !== 'undefined') {
-      apiBaseUrl = '';
-    }
-
-    const url = apiBaseUrl
-      ? `${apiBaseUrl.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`
-      : endpoint;
+    const url = buildApiUrl(endpoint);
 
     let res: Response;
     try {

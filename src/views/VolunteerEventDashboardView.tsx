@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
+import { buildApiUrl } from '../utils/urlHelper';
 import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { BrowserQRCodeReader } from '@zxing/browser';
@@ -497,6 +498,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [currentDutyLocation, setCurrentDutyLocation] = useState<any>(null);
   const [showLocationSelectModal, setShowLocationSelectModal] = useState<boolean>(false);
   const [showLocationQRModal, setShowLocationQRModal] = useState<boolean>(false);
+  const [showSetLocationSheet, setShowSetLocationSheet] = useState<boolean>(false);
+  const [showEventDetailsModal, setShowEventDetailsModal] = useState<boolean>(false);
+  const [showOfflineHubDetails, setShowOfflineHubDetails] = useState<boolean>(false);
   const [availableLocations, setAvailableLocations] = useState<any[]>([]);
   const [selectedLocationPresenceId, setSelectedLocationPresenceId] = useState<string>('');
   const [presenceActionLoading, setPresenceActionLoading] = useState<boolean>(false);
@@ -507,7 +511,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const fetchCurrentDutyLocation = async () => {
     try {
-      const res = await fetch('/api/duty/current-location');
+      const res = await fetch(buildApiUrl('/api/duty/current-location'));
       if (res.ok) {
         const data = await res.json();
         if (data.success && (data.presence || data.location)) {
@@ -523,7 +527,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const fetchAvailableLocations = async () => {
     try {
-      const res = await fetch('/api/duty/locations');
+      const res = await fetch(buildApiUrl('/api/duty/locations'));
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -595,13 +599,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setPresenceActionLoading(true);
     setLocationScannerError(null);
     try {
-      let res = await fetch('/api/event-duty/location-access/verify', {
+      let res = await fetch(buildApiUrl('/api/event-duty/location-access/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: token })
       });
       if (!res.ok) {
-        res = await fetch('/api/duty/location-code/verify', {
+        res = await fetch(buildApiUrl('/api/duty/location-code/verify'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code: token })
@@ -630,7 +634,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (!scannedTokenStr && !scannedLocationData?.location?.id) return;
     setPresenceActionLoading(true);
     try {
-      const res = await fetch('/api/duty/current-location', {
+      const res = await fetch(buildApiUrl('/api/duty/current-location'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -670,7 +674,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (!locId) return;
     setPresenceActionLoading(true);
     try {
-      const res = await fetch('/api/duty/current-location', {
+      const res = await fetch(buildApiUrl('/api/duty/current-location'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ locationId: locId })
@@ -698,7 +702,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (!confirm('Are you sure you want to leave your current location? You will no longer receive location-specific response priority alerts.')) return;
     setPresenceActionLoading(true);
     try {
-      const res = await fetch('/api/duty/current-location', {
+      const res = await fetch(buildApiUrl('/api/duty/current-location'), {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -2468,306 +2472,366 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       </header>
 
       {/* Main Container */}
-      <main className="max-w-4xl w-full mx-auto px-4 pt-6 space-y-6 flex-1">
+      <main className="max-w-4xl w-full mx-auto px-4 pt-5 space-y-5 flex-1">
         
-        {/* Connection & Synchronization Hub */}
-        <div 
-          className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] p-6 space-y-5"
-          data-component-version="volunteer-offline-hub-card-v1"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="text-xs font-bold text-gray-950 uppercase tracking-widest font-sans">
-                Device Connectivity & Offline Sync
-              </h3>
+        {/* Device Connectivity Bar / Collapsible Hub */}
+        {offlineService.isOffline() || outbox.length > 0 || showOfflineHubDetails ? (
+          <div 
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-4 shadow-2xs animate-fade-in"
+            data-component-version="volunteer-offline-hub-card-v3"
+          >
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F4F3EF]">
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-serif font-bold text-[#18181B]">
+                  Sync & Data Options
+                </h3>
+                <div className="flex items-center space-x-1.5 pt-0.5">
+                  {offlineService.isOffline() ? (
+                    <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-[11px] font-medium">
+                      Operating Offline
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Synced</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center space-x-2">
-                <span className={`inline-block w-2.5 h-2.5 rounded-full ${offlineService.isOffline() ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
-                <span className="text-xs text-gray-600 font-medium">
-                  {offlineService.isOffline() ? 'Operating Offline' : 'Live Connected Mode'}
-                </span>
+                <button
+                  type="button"
+                  onClick={handleDownloadManifest}
+                  disabled={isDownloadingManifest || offlineService.isOffline()}
+                  className="px-3 py-1.5 bg-[#FAF9F6] hover:bg-[#F4F3EF] border border-[#EAE8E1] text-[#18181B] text-xs font-medium rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shadow-2xs"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isDownloadingManifest ? 'animate-spin text-[#C59B27]' : 'text-zinc-500'}`} />
+                  <span>{isDownloadingManifest ? 'Caching...' : 'Preload data'}</span>
+                </button>
+
+                <button 
+                  type="button" 
+                  onClick={() => setShowOfflineHubDetails(false)}
+                  className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
+                  title="Close sync options"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            <Button
-              onClick={handleDownloadManifest}
-              disabled={isDownloadingManifest || offlineService.isOffline()}
-              className="px-4 py-2 bg-white hover:bg-gray-50 border border-[#EAE8E1] text-gray-800 text-xs font-bold rounded-2xl flex items-center space-x-1.5 shadow-xs shrink-0 self-start sm:self-auto"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isDownloadingManifest ? 'animate-spin text-[#C59B27]' : 'text-gray-500'}`} />
-              <span>{isDownloadingManifest ? 'Caching Manifest...' : 'Preload Offline Manifest'}</span>
-            </Button>
-          </div>
+            {/* Sync Queue Outbox Visualization */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-bold text-[#18181B]">
+                    Pending Offline Scans ({outbox.length})
+                  </h4>
+                  <p className="text-xs text-[#71717A] leading-relaxed">
+                    {outbox.length === 0 
+                      ? 'All check-ins are saved and fully synchronized.' 
+                      : `${outbox.length} offline check-ins waiting to upload.`}
+                  </p>
+                </div>
 
-          {/* Sync Queue Outbox Visualization */}
-          <div className="border-t border-gray-200/60 pt-4 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-0.5">
-                <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest font-mono">
-                  Pending Sync Outbox ({outbox.length})
-                </h4>
-                <p className="text-[11px] text-gray-500 leading-normal">
-                  {outbox.length === 0 
-                    ? 'All scans are fully synchronized with the master database.' 
-                    : `${outbox.length} offline check-ins waiting to write to server.`}
-                </p>
+                {outbox.length > 0 && (
+                  <Button
+                    onClick={handleManualSyncOutbox}
+                    disabled={isSyncingOutbox || offlineService.isOffline()}
+                    className="px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A8801C] text-white text-xs font-bold rounded-xl flex items-center space-x-1.5 shadow-xs shrink-0 self-start sm:self-auto"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isSyncingOutbox ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingOutbox ? 'Syncing...' : 'Sync now'}</span>
+                  </Button>
+                )}
               </div>
 
               {outbox.length > 0 && (
-                <Button
-                  onClick={handleManualSyncOutbox}
-                  disabled={isSyncingOutbox || offlineService.isOffline()}
-                  className="px-4 py-2 bg-[#C59B27] hover:bg-[#A8801C] text-white text-xs font-bold rounded-2xl flex items-center space-x-1.5 shadow-sm shrink-0 self-start sm:self-auto"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncingOutbox ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingOutbox ? 'Syncing...' : 'Sync Now'}</span>
-                </Button>
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl divide-y divide-[#EAE8E1] max-h-48 overflow-y-auto">
+                  {outbox.map((item) => (
+                    <div key={item.idempotencyKey} className="p-3 flex items-center justify-between text-xs gap-3">
+                      <div className="space-y-0.5 min-w-0 pr-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-[#18181B] truncate">{item.childName}</span>
+                          <span className="px-1.5 py-0.5 bg-white border border-[#EAE8E1] text-[#71717A] rounded text-[10px] font-mono">{item.passReference}</span>
+                        </div>
+                        <div className="text-[11px] text-[#71717A]">
+                          {item.gateLocation} • {new Date(item.actionTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {item.error && (
+                          <p className="text-[10px] text-rose-600 font-semibold mt-0.5">Error: {item.error}</p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleCancelQueuedAction(item.idempotencyKey)}
+                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 cursor-pointer"
+                        title="Discard queued scan"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-
-            {outbox.length > 0 && (
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl divide-y divide-gray-100 max-h-48 overflow-y-auto shadow-xs">
-                {outbox.map((item) => (
-                  <div key={item.idempotencyKey} className="p-3 flex items-center justify-between text-xs gap-3">
-                    <div className="space-y-1 min-w-0 pr-3">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-bold text-gray-900 truncate">{item.childName}</span>
-                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[9px] font-mono uppercase tracking-wider">{item.passReference}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-[10px] text-gray-400 font-mono">
-                        <span>{item.gateLocation}</span>
-                        <span>•</span>
-                        <span>{new Date(item.actionTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                      </div>
-                      {item.error && (
-                        <p className="text-[9px] text-red-600 font-semibold mt-1">Error: {item.error}</p>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => handleCancelQueuedAction(item.idempotencyKey)}
-                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0 cursor-pointer"
-                      title="Discard queued scan"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-2xl text-xs shadow-2xs">
+            <div className="flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-semibold text-[#18181B]">Synced</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOfflineHubDetails(true)}
+              className="px-3 py-1 bg-[#FAF9F6] hover:bg-[#F4F3EF] border border-[#EAE8E1] text-[#52525B] hover:text-[#18181B] font-medium text-xs rounded-xl transition-all cursor-pointer shadow-2xs"
+            >
+              Sync options
+            </button>
+          </div>
+        )}
 
         {/* Dynamic Route Content Router */}
         {cleanRoute === '/volunteer/event' && (
           /* ==================== 1. EVENT TOOLS / METRICS VIEW ==================== */
-          <div className="space-y-6 animate-fade-in" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
-            {/* 1. Volunteer Dashboard Hero Image Card */}
+          <div className="space-y-4 animate-fade-in" data-view-version="volunteer-dashboard-v11-refined-mobile">
+            
+            {/* 1. Compact Volunteer Greeting */}
+            <div className="space-y-1 pt-1" data-component-version="volunteer-dashboard-compact-greeting">
+              <h1 className="text-2xl sm:text-3xl font-serif font-medium text-[#18181B] tracking-tight">
+                {(() => {
+                  const hour = new Date().getHours();
+                  const rawName = volunteerProfile?.full_name || 
+                                  volunteerProfile?.fullName || 
+                                  volunteerProfile?.user?.fullName || 
+                                  volunteerProfile?.user?.full_name || 
+                                  '';
+                  const firstName = rawName.trim() && rawName.toLowerCase() !== 'volunteer' 
+                    ? rawName.trim().split(/\s+/)[0] 
+                    : '';
+                  let greetingPrefix = 'Welcome';
+                  if (hour >= 4 && hour < 12) {
+                    greetingPrefix = 'Good morning';
+                  } else if (hour >= 12 && hour < 17) {
+                    greetingPrefix = 'Good afternoon';
+                  } else if (hour >= 17 || hour < 4) {
+                    greetingPrefix = 'Good evening';
+                  }
+                  return firstName ? `${greetingPrefix}, ${firstName}` : greetingPrefix;
+                })()}
+              </h1>
+              <p className="text-sm text-[#71717A] font-normal">
+                Here is your duty information for today.
+              </p>
+            </div>
+
+            {/* 2. Compact Event Cover Strip */}
             <div 
-              className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] shadow-xs overflow-hidden" 
-              data-component-version="volunteer-dashboard-hero-v10-secure-media"
+              className="relative h-28 sm:h-32 w-full rounded-2xl overflow-hidden bg-[#18181B] shadow-xs border border-[#EAE8E1]/80"
+              data-component-version="volunteer-dashboard-event-cover-strip"
             >
-              {/* Top Image area with fixed aspect ratio */}
-              <div className="relative aspect-[16/9] w-full bg-[#24221C] overflow-hidden">
-                <SafeImage 
-                  src={customHeroUrl}
-                  fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
-                  alt="Volunteer Dashboard" 
-                  className="absolute inset-0 w-full h-full object-cover"
-                  containerClassName="absolute inset-0 w-full h-full"
-                  loading="eager"
-                  decoding="async"
-                  fetchPriority="high"
-                  data-component-version="volunteer-dashboard-hero-image-v5-handover-stable"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+              <SafeImage 
+                src={customHeroUrl}
+                fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
+                alt="Current Event" 
+                className="w-full h-full object-cover opacity-80"
+                containerClassName="absolute inset-0 w-full h-full"
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent pointer-events-none" />
+              <div className="absolute top-3 left-3">
+                <span className="px-2.5 py-0.5 text-[10px] font-bold text-white bg-black/40 backdrop-blur-md rounded-full border border-white/20 uppercase tracking-wider">
+                  Current event
+                </span>
+              </div>
+              <div className="absolute bottom-3 left-3 right-3 text-white space-y-0.5">
+                <h2 className="text-base sm:text-lg font-serif font-bold text-white leading-tight drop-shadow-xs truncate">
+                  {eventDetails?.title || 'The General Assembly'}
+                </h2>
+                <p className="text-xs text-white/80 font-medium truncate">
+                  {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children and Teens'}
+                </p>
+              </div>
+            </div>
+
+            {/* 3. Current Event Summary Card */}
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-event-summary">
+              <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#F4F3EF]">
+                <div className="inline-flex items-center space-x-2 px-3 py-1 bg-[#FAF6EB] border border-[#E8DCBF] rounded-full text-xs leading-none shrink-0">
+                  <span className="font-bold text-[#8C6B18] tracking-tight">Ready for duty</span>
+                  <span className="text-[#C59B27]/40 text-[11px] font-light">|</span>
+                  <span className="text-[11px] font-medium text-[#71717A]">{teamName || 'General Team'}</span>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setShowEventDetailsModal(true)} 
+                  className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] transition-colors cursor-pointer shrink-0"
+                >
+                  View event details
+                </button>
               </div>
 
-              {/* Content area below the image on ivory background */}
-              <div className="p-5 sm:p-6 bg-[#FAF9F6] space-y-4" data-component-version="volunteer-dashboard-current-event-v3-real">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="px-2.5 py-0.5 text-[10px] font-bold text-[#C59B27] bg-[#C59B27]/10 border border-[#C59B27]/20 rounded-full uppercase tracking-wider">
-                    {teamName} • Ready for event support
+              <div className="space-y-2 text-xs text-[#52525B] pt-0.5">
+                <div className="flex items-center space-x-2.5">
+                  <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
+                  <span className="font-medium text-[#3F3F46]">
+                    {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
+                    <span className="mx-2 text-zinc-300">|</span>
+                    {eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}
                   </span>
                 </div>
-
-                <div className="space-y-1.5">
-                  <h2 data-component-version="volunteer-dashboard-greeting-v6-handover-real-name" className="text-2xl sm:text-3xl font-serif font-black text-[#18181B] tracking-tight leading-tight">
-                    {(() => {
-                      const hour = new Date().getHours();
-                      const rawName = volunteerProfile?.full_name || 
-                                      volunteerProfile?.fullName || 
-                                      volunteerProfile?.user?.fullName || 
-                                      volunteerProfile?.user?.full_name || 
-                                      '';
-                      const firstName = rawName.trim() && rawName.toLowerCase() !== 'volunteer' 
-                        ? rawName.trim().split(/\s+/)[0] 
-                        : '';
-                      let greetingPrefix = 'Welcome';
-                      if (hour >= 4 && hour < 12) {
-                        greetingPrefix = 'Good morning';
-                      } else if (hour >= 12 && hour < 17) {
-                        greetingPrefix = 'Good afternoon';
-                      } else if (hour >= 17 || hour < 4) {
-                        greetingPrefix = 'Good evening';
-                      }
-                      return firstName ? `${greetingPrefix}, ${firstName}` : greetingPrefix;
-                    })()}
-                  </h2>
-                  <div className="flex flex-col space-y-2 pt-1 text-xs text-gray-600 font-medium">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-serif font-bold text-base text-gray-900">
-                        {eventDetails?.title || 'The General Assembly'}
-                      </span>
-                      <span className="text-gray-300">|</span>
-                      <span className="text-[#C59B27] font-bold uppercase tracking-wider text-[10px]">
-                        {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children and Teens'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-2 text-gray-500 pt-0.5">
-                      <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
-                      <span>{formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)} • {eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}</span>
-                    </div>
-
-                    <div className="flex items-center space-x-2 text-gray-500">
-                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                      <span className="truncate">{eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}</span>
-                    </div>
-                  </div>
+                <div className="flex items-center space-x-2.5">
+                  <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                  <span className="font-medium text-[#3F3F46] leading-relaxed truncate">
+                    {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
+                  </span>
                 </div>
+              </div>
+            </div>
 
-                {/* Phase 6: Current Duty Location Card */}
-                <div className="mt-4 p-4 bg-zinc-50 border border-zinc-200/80 rounded-2xl space-y-3 shadow-xs">
+            {/* 4. My Duty Location Card */}
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
+              {currentDutyLocation ? (
+                /* Assigned/Confirmed Duty Location State */
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 text-zinc-700">
-                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 animate-bounce" />
-                      <span className="text-xs font-mono font-bold tracking-wider uppercase">Current Duty Location</span>
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                      <h3 className="text-sm font-serif font-bold text-[#18181B]">My duty location</h3>
                     </div>
-                    {currentDutyLocation && (
-                      <span className="px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Active Coverage
-                      </span>
+                    <span className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      Arrival confirmed
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1">
+                    <div className="text-sm font-serif font-bold text-[#18181B]">
+                      {currentDutyLocation.name}
+                    </div>
+                    <div className="text-xs text-[#71717A] flex flex-wrap items-center gap-2">
+                      {currentDutyLocation.zone && <span>Zone: {currentDutyLocation.zone}</span>}
+                      {currentDutyLocation.room_number && <span>• Room {currentDutyLocation.room_number}</span>}
+                      {currentDutyLocation.location_type && <span>• {currentDutyLocation.location_type}</span>}
+                    </div>
+                    {currentDutyLocation.guideline && (
+                      <p className="text-xs text-[#52525B] italic pt-1">
+                        Guideline: {currentDutyLocation.guideline}
+                      </p>
                     )}
                   </div>
 
-                  {currentDutyLocation ? (
-                    <div className="space-y-2">
-                      <div className="p-3 bg-white border border-zinc-100 rounded-xl">
-                        <div className="text-sm font-serif font-bold text-zinc-950">
-                          {currentDutyLocation.name}
-                        </div>
-                        {(currentDutyLocation.zone || currentDutyLocation.room_number) && (
-                          <div className="text-[10px] font-mono font-medium text-zinc-500 mt-0.5">
-                            {currentDutyLocation.zone ? `Zone: ${currentDutyLocation.zone}` : ''} {currentDutyLocation.room_number ? `• Room ${currentDutyLocation.room_number}` : ''}
-                          </div>
-                        )}
-                        {currentDutyLocation.guideline && (
-                          <div className="text-[11px] text-zinc-600 italic mt-1.5 bg-zinc-50 p-2 rounded-lg border border-zinc-100">
-                            Guideline: {currentDutyLocation.guideline}
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            fetchAvailableLocations();
-                            setShowLocationSelectModal(true);
-                          }}
-                          className="flex-1 py-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-800 font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Change Location</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleLeaveLocation}
-                          className="py-2 px-3 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-700 font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center"
-                          title="Leave current location"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <p className="text-[11px] text-zinc-500 font-medium leading-relaxed">
-                        No active duty location registered. Scan a location QR code or select your area manually to receive localized alert routing and capacity notifications.
-                      </p>
-                      
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowLocationQRModal(true);
-                            startLocationQRScanning();
-                          }}
-                          className="flex-1 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-xs"
-                        >
-                          <QrCode className="w-3.5 h-3.5" />
-                          <span>Scan Location Code</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            fetchAvailableLocations();
-                            setShowLocationSelectModal(true);
-                          }}
-                          className="flex-1 py-2.5 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-800 font-bold text-[10px] tracking-wider uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-2xs"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Select Area</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowSetLocationSheet(true)}
+                      className="flex-1 py-2 px-3 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-[#18181B] font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>Change location</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLeaveLocation}
+                      className="py-2 px-3.5 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                      title="Leave current location"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Leave</span>
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                /* Unconfirmed Location State */
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                      <h3 className="text-sm font-serif font-bold text-[#18181B]">My duty location</h3>
+                    </div>
+                    <span className="px-2 py-0.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-full">
+                      Location not confirmed
+                    </span>
+                  </div>
 
-                <div className="pt-2 flex flex-col space-y-2">
-                  <div className="flex items-center space-x-2">
+                  <p className="text-xs text-[#52525B] leading-relaxed">
+                    Confirm where you are serving so you can receive the correct assignments and event alerts.
+                  </p>
+
+                  <div className="pt-0.5 flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSetLocationSheet(true)}
+                      className="w-full py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      <span>Set duty location</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setCameraActive(true);
-                        setScanMode('check_in');
-                        onNavigate('/volunteer/scan');
+                        setShowLocationQRModal(true);
+                        startLocationQRScanning();
                       }}
-                      className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-sm text-center"
+                      className="w-full sm:w-auto py-2.5 px-3.5 bg-transparent hover:bg-zinc-50 text-[#52525B] hover:text-[#18181B] font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
                     >
-                      Start check-in
+                      <QrCode className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>Scan location QR</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('/volunteer/pickup')}
-                      className="flex-1 py-3 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-xs text-center"
-                    >
-                      Open pickup
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenSafetyAlertModal()}
-                      className="flex-1 py-3 bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-xs"
-                    >
-                      <Bell className="h-4 w-4 animate-pulse shrink-0" />
-                      <span>Request admin help</span>
-                    </button>
-                    {mySafetyAlerts.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowMyAlertsView(true)}
-                        className="py-3 px-4 bg-gray-50 border border-[#EAE8E1] hover:bg-gray-100 text-gray-700 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
-                        title="View requested support history"
-                      >
-                        <History className="h-4 w-4 shrink-0 text-gray-500" />
-                        <span>({mySafetyAlerts.filter(a => a.status !== 'resolved').length})</span>
-                      </button>
-                    )}
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* 5. Primary Quick Operational Actions */}
+            <div className="pt-1 space-y-2">
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCameraActive(true);
+                    setScanMode('check_in');
+                    onNavigate('/volunteer/scan');
+                  }}
+                  className="py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>Start check-in</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/pickup')}
+                  className="py-3 px-4 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-[#18181B] font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                >
+                  <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
+                  <span>Open pickup</span>
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenSafetyAlertModal()}
+                  className="flex-1 py-2.5 bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
+                >
+                  <Bell className="h-4 w-4 animate-pulse shrink-0 text-rose-600" />
+                  <span>Request admin help</span>
+                </button>
+                {mySafetyAlerts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMyAlertsView(true)}
+                    className="py-2.5 px-3 bg-gray-50 border border-[#EAE8E1] hover:bg-gray-100 text-gray-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                    title="View requested support history"
+                  >
+                    <History className="h-4 w-4 shrink-0 text-gray-500" />
+                    <span>({mySafetyAlerts.filter(a => a.status !== 'resolved').length})</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -7563,6 +7627,156 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               userRole="volunteer" 
               volunteerProfile={volunteerProfile}
             />
+          </div>
+        </div>
+      )}
+
+      {/* SET DUTY LOCATION BOTTOM SHEET */}
+      {showSetLocationSheet && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div 
+            onClick={() => setShowSetLocationSheet(false)} 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 z-10 animate-slide-up border border-[#EAE8E1]">
+            <div className="w-12 h-1.5 bg-zinc-200 rounded-full mx-auto sm:hidden -mt-1 mb-2" />
+            
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <div>
+                <h3 className="text-lg font-serif font-bold text-[#18181B]">
+                  Set your duty location
+                </h3>
+                <p className="text-xs text-[#71717A] mt-0.5">
+                  Scan the label at your location or choose from the areas assigned to you.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSetLocationSheet(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSetLocationSheet(false);
+                  setShowLocationQRModal(true);
+                  startLocationQRScanning();
+                }}
+                className="w-full p-4 bg-[#FAF9F6] border border-[#EAE8E1] hover:border-[#C59B27] hover:bg-[#FAF6EB]/50 rounded-2xl text-left transition-all cursor-pointer flex items-start space-x-3.5 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <span className="font-bold text-sm text-[#18181B] block">Scan location QR</span>
+                  <span className="text-xs text-[#71717A] block">Use the location label displayed at the venue.</span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-[#C59B27] shrink-0 self-center" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSetLocationSheet(false);
+                  fetchAvailableLocations();
+                  setShowLocationSelectModal(true);
+                }}
+                className="w-full p-4 bg-[#FAF9F6] border border-[#EAE8E1] hover:border-[#C59B27] hover:bg-[#FAF6EB]/50 rounded-2xl text-left transition-all cursor-pointer flex items-start space-x-3.5 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <span className="font-bold text-sm text-[#18181B] block">Choose an assigned area</span>
+                  <span className="text-xs text-[#71717A] block">Select from your available Event Duty locations.</span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-[#C59B27] shrink-0 self-center" />
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSetLocationSheet(false)}
+                className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 text-[#18181B] font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EVENT DETAILS MODAL */}
+      {showEventDetailsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div 
+            onClick={() => setShowEventDetailsModal(false)} 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 z-10 border border-[#EAE8E1] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <h3 className="text-lg font-serif font-bold text-[#18181B]">
+                Event Details
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEventDetailsModal(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-[#18181B]">
+              <div>
+                <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Event Title</span>
+                <span className="text-base font-serif font-bold text-[#18181B]">{eventDetails?.title || 'The General Assembly'}</span>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Ministry / Department</span>
+                <span className="font-semibold text-[#C59B27]">{eventDetails?.section_name || 'Children and Teens Ministry'}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Date Range</span>
+                  <span className="font-medium">{formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Daily Hours</span>
+                  <span className="font-medium">{eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Venue / Location</span>
+                <span className="font-medium">{eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}</span>
+              </div>
+
+              {eventDetails?.description && (
+                <div>
+                  <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Overview</span>
+                  <p className="text-zinc-600 leading-relaxed mt-0.5">{eventDetails.description}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-[#EAE8E1]">
+              <button
+                type="button"
+                onClick={() => setShowEventDetailsModal(false)}
+                className="w-full py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-xl cursor-pointer text-center"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Info, AlertTriangle, RefreshCw } from 'lucide-react';
+import { buildApiUrl } from '../../utils/urlHelper';
 
 interface EventLocation {
   id: string;
@@ -42,7 +43,7 @@ export function EventLocationSelector({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/duty/locations');
+        const res = await fetch(buildApiUrl('/api/duty/locations'));
         if (res.ok) {
           const data = await res.json();
           if (data.success) {

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api, extractApiError } from '../../services/api';
+import { buildApiUrl } from '../../utils/urlHelper';
 import { Button } from '../common/Button';
 import { ReportDocumentPreview } from './reports/ReportDocumentPreview';
 import { ReportPreviewSkeleton } from './reports/ReportPreviewSkeleton';
@@ -782,20 +783,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
 
     showSuccess('Preparing File', 'Preparing your report…');
     
-    let apiBaseUrl = '';
-    try {
-      apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-    } catch {
-      apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
-    }
-    if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
-      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.run.app')) {
-        apiBaseUrl = '';
-      }
-    }
-
-    const downloadUrl = `${apiBaseUrl}/api/admin/reports/${generatedPdfId}/download`;
+    const downloadUrl = buildApiUrl(`/api/admin/reports/${generatedPdfId}/download`);
     
     fetch(downloadUrl, {
       headers: {
@@ -849,7 +837,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
       const isTraining = template.permittedEventTypes?.includes('training-session');
       const token = api.getToken();
 
-      const response = await fetch('/api/admin/reports/preview/download', {
+      const response = await fetch(buildApiUrl('/api/admin/reports/preview/download'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

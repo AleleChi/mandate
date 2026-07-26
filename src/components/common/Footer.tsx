@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Heart, MapPin } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
+import { buildApiUrl } from '../../utils/urlHelper';
 
 export const Footer: React.FC = () => {
   const [copyright, setCopyright] = useState({
@@ -10,7 +11,7 @@ export const Footer: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    fetch('/api/admin/footer-settings')
+    fetch(buildApiUrl('/api/admin/footer-settings'))
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data && data.success && data.settings) {

@@ -35,6 +35,7 @@ import {
   LockOpen
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
+import { buildApiUrl } from '../../utils/urlHelper';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
@@ -523,20 +524,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
     showSuccess('Preparing File', 'Preparing report download…');
     
-    let apiBaseUrl = '';
-    try {
-      apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-    } catch {
-      apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
-    }
-    if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
-      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.run.app')) {
-        apiBaseUrl = '';
-      }
-    }
-
-    const downloadUrl = `${apiBaseUrl}/api/admin/reports/${reportId}/download`;
+    const downloadUrl = buildApiUrl(`/api/admin/reports/${reportId}/download`);
     
     fetch(downloadUrl, {
       headers: {

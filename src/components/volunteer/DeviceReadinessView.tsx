@@ -21,6 +21,7 @@ import {
   CornerDownRight
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
+import { buildApiUrl } from '../../utils/urlHelper';
 
 // Static client-side ID to identify this specific device across reloads without fingerprinting
 const getOrCreateDeviceId = (): string => {
@@ -99,7 +100,7 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
       if (storedPrivacy !== null) setPrefVoicePrivacy(storedPrivacy === 'true');
 
       // Fetch from API
-      const res = await fetch('/api/duty/readiness');
+      const res = await fetch(buildApiUrl('/api/duty/readiness'));
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -142,7 +143,7 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
       // Attempt to save to backend if online
       if (navigator.onLine) {
         // First register/check to ensure device exists in DB
-        await fetch('/api/duty/readiness/check', {
+        await fetch(buildApiUrl('/api/duty/readiness/check'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -157,12 +158,12 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
         });
 
         // Fetch registered list and find local device ID
-        const devRes = await fetch('/api/duty/devices');
+        const devRes = await fetch(buildApiUrl('/api/duty/devices'));
         if (devRes.ok) {
           const devData = await devRes.json();
           const matched = devData.devices?.find((d: any) => d.app_generated_device_id === deviceId);
           if (matched) {
-            await fetch(`/api/duty/devices/${matched.id}/preferences`, {
+            await fetch(buildApiUrl(`/api/duty/devices/${matched.id}/preferences`), {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -205,7 +206,7 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
     if (navigator.onLine) {
       try {
         const start = performance.now();
-        const res = await fetch('/api/health');
+        const res = await fetch(buildApiUrl('/api/health'));
         const duration = performance.now() - start;
         if (res.ok && duration < 1000) {
           setInternet('connected');
@@ -266,7 +267,7 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
     // Persist checking metrics to server (Section 19)
     if (navigator.onLine) {
       try {
-        await fetch('/api/duty/readiness/check', {
+        await fetch(buildApiUrl('/api/duty/readiness/check'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -430,7 +431,7 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
 
     setIsSubmittingDuty(true);
     try {
-      const res = await fetch('/api/duty/start', {
+      const res = await fetch(buildApiUrl('/api/duty/start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appGeneratedDeviceId: deviceId })
@@ -456,7 +457,7 @@ export function DeviceReadinessView({ onBack, userRole = 'volunteer', volunteerP
 
     setIsSubmittingDuty(true);
     try {
-      const res = await fetch('/api/duty/end', {
+      const res = await fetch(buildApiUrl('/api/duty/end'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appGeneratedDeviceId: deviceId })

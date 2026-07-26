@@ -32,25 +32,52 @@ async function startServer() {
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-  // CORS middleware supporting CORS_ORIGIN and APP_BASE_URL
+  // CORS middleware supporting CORS_ORIGIN, APP_BASE_URL, and Netlify origins
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    const allowedOrigin = process.env.CORS_ORIGIN || process.env.APP_BASE_URL;
-    
-    // Always permit origin in development/preview, or if no specific allowedOrigin is set
-    if (process.env.NODE_ENV !== 'production' || !allowedOrigin) {
-      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+
+    // Build list of allowed origins from env
+    const envOrigins = [
+      process.env.CORS_ORIGIN,
+      process.env.APP_BASE_URL
+    ]
+      .filter(Boolean)
+      .flatMap(val => (val as string).split(','))
+      .map(s => s.trim().replace(/\/+$/, ''))
+      .filter(Boolean);
+
+    let isAllowed = false;
+
+    if (!origin) {
+      // Same-origin or non-browser request
+      isAllowed = true;
+    } else if (process.env.NODE_ENV !== 'production' || envOrigins.length === 0) {
+      // In development/preview or if no explicit CORS_ORIGIN set, reflect incoming origin
+      isAllowed = true;
     } else {
-      if (allowedOrigin === '*' || origin === allowedOrigin) {
-        res.setHeader('Access-Control-Allow-Origin', origin || '*');
-      } else {
-        res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+      const cleanOrigin = origin.trim().replace(/\/+$/, '');
+      if (
+        envOrigins.includes('*') ||
+        envOrigins.includes(cleanOrigin) ||
+        cleanOrigin.endsWith('.netlify.app') ||
+        cleanOrigin.endsWith('.onrender.com') ||
+        cleanOrigin.includes('localhost') ||
+        cleanOrigin.includes('127.0.0.1')
+      ) {
+        isAllowed = true;
       }
     }
-    
+
+    if (isAllowed && origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (envOrigins.length > 0 && envOrigins[0] !== '*') {
+      res.setHeader('Access-Control-Allow-Origin', envOrigins[0]);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
@@ -58,9 +85,22 @@ async function startServer() {
     next();
   });
 
-  // API Routes FIRST
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  // API Routes FIRST - Lightweight health check verifying server & database status
+  app.get('/api/health', async (req, res) => {
+    let dbStatus = 'ok';
+    try {
+      const db = getDb();
+      await db.queryOne('SELECT 1');
+    } catch (err) {
+      console.error('[Health Check DB Error]:', err);
+      dbStatus = 'error';
+    }
+    const isOk = dbStatus === 'ok';
+    res.status(isOk ? 200 : 503).json({
+      status: isOk ? 'ok' : 'degraded',
+      database: dbStatus,
+      timestamp: new Date().toISOString()
+    });
   });
 
   app.use('/api/auth', authRoutes);

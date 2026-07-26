@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
+import { buildApiUrl } from '../../utils/urlHelper';
 
 interface BrandLogoProps {
   context?: 'landing' | 'admin' | 'parent' | 'volunteer' | 'auth' | 'compact';
@@ -16,44 +17,7 @@ let globalPromise: Promise<string | null> | null = null;
 
 export function getSafePublicAssetUrl(url: string | null): string | null {
   if (!url) return null;
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-    return url;
-  }
-  
-  // Resolve API Base URL
-  let apiBaseUrl = '';
-  try {
-    apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-  } catch {
-    apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
-  }
-
-  let isDev = false;
-  try {
-    isDev = !!import.meta.env.DEV;
-  } catch {}
-
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (
-      isDev ||
-      hostname === 'localhost' || 
-      hostname === '127.0.0.1' || 
-      hostname.endsWith('.run.app') || 
-      hostname.endsWith('.google.com') ||
-      hostname.endsWith('.googleusercontent.com')
-    ) {
-      apiBaseUrl = ''; // Use relative paths for local development and AI Studio preview
-    }
-  }
-
-  if (apiBaseUrl) {
-    const base = apiBaseUrl.replace(/\/+$/, '');
-    const path = url.replace(/^\/+/, '');
-    return `${base}/${path}`;
-  }
-  
-  return url;
+  return buildApiUrl(url);
 }
 
 export const fetchLogoUrl = async (): Promise<string | null> => {

@@ -1,4 +1,5 @@
 import { REAL_ASSETS } from '../config/assets';
+import { getApiBaseUrl } from './urlHelper';
 
 // Proof string as required by Phase 3 rules
 export const SAFE_MEDIA_URL_RESOLVER_VERSION = "safe-media-url-resolver-v3-secure";
@@ -57,17 +58,12 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
     return trimmed;
   }
 
-  // Determine the API base URL from Vite environment variables
-  let apiBaseUrl = '';
-  try {
-    apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-  } catch {
-    apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
-  }
+  // Determine the API base URL from Vite environment variables or urlHelper
+  let apiBaseUrl = getApiBaseUrl();
 
   // In local development or container preview where apiBaseUrl is not explicitly configured,
   // we fallback to the current page origin so media files are requested from the same container.
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && !apiBaseUrl) {
     const hostname = window.location.hostname;
     const isLocalOrPreview =
       hostname === 'localhost' ||
@@ -76,7 +72,7 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
       hostname.endsWith('.google.com') ||
       hostname.endsWith('.googleusercontent.com');
 
-    if (isLocalOrPreview && !apiBaseUrl) {
+    if (isLocalOrPreview) {
       apiBaseUrl = window.location.origin;
     }
   }
