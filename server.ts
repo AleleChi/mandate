@@ -36,18 +36,18 @@ async function startServer() {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     const allowedOrigin = process.env.CORS_ORIGIN || process.env.APP_BASE_URL;
-    if (allowedOrigin) {
+    
+    // Always permit origin in development/preview, or if no specific allowedOrigin is set
+    if (process.env.NODE_ENV !== 'production' || !allowedOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    } else {
       if (allowedOrigin === '*' || origin === allowedOrigin) {
         res.setHeader('Access-Control-Allow-Origin', origin || '*');
       } else {
-        // Fallback: if not matched but in development, allow it
-        if (process.env.NODE_ENV !== 'production') {
-          res.setHeader('Access-Control-Allow-Origin', origin || '*');
-        } else {
-          res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-        }
+        res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
       }
     }
+    
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -114,6 +114,7 @@ async function startServer() {
   app.use('/api/volunteer', volunteerRoutes);
   app.use('/api/staff', volunteerRoutes);
   app.use('/api/duty', dutyRouter);
+  app.use('/api/event-duty', dutyRouter);
   app.use('/api/admin/duty', adminDutyRouter);
   app.use('/api/incidents', incidentRoutes);
   app.use('/api/admin/escalation', escalationRoutes);

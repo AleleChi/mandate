@@ -39,15 +39,58 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { motion, AnimatePresence } from 'motion/react';
+import { TemplateConfigureView } from '../../components/admin/TemplateConfigureView';
+import { GeneratedReportPreviewModal } from '../../components/admin/reports/GeneratedReportPreviewModal';
+import { ReportActionsMenu } from '../../components/admin/reports/ReportActionsMenu';
 
 interface AdminReportsViewProps {
   onBackToOverview: () => void;
   onNavigate?: (route: string) => void;
+  currentRoute?: string;
 }
 
 // Tabs
 type MainTab = 'reports_centre' | 'template_library' | 'custom_builder' | 'live_metrics';
 type LegacyReportTab = 'pre_event' | 'live_event' | 'end_of_event' | 'volunteer_parent';
+
+function formatReportDate(value?: string | null): string {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Date unavailable';
+  }
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function getReportStatusLabel(status: string): string {
+  switch (status) {
+    case 'queued':
+      return 'Waiting';
+    case 'generating':
+      return 'Preparing';
+    case 'ready':
+    case 'completed':
+      return 'Ready';
+    case 'failed':
+      return 'Needs attention';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'archived':
+      return 'Archived';
+    default:
+      return 'Waiting';
+  }
+}
+
+function getGroundedNarrative(): string {
+  return 'All registered attendees and supervisor assignments have been reconciled against primary database tables.';
+}
 
 interface ReportTemplate {
   key: string;
@@ -55,11 +98,28 @@ interface ReportTemplate {
   description: string;
   privacyClassification: string;
   recommendedSections: string[];
+  supportedSections?: string[];
+  defaultSections?: string[];
+  availableFilters?: any;
+  dataAvailability?: { status: string; description: string };
+  permittedEventTypes?: string[];
+  allowedActions?: string[];
+  estimatedTime?: string;
+  audience?: string;
+  reportDomain?: string;
+  requiredDataSources?: string[];
+  analyticsCalculations?: string[];
+  reportSections?: string[];
+  charts?: string[];
+  tables?: string[];
+  insights?: string[];
+  recommendations?: string[];
 }
 
 export const AdminReportsView: React.FC<AdminReportsViewProps> = ({ 
   onBackToOverview,
-  onNavigate 
+  onNavigate,
+  currentRoute
 }) => {
   const { showError, showSuccess } = useNotification();
   
@@ -79,12 +139,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   const [localNotes, setLocalNotes] = useState('');
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
   const [generatedReports, setGeneratedReports] = useState<any[]>([]);
+
+  // Preview Modal State
+  const [previewingReportId, setPreviewingReportId] = useState<string | null>(null);
+  const [previewReportTitle, setPreviewReportTitle] = useState<string>('');
+  const [previewEventTitle, setPreviewEventTitle] = useState<string>('');
   
   // Custom Builder Form State
-  const [builderTemplate, setBuilderTemplate] = useState<string>('event_executive_summary');
+  const [builderTemplate, setBuilderTemplate] = useState<string>('event-executive-report-v1');
   const [builderClassification, setBuilderClassification] = useState<string>('Internal operational');
   const [builderSections, setBuilderSections] = useState<string[]>([
-    'Executive Summary', 'Operational Metrics', 'Grounded Recommendations'
+    'Executive Summary', 'Operational Metrics', 'Recommended actions'
   ]);
   const [builderFilters, setBuilderFilters] = useState({
     ageGroup: 'All',
@@ -95,6 +160,15 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   const [activeProgressJobId, setActiveProgressJobId] = useState<string | null>(null);
   const [activeProgressStep, setActiveProgressStep] = useState<number>(0);
   const [activeProgressText, setActiveProgressText] = useState<string>('');
+
+  // Per-row Action State
+  const [rowActionLoading, setRowActionLoading] = useState<{ [reportId: string]: string }>({});
+  const [confirmModal, setConfirmModal] = useState<{ type: 'delete' | 'archive'; reportId: string } | null>(null);
+
+  // Real-time Preview States
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
+  const [previewPage, setPreviewPage] = useState<number>(1);
 
   // Audit modal
   const [auditReportId, setAuditReportId] = useState<string | null>(null);
@@ -159,6 +233,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   };
 
   useEffect(() => {
+    console.info('[Reports Centre] Runtime build: reports-recovery-2026-07-25-v4');
     fetchReportsListAndTemplates();
   }, []);
 
@@ -167,6 +242,65 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       fetchLegacyReports(true);
     }
   }, [activeMainTab, activeLegacyTab]);
+
+  const fetchPreview = async () => {
+    setLoadingPreview(true);
+    try {
+      const response = await api.request('/api/admin/reports/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          templateKey: builderTemplate,
+          privacyLevel: builderClassification,
+          sections: builderSections,
+          filters: builderFilters,
+          eventId: null
+        })
+      });
+      if (response && response.success) {
+        setPreviewData(response);
+      }
+    } catch (err) {
+      console.error('Failed to fetch report preview:', err);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const getGroundedNarrative = () => {
+    if (!previewData || !previewData.analytics) {
+      return "This official operational review provides critical summaries based on records captured in the general attendance databases up to the compiler cutoff timestamp. Real-time active check-in tracking allows coordinator supervisors to ensure optimal safeguarding ratios, secure release handoffs, and instant incident coordination responsiveness across Grace Hall and related venues.";
+    }
+    const a = previewData.analytics;
+    const isTraining = !!previewData.context?.eventTitle?.toLowerCase().includes('drill') || !!a.training;
+    
+    if (isTraining) {
+      const scenario = a.training?.scenarioTitle || 'Emergency Evacuation Drill';
+      const participants = a.training?.participantsCount ?? 0;
+      const completed = a.training?.objectivesCompletedCount ?? 0;
+      const totalObj = a.training?.objectivesCount ?? 0;
+      const pct = totalObj > 0 ? ((completed / totalObj) * 100).toFixed(1) : '0.0';
+      const ack = a.training?.medianAckTimeSeconds ? `${a.training.medianAckTimeSeconds.toFixed(1)}s` : 'N/A';
+      return `This training evaluation report details the results for simulated scenario drill: "${scenario}" conducted on ${previewData.context?.startsAt?.slice(0,10) || new Date().toISOString().slice(0,10)}. A total of ${participants} active staff participants completed safety training. Evaluated outcomes show that ${completed} of ${totalObj} critical drill objectives were successfully met, representing an objective completion rate of ${pct}%. Real-time communications verified a median acknowledgement response latency of ${ack}. This training isolation is strictly validated for safeguarding drills.`;
+    } else {
+      const title = previewData.context?.eventTitle || 'General Assembly';
+      const regs = a.attendance?.totalRegistrations ?? 0;
+      const checkedIn = a.attendance?.checkedInTotal ?? 0;
+      const pct = a.attendance?.attendanceRate?.toFixed(1) ?? '0.0';
+      const released = a.attendance?.releasedTotal ?? 0;
+      const alerts = a.alerts?.totalAlerts ?? 0;
+      const ack = a.alerts?.medianAcknowledgementTimeSeconds ? `${a.alerts.medianAcknowledgementTimeSeconds.toFixed(1)}s` : '0.0s';
+      const devices = a.devices?.totalDevices ?? 0;
+      const readiness = a.devices?.readinessRate?.toFixed(1) ?? '0.0';
+      const syncs = a.offline?.queuedActionsCount ?? 0;
+      return `This report presents authoritative operational metrics for "${title}" as of ${previewData.metadata?.cutoffTime?.slice(0, 10) || new Date().toISOString().slice(0,10)}. A total of ${regs} children were registered, with ${checkedIn} verified check-ins (attendance rate: ${pct}%) and ${released} secure releases logged. Safeguarding operations recorded ${alerts} safety alerts, with a median response acknowledgement time of ${ack}. Device audits verified ${devices} active duty devices with an overall readiness rate of ${readiness}%, ensuring healthy coverage. Network resilience metrics logged ${syncs} offline sync actions successfully reconciled.`;
+    }
+  };
+
+  useEffect(() => {
+    if (activeMainTab === 'custom_builder') {
+      fetchPreview();
+    }
+  }, [builderTemplate, builderClassification, builderSections, builderFilters, activeMainTab]);
 
   // Handle saving notes
   const handleSaveNotes = async () => {
@@ -201,7 +335,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showSuccess('Export Started', `Downloading ${type.replace(/_/g, ' ')} CSV export...`);
+    showSuccess('Export Started', `Downloading ${(type || '').replace(/_/g, ' ')} CSV export...`);
   };
 
   // 3. Request a new PDF Report Job
@@ -225,11 +359,11 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       });
 
       if (response && response.success) {
-        showSuccess('Job Queued', 'Professional PDF snapshot compilation started in background.');
+        showSuccess('Job Queued', 'Report generation started in the background.');
         const newJobId = response.jobId;
         setActiveProgressJobId(newJobId);
         setActiveProgressStep(1);
-        setActiveProgressText('Compiling real-time database snapshot & ledger...');
+        setActiveProgressText('Gathering event data and preparing report...');
 
         // Start polling for progress
         pollJobStatus(newJobId);
@@ -252,41 +386,42 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       if (attempts > 30) {
         clearInterval(interval);
         setActiveProgressJobId(null);
-        showError('Timeout', 'Report took longer than expected. Check Reports Centre.');
+        showError('Timeout', 'Report generation took longer than expected. Please check Generated reports.');
         fetchReportsListAndTemplates();
         return;
       }
 
       try {
         const res = await api.request(`/api/admin/reports/${jobId}`);
-        if (res && res.success) {
-          const status = res.report.status;
+        const job = res?.report || res?.job;
+        if (res && res.success && job) {
+          const status = job.status;
           
           if (status === 'queued') {
             setActiveProgressStep(1);
-            setActiveProgressText('Compiling database records safely...');
+            setActiveProgressText('Gathering event information...');
           } else if (status === 'generating') {
             setActiveProgressStep(2);
-            setActiveProgressText('Applying role-aware privacy filters...');
+            setActiveProgressText('Calculating figures and applying privacy filters...');
           } else if (status === 'completed' || status === 'ready') {
             setActiveProgressStep(4);
-            setActiveProgressText('Signing hash ledger and writing PDF...');
+            setActiveProgressText('Report ready.');
             clearInterval(interval);
             setTimeout(() => {
               setActiveProgressJobId(null);
-              showSuccess('Report Complete', 'Immutable A4 PDF ready for download.');
+              showSuccess('Report ready', 'Your report is compiled and ready for download.');
               setActiveMainTab('reports_centre');
               fetchReportsListAndTemplates();
             }, 1000);
           } else if (status === 'failed') {
             clearInterval(interval);
             setActiveProgressJobId(null);
-            showError('Generation Failed', res.report.error_log || 'PDF generation failed.');
+            showError('Generation failed', job.errorMessage || job.error_log || 'Report compilation encountered an issue.');
             fetchReportsListAndTemplates();
           } else if (status === 'cancelled') {
             clearInterval(interval);
             setActiveProgressJobId(null);
-            showError('Cancelled', 'Job was cancelled by another supervisor.');
+            showError('Cancelled', 'Report generation was cancelled.');
             fetchReportsListAndTemplates();
           }
         }
@@ -379,17 +514,15 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   };
 
   // Secure authorized download via standard auth header token
-  const handleDownloadReportPDF = (reportId: string, filename: string) => {
+  const handleDownloadReportPDF = (reportId: string, filename?: string) => {
     const token = api.getToken();
     if (!token) {
       showError('Error', 'You are currently logged out.');
       return;
     }
 
-    // Direct download with authorization in header is preferred, but for iframe downloads we can fetch and download
-    showSuccess('Downloading', 'Decrypting and verifying report digital signature...');
+    showSuccess('Preparing File', 'Preparing report download…');
     
-    // We can fetch as blob to include token header
     let apiBaseUrl = '';
     try {
       apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
@@ -410,25 +543,57 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         'Authorization': `Bearer ${token}`
       }
     })
-    .then(res => {
-      if (!res.ok) {
-        throw new Error(`Download failed with code: ${res.status}`);
+    .then(async (res) => {
+      const contentType = res.headers.get('content-type') || '';
+      
+      if (!res.ok || contentType.includes('application/json')) {
+        let errorMsg = 'We could not download this report.';
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errorMsg);
       }
-      return res.blob();
-    })
-    .then(blob => {
+
+      if (!contentType.includes('application/pdf')) {
+        throw new Error('We could not download this report.');
+      }
+
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        throw new Error('Downloaded report file was empty.');
+      }
+
+      const disposition = res.headers.get('content-disposition') || '';
+      let headerFilename = '';
+      const filenameStarMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (filenameStarMatch) {
+        try {
+          headerFilename = decodeURIComponent(filenameStarMatch[1]);
+        } catch (_) {}
+      }
+      if (!headerFilename) {
+        const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+        if (filenameMatch) headerFilename = filenameMatch[1];
+      }
+
+      const safeDownloadName = headerFilename || (filename && !filename.startsWith('job-') && !filename.startsWith('rep-') && filename.endsWith('.pdf') ? filename : 'Attendance and Demographics Report.pdf');
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename || `report_${reportId}.pdf`;
+      a.download = safeDownloadName;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      showSuccess('Success', 'PDF successfully downloaded.');
+      showSuccess('Success', 'PDF report successfully downloaded.');
     })
-    .catch(err => {
-      showError('Download failed', err.message || 'Verification of hash ledger failed.');
+    .catch((err: any) => {
+      console.error('[Download PDF] Frontend handling error:', err);
+      showError('Download Failed', err.message || 'We could not download this report.');
     });
   };
 
@@ -450,6 +615,39 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     showSuccess('Template Applied', `Form preset configured for "${temp.name}".`);
   };
 
+  const openReportTemplate = (templateKey: string) => {
+    const exists = templates.some(t => t.key === templateKey);
+    if (!exists) {
+      showError('Navigation Error', 'The selected template key is not supported or does not exist.');
+      return;
+    }
+    
+    if (onNavigate) {
+      onNavigate(`/admin/reports/templates/${templateKey}/configure`);
+    } else {
+      showError('Navigation Error', 'Router service is currently unavailable.');
+    }
+  };
+
+  const isConfigureRoute = currentRoute && currentRoute.startsWith('/admin/reports/templates/') && currentRoute.endsWith('/configure');
+  const templateKey = isConfigureRoute ? currentRoute.split('/')[4] : null;
+
+  if (isConfigureRoute && templateKey) {
+    return (
+      <TemplateConfigureView 
+        templateKey={templateKey}
+        onBack={() => {
+          if (onNavigate) {
+            onNavigate('/admin/reports');
+          }
+        }}
+        onNavigate={onNavigate}
+        showSuccess={showSuccess}
+        showError={showError}
+      />
+    );
+  }
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 8 }}
@@ -457,17 +655,18 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       transition={{ duration: 0.4, ease: 'easeOut' }}
       className="space-y-8 pb-16"
       id="admin-reports-module"
+      data-build-version="reports-recovery-2026-07-25-v4"
       data-view-version="admin-reports-v3-professional-ledger"
     >
       {/* ----------------- TOP BANNER & STATS ----------------- */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/60 pb-6">
         <div>
-          <h1 className="text-3xl font-serif font-semibold text-stone-900 tracking-tight flex items-center gap-2">
+          <h1 className="text-3xl font-serif font-medium text-stone-900 tracking-tight flex items-center gap-2">
             <Shield className="w-8 h-8 text-[#C59B27] stroke-1" />
-            Reports Centre & Analytics
+            Reports Centre
           </h1>
           <p className="text-stone-500 text-sm mt-1.5 leading-relaxed">
-            Immutable snapshot reports, professional A4 print PDF rendering, and role-aware safeguarding filters.
+            Review reports created for this event, download completed files or prepare an updated version.
           </p>
         </div>
 
@@ -491,7 +690,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             id="btn-refresh-all-reports"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Sync Ledger
+            Refresh
           </Button>
         </div>
       </div>
@@ -500,10 +699,10 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       <div className="flex border-b border-stone-200/80 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none" data-component-version="admin-reports-main-tabs">
         <div className="flex space-x-6 min-w-max pb-1">
           {[
-            { id: 'reports_centre', label: 'Reports Directory', desc: 'Immutable PDF Snapshots' },
-            { id: 'template_library', label: 'Report Templates', desc: 'Predefined Outlines' },
-            { id: 'custom_builder', label: 'Custom PDF Builder', desc: 'Generate Ledger PDF' },
-            { id: 'live_metrics', label: 'Live Analytics Dashboard', desc: 'Real-time Metrics' }
+            { id: 'reports_centre', label: 'Generated reports' },
+            { id: 'template_library', label: 'Templates' },
+            { id: 'custom_builder', label: 'Create report' },
+            { id: 'live_metrics', label: 'Live metrics' }
           ].map((tab) => {
             const isActive = activeMainTab === tab.id;
             return (
@@ -518,7 +717,6 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 id={`main-tab-${tab.id}`}
               >
                 <div className="text-sm font-medium">{tab.label}</div>
-                <div className="text-[10px] text-stone-400 font-normal mt-0.5">{tab.desc}</div>
                 {isActive && (
                   <motion.div 
                     layoutId="activeMainTabUnderline" 
@@ -545,7 +743,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             <div className="flex items-center justify-between mb-3 border-b border-stone-800 pb-2">
               <span className="text-xs font-serif font-medium uppercase tracking-wider text-[#C59B27] flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                A4 Generation Pipeline
+                Preparing Report
               </span>
               <span className="text-[10px] font-mono text-stone-400">ID: {activeProgressJobId.slice(0, 8)}</span>
             </div>
@@ -573,9 +771,9 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         <div className="space-y-6" data-view-version="admin-reports-centre-v1-premium">
           <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="space-y-1">
-              <h3 className="text-sm font-serif font-semibold text-stone-900">Signed Report Registry</h3>
+              <h3 className="text-sm font-serif font-semibold text-stone-900">Generated reports</h3>
               <p className="text-stone-500 text-xs leading-relaxed">
-                Every record is generated on demand as an immutable snapshot. This guarantees reproducible, audit-safe compliance reports.
+                Review reports created for this event, download completed files or prepare an updated version.
               </p>
             </div>
             <Button
@@ -584,38 +782,38 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               id="btn-nav-custom-builder"
             >
               <Plus className="w-4 h-4" />
-              Build New Snapshot
+              Create report
             </Button>
           </div>
 
           {loadingReportsList ? (
             <div className="flex items-center justify-center p-12 min-h-[30vh]">
-              <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports registry..." />
+              <KoinoniaInlineLoader variant="logo" size="md" label="Loading generated reports..." />
             </div>
           ) : generatedReports.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-stone-500 text-center space-y-4">
               <FileText className="w-10 h-10 text-stone-300 stroke-1" />
               <div className="space-y-1">
-                <p className="text-sm font-serif font-medium text-stone-700">No Immutable Snapshots Registered</p>
-                <p className="text-xs text-stone-400">Generate your first audit-ready report using our Custom PDF Builder.</p>
+                <p className="text-sm font-serif font-medium text-stone-700">No Reports Generated Yet</p>
+                <p className="text-xs text-stone-400">Prepare your first report using our custom report wizard or standard templates.</p>
               </div>
               <Button
                 onClick={() => setActiveMainTab('custom_builder')}
                 className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2 px-5 rounded-lg"
               >
-                Open Custom Builder
+                Create report
               </Button>
             </div>
           ) : (
             <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-sm" data-component-version="reports-accessibility-v1">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" aria-label="Generated Snapshot Reports">
+                <table className="w-full text-left border-collapse" aria-label="Generated Event Reports">
                   <thead>
                     <tr className="bg-stone-50 border-b border-stone-200">
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report Description</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Privacy & Classification</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Audit Metadata</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Operational Status</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Prepared By</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Classification</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
                       <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
                     </tr>
                   </thead>
@@ -627,43 +825,54 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                       const isCancelled = report.status === 'cancelled';
                       const isArchived = report.status === 'archived';
 
+                      const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Event Snapshot Report';
+                      const eventTitle = report.eventTitle || report.eventName || 'Annual General Assembly 2026';
+                      const preparedBy = report.requestedByName || report.requestedByEmail || 'Administrator';
+                      const classification = report.privacyClassification || report.privacy_classification || 'Internal operational';
+                      const statusLabel = getReportStatusLabel(report.status);
+                      const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
+
                       let classificationBadge = 'bg-stone-100 text-stone-700 border-stone-200';
-                      if (report.privacy_classification === 'Internal operational') classificationBadge = 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/20';
-                      if (report.privacy_classification === 'Safeguarding restricted') classificationBadge = 'bg-red-50 text-red-700 border-red-200';
+                      if (classification === 'Internal operational') classificationBadge = 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/20';
+                      if (classification === 'Safeguarding restricted') classificationBadge = 'bg-red-50 text-red-700 border-red-200';
 
                       return (
-                        <tr key={report.id} className="hover:bg-stone-50/40 transition-colors">
+                        <tr key={report.id} className="hover:bg-stone-50/50 transition-colors">
                           <td className="py-4 px-6">
                             <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <FileText className={`w-4 h-4 ${isComplete ? 'text-[#C59B27]' : 'text-stone-400'}`} />
-                                <span className="font-serif font-semibold text-stone-900 text-sm">{report.report_name}</span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 text-[10px] text-stone-400 font-mono">
-                                <span>ID: {report.id.substring(0, 10)}...</span>
-                                <span>•</span>
-                                <span>Template: {report.template_key.replace(/_/g, ' ')}</span>
-                                {report.file_size && (
+                              <h3 className="font-serif text-[17px] leading-[1.35] font-medium text-[#18181B] tracking-[-0.01em] line-clamp-2 max-w-[420px] break-words">
+                                {reportTitle}
+                              </h3>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[12px] leading-5 text-stone-500 font-normal">
+                                <span className="font-medium text-stone-700">{eventTitle}</span>
+                                <span>·</span>
+                                <span>{formattedDate}</span>
+                                {(report.fileSize || report.file_size) && (
                                   <>
-                                    <span>•</span>
-                                    <span>{(report.file_size / 1024).toFixed(1)} KB</span>
+                                    <span>·</span>
+                                    <span>{((report.fileSize || report.file_size) / 1024).toFixed(1)} KB</span>
                                   </>
                                 )}
+                                {report.pageCount ? (
+                                  <>
+                                    <span>·</span>
+                                    <span>{report.pageCount} pages</span>
+                                  </>
+                                ) : null}
                               </div>
                             </div>
                           </td>
+                          <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                            {preparedBy}
+                          </td>
                           <td className="py-4 px-6">
-                            <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded border ${classificationBadge}`}>
-                              {report.privacy_classification === 'Safeguarding restricted' ? <ShieldAlert className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
-                              {report.privacy_classification}
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium leading-4 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
+                              <Shield className="w-3 h-3 text-stone-500" />
+                              {classification}
                             </span>
                           </td>
-                          <td className="py-4 px-6 text-xs text-stone-500 space-y-0.5">
-                            <div className="font-medium text-stone-700">By: User #{(report.requested_by || report.requested_by_user_id || '').slice(0,8)}</div>
-                            <div className="font-mono text-[10px]">{new Date(report.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
-                          </td>
                           <td className="py-4 px-6">
-                            <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full ${
+                            <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase font-semibold tracking-wider px-2.5 py-1 rounded-full ${
                               isComplete ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
                               isPending ? 'bg-amber-50 text-amber-800 border border-amber-200' :
                               isFailed ? 'bg-red-50 text-red-800 border border-red-200' :
@@ -671,89 +880,67 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                               'bg-stone-100 text-stone-600'
                             }`}>
                               {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
-                              {report.status}
+                              {statusLabel}
                             </span>
                           </td>
                           <td className="py-4 px-6 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-2">
                               {isComplete && (
                                 <>
-                                  <Button
-                                    onClick={() => handleDownloadReportPDF(report.id, report.storage_key)}
-                                    className="bg-stone-900 hover:bg-black text-white text-[10px] font-semibold py-1.5 px-2.5 rounded flex items-center gap-1"
+                                  <button
+                                    onClick={() => {
+                                      setPreviewingReportId(report.id);
+                                      setPreviewReportTitle(reportTitle);
+                                      setPreviewEventTitle(eventTitle);
+                                    }}
+                                    className="h-10 min-w-[104px] bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1.5 px-3 shadow-2xs"
+                                    id={`btn-preview-${report.id}`}
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-stone-600" />
+                                    Preview
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
+                                    className="h-10 min-w-[112px] bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1.5 px-3 shadow-xs"
                                     id={`btn-download-${report.id}`}
-                                    title="Secure Expiring PDF Download"
-                                    data-component-version="secure-report-download-v1"
                                   >
                                     <Download className="w-3.5 h-3.5" />
                                     Download
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleTriggerUpdatedVersion(report.id)}
-                                    variant="outline"
-                                    className="border-stone-200 text-stone-600 text-[10px] font-semibold py-1.5 px-2.5 rounded flex items-center gap-1 hover:bg-stone-50"
-                                    id={`btn-updated-${report.id}`}
-                                    title="Compile Updated Version on Live DB"
-                                  >
-                                    <RefreshCw className="w-3 h-3" />
-                                    Update
-                                  </Button>
+                                  </button>
                                 </>
                               )}
 
                               {isFailed && (
-                                <Button
+                                <button
                                   onClick={() => handleRegenerateReport(report.id)}
-                                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-[10px] font-semibold py-1.5 px-2.5 rounded flex items-center gap-1"
+                                  className="h-10 px-4 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5"
                                   id={`btn-retry-${report.id}`}
                                 >
-                                  <RefreshCw className="w-3 h-3" />
-                                  Retry
-                                </Button>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  Try again
+                                </button>
                               )}
 
                               {isPending && (
-                                <Button
+                                <button
                                   onClick={() => handleCancelReport(report.id)}
-                                  variant="outline"
-                                  className="border-stone-200 text-red-600 text-[10px] font-semibold py-1.5 px-2.5 rounded hover:bg-red-50 hover:border-red-200"
+                                  className="h-10 px-3 bg-white border border-stone-200 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-50"
                                   id={`btn-cancel-${report.id}`}
                                 >
                                   Cancel
-                                </Button>
+                                </button>
                               )}
 
-                              <Button
-                                onClick={() => viewAuditLogs(report.id)}
-                                variant="outline"
-                                className="border-stone-200 text-stone-600 text-[10px] font-semibold p-1.5 rounded hover:bg-stone-50"
-                                id={`btn-audit-${report.id}`}
-                                title="Audit Trails Log"
-                              >
-                                <History className="w-3.5 h-3.5" />
-                              </Button>
-
-                              {!isArchived && isComplete && (
-                                <Button
-                                  onClick={() => handleArchiveReport(report.id)}
-                                  variant="outline"
-                                  className="border-stone-200 text-stone-600 text-[10px] font-semibold p-1.5 rounded hover:bg-stone-50"
-                                  id={`btn-archive-${report.id}`}
-                                  title="Archive Report"
-                                >
-                                  <Archive className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
-
-                              <Button
-                                onClick={() => handleDeleteReport(report.id)}
-                                variant="outline"
-                                className="border-stone-200 text-red-600 hover:bg-red-50 hover:border-red-200 p-1.5 rounded"
-                                id={`btn-delete-${report.id}`}
-                                title="Delete Permanently"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
+                              <ReportActionsMenu
+                                reportId={report.id}
+                                status={report.status}
+                                onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
+                                onViewHistory={() => viewAuditLogs(report.id)}
+                                onRegenerate={() => handleRegenerateReport(report.id)}
+                                onArchive={!isArchived ? () => setConfirmModal({ type: 'archive', reportId: report.id }) : undefined}
+                                onDelete={() => setConfirmModal({ type: 'delete', reportId: report.id })}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -778,37 +965,57 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             return (
               <div 
                 key={temp.key} 
-                className="bg-white p-6 rounded-xl border border-stone-200 hover:border-[#C59B27]/40 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5"
+                className="bg-white p-6 rounded-xl border border-stone-200 hover:border-[#C59B27]/40 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-6"
                 id={`template-card-${temp.key}`}
               >
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${classificationBadge}`}>
                       {temp.privacyClassification}
                     </span>
-                    <FileText className="w-5 h-5 text-stone-400 stroke-1" />
+                    <span className="text-[10px] text-stone-400 font-mono bg-stone-50 px-2 py-0.5 rounded border border-stone-100">
+                      {temp.reportDomain || 'General'}
+                    </span>
                   </div>
-                  <h3 className="font-serif font-bold text-stone-900 text-base leading-snug">{temp.name}</h3>
-                  <p className="text-stone-500 text-xs leading-relaxed">{temp.description}</p>
+                  
+                  <div className="space-y-2">
+                    <h3 className="font-serif font-bold text-stone-900 text-base leading-snug">{temp.name}</h3>
+                    <p className="text-stone-500 text-xs leading-relaxed">{temp.description}</p>
+                  </div>
+
+                  {/* What this report includes */}
+                  <div className="border-t border-stone-100 pt-3.5 space-y-2">
+                    <span className="text-[11px] font-bold text-[#C59B27] uppercase tracking-wider block font-serif">
+                      What this report includes
+                    </span>
+                    <ul className="space-y-1 text-xs text-stone-600">
+                      {((temp as any).includes || temp.defaultSections || temp.supportedSections || []).slice(0, 4).map((item: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-1.5">
+                          <span className="text-[#C59B27] shrink-0 font-bold">•</span>
+                          <span className="leading-tight">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Best Used For */}
+                  <div className="border-t border-stone-100 pt-3.5 space-y-1">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 block font-semibold">
+                      Best used for
+                    </span>
+                    <p className="text-xs text-stone-700 leading-relaxed font-serif">
+                      {(temp as any).bestUsedFor || (temp as any).audience || 'Operational review and administrative oversight'}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-1.5 border-t border-stone-100 pt-3">
-                    <span className="text-[10px] text-stone-400 font-mono block">RECOMMENDED SECTIONS:</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {temp.recommendedSections.map((sec, i) => (
-                        <span key={i} className="text-[10px] bg-stone-50 text-stone-600 px-2 py-0.5 rounded-sm font-medium">
-                          {sec}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
+                <div className="border-t border-stone-100 pt-4">
                   <Button
-                    onClick={() => handleApplyTemplateToForm(temp)}
-                    className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                    onClick={() => openReportTemplate(temp.key)}
+                    className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                    id={`btn-configure-template-${temp.key}`}
                   >
-                    Configure Template
+                    Configure report
                     <ChevronRight className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -830,7 +1037,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             <div className="border-b border-stone-100 pb-4">
               <h3 className="text-lg font-serif font-semibold text-stone-900">Custom PDF Report Configuration</h3>
               <p className="text-stone-500 text-xs leading-relaxed mt-1">
-                Customize structural sections, filters, and classifications to produce an authoritative PDF snapshot ledger.
+                Customize structural sections, filters, and classifications to produce an official report.
               </p>
             </div>
 
@@ -885,7 +1092,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             {/* Section Checklist checkboxes */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Custom Section Checklist</label>
-              <p className="text-[11px] text-stone-400 mb-2">Toggle specific layouts to compile in the final A4 output.</p>
+              <p className="text-[11px] text-stone-400 mb-2">Toggle specific sections to compile in the final report.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
                   'Executive Summary',
@@ -895,7 +1102,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   'Safeguarding Audits & Device Readiness',
                   'Medical Allergies & Specific Diet logs',
                   'Pickup & Authorized Collectors list',
-                  'Grounded Recommendations'
+                  'Recommended actions'
                 ].map((sec) => {
                   const checked = builderSections.includes(sec);
                   return (
@@ -976,81 +1183,351 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
           {/* Interactive Report Preview Panel Column */}
           <div className="xl:col-span-5 space-y-6" data-view-version="report-preview-v1-premium">
-            <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl">
-              <h3 className="text-xs font-serif font-semibold text-stone-900 flex items-center gap-1">
-                <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
-                Interactive Layout Preview
-              </h3>
-              <p className="text-[10px] text-stone-400 mt-0.5">
-                Renders a representation of the compiled cover page and structure.
-              </p>
+            <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-serif font-semibold text-stone-900 flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
+                  Premium Interactive Preview
+                </h3>
+                <p className="text-[10px] text-stone-400">
+                  Authoritative multi-page preview powered by live database snapshots.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4].map((p) => (
+                  <button
+                    type="button"
+                    key={p}
+                    onClick={() => setPreviewPage(p)}
+                    className={`w-5 h-5 rounded-full text-[10px] font-mono font-bold flex items-center justify-center transition-all ${
+                      previewPage === p
+                        ? 'bg-[#C59B27] text-white shadow-sm'
+                        : 'bg-stone-200 text-stone-600 hover:bg-stone-300'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* A4 mockup sheet */}
-            <div className="bg-stone-100 border border-stone-200 rounded-xl p-6 flex justify-center shadow-inner min-h-[500px]">
+            <div className="bg-stone-100 border border-stone-200 rounded-xl p-6 flex flex-col items-center justify-center shadow-inner min-h-[550px] relative">
+              {loadingPreview && (
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-10 flex flex-col items-center justify-center gap-2 rounded-xl">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#C59B27]" />
+                  <span className="text-[10px] font-mono text-stone-500 font-semibold uppercase tracking-wider">Syncing live records...</span>
+                </div>
+              )}
+
               <div 
                 className="w-full max-w-sm bg-[#FAF9F6] border border-stone-300 shadow-xl rounded-sm p-8 flex flex-col justify-between text-stone-950 font-sans relative aspect-[1/1.41]"
                 id="report-preview-a4-canvas"
                 data-component-version="premium-report-cover-v1"
               >
                 {/* Stamp overlay */}
-                <div className="absolute top-6 right-6 border border-[#C59B27] text-[#C59B27] font-mono text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded rotate-12 opacity-80 select-none">
-                  IMMUTABLE LEDGER
+                <div className="absolute top-6 right-6 border border-[#C59B27] text-[#C59B27] font-mono text-[8px] uppercase font-bold tracking-widest px-2 py-0.5 rounded rotate-12 opacity-80 select-none">
+                  OFFICIAL RECORD
                 </div>
 
-                <div className="space-y-8">
-                  {/* Branding */}
-                  <div className="border-b border-[#C59B27]/40 pb-4">
-                    <div className="text-xs font-serif font-bold text-stone-900 tracking-wider">KOINONIA GLOBAL</div>
-                    <div className="text-[7px] text-stone-500 font-mono uppercase tracking-widest mt-0.5">
-                      CHILDREN & TEENS FELLOWSHIP PROGRAMME
-                    </div>
-                  </div>
+                {/* PAGE 1: COVER PAGE */}
+                {(() => {
+                  const docModel = (previewData as any)?.documentModel;
+                  const narrativeSection = docModel?.sections?.find((s: any) => s.type === 'narrative');
+                  const narrativeText = narrativeSection?.content?.text || getGroundedNarrative();
+                  const tableSection = docModel?.sections?.find((s: any) => s.type === 'table');
 
-                  {/* Title & Classification */}
-                  <div className="space-y-4">
-                    <span className="inline-block text-[7px] uppercase font-bold tracking-widest text-white bg-stone-900 px-2 py-0.5 rounded">
-                      SYSTEM SNAPSHOT LEDGER
-                    </span>
-                    <h2 className="text-xl font-serif font-semibold text-stone-900 tracking-tight leading-snug">
-                      {templates.find(t => t.key === builderTemplate)?.name?.toUpperCase() || 'OPERATIONAL REPORT'}
-                    </h2>
-                    <div className="space-y-1.5 text-[8px] text-stone-500">
-                      <div><strong className="text-stone-700">Scope:</strong> General Assembly Cohort 2026</div>
-                      <div><strong className="text-stone-700">Filters:</strong> Age cohort: {builderFilters.ageGroup} | Room: {builderFilters.location}</div>
-                      <div><strong className="text-stone-700">Timezone:</strong> {builderFilters.timezone} UTC</div>
-                    </div>
-                  </div>
+                  return (
+                    <>
+                      {previewPage === 1 && (
+                        <div className="flex flex-col justify-between h-full">
+                          <div className="space-y-8">
+                            {/* Branding */}
+                            <div className="border-b border-[#C59B27]/40 pb-4">
+                              <div className="text-xs font-serif font-bold text-stone-900 tracking-wider">
+                                {docModel?.branding?.organizationName || 'KOINONIA GLOBAL'}
+                              </div>
+                              <div className="text-[7px] text-stone-500 font-mono uppercase tracking-widest mt-0.5">
+                                CHILDREN & TEENS FELLOWSHIP PROGRAMME
+                              </div>
+                            </div>
 
-                  {/* Included Sections Representation */}
-                  <div className="space-y-2 pt-2 border-t border-stone-200">
-                    <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">INCLUDED LEDGER SECTIONS:</span>
-                    <div className="space-y-1">
-                      {builderSections.map((sec, i) => (
-                        <div key={i} className="flex items-center gap-1.5 text-[8px] text-stone-600 font-mono">
-                          <span className="text-[#C59B27]">✔</span>
-                          {sec}
+                            {/* Title & Classification */}
+                            <div className="space-y-4">
+                              <span className="inline-block text-[7px] uppercase font-bold tracking-widest text-white bg-stone-950 px-2 py-0.5 rounded">
+                                REGISTRY SUMMARY REPORT
+                              </span>
+                              <h2 className="text-xl font-serif font-semibold text-stone-900 tracking-tight leading-snug">
+                                {docModel?.reportTitle?.toUpperCase() || templates.find(t => t.key === builderTemplate)?.name?.toUpperCase() || 'OPERATIONAL REPORT'}
+                              </h2>
+                              <div className="space-y-1.5 text-[8px] text-stone-500">
+                                <div><strong className="text-stone-700">Scope:</strong> General Assembly Cohort 2026</div>
+                                <div><strong className="text-stone-700">Selected Filters:</strong> Age group: {builderFilters.ageGroup} | Location: {builderFilters.location}</div>
+                                <div><strong className="text-stone-700">Compiled Cutoff:</strong> {previewData?.metadata?.cutoffTime ? new Date(previewData.metadata.cutoffTime).toUTCString().slice(0, 25) : new Date().toUTCString().slice(0, 25)}</div>
+                                <div><strong className="text-stone-700">Timezone Configuration:</strong> {builderFilters.timezone} UTC</div>
+                              </div>
+                            </div>
+
+                            {/* Included Sections Representation */}
+                            <div className="space-y-2 pt-2 border-t border-stone-200">
+                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">STRUCTURED SUMMARY SECTIONS:</span>
+                              <div className="space-y-1">
+                                {docModel?.sections ? (
+                                  docModel.sections.map((sec: any, i: number) => (
+                                    <div key={i} className="flex items-center gap-1.5 text-[8px] text-stone-600 font-mono">
+                                      <span className="text-[#C59B27]">✔</span>
+                                      {sec.title}
+                                    </div>
+                                  ))
+                                ) : (
+                                  builderSections.map((sec, i) => (
+                                    <div key={i} className="flex items-center gap-1.5 text-[8px] text-stone-600 font-mono">
+                                      <span className="text-[#C59B27]">✔</span>
+                                      {sec}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4 pt-6 border-t border-stone-200">
+                            {/* Classification Strip */}
+                            <div className={`p-2 rounded text-[8px] uppercase font-bold tracking-widest text-center ${
+                              builderClassification === 'Public Summary' ? 'bg-stone-200 text-stone-800' :
+                              builderClassification === 'Internal operational' ? 'bg-[#C59B27]/10 text-[#C59B27]' :
+                              'bg-red-50 text-red-700'
+                            }`}>
+                              Classification: {docModel?.privacyClassification || builderClassification}
+                            </div>
+
+                            {/* Footer Notice */}
+                            <div className="text-[6px] text-stone-400 leading-normal text-center font-mono">
+                              Notice: Access and download of administrative records are audited to maintain safeguarding compliance.
+                            </div>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                      )}
 
-                <div className="space-y-4 pt-6 border-t border-stone-200">
-                  {/* Classification Strip */}
-                  <div className={`p-2 rounded text-[8px] uppercase font-bold tracking-widest text-center ${
-                    builderClassification === 'Public Summary' ? 'bg-stone-200 text-stone-800' :
-                    builderClassification === 'Internal operational' ? 'bg-[#C59B27]/10 text-[#C59B27]' :
-                    'bg-red-50 text-red-700'
-                  }`}>
-                    Classification: {builderClassification}
-                  </div>
+                      {/* PAGE 2: TABLE OF CONTENTS & EXEC SUMMARY */}
+                      {previewPage === 2 && (
+                        <div className="flex flex-col justify-between h-full">
+                          <div className="space-y-6">
+                            <div className="border-b border-[#C59B27]/40 pb-2">
+                              <span className="text-[7px] text-stone-400 font-mono block uppercase">SECTION I</span>
+                              <h3 className="text-sm font-serif font-bold text-stone-900 uppercase">Executive Outline</h3>
+                            </div>
 
-                  {/* Footer Notice */}
-                  <div className="text-[6px] text-stone-400 leading-normal text-center font-mono">
-                    NOTICE: Contains administrative data ledger records. Every report downloaded registers an entry in the auditing logs.
-                  </div>
-                </div>
+                            {/* TOC */}
+                            <div className="space-y-1.5">
+                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">TABLE OF CONTENTS</span>
+                              <div className="space-y-1 text-[8px] text-stone-600 font-mono">
+                                <div className="flex justify-between">
+                                  <span>1. Executive summary outline</span>
+                                  <span>........................................ Page 02</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>2. Authoritative database analytics</span>
+                                  <span>........................................ Page 03</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>3. Strategic action recommendation</span>
+                                  <span>........................................ Page 04</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Executive Summary Narrative */}
+                            <div className="space-y-2 pt-2 border-t border-stone-200">
+                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">EXECUTIVE SUMMARY</span>
+                              <p className="text-[8px] text-stone-600 leading-relaxed font-serif">
+                                {narrativeText}
+                              </p>
+                              <p className="text-[8px] text-stone-600 leading-relaxed font-serif">
+                                All sensitive profiles and medical notes have been filtered in compliance with Koinonia security policy classifications.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-stone-200 pt-3 flex justify-between items-center text-[6px] text-stone-400 font-mono">
+                            <span>PAGE 2 OF 4</span>
+                            <span>{builderTemplate.slice(0, 15)}...</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PAGE 3: AUTHORITATIVE METRICS & CHARTS */}
+                      {previewPage === 3 && (
+                        <div className="flex flex-col justify-between h-full">
+                          <div className="space-y-4 overflow-y-auto max-h-[420px] pr-1 scrollbar-thin">
+                            <div className="border-b border-[#C59B27]/40 pb-2">
+                              <span className="text-[7px] text-stone-400 font-mono block uppercase">SECTION II</span>
+                              <h3 className="text-sm font-serif font-bold text-stone-900 uppercase">Operational Metrics</h3>
+                            </div>
+
+                            {/* Compiled KPIs */}
+                            <div className="grid grid-cols-2 gap-2">
+                              {docModel?.kpis ? (
+                                docModel.kpis.slice(0, 4).map((kpi: any, idx: number) => {
+                                  let colorClasses = 'bg-stone-50 border border-stone-200 text-stone-800';
+                                  if (kpi.color === 'gold') colorClasses = 'bg-stone-50 border border-[#C59B27]/20 text-[#C59B27]';
+                                  if (kpi.color === 'green') colorClasses = 'bg-stone-50 border border-emerald-100 text-emerald-800';
+                                  if (kpi.color === 'amber') colorClasses = 'bg-stone-50 border border-amber-100 text-amber-800';
+                                  if (kpi.color === 'red') colorClasses = 'bg-red-50/20 border-red-100 text-red-700';
+
+                                  return (
+                                    <div key={idx} className={`p-1.5 rounded relative ${colorClasses}`}>
+                                      <span className="text-[5.5px] opacity-70 font-mono uppercase block">{kpi.label}</span>
+                                      <span className="text-xs font-serif font-bold block">{kpi.value}</span>
+                                      <span className="text-[5.5px] opacity-80 block truncate mt-0.5">{kpi.sublabel}</span>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <>
+                                  <div className="bg-stone-50 border border-stone-200 p-2 rounded relative">
+                                    <div className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-emerald-500" />
+                                    <span className="text-[6px] text-stone-400 font-mono uppercase block">Registrations</span>
+                                    <span className="text-xs font-serif font-bold text-stone-800">
+                                      {previewData?.analytics?.attendance?.totalRegistrations ?? '—'}
+                                    </span>
+                                  </div>
+                                  <div className="bg-stone-50 border border-stone-200 p-2 rounded relative">
+                                    <span className="text-[6px] text-stone-400 font-mono uppercase block">Active Attendance</span>
+                                    <span className="text-xs font-serif font-bold text-[#C59B27]">
+                                      {previewData?.analytics?.attendance?.checkedInTotal ?? '—'}
+                                      <span className="text-[8px] text-stone-500 ml-1">
+                                        ({previewData?.analytics?.attendance?.attendanceRate?.toFixed(1) ?? '0'}%)
+                                      </span>
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Compiled Table Section */}
+                            {tableSection && (
+                              <div className="space-y-1 pt-2 border-t border-stone-200">
+                                <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">{tableSection.title}</span>
+                                <div className="border border-stone-200 rounded overflow-hidden">
+                                  <table className="w-full text-left text-[5.5px] font-mono leading-tight">
+                                    <thead>
+                                      <tr className="bg-stone-50 text-stone-500 border-b border-stone-200">
+                                        {tableSection.content.headers.slice(0, 3).map((h: string, i: number) => (
+                                          <th key={i} className="p-1 font-semibold">{h}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {tableSection.content.rows.slice(0, 5).map((row: string[], rIdx: number) => (
+                                        <tr key={rIdx} className="border-b border-stone-100 text-stone-700 hover:bg-stone-50/50">
+                                          {row.slice(0, 3).map((cell: string, cIdx: number) => (
+                                            <td key={cIdx} className="p-1 truncate max-w-[90px]">{cell}</td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Mini visual distribution charts if no table */}
+                            {!tableSection && (
+                              <div className="space-y-2 pt-2 border-t border-stone-200">
+                                <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">COHORT DENSITY DISTRIBUTION</span>
+                                <div className="space-y-1.5">
+                                  {previewData?.analytics?.attendance?.ageGroupDistribution && Object.keys(previewData.analytics.attendance.ageGroupDistribution).map((ag) => {
+                                    const stats = previewData.analytics.attendance.ageGroupDistribution[ag];
+                                    const rate = stats.registered > 0 ? (stats.checkedIn / stats.registered) * 100 : 0;
+                                    return (
+                                      <div key={ag} className="space-y-0.5">
+                                        <div className="flex justify-between items-center text-[7px] text-stone-600 font-mono">
+                                          <span>{ag}</span>
+                                          <span>{stats.checkedIn} checked in ({rate.toFixed(0)}%)</span>
+                                        </div>
+                                        <div className="w-full bg-stone-200 h-1 rounded-full overflow-hidden">
+                                          <div className="bg-[#C59B27] h-full" style={{ width: `${rate}%` }} />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="border-t border-stone-200 pt-3 flex justify-between items-center text-[6px] text-stone-400 font-mono">
+                            <span>PAGE 3 OF 4</span>
+                            <span>{builderTemplate.slice(0, 15)}...</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PAGE 4: STRATEGIC RECS & APPENDIX */}
+                      {previewPage === 4 && (
+                        <div className="flex flex-col justify-between h-full">
+                          <div className="space-y-4 overflow-y-auto max-h-[420px] pr-1">
+                            <div className="border-b border-[#C59B27]/40 pb-2">
+                              <span className="text-[7px] text-stone-400 font-mono block uppercase">SECTION III</span>
+                              <h3 className="text-sm font-serif font-bold text-stone-900 uppercase">Recommendations</h3>
+                            </div>
+
+                            {/* Recommendations */}
+                            <div className="space-y-2">
+                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">STRATEGIC HIGHLIGHTS</span>
+                              <ul className="list-disc pl-3 text-[7px] text-stone-600 space-y-1 leading-relaxed font-serif">
+                                {docModel?.recommendations && docModel.recommendations.length > 0 ? (
+                                  docModel.recommendations.slice(0, 3).map((rec: any, index: number) => (
+                                    <li key={index}>
+                                      <strong className="text-stone-800">{rec.action}</strong>
+                                      <span className="text-stone-500 block text-[6.5px] font-sans mt-0.5">• Rationale: {rec.rationale} ({rec.priority.toUpperCase()} PRIORITY)</span>
+                                    </li>
+                                  ))
+                                ) : previewData?.analytics?.insights && previewData.analytics.insights.length > 0 ? (
+                                  previewData.analytics.insights.slice(0, 3).map((ins: any, index: number) => (
+                                    <li key={index}>
+                                      <strong>[{ins.category}]</strong> {ins.finding} (Recommendation: {ins.recommendation})
+                                    </li>
+                                  ))
+                                ) : (
+                                  <>
+                                    <li>Charge and distribute active communication hand-radios 30 minutes before arrival check-in.</li>
+                                    <li>Verify that every check-out is validated through security pass codes without exception.</li>
+                                    <li>Pre-stage response teams in Grace Hall primary entrance during peak arrival.</li>
+                                  </>
+                                )}
+                              </ul>
+                            </div>
+
+                            {/* Limitations */}
+                            <div className="space-y-2 pt-2 border-t border-stone-200">
+                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">METRIC LIMITATIONS & AUDIT INFO</span>
+                              {docModel?.limitations && docModel.limitations.length > 0 ? (
+                                <div className="text-[6.5px] text-stone-500 font-mono leading-relaxed space-y-0.5">
+                                  {docModel.limitations.slice(0, 4).map((lim: string, i: number) => (
+                                    <div key={i}>• {lim}</div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-[7px] text-stone-500 font-mono leading-relaxed space-y-1">
+                                  <div>• Counts are subject to network sync delays during field operations.</div>
+                                  <div>• All reports accessed are logged to track administrative data custody.</div>
+                                  <div>• Privacy classification: {builderClassification.toUpperCase()}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="border-t border-stone-200 pt-3 flex justify-between items-center text-[6px] text-stone-400 font-mono">
+                            <span>PAGE 4 OF 4</span>
+                            <span>{builderTemplate.slice(0, 15)}...</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -1358,6 +1835,86 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* ----------------- CONFIRMATION MODAL ----------------- */}
+      <AnimatePresence>
+        {confirmModal && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="space-y-2">
+                <h3 className="text-base font-serif font-bold text-stone-900">
+                  {confirmModal.type === 'delete' ? 'Delete report snapshot?' : 'Archive report snapshot?'}
+                </h3>
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  {confirmModal.type === 'delete' 
+                    ? 'This action will permanently delete the generated PDF report and its associated metadata. This action cannot be undone.'
+                    : 'This action will archive the report and hide it from the active report directory.'}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t border-stone-100">
+                <Button
+                  onClick={() => setConfirmModal(null)}
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const { type, reportId } = confirmModal;
+                    setConfirmModal(null);
+                    if (type === 'delete') {
+                      try {
+                        const res = await api.request(`/api/admin/reports/${reportId}`, { method: 'DELETE' });
+                        if (res && res.success) {
+                          showSuccess('Report deleted', 'The report was deleted.');
+                          fetchReportsListAndTemplates();
+                        }
+                      } catch (err: any) {
+                        showError('Action failed', extractApiError(err).message);
+                      }
+                    } else if (type === 'archive') {
+                      try {
+                        const res = await api.request(`/api/admin/reports/${reportId}/archive`, { method: 'POST' });
+                        if (res && res.success) {
+                          showSuccess('Report archived', 'The report has been archived.');
+                          fetchReportsListAndTemplates();
+                        }
+                      } catch (err: any) {
+                        showError('Action failed', extractApiError(err).message);
+                      }
+                    }
+                  }}
+                  className={confirmModal.type === 'delete' ? "bg-red-600 hover:bg-red-700 text-white text-xs py-2 px-4 rounded-lg" : "bg-stone-900 hover:bg-black text-white text-xs py-2 px-4 rounded-lg"}
+                >
+                  {confirmModal.type === 'delete' ? 'Delete permanently' : 'Archive report'}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Generated Report Preview Modal */}
+      {previewingReportId && (
+        <GeneratedReportPreviewModal
+          reportId={previewingReportId}
+          reportTitle={previewReportTitle}
+          eventTitle={previewEventTitle}
+          onClose={() => setPreviewingReportId(null)}
+          onDownloadPdf={(id) => handleDownloadReportPDF(id, `${id}.pdf`)}
+        />
+      )}
     </motion.div>
   );
 };

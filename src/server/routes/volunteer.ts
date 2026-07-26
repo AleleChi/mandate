@@ -5095,7 +5095,7 @@ export async function serializeChildEmergencySummary(options: {
     summary: {
       identity,
       alertContext: alert ? {
-        categoryLabel: alert.category.toUpperCase().replace(/_/g, ' '),
+        categoryLabel: (alert.category || 'GENERAL').toUpperCase().replace(/_/g, ' '),
         locationLabel: alert.location_label || 'Unspecified location',
         locationDetail: alert.location_detail || null
       } : {

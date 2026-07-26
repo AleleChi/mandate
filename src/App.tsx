@@ -224,9 +224,9 @@ export default function App() {
   // Sync route with URL hash for easy browser bookmarking/testing
   useEffect(() => {
     const handleHashChange = () => {
-      let hash = window.location.hash;
+      let hash = window.location.hash || '';
       // Strip all leading '#' and ensure there is exactly one leading '/'
-      hash = hash.replace(/^#+/, '');
+      hash = (hash || '').replace(/^#+/, '');
       if (!hash.startsWith('/')) {
         hash = '/' + hash;
       }
@@ -1110,7 +1110,7 @@ export default function App() {
                         ? 'children'
                         : cleanRoute === '/admin/attendance'
                           ? 'attendance'
-                          : cleanRoute === '/admin/reports'
+                          : cleanRoute === '/admin/reports' || cleanRoute.startsWith('/admin/reports/')
                             ? 'reports'
                             : cleanRoute === '/admin/messages'
                               ? 'messages'
@@ -1118,7 +1118,17 @@ export default function App() {
                                 ? 'volunteers'
                                 : cleanRoute === '/admin/parents' || cleanRoute.startsWith('/admin/parents/')
                                   ? 'parents'
-                                  : 'overview'
+                                  : cleanRoute === '/admin/events'
+                                    ? 'events'
+                                    : cleanRoute === '/admin/duty-devices'
+                                      ? 'duty_devices'
+                                      : cleanRoute === '/admin/incidents'
+                                        ? 'incidents'
+                                        : cleanRoute === '/admin/escalations'
+                                          ? 'escalations'
+                                          : cleanRoute === '/admin/operations'
+                                            ? 'operations'
+                                            : 'overview'
               }
             />
           </AdminProtectedRoute>

@@ -1,4 +1,7 @@
 import { Router, Response } from 'express';
+import crypto from 'crypto';
+import { query, queryOne, execute } from '../db';
+import { broadcastSSEEvent } from '../services/sse';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import {
   getEscalationPolicies,
@@ -13,9 +16,9 @@ import {
 
 const router = Router();
 
-// Validate that only admin/superadmin can manage policies and view logs
+// Validate that only admin/super_admin/superadmin can manage policies and view logs
 function verifyAdmin(req: AuthenticatedRequest, res: Response, next: any) {
-  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'superadmin')) {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'superadmin' && req.user.role !== 'super_admin')) {
     return res.status(403).json({ success: false, error: 'Access denied. Administrator privileges required.', code: 'FORBIDDEN' });
   }
   next();
@@ -128,6 +131,103 @@ router.get('/history', authMiddleware, verifyAdmin, async (req: AuthenticatedReq
     const eventId = (req.query.eventId as string) || 'event-ga-2026';
     const history = await getEscalationHistory(eventId);
     res.json({ success: true, history });
+  } catch (err: any) {
+    console.error('[Escalation Route Error]:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal error' });
+  }
+});
+
+// 7. Get active cycles
+router.get('/cycles', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const eventId = (req.query.eventId as string) || 'event-ga-2026';
+    const cycles = await query(`
+      SELECT c.*, p.name as policy_name, a.title as alert_title, a.severity as alert_severity, a.category as alert_category
+      FROM escalation_cycles c
+      LEFT JOIN escalation_policies p ON p.id = c.policy_id
+      LEFT JOIN event_safety_alerts a ON a.id = c.alert_id
+      WHERE c.event_id = ? AND c.status IN ('scheduled', 'active', 'escalating')
+      ORDER BY c.created_at DESC
+    `, [eventId]);
+    res.json({ success: true, cycles });
+  } catch (err: any) {
+    console.error('[Escalation Route Error]:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal error' });
+  }
+});
+
+// 8. Manually notify backup
+router.post('/cycles/:id/notify-backup', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const cycle = await queryOne('SELECT * FROM escalation_cycles WHERE id = ?', [id]);
+    if (!cycle) {
+      return res.status(404).json({ success: false, error: 'Escalation cycle not found' });
+    }
+    const now = new Date().toISOString();
+    await execute(`
+      INSERT INTO escalation_history (id, event_id, cycle_id, actor_user_id, action_type, safe_summary, created_at)
+      VALUES (?, ?, ?, ?, 'manual_backup_notified', ?, ?)
+    `, [crypto.randomUUID(), cycle.event_id, cycle.id, req.user!.id, `Super Admin manually dispatched backup alert notification for cycle ${cycle.id.substring(0,8)}.`, now]);
+
+    broadcastSSEEvent('escalation.history_updated', { eventId: cycle.event_id });
+    res.json({ success: true, message: 'Backup notification dispatched successfully.' });
+  } catch (err: any) {
+    console.error('[Escalation Route Error]:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal error' });
+  }
+});
+
+// 9. Cancel cycle
+router.post('/cycles/:id/cancel', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const cycle = await queryOne('SELECT * FROM escalation_cycles WHERE id = ?', [id]);
+    if (!cycle) {
+      return res.status(404).json({ success: false, error: 'Escalation cycle not found' });
+    }
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE escalation_cycles 
+      SET status = 'cancelled', stopped_at = ?, stop_reason = 'Cancelled manually by administrator', updated_at = ?
+      WHERE id = ?
+    `, [now, now, id]);
+
+    await execute(`
+      INSERT INTO escalation_history (id, event_id, cycle_id, actor_user_id, action_type, safe_summary, created_at)
+      VALUES (?, ?, ?, ?, 'cycle_cancelled', ?, ?)
+    `, [crypto.randomUUID(), cycle.event_id, cycle.id, req.user!.id, `Escalation cycle cancelled manually by Super Admin.`, now]);
+
+    broadcastSSEEvent('escalation.history_updated', { eventId: cycle.event_id });
+    res.json({ success: true, message: 'Escalation cycle cancelled successfully.' });
+  } catch (err: any) {
+    console.error('[Escalation Route Error]:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal error' });
+  }
+});
+
+// 10. Restart cycle
+router.post('/cycles/:id/restart', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const cycle = await queryOne('SELECT * FROM escalation_cycles WHERE id = ?', [id]);
+    if (!cycle) {
+      return res.status(404).json({ success: false, error: 'Escalation cycle not found' });
+    }
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE escalation_cycles 
+      SET status = 'active', current_step_order = 1, next_due_at = ?, stopped_at = NULL, stop_reason = NULL, updated_at = ?
+      WHERE id = ?
+    `, [now, now, id]);
+
+    await execute(`
+      INSERT INTO escalation_history (id, event_id, cycle_id, actor_user_id, action_type, safe_summary, created_at)
+      VALUES (?, ?, ?, ?, 'cycle_restarted', ?, ?)
+    `, [crypto.randomUUID(), cycle.event_id, cycle.id, req.user!.id, `Escalation cycle restarted manually by Super Admin.`, now]);
+
+    broadcastSSEEvent('escalation.history_updated', { eventId: cycle.event_id });
+    res.json({ success: true, message: 'Escalation cycle restarted successfully.' });
   } catch (err: any) {
     console.error('[Escalation Route Error]:', err);
     res.status(500).json({ success: false, error: err.message || 'Internal error' });

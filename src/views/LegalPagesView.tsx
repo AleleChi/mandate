@@ -9,7 +9,7 @@ interface LegalPagesViewProps {
 
 export const LegalPagesView: React.FC<LegalPagesViewProps> = ({ page, onNavigate }) => {
   const [copyright, setCopyright] = useState<{ copyrightYear: number; copyrightText: string }>({
-    copyrightYear: 2025,
+    copyrightYear: 2026,
     copyrightText: 'Koinonia Children and Teens. All rights reserved.'
   });
 

@@ -82,19 +82,9 @@ export const api = {
       isDev = !!import.meta.env.DEV;
     } catch {}
 
-    // Fallback to relative URLs in development/preview to connect to the local container backend
+    // Always use relative paths inside the browser for robust, CORS-free full-stack routing
     if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
-      if (
-        isDev ||
-        hostname === 'localhost' || 
-        hostname === '127.0.0.1' || 
-        hostname.endsWith('.run.app') || 
-        hostname.endsWith('.google.com') ||
-        hostname.endsWith('.googleusercontent.com')
-      ) {
-        apiBaseUrl = ''; // Use relative paths for local development and AI Studio preview
-      }
+      apiBaseUrl = '';
     }
 
     const url = apiBaseUrl
@@ -111,7 +101,32 @@ export const api = {
       if (err?.name === 'AbortError') {
         throw err;
       }
-      throw new ParentApiError('Connection problem', 'Please check your internet and try again.');
+      // Retry once after 350ms for transient dev server restarts / network drops
+      try {
+        await new Promise((r) => setTimeout(r, 350));
+        res = await fetch(url, {
+          ...options,
+          headers
+        });
+      } catch (retryErr: any) {
+        if (retryErr?.name === 'AbortError') {
+          throw retryErr;
+        }
+        throw new ParentApiError('Connection problem', 'Please check your internet and try again.');
+      }
+    }
+
+    // Handle temporary 502/503/504 server restarts gracefully with a quick retry
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      try {
+        await new Promise((r) => setTimeout(r, 500));
+        res = await fetch(url, {
+          ...options,
+          headers
+        });
+      } catch (_) {
+        // Proceed with response handling below
+      }
     }
 
     // Safely parse JSON or handle HTML fallback responses
@@ -122,6 +137,12 @@ export const api = {
     } else {
       const text = await res.text().catch(() => '');
       if (text.trim().startsWith('<')) {
+        if (!res.ok) {
+          if (res.status === 401) throw new ParentApiError('Unauthorized', 'Please log in to continue.', 'UNAUTHORIZED');
+          if (res.status === 403) throw new ParentApiError('Access denied', 'You do not have permission to access this resource.', 'FORBIDDEN');
+          if (res.status === 404) throw new ParentApiError('Not found', 'The requested resource was not found.', 'NOT_FOUND');
+          throw new ParentApiError('Server error', `The server returned an invalid response (status ${res.status}).`, 'SERVER_ERROR');
+        }
         throw new ParentApiError('Connection problem', 'The server returned an invalid response. Please try again.');
       }
       try {
@@ -301,8 +322,10 @@ export const api = {
       if (role) {
         url += `&role=${role}`;
       }
-      const res = await api.request<{ notifications: any[] }>(url);
-      return res.notifications || [];
+      const res = await api.request<any>(url);
+      if (res && Array.isArray(res.notifications)) return res.notifications;
+      if (Array.isArray(res)) return res;
+      return [];
     },
     async markAllNotificationsAsRead() {
       return api.request<any>('/api/notifications/read-all', {
@@ -644,8 +667,8 @@ export const api = {
     async getMe() {
       return api.request<{ user: any; profile: any }>('/api/admin/me');
     },
-    async getOverview() {
-      return api.request<any>('/api/admin/overview');
+    async getOverview(options?: RequestInit) {
+      return api.request<any>('/api/admin/overview', options);
     },
     async getChildren(params?: { q?: string; filter?: string; page?: number; limit?: number }) {
       const queryParams = new URLSearchParams();
@@ -1108,7 +1131,10 @@ export const api = {
       });
     },
     async getSafetyAlerts() {
-      return api.request<any[]>('/api/admin/safety-alerts');
+      const res = await api.request<any>('/api/admin/safety-alerts');
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.alerts)) return res.alerts;
+      return [];
     },
     async getSafetyAlertDetail(id: string, role?: string) {
       const url = role ? `/api/admin/safety-alerts/${id}?role=${encodeURIComponent(role)}` : `/api/admin/safety-alerts/${id}`;
@@ -1365,6 +1391,24 @@ export const api = {
       },
       async getHistory(eventId?: string) {
         return api.request<any>(`/api/admin/escalation/history?eventId=${eventId || 'event-ga-2026'}`);
+      },
+      async getCycles(eventId?: string) {
+        return api.request<any>(`/api/admin/escalation/cycles?eventId=${eventId || 'event-ga-2026'}`);
+      },
+      async notifyBackup(cycleId: string) {
+        return api.request<any>(`/api/admin/escalation/cycles/${cycleId}/notify-backup`, {
+          method: 'POST'
+        });
+      },
+      async cancelCycle(cycleId: string) {
+        return api.request<any>(`/api/admin/escalation/cycles/${cycleId}/cancel`, {
+          method: 'POST'
+        });
+      },
+      async restartCycle(cycleId: string) {
+        return api.request<any>(`/api/admin/escalation/cycles/${cycleId}/restart`, {
+          method: 'POST'
+        });
       }
     },
     operations: {

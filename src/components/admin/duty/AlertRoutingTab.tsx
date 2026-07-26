@@ -10,8 +10,9 @@ import {
   CheckSquare, 
   Square 
 } from 'lucide-react';
+import { safeStorage } from '../../../utils/storage';
 
-const REAL_EVENT_ID = 'the-general-assembly-2026';
+const REAL_EVENT_ID = 'event-ga-2026';
 
 interface RoutingRule {
   id: string;
@@ -29,6 +30,7 @@ export default function AlertRoutingTab() {
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [eventUnavailable, setEventUnavailable] = useState<boolean>(false);
 
   const [rules, setRules] = useState<RoutingRule[]>([]);
 
@@ -57,8 +59,34 @@ export default function AlertRoutingTab() {
   const fetchAlertRouting = async () => {
     setLoading(true);
     setError(null);
+    setEventUnavailable(false);
     try {
-      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/alert-routing`);
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Check events first
+      const eventsRes = await fetch('/api/admin/events', { headers });
+      if (!eventsRes.ok) {
+        if (eventsRes.status === 401 || eventsRes.status === 403) {
+          setError('Permission Denied: Admin access required');
+        } else {
+          setError('Failed to fetch routing rules');
+        }
+        return;
+      }
+      const eventsData = await eventsRes.json();
+      const activeEvent = eventsData.events?.find((e: any) => e.status === 'current' || e.status === 'open');
+      if (!activeEvent) {
+        setEventUnavailable(true);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/alert-routing`, { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -82,7 +110,11 @@ export default function AlertRoutingTab() {
           setError(data.error || 'Failed to fetch alert routing policy');
         }
       } else {
-        setError('Failed to fetch routing rules');
+        if (res.status === 401 || res.status === 403) {
+          setError('Permission Denied: Admin access required');
+        } else {
+          setError('Failed to fetch routing rules');
+        }
       }
     } catch (err) {
       console.error('Failed to fetch routing:', err);
@@ -107,9 +139,16 @@ export default function AlertRoutingTab() {
     setSaving(true);
     setError(null);
     try {
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/alert-routing`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ rules })
       });
       if (res.ok) {
@@ -122,7 +161,11 @@ export default function AlertRoutingTab() {
           setError(data.error || 'Failed to save rules');
         }
       } else {
-        setError('Failed to save rules to server');
+        if (res.status === 401 || res.status === 403) {
+          setError('Permission Denied: Admin access required');
+        } else {
+          setError('Failed to save rules to server');
+        }
       }
     } catch (err) {
       console.error('Failed saving rules:', err);
@@ -176,10 +219,22 @@ export default function AlertRoutingTab() {
         </div>
       </div>
 
-      {loading && rules.length === 0 ? (
+      {eventUnavailable ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-3xl">
+          <ShieldAlert className="w-6 h-6 mx-auto mb-2 text-[#C59B27] opacity-60" />
+          <span className="font-bold text-zinc-700 block mb-1">No active event is available</span>
+          <span>Please create or open an event in the dashboard to review emergency and alert routing configurations.</span>
+        </div>
+      ) : loading && rules.length === 0 ? (
         <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-3xl">
           <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading routing policies...</span>
+        </div>
+      ) : error ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-3xl">
+          <XCircle className="w-6 h-6 mx-auto mb-2 text-rose-600" />
+          <span className="font-bold text-zinc-700 block mb-1">Failed to Load Routing Policies</span>
+          <span>{error}</span>
         </div>
       ) : (
         <div className="space-y-4">

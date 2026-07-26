@@ -300,6 +300,7 @@ dutyRouter.patch('/devices/:deviceId/preferences', async (req: AuthenticatedRequ
 dutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
+    const role = req.user?.role;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -310,7 +311,7 @@ dutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, res: R
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    if (device.user_id !== userId) {
+    if (device.user_id !== userId && role !== 'admin' && role !== 'super_admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -472,8 +473,9 @@ adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response)
     const filterReadiness = req.query.readiness as string;
     const filterConnection = req.query.connection as string;
 
+    const eventIdParam = (req.query.eventId as string) || REAL_EVENT_ID;
     let whereClause = 'WHERE d.event_id = ?';
-    const params: any[] = [REAL_EVENT_ID];
+    const params: any[] = [eventIdParam];
 
     if (filterRole) {
       whereClause += ' AND d.role = ?';
@@ -505,9 +507,11 @@ adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response)
     const totalPages = Math.ceil(total / limit);
 
     const itemsQuery = `
-      SELECT d.*, u.full_name as user_name
+      SELECT d.*, COALESCE(v.full_name, p.full_name, u.email) as user_name
       FROM event_duty_devices d
       JOIN users u ON d.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
       ${whereClause}
       ORDER BY d.updated_at DESC
       LIMIT ? OFFSET ?
@@ -575,11 +579,40 @@ adminDutyRouter.post('/devices/:deviceId/remind', async (req: AuthenticatedReque
 
     return res.json({
       success: true,
-      message: 'Readiness reminder sent successfully'
+      message: `Readiness reminder sent to ${device.device_label || 'device'}.`,
+      deviceLabel: device.device_label
     });
   } catch (err: any) {
     console.error('Error in POST /api/admin/duty/devices/:deviceId/remind:', err);
     return res.status(500).json({ error: 'An unexpected error occurred while reminding team member' });
+  }
+});
+
+// DELETE /api/admin/duty/devices/:deviceId
+adminDutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { deviceId } = req.params;
+    const device = await queryOne('SELECT * FROM event_duty_devices WHERE id = ?', [deviceId]);
+    if (!device) {
+      return res.status(404).json({ error: 'Device registration not found or already removed' });
+    }
+
+    await execute('DELETE FROM event_duty_devices WHERE id = ?', [deviceId]);
+
+    return res.json({
+      success: true,
+      message: 'Device registration removed successfully',
+      deviceId,
+      deviceLabel: device.device_label
+    });
+  } catch (err: any) {
+    console.error('Error in DELETE /api/admin/duty/devices/:deviceId:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while removing device' });
   }
 });
 
@@ -737,14 +770,17 @@ adminDutyRouter.get('/events/:eventId/duty-assignments', async (req: Authenticat
       params.push(level);
     }
     if (queryStr) {
-      whereClause += ' AND (u.full_name LIKE ? OR u.email LIKE ?)';
-      params.push(`%${queryStr}%`, `%${queryStr}%`);
+      whereClause += ' AND (COALESCE(v.full_name, p.full_name, u.email) LIKE ? OR u.email LIKE ? OR a.responsibility_key LIKE ? OR el.name LIKE ?)';
+      params.push(`%${queryStr}%`, `%${queryStr}%`, `%${queryStr}%`, `%${queryStr}%`);
     }
 
     const countQuery = `
       SELECT COUNT(*) as total
       FROM event_duty_assignments a
       JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
       ${whereClause}
     `;
     const countResult = await queryOne(countQuery, params);
@@ -752,11 +788,14 @@ adminDutyRouter.get('/events/:eventId/duty-assignments', async (req: Authenticat
     const totalPages = Math.ceil(total / limit);
 
     const itemsQuery = `
-      SELECT a.*, u.full_name as user_name, u.email as user_email, u.role as user_role,
+      SELECT a.*, COALESCE(v.full_name, p.full_name, u.email) as user_name, u.email as user_email, u.role as user_role,
              (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = a.user_id AND d.readiness_status = 'ready') as ready_devices,
+             (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = a.user_id) as total_devices,
              el.name as assigned_location_name, el.location_type as assigned_location_type
       FROM event_duty_assignments a
       JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
       LEFT JOIN event_locations el ON a.assigned_location_id = el.id
       ${whereClause}
       ORDER BY 
@@ -803,6 +842,10 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
       return res.status(400).json({ error: 'Missing required assignment fields' });
     }
 
+    if (new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+      return res.status(400).json({ error: 'Shift end time must be later than start time.' });
+    }
+
     const targetUser = await queryOne('SELECT id, role, is_deleted FROM users WHERE id = ?', [userId]);
     if (!targetUser || targetUser.is_deleted === 1) {
       return res.status(400).json({ error: 'Selected user is inactive or does not exist' });
@@ -814,7 +857,7 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
     await execute(`
       INSERT INTO event_duty_assignments (
         id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, now, now
     ]);
@@ -876,6 +919,12 @@ adminDutyRouter.patch('/events/:eventId/duty-assignments/:assignmentId', async (
     const assignment = await queryOne('SELECT * FROM event_duty_assignments WHERE id = ?', [assignmentId]);
     if (!assignment) {
       return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    const effectiveStart = startsAt || assignment.starts_at;
+    const effectiveEnd = endsAt || assignment.ends_at;
+    if (effectiveStart && effectiveEnd && new Date(effectiveEnd).getTime() <= new Date(effectiveStart).getTime()) {
+      return res.status(400).json({ error: 'Shift end time must be later than start time.' });
     }
 
     const now = new Date().toISOString();
@@ -950,6 +999,25 @@ adminDutyRouter.delete('/events/:eventId/duty-assignments/:assignmentId', async 
   }
 });
 
+// GET /api/admin/duty/events/:eventId/locations
+adminDutyRouter.get('/events/:eventId/locations', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const { eventId } = req.params;
+    const locations = await query('SELECT id, name, location_type, parent_location_id FROM event_locations WHERE event_id = ? AND is_active = 1 ORDER BY name ASC', [eventId]);
+    return res.json({
+      success: true,
+      items: locations || []
+    });
+  } catch (err: any) {
+    console.error('Error fetching event locations for admin:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 // GET /api/admin/events/:eventId/alert-routing
 adminDutyRouter.get('/events/:eventId/alert-routing', async (req: AuthenticatedRequest, res: Response) => {
@@ -973,9 +1041,11 @@ adminDutyRouter.get('/events/:eventId/alert-routing', async (req: AuthenticatedR
     }
 
     const changeHistory = await query(`
-      SELECT h.*, u.full_name as user_name
+      SELECT h.*, COALESCE(v.full_name, p.full_name, u.email) as user_name
       FROM event_routing_change_history h
       JOIN users u ON h.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
       WHERE h.event_id = ?
       ORDER BY h.created_at DESC
       LIMIT 25
@@ -1173,17 +1243,19 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
     const offset = (page - 1) * limit;
     const queryStr = req.query.query as string || '';
 
-    let whereClause = "WHERE u.is_deleted = 0 AND u.role IN ('volunteer', 'team', 'admin', 'super_admin')";
+    let whereClause = "WHERE u.role IN ('volunteer', 'team', 'admin', 'super_admin') AND COALESCE(vp.is_deleted, 0) = 0";
     const params: any[] = [];
 
     if (queryStr) {
-      whereClause += ' AND (u.full_name LIKE ? OR u.email LIKE ?)';
+      whereClause += ' AND (COALESCE(vp.full_name, pp.full_name, u.email) LIKE ? OR u.email LIKE ?)';
       params.push(`%${queryStr}%`, `%${queryStr}%`);
     }
 
     const countQuery = `
       SELECT COUNT(*) as total
       FROM users u
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
       ${whereClause}
     `;
     const countResult = await queryOne(countQuery, params);
@@ -1191,13 +1263,14 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
     const totalPages = Math.ceil(total / limit);
 
     const itemsQuery = `
-      SELECT u.id, u.full_name, u.email, u.role, u.created_at,
+      SELECT u.id, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, u.role, u.created_at,
              COALESCE(vp.status, 'active') as volunteer_status,
              (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = u.id) as device_count
       FROM users u
       LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
       ${whereClause}
-      ORDER BY u.full_name ASC
+      ORDER BY COALESCE(vp.full_name, pp.full_name, u.email) ASC
       LIMIT ? OFFSET ?
     `;
     const queryParams = [...params, limit, offset];
@@ -1326,9 +1399,11 @@ export async function resolveAlertRecipients(alertId: string, category: string, 
 
   // 2. Fetch all on-duty users / assignments for current event
   const assignments = await query(`
-    SELECT a.*, u.full_name, u.email, u.is_deleted, u.role as user_role
+    SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, COALESCE(vp.is_deleted, pp.is_deleted, 0) as is_deleted, u.role as user_role
     FROM event_duty_assignments a
     JOIN users u ON a.user_id = u.id
+    LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+    LEFT JOIN parent_profiles pp ON pp.user_id = u.id
     WHERE a.event_id = ? AND a.status != 'cancelled'
   `, [REAL_EVENT_ID]);
 
@@ -1672,9 +1747,11 @@ adminDutyRouter.post('/events/:eventId/alert-routing/preview', async (req: Authe
     }
 
     const assignments = await query(`
-      SELECT a.*, u.full_name, u.email, u.role as user_role
+      SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, u.role as user_role
       FROM event_duty_assignments a
       JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+      LEFT JOIN parent_profiles pp ON pp.user_id = u.id
       WHERE a.event_id = ? AND a.status != 'cancelled'
     `, [REAL_EVENT_ID]);
 
@@ -1823,21 +1900,64 @@ adminDutyRouter.get('/events/:eventId/response-coverage', async (req: Authentica
 
     const { eventId } = req.params;
 
-    // Counts
-    const onDutyCountRes = await queryOne(`SELECT COUNT(*) as count FROM user_duty_status WHERE on_duty = 1 AND assigned_event_id = ?`, [eventId]);
-    const readyDevicesRes = await queryOne(`SELECT COUNT(*) as count FROM event_duty_devices WHERE readiness_status = 'ready' AND event_id = ?`, [eventId]);
-    const liveDevicesRes = await queryOne(`SELECT COUNT(*) as count FROM event_duty_devices WHERE live_connection_status = 'connected' AND event_id = ?`, [eventId]);
+    // 1. Fetch active event rules
+    const rules = await query(
+      'SELECT * FROM alert_routing_rules WHERE event_id = ? AND is_active = 1 ORDER BY category_key ASC',
+      [eventId]
+    );
 
+    // Standard category definitions if rules are missing or for fallback
+    const standardCategoryNames: Record<string, { name: string; defaultSeverity: string }> = {
+      child_care: { name: 'General Child Care Concern', defaultSeverity: 'Medium' },
+      medical_support: { name: 'Medical or First Aid Support', defaultSeverity: 'Critical' },
+      pickup_issue: { name: 'Pickup Concern', defaultSeverity: 'High' },
+      pass_issue: { name: 'Pass/Check-in Concern', defaultSeverity: 'Medium' },
+      security_concern: { name: 'Security / Missing Child Concerns', defaultSeverity: 'Critical' },
+      location_support: { name: 'Room/Classroom Assistance', defaultSeverity: 'Medium' },
+      other: { name: 'General Help', defaultSeverity: 'Low' }
+    };
+
+    // 2. Hydrate rules with recipients
+    let hydratedRules: any[] = [];
+    if (rules && rules.length > 0) {
+      for (const rule of rules) {
+        const recs = await query(
+          'SELECT * FROM alert_routing_recipients WHERE routing_rule_id = ? ORDER BY sort_order ASC',
+          [rule.id]
+        );
+        hydratedRules.push({
+          ...rule,
+          recipients: recs || []
+        });
+      }
+    } else {
+      // Fallback categories if no rules exist in database yet
+      for (const [key, meta] of Object.entries(standardCategoryNames)) {
+        hydratedRules.push({
+          id: `fallback-${key}`,
+          event_id: eventId,
+          category_key: key,
+          severity_key: meta.defaultSeverity.toLowerCase(),
+          recipients: [
+            { recipient_type: 'role', responsibility_key: 'General Response', delivery_tier: 'primary' }
+          ]
+        });
+      }
+    }
+
+    // 3. Fetch active team assignments for this event
     const activeAssignments = await query(`
-      SELECT a.*, u.full_name, u.role as user_role
+      SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email as user_email, u.role as user_role,
+             el.name as assigned_location_name
       FROM event_duty_assignments a
       JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+      LEFT JOIN parent_profiles pp ON pp.user_id = u.id
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
       WHERE a.event_id = ? AND a.status != 'cancelled'
     `, [eventId]);
 
-    const dutyStatuses = await query('SELECT * FROM user_duty_status');
-    const dutyMap = new Map(dutyStatuses.map((d: any) => [d.user_id, d]));
-
+    // 4. Fetch registered devices for this event
     const devices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [eventId]);
     const userDevicesMap = new Map<string, any[]>();
     for (const d of devices) {
@@ -1847,154 +1967,205 @@ adminDutyRouter.get('/events/:eventId/response-coverage', async (req: Authentica
       userDevicesMap.get(d.user_id)!.push(d);
     }
 
-    const categoriesList = [
-      { key: 'child_care', name: 'General Child Care Concern' },
-      { key: 'medical_support', name: 'Medical or First Aid Support' },
-      { key: 'pickup_issue', name: 'Pickup Concern' },
-      { key: 'pass_issue', name: 'Pass/Check-in Concern' },
-      { key: 'security_concern', name: 'Security / Missing Child Concerns' },
-      { key: 'location_support', name: 'Room/Classroom Assistance' },
-      { key: 'other', name: 'General Help' }
-    ];
+    // Helper to format role names cleanly
+    const formatRole = (r?: string) => {
+      if (!r) return 'General Response';
+      const clean = r.trim();
+      if (clean === 'super_admin') return 'Super Admin';
+      if (clean === 'admin') return 'Administrator';
+      if (clean === 'safeguarding_lead') return 'Safeguarding Lead';
+      if (clean === 'attendance_lead') return 'Attendance Lead';
+      if (clean === 'pickup_lead') return 'Pickup Lead';
+      if (clean === 'volunteer_lead') return 'Volunteer Lead';
+      return clean.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
 
-    const resultCategories = [];
-    let uncoveredCount = 0;
+    const categoriesResult: any[] = [];
+    const uniqueActiveRespondersSet = new Set<string>();
+    let totalAssignmentsAcrossCategories = 0;
+    let coverageGapsCount = 0;
+    let routingIssuesCount = 0;
+    const limitations: string[] = [];
 
-    for (const cat of categoriesList) {
-      // Find rules
-      let rule = await queryOne(`SELECT id FROM alert_routing_rules WHERE event_id = ? AND category_key = ? AND is_active = 1 LIMIT 1`, [eventId, cat.key]);
-      let ruleRecs = [];
-      if (rule) {
-        ruleRecs = await query('SELECT * FROM alert_routing_recipients WHERE routing_rule_id = ?', [rule.id]);
-      } else {
-        const defaults: Record<string, string[]> = {
-          medical_support: ['First Aid Team', 'Care Lead'],
-          security_concern: ['Security Lead', 'Event Admin'],
-          pickup_issue: ['Pickup Lead'],
-          pass_issue: ['Gate/Check-in Lead'],
-          location_support: ['Room/Group Lead', 'Care Lead'],
-          child_care: ['Care Lead'],
-          other: ['General Response']
+    let missingShiftTimeCount = 0;
+
+    for (const rule of hydratedRules) {
+      const catKey = rule.category_key;
+      const meta = standardCategoryNames[catKey] || { name: catKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), defaultSeverity: 'Medium' };
+      const categoryName = meta.name;
+
+      let rawSev = (rule.severity_key || meta.defaultSeverity || 'Medium').toLowerCase();
+      let severityLabel = 'Medium';
+      if (rawSev.includes('crit')) severityLabel = 'Critical';
+      else if (rawSev.includes('high')) severityLabel = 'High';
+      else if (rawSev.includes('low')) severityLabel = 'Low';
+      else if (rawSev.includes('all')) severityLabel = 'High';
+
+      const recipients = rule.recipients || [];
+      
+      const primaryRecs = recipients.filter((r: any) => r.delivery_tier === 'primary');
+      const backupRecs = recipients.filter((r: any) => r.delivery_tier === 'backup');
+
+      const expectedPrimaryRoles = Array.from(new Set(primaryRecs.map((r: any) => formatRole(r.responsibility_key || r.user_role))));
+      const expectedBackupRoles = Array.from(new Set(backupRecs.map((r: any) => formatRole(r.responsibility_key || r.user_role))));
+      const expectedRolesCombined = Array.from(new Set([...expectedPrimaryRoles, ...expectedBackupRoles]));
+
+      // Function to match an assignment to recipient requirements
+      const isAssignmentMatch = (assign: any, rec: any) => {
+        const respKey = (rec.responsibility_key || '').toLowerCase();
+        const assignResp = (assign.responsibility_key || '').toLowerCase();
+        const userRole = (assign.user_role || '').toLowerCase();
+
+        if (respKey) {
+          if (assignResp && (assignResp.includes(respKey) || respKey.includes(assignResp))) return true;
+          if (respKey.includes('super admin') && userRole === 'super_admin') return true;
+          if (respKey.includes('event admin') && (userRole === 'admin' || userRole === 'super_admin')) return true;
+          if (respKey.includes('general response') || respKey.includes('general')) return true;
+        }
+        if (rec.user_role && rec.user_role.toLowerCase() === userRole) return true;
+        return false;
+      };
+
+      const primaryMatchesMap = new Map<string, any>();
+      const backupMatchesMap = new Map<string, any>();
+
+      for (const assign of activeAssignments) {
+        if (!assign.starts_at || !assign.ends_at) {
+          missingShiftTimeCount++;
+        }
+
+        const isPrimaryMatch = primaryRecs.some((rec: any) => isAssignmentMatch(assign, rec));
+        const isBackupMatch = backupRecs.some((rec: any) => isAssignmentMatch(assign, rec));
+
+        const userDevs = userDevicesMap.get(assign.user_id) || [];
+        const readyDevsCount = userDevs.filter((d: any) => d.readiness_status === 'ready').length;
+
+        const isOnDuty = assign.status === 'on_duty' || assign.status === 'active';
+
+        const responderObj = {
+          userId: assign.user_id,
+          name: assign.full_name || assign.user_email || 'Administrator',
+          responsibility: formatRole(assign.responsibility_key),
+          onDuty: isOnDuty,
+          readyDevices: readyDevsCount,
+          locationName: assign.assigned_location_name || null
         };
-        const backVars = { medical_support: ['General Response'], security_concern: ['General Response'], pickup_issue: ['Care Lead'] } as any;
-        const roles = defaults[cat.key] || ['General Response'];
-        const backupRoles = backVars[cat.key] || [];
 
-        ruleRecs = [
-          ...roles.map((r, i) => ({ recipient_type: 'role', responsibility_key: r, delivery_tier: 'primary' })),
-          ...backupRoles.map((r, i) => ({ recipient_type: 'role', responsibility_key: r, delivery_tier: 'backup' }))
-        ];
-      }
-
-      const primaryResponders: any[] = [];
-      const backupResponders: any[] = [];
-      const supervisoryRecipients: any[] = [];
-
-      let hasReadyPrimaryDevice = false;
-      let hasLivePrimaryConnection = false;
-
-      for (const rec of ruleRecs) {
-        if (rec.recipient_type === 'role' && rec.responsibility_key) {
-          const matched = activeAssignments.filter((a: any) => a.responsibility_key === rec.responsibility_key);
-          for (const assign of matched) {
-            const duty = dutyMap.get(assign.user_id);
-            const uDevs = userDevicesMap.get(assign.user_id) || [];
-            
-            const isUnavailable = assign.status === 'temporarily_unavailable';
-            const notOnDuty = duty && duty.on_duty === 0;
-
-            const responderDetail = {
-              userId: assign.user_id,
-              name: assign.full_name,
-              status: assign.status,
-              onDuty: duty && duty.on_duty === 1,
-              readyDevices: uDevs.filter((d: any) => d.readiness_status === 'ready').length
-            };
-
-            if (rec.delivery_tier === 'primary') {
-              primaryResponders.push(responderDetail);
-              if (!isUnavailable && !notOnDuty) {
-                if (uDevs.some((d: any) => d.readiness_status === 'ready')) hasReadyPrimaryDevice = true;
-                if (uDevs.some((d: any) => d.live_connection_status === 'connected')) hasLivePrimaryConnection = true;
-              }
-            } else if (rec.delivery_tier === 'backup') {
-              backupResponders.push(responderDetail);
-            } else {
-              supervisoryRecipients.push(responderDetail);
-            }
+        if (isPrimaryMatch && !primaryMatchesMap.has(assign.user_id)) {
+          primaryMatchesMap.set(assign.user_id, responderObj);
+          if (isOnDuty) {
+            uniqueActiveRespondersSet.add(assign.user_id);
+          }
+        }
+        if (isBackupMatch && !backupMatchesMap.has(assign.user_id) && !primaryMatchesMap.has(assign.user_id)) {
+          backupMatchesMap.set(assign.user_id, responderObj);
+          if (isOnDuty) {
+            uniqueActiveRespondersSet.add(assign.user_id);
           }
         }
       }
 
-      // Coverage status logic
-      let coverageStatus = 'Not covered';
-      let gap = null;
-      let action = null;
+      const primaryRespondersList = Array.from(primaryMatchesMap.values());
+      const backupRespondersList = Array.from(backupMatchesMap.values());
 
-      if (primaryResponders.length > 0) {
-        if (primaryResponders.some(r => r.status === 'on_duty')) {
-          if (hasReadyPrimaryDevice && hasLivePrimaryConnection) {
-            coverageStatus = 'Covered';
-          } else {
-            coverageStatus = 'Limited';
-            gap = 'Primary responders are online but have connection or readiness limitations.';
-            action = 'Send readiness reminder';
-          }
-        } else {
-          coverageStatus = 'Limited';
-          gap = 'Primary responders are assigned but not currently on duty.';
-          action = 'Ask responder to start duty';
-        }
-      } else if (backupResponders.length > 0) {
-        coverageStatus = 'Covered with backup only';
-        gap = 'No primary responder is assigned or on duty.';
-        action = 'Assign a primary responder';
+      totalAssignmentsAcrossCategories += (primaryRespondersList.length + backupRespondersList.length);
+
+      const activeOnDutyPrimary = primaryRespondersList.filter(r => r.onDuty);
+      const activeOnDutyBackup = backupRespondersList.filter(r => r.onDuty);
+
+      const primaryWithReadyDevice = activeOnDutyPrimary.filter(r => r.readyDevices > 0);
+      const backupWithReadyDevice = activeOnDutyBackup.filter(r => r.readyDevices > 0);
+
+      const totalRespondersInCat = primaryRespondersList.length + backupRespondersList.length;
+      const totalReadyDevicesInCat = [...primaryRespondersList, ...backupRespondersList].filter(r => r.readyDevices > 0).length;
+
+      let deviceReadinessSummary = 'No device assigned';
+      if (totalRespondersInCat > 0) {
+        deviceReadinessSummary = `${totalReadyDevicesInCat}/${totalRespondersInCat} devices ready`;
+      }
+
+      let coverageStatus: 'Complete' | 'Limited' | 'No coverage' | 'Routing issue' = 'No coverage';
+      let coverageReason = '';
+      let recommendedAction = '';
+
+      if (recipients.length === 0 || expectedRolesCombined.length === 0) {
+        coverageStatus = 'Routing issue';
+        coverageReason = 'The alert routing rule has no assigned response roles or recipients configured.';
+        recommendedAction = 'Review this alert rule because no response role is configured.';
+        routingIssuesCount++;
+        coverageGapsCount++;
+      } else if (activeOnDutyPrimary.length === 0) {
+        coverageStatus = 'No coverage';
+        coverageReason = `No eligible primary responder is currently on duty for ${categoryName}.`;
+        const roleTarget = expectedPrimaryRoles[0] || 'responder';
+        recommendedAction = `Assign an on-duty ${roleTarget} to cover ${categoryName}.`;
+        coverageGapsCount++;
+      } else if (primaryWithReadyDevice.length === 0) {
+        coverageStatus = 'Limited';
+        coverageReason = `On-duty primary responder is available, but does not have a registered ready device.`;
+        recommendedAction = `Provide a ready duty device to the primary responder for ${categoryName}.`;
+        coverageGapsCount++;
+      } else if (activeOnDutyBackup.length === 0) {
+        coverageStatus = 'Limited';
+        coverageReason = `Primary responder is available on duty, but no backup responder is currently assigned or on duty.`;
+        recommendedAction = `Add an on-duty backup responder for ${categoryName}.`;
+        coverageGapsCount++;
       } else {
-        coverageStatus = 'Not covered';
-        gap = 'No eligible primary or backup responders are assigned.';
-        action = 'Assign a primary responder';
-        uncoveredCount++;
+        coverageStatus = 'Complete';
+        coverageReason = `Primary and backup responders are on duty with ready devices.`;
+        recommendedAction = `Coverage is sufficient. No action is required.`;
       }
 
-      resultCategories.push({
-        categoryKey: cat.key,
-        categoryName: cat.name,
-        status: coverageStatus,
-        primaryResponders,
-        backupResponders,
-        supervisoryRecipients,
-        readyDevicesCount: primaryResponders.reduce((sum, r) => sum + r.readyDevices, 0),
-        liveConnectionState: hasLivePrimaryConnection ? 'connected' : 'disconnected',
-        pushFallbackState: 'enabled',
-        identifiedGap: gap,
-        recommendedAction: action
+      categoriesResult.push({
+        id: rule.id || `rule-${catKey}`,
+        categoryKey: catKey,
+        name: categoryName,
+        severity: severityLabel,
+        expectedRoles: expectedRolesCombined.length > 0 ? expectedRolesCombined : ['Unassigned Policy'],
+        primaryResponders: primaryRespondersList,
+        backupResponders: backupRespondersList,
+        deviceReadiness: {
+          primaryReady: primaryWithReadyDevice.length > 0,
+          backupReady: backupWithReadyDevice.length > 0,
+          summary: deviceReadinessSummary
+        },
+        coverageStatus,
+        coverageReason,
+        recommendedAction,
+        allowedActions: ['view_routing', 'assign_responder', 'review_devices']
       });
     }
 
-    let overallStatus = 'Ready for event response';
-    if (uncoveredCount > 0) {
-      overallStatus = 'Action needed before event';
-    } else if (resultCategories.some(c => c.status === 'Limited' || c.status === 'Covered with backup only')) {
-      overallStatus = 'Ready with coverage limitations';
+    const validCategoryCount = categoriesResult.length;
+    const totalActiveRespondersCount = uniqueActiveRespondersSet.size;
+
+    const averageRespondersPerAlertNumber = validCategoryCount > 0
+      ? Number((totalAssignmentsAcrossCategories / validCategoryCount).toFixed(1))
+      : null;
+
+    if (missingShiftTimeCount > 0) {
+      limitations.push(`Coverage information is limited because ${missingShiftTimeCount} team assignment(s) do not have explicit shift end times.`);
     }
 
     return res.json({
       success: true,
-      event: {
-        name: 'The General Assembly'
-      },
       summary: {
-        overallStatus,
-        onDutyPeople: onDutyCountRes?.count || 0,
-        readyDevices: readyDevicesRes?.count || 0,
-        liveDevices: liveDevicesRes?.count || 0,
-        uncoveredCategories: uncoveredCount
+        activeResponders: totalActiveRespondersCount,
+        coverageGaps: coverageGapsCount,
+        averageRespondersPerAlert: averageRespondersPerAlertNumber,
+        routingIssues: routingIssuesCount,
+        validCategoriesCount: validCategoryCount
       },
-      categories: resultCategories
+      categories: categoriesResult,
+      limitations
     });
   } catch (err: any) {
-    console.error('Error fetching coverage report:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('[Response Coverage] failed for eventId:', req.params?.eventId, err?.message || err);
+    return res.status(500).json({
+      success: false,
+      error: 'RESPONSE_COVERAGE_LOAD_FAILED',
+      message: 'We could not load response coverage.'
+    });
   }
 });
 
@@ -2246,25 +2417,50 @@ dutyRouter.delete('/current-location', async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// 5. Verify a scanned QR token
-dutyRouter.post('/location-code/verify', async (req: AuthenticatedRequest, res: Response) => {
+// 5. Verify a scanned QR token (and support canonical /api/event-duty/location-access endpoints)
+const handleVerifyLocationToken = async (rawToken: string, userId: string | undefined, res: Response) => {
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ success: false, error: 'Location code token is required' });
+    if (!rawToken) {
+      return res.status(400).json({ success: false, error: 'Location token is required.' });
     }
 
-    const code = await queryOne('SELECT * FROM event_location_codes WHERE token_hash = ? AND is_active = 1', [token]);
+    // Extract token if full URL was scanned
+    let token = rawToken.trim();
+    if (token.includes('/location-access/')) {
+      token = token.split('/location-access/').pop()?.split('?')[0] || token;
+    } else if (token.includes('loc_code_')) {
+      const match = token.match(/loc_code_[a-f0-9]+/i);
+      if (match) token = match[0];
+    }
+
+    // Lookup token in DB
+    const code = await queryOne('SELECT * FROM event_location_codes WHERE token_hash = ?', [token]);
     if (!code) {
-      return res.status(400).json({ success: false, error: 'This location code could not be verified.' });
+      return res.status(404).json({
+        success: false,
+        error: 'Code not recognised',
+        message: 'This QR code does not match any registered Event Duty location.'
+      });
     }
 
-    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1', [code.event_location_id, REAL_EVENT_ID]);
-    if (!loc) {
-      return res.status(400).json({ success: false, error: 'This location is no longer active.' });
+    if (!code.is_active) {
+      return res.status(403).json({
+        success: false,
+        error: 'Code disabled',
+        message: 'QR access has been disabled for this location. Please contact a ministry administrator.'
+      });
     }
 
-    // Build path label
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ?', [code.event_location_id, REAL_EVENT_ID]);
+    if (!loc || !loc.is_active) {
+      return res.status(404).json({
+        success: false,
+        error: 'Location inactive',
+        message: 'This location is no longer active for the current event.'
+      });
+    }
+
+    // Hierarchy path
     const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
     const locMap = new Map<string, any>();
     for (const l of allLocations) {
@@ -2289,21 +2485,95 @@ dutyRouter.post('/location-code/verify', async (req: AuthenticatedRequest, res: 
       return pathParts.join(' › ');
     };
 
+    // Active presence / on-duty count
+    const activeResponders = await query(`
+      SELECT p.*, pr.full_name, u.role
+      FROM event_duty_location_presence p
+      JOIN users u ON p.user_id = u.id
+      JOIN parent_profiles pr ON u.id = pr.user_id
+      WHERE p.event_location_id = ? AND p.ended_at IS NULL
+    `, [loc.id]);
+
+    // User's specific assignment
+    let assignment = {
+      assigned: false,
+      responsibility: loc.team_key || 'General Duty',
+      shiftStatus: 'Unassigned volunteer'
+    };
+
+    if (userId) {
+      const userAssignment = await queryOne(`
+        SELECT * FROM event_duty_assignments
+        WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status = 'scheduled'
+      `, [userId, REAL_EVENT_ID, loc.id]);
+
+      if (userAssignment) {
+        assignment = {
+          assigned: true,
+          responsibility: userAssignment.responsibility_key || loc.team_key || 'Assigned Duty',
+          shiftStatus: 'Scheduled'
+        };
+      }
+    }
+
+    // Active alerts at location
+    const activeAlerts = await query(`
+      SELECT id, title, severity FROM event_safety_alerts
+      WHERE event_id = ? AND location_id = ? AND status IN ('open', 'acknowledged')
+    `, [REAL_EVENT_ID, loc.id]);
+
+    // Audit log scan event (opaque reference, no raw token/child info)
+    const auditId = 'audit-' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    await execute(`
+      INSERT INTO event_audit_logs (id, event_id, user_id, action, entity_type, entity_id, details, created_at)
+      VALUES (?, ?, ?, 'LOCATION_QR_SCANNED', 'LOCATION', ?, ?, ?)
+    `, [auditId, REAL_EVENT_ID, userId || 'anonymous', loc.id, JSON.stringify({ locationName: loc.name }), now]);
+
     return res.json({
       success: true,
+      token: token,
       location: {
         id: loc.id,
         name: loc.name,
         type: loc.location_type,
-        instructions: loc.instructions,
+        shortName: loc.short_name,
         description: loc.description,
-        pathLabel: getFullPath(loc.id)
-      }
+        instructions: loc.instructions,
+        emergencyLabel: loc.emergency_label,
+        capacity: loc.capacity || 0,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        pathLabel: getFullPath(loc.id),
+        status: 'Active'
+      },
+      assignment,
+      operationalSummary: {
+        onDutyCount: activeResponders.length,
+        deviceReadiness: 'Ready',
+        activeAlertsCount: activeAlerts.length,
+        attentionRequired: activeAlerts.length > 0 || activeResponders.length === 0
+      },
+      allowedActions: ['confirm_arrival', 'view_assignment', 'report_issue']
     });
   } catch (err: any) {
-    console.error('Error verifying location code:', err);
-    return res.status(500).json({ success: false, error: 'Internal server error verifying location code' });
+    console.error('Error in location token verification:', err);
+    return res.status(500).json({ success: false, error: 'Internal server error verifying location code.' });
   }
+};
+
+dutyRouter.post('/location-code/verify', async (req: AuthenticatedRequest, res: Response) => {
+  const token = req.body.token || req.body.code || req.body.scannedToken;
+  return handleVerifyLocationToken(token, req.user?.id, res);
+});
+
+dutyRouter.get('/location-access/:token', async (req: AuthenticatedRequest, res: Response) => {
+  return handleVerifyLocationToken(req.params.token, req.user?.id, res);
+});
+
+dutyRouter.post('/location-access/verify', async (req: AuthenticatedRequest, res: Response) => {
+  const token = req.body.token || req.body.code || req.body.scannedToken;
+  return handleVerifyLocationToken(token, req.user?.id, res);
 });
 
 export { dutyRouter, adminDutyRouter };

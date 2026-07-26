@@ -1062,7 +1062,8 @@ function initSqliteSchema(db: Database.Database) {
     "reopen_note TEXT",
     "response_version INTEGER DEFAULT 1",
     "structured_details TEXT",
-    "category_version INTEGER DEFAULT 1"
+    "category_version INTEGER DEFAULT 1",
+    "public_reference TEXT"
   ];
   for (const col of sqliteAlertNewCols) {
     try {
@@ -2657,7 +2658,8 @@ async function initPostgresSchema(pool: any) {
       "reopen_note TEXT",
       "response_version INTEGER DEFAULT 1",
       "structured_details TEXT",
-      "category_version INTEGER DEFAULT 1"
+      "category_version INTEGER DEFAULT 1",
+      "public_reference VARCHAR(255)"
     ];
     for (const col of pgAlertNewCols) {
       try {

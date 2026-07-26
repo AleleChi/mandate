@@ -37,17 +37,71 @@
           }
 
           // Defensive guard against incomplete runtime or onMessage under headless/automation testing
-          if (typeof window.chrome !== 'undefined' && window.chrome) {
-            if (window.chrome.runtime) {
-              if (window.chrome.runtime.onMessage) {
-                if (typeof window.chrome.runtime.onMessage.addListener !== 'function') {
-                  window.chrome.runtime.onMessage.addListener = function() {};
+          try {
+            let mockChrome = {
+              runtime: {
+                onMessage: {
+                  addListener: function() {},
+                  removeListener: function() {},
+                  emit: function() {}
                 }
-                if (typeof window.chrome.runtime.onMessage.emit !== 'function') {
-                  window.chrome.runtime.onMessage.emit = function() {};
+              }
+            };
+
+            // Merge with existing chrome properties if they exist
+            if (typeof window.chrome === 'object' && window.chrome !== null) {
+              for (let key in window.chrome) {
+                try {
+                  mockChrome[key] = window.chrome[key];
+                } catch (e) {}
+              }
+              
+              if (window.chrome.runtime) {
+                for (let rKey in window.chrome.runtime) {
+                  try {
+                    mockChrome.runtime[rKey] = window.chrome.runtime[rKey];
+                  } catch (e) {}
+                }
+                
+                if (window.chrome.runtime.onMessage) {
+                  for (let mKey in window.chrome.runtime.onMessage) {
+                    try {
+                      mockChrome.runtime.onMessage[mKey] = window.chrome.runtime.onMessage[mKey];
+                    } catch (e) {}
+                  }
                 }
               }
             }
+
+            // Redefine window.chrome safely using Object.defineProperty
+            Object.defineProperty(window, 'chrome', {
+              value: mockChrome,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (e) {
+            // Fallback direct assignment if Object.defineProperty is blocked
+            try {
+              if (typeof window.chrome === 'undefined') {
+                window.chrome = {};
+              }
+              if (!window.chrome.runtime) {
+                window.chrome.runtime = {};
+              }
+              if (!window.chrome.runtime.onMessage) {
+                window.chrome.runtime.onMessage = {};
+              }
+              if (typeof window.chrome.runtime.onMessage.addListener !== 'function') {
+                window.chrome.runtime.onMessage.addListener = function() {};
+              }
+              if (typeof window.chrome.runtime.onMessage.removeListener !== 'function') {
+                window.chrome.runtime.onMessage.removeListener = function() {};
+              }
+              if (typeof window.chrome.runtime.onMessage.emit !== 'function') {
+                window.chrome.runtime.onMessage.emit = function() {};
+              }
+            } catch (err) {}
           }
         }
       })();

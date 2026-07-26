@@ -22,6 +22,7 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const timersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const lastToastRef = useRef<{ type: string; message: string; timestamp: number } | null>(null);
 
   const dismiss = useCallback((id: string) => {
     if (timersRef.current[id]) {
@@ -33,6 +34,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const addToast = useCallback(
     (type: ToastNotification['type'], message: string, description?: string, duration?: number) => {
+      const now = Date.now();
+      if (
+        lastToastRef.current &&
+        lastToastRef.current.type === type &&
+        lastToastRef.current.message === message &&
+        now - lastToastRef.current.timestamp < 2000
+      ) {
+        // Deduplicate identical toasts within 2 seconds
+        return;
+      }
+      lastToastRef.current = { type, message, timestamp: now };
+
       const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const toastDuration = duration ?? (type === 'error' ? 6000 : 3500);
 

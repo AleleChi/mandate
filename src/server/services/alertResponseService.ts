@@ -277,11 +277,20 @@ async function getProfileInfo(userId: string) {
  * Shared method to retrieve full response state.
  * Proof: data-component-version="alert-response-state-api-v1"
  */
-export async function getAlertResponseState(alertId: string, actor: Actor) {
-  const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+export async function getAlertResponseState(alertIdOrRef: string, actor: Actor) {
+  let alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ? OR public_reference = ?', [alertIdOrRef, alertIdOrRef]);
   if (!alert) {
     throw new AlertResponseError('Alert not found', 'ALERT_NOT_FOUND', 404);
   }
+
+  // Auto-generate public_reference if missing
+  if (!alert.public_reference) {
+    const publicRef = `ref-${crypto.randomBytes(16).toString('hex')}`;
+    await execute('UPDATE event_safety_alerts SET public_reference = ? WHERE id = ?', [publicRef, alert.id]);
+    alert.public_reference = publicRef;
+  }
+
+  const alertId = alert.id;
 
   if (alert.event_id !== REAL_EVENT_ID) {
     throw new AlertResponseError('Event isolation boundary violation', 'EVENT_ISOLATION_VIOLATION', 403);
@@ -348,6 +357,7 @@ export async function getAlertResponseState(alertId: string, actor: Actor) {
     success: true,
     alert: {
       id: alert.id,
+      reference: alert.public_reference || alert.id,
       status: alert.status,
       severity: alert.severity,
       title: alert.title,

@@ -114,7 +114,7 @@ export function AdminDutyDevicesView() {
         {activeTab === 'response_coverage' && (
           <ErrorBoundary fallbackTitle="Response Coverage panel failed to load">
             <Suspense fallback={<TabLoading />}>
-              <ResponseCoverageTab />
+              <ResponseCoverageTab onNavigateTab={(tab) => setActiveTab(tab)} />
             </Suspense>
           </ErrorBoundary>
         )}

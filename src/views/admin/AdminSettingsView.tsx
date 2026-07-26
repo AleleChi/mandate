@@ -291,7 +291,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [passwordError, setPasswordError] = useState('');
 
   // Footer & Copyright Settings State
-  const [copyrightYear, setCopyrightYear] = useState(2025);
+  const [copyrightYear, setCopyrightYear] = useState(2026);
   const [copyrightText, setCopyrightText] = useState('Koinonia Children and Teens. All rights reserved.');
   const [savingFooter, setSavingFooter] = useState(false);
 

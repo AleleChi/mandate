@@ -32,6 +32,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
+import { ActiveResponseCoordinationPanel } from '../../components/common/ActiveResponseCoordinationPanel';
 
 /**
  * Proofs and identifiers:
@@ -63,12 +64,16 @@ interface AdminOperationsDashboardViewProps {
   onBackToOverview: () => void;
   adminUser: any;
   eventId?: string;
+  onNavigate?: (route: string) => void;
+  onTabChange?: (tab: string) => void;
 }
 
 export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardViewProps> = ({
   onBackToOverview,
   adminUser,
-  eventId = 'event-ga-2026'
+  eventId = 'event-ga-2026',
+  onNavigate,
+  onTabChange
 }) => {
   const { showError, showSuccess, showInfo } = useNotification();
   const [isPending, startTransition] = useTransition();
@@ -92,6 +97,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'delayed' | 'offline'>('connected');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [selectedAlertRef, setSelectedAlertRef] = useState<string | null>(null);
   
   // Debounce ref
   const debounceTimers = useRef<Record<string, any>>({});
@@ -282,7 +288,36 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
   // Quick Action triggers
   const handleQuickAction = (route: string) => {
-    showInfo(`Navigating to designated module: ${route}`);
+    if (route.startsWith('/admin/alerts?id=')) {
+      const alertId = route.split('id=')[1];
+      if (alertId) {
+        setSelectedAlertRef(alertId);
+        return;
+      }
+    }
+
+    if (onNavigate) {
+      if (route === '/admin/check-in' || route === '/admin/pickup' || route === '/admin/attendance') {
+        if (onTabChange) onTabChange('attendance');
+      } else if (route === '/admin/alerts' || route === '/admin/team-alerts') {
+        onNavigate('/admin/team-alerts');
+      } else if (route === '/admin/locations' || route === '/admin/events') {
+        if (onTabChange) onTabChange('events');
+      } else if (route.startsWith('/admin/duty')) {
+        if (onTabChange) onTabChange('duty_devices');
+      } else if (route.startsWith('/admin/incidents')) {
+        if (onTabChange) onTabChange('incidents');
+      } else {
+        const tab = route.replace('/admin/', '').split('?')[0];
+        if (['overview', 'settings', 'applications', 'review', 'children', 'attendance', 'reports', 'messages', 'volunteers', 'parents', 'events', 'duty_devices', 'incidents', 'escalations', 'operations', 'training'].includes(tab)) {
+          if (onTabChange) onTabChange(tab);
+        } else {
+          onNavigate(route);
+        }
+      }
+    } else {
+      showInfo(`Navigating to designated module: ${route}`);
+    }
   };
 
   if (loading && !overview) {
@@ -637,7 +672,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => handleQuickAction(`/admin/alerts?id=${alert.id}`)}
+                            onClick={() => setSelectedAlertRef(alert.reference || alert.id)}
                           >
                             Open
                           </Button>
@@ -1011,6 +1046,28 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
           </div>
         )}
       </section>
+
+      {/* Sliding coordination panel overlay */}
+      {selectedAlertRef && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end" id="coordination-panel-overlay">
+          <div className="w-full max-w-xl h-full bg-[#FAF9F6] shadow-2xl flex flex-col relative animate-in slide-in-from-right duration-300">
+            <ActiveResponseCoordinationPanel
+              alertId={selectedAlertRef}
+              currentUser={{
+                id: adminUser?.id || 'temp-id',
+                role: adminUser?.role || 'admin',
+                fullName: adminUser?.fullName || adminUser?.full_name || 'Super Admin',
+                email: adminUser?.email || ''
+              }}
+              onClose={() => {
+                setSelectedAlertRef(null);
+                fetchOverview(true);
+              }}
+              onRefreshParentAlerts={() => fetchOverview(true)}
+            />
+          </div>
+        </div>
+      )}
 
     </div>
   );

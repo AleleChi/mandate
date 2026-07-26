@@ -4,7 +4,7 @@ import { BrandLogo } from './BrandLogo';
 
 export const Footer: React.FC = () => {
   const [copyright, setCopyright] = useState({
-    copyrightYear: 2025,
+    copyrightYear: 2026,
     copyrightText: 'Koinonia Children and Teens. All rights reserved.'
   });
 

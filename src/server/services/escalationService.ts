@@ -476,7 +476,7 @@ async function executeStep(cycle: any, step: EscalationPolicyStep, execution: an
 
   // Fallback if no target users resolved: notify Admins
   if (targetUserIds.length === 0) {
-    const adminUsers = await query("SELECT id FROM users WHERE role IN ('admin', 'superadmin')");
+    const adminUsers = await query("SELECT id FROM users WHERE role IN ('admin', 'superadmin', 'super_admin')");
     targetUserIds = adminUsers.map(u => u.id);
   }
 

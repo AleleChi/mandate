@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { query, queryOne, execute } from '../db';
 
 /**
@@ -302,7 +303,7 @@ export class EventOperationsService {
    */
   private async getActiveAlertSummary(eventId: string) {
     const alerts = await query(`
-      SELECT id, severity, category, status, title, location_label, created_at, owner_user_id, reopened_at
+      SELECT id, public_reference, severity, category, status, title, location_label, created_at, owner_user_id, reopened_at
       FROM event_safety_alerts
       WHERE event_id = ? AND status != 'resolved'
       ORDER BY 
@@ -320,6 +321,12 @@ export class EventOperationsService {
       const assistantsRes = await queryOne('SELECT COUNT(*) as count FROM alert_response_assignments WHERE alert_id = ? AND assignment_status = \'active\'', [a.id]);
       const handoversRes = await queryOne('SELECT COUNT(*) as count FROM alert_handover_requests WHERE alert_id = ? AND status = \'pending\'', [a.id]);
       
+      let publicRef = a.public_reference;
+      if (!publicRef) {
+        publicRef = `ref-${crypto.randomBytes(16).toString('hex')}`;
+        await execute('UPDATE event_safety_alerts SET public_reference = ? WHERE id = ?', [publicRef, a.id]);
+      }
+
       let ownerName = 'Unassigned';
       if (a.owner_user_id) {
         const u = await queryOne(`
@@ -334,6 +341,7 @@ export class EventOperationsService {
 
       return {
         id: a.id,
+        reference: publicRef,
         severity: a.severity,
         category: a.category,
         title: a.title,

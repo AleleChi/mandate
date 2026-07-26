@@ -3,7 +3,7 @@ import {
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
-  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield
+  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -216,8 +216,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }
         return unreadList.length;
       });
-    } catch (err) {
-      console.error('Error fetching volunteer notifications:', err);
+    } catch (err: any) {
+      console.warn('[VolunteerDashboard] Volunteer notifications fetch issue:', err?.message || err);
     }
   };
 
@@ -502,14 +502,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [presenceActionLoading, setPresenceActionLoading] = useState<boolean>(false);
   const [isLocationScannerActive, setIsLocationScannerActive] = useState<boolean>(false);
   const [locationScannerError, setLocationScannerError] = useState<string | null>(null);
+  const [scannedLocationData, setScannedLocationData] = useState<any | null>(null);
+  const [scannedTokenStr, setScannedTokenStr] = useState<string | null>(null);
 
   const fetchCurrentDutyLocation = async () => {
     try {
       const res = await fetch('/api/duty/current-location');
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.location) {
-          setCurrentDutyLocation(data.location);
+        if (data.success && (data.presence || data.location)) {
+          setCurrentDutyLocation(data.presence || data.location);
         } else {
           setCurrentDutyLocation(null);
         }
@@ -591,31 +593,74 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const handleVerifyLocationQR = async (token: string) => {
     setPresenceActionLoading(true);
+    setLocationScannerError(null);
     try {
-      const res = await fetch('/api/duty/location-code/verify', {
+      let res = await fetch('/api/event-duty/location-access/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: token })
+        body: JSON.stringify({ token: token })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          showSuccess('Location Verified', `Presence registered at: ${data.location.name}`);
-          setCurrentDutyLocation(data.location);
-          setIsLocationScannerActive(false);
-          setShowLocationQRModal(false);
-        } else {
-          showError('Verification Failed', data.error || 'Invalid or expired QR location code.');
-          if (isLocationScannerActive) {
-            startLocationQRScanning();
-          }
-        }
+      if (!res.ok) {
+        res = await fetch('/api/duty/location-code/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: token })
+        });
+      }
+      const data = await res.json();
+      if (res.ok && data.success) {
+        stopLocationQRScanning();
+        setScannedLocationData(data);
+        setScannedTokenStr(data.token || token);
       } else {
-        showError('Verification Failed', 'Invalid location QR code.');
+        const errorMsg = data.message || data.error || 'Invalid or disabled QR location code.';
+        showError('Verification Failed', errorMsg);
+        setLocationScannerError(errorMsg);
       }
     } catch (err) {
       console.error('Error verifying location QR:', err);
-      showError('Error', 'Failed to verify location code.');
+      showError('Error', 'Failed to connect to verification server.');
+      setLocationScannerError('Network error verifying QR code.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const handleConfirmArrivalFromQR = async () => {
+    if (!scannedTokenStr && !scannedLocationData?.location?.id) return;
+    setPresenceActionLoading(true);
+    try {
+      const res = await fetch('/api/duty/current-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scannedToken: scannedTokenStr,
+          locationId: scannedLocationData?.location?.id,
+          source: 'scanned'
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.presence) {
+          showSuccess('Arrival Confirmed', `Duty location set to: ${data.presence.name}`);
+          setCurrentDutyLocation({
+            id: data.presence.locationId,
+            name: data.presence.name,
+            type: data.presence.type,
+            instructions: data.presence.instructions
+          });
+          setScannedLocationData(null);
+          setScannedTokenStr(null);
+          setShowLocationQRModal(false);
+        } else {
+          showError('Action Failed', data.error || 'Could not register presence.');
+        }
+      } else {
+        showError('Server Error', 'Failed to record arrival at location.');
+      }
+    } catch (err) {
+      console.error('Error confirming arrival:', err);
+      showError('Error', 'Failed to register duty location arrival.');
     } finally {
       setPresenceActionLoading(false);
     }
@@ -632,9 +677,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          showSuccess('Presence Changed', `Duty location set to: ${data.location.name}`);
-          setCurrentDutyLocation(data.location);
+        if (data.success && (data.presence || data.location)) {
+          const loc = data.presence || data.location;
+          showSuccess('Presence Changed', `Duty location set to: ${loc.name}`);
+          setCurrentDutyLocation(loc);
           setShowLocationSelectModal(false);
         } else {
           showError('Action Failed', data.error || 'Could not change location.');
@@ -685,8 +731,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       if (Array.isArray(res)) {
         setTeamAlerts(res);
       }
-    } catch (err) {
-      console.error('Failed to fetch team safety alerts:', err);
+    } catch (err: any) {
+      console.warn('[VolunteerDashboard] Team safety alerts fetch issue:', err?.message || err);
     } finally {
       setLoadingTeamAlerts(false);
     }
@@ -757,8 +803,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       if (res && res.success) {
         setMySafetyAlerts(res.alerts || []);
       }
-    } catch (err) {
-      console.error('Failed to fetch volunteer safety alerts:', err);
+    } catch (err: any) {
+      console.warn('[VolunteerDashboard] Volunteer safety alerts fetch issue:', err?.message || err);
     }
   };
 
@@ -7308,68 +7354,182 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             }}
             className="fixed inset-0 bg-black/60 backdrop-blur-xs" 
           />
-          <div className="relative bg-zinc-950 border border-zinc-800 rounded-[28px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10 text-white">
+          <div className="relative bg-zinc-950 border border-zinc-800 rounded-[28px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10 text-white overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-zinc-850">
               <h4 className="font-serif font-bold text-base text-white flex items-center gap-2">
                 <QrCode className="w-5 h-5 text-[#C59B27]" />
-                Scan Location Code
+                <span>{scannedLocationData ? 'Location Access Verified' : 'Scan Location QR Code'}</span>
               </h4>
-            </div>
-
-            <div className="relative w-full aspect-square bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center">
-              {isLocationScannerActive ? (
-                <>
-                  <video 
-                    id="location-scan-video" 
-                    className="absolute inset-0 w-full h-full object-cover" 
-                    playsInline 
-                    muted 
-                  />
-                  {/* Decorative Scan Frame */}
-                  <div className="absolute inset-8 border-2 border-dashed border-[#C59B27] rounded-xl pointer-events-none animate-pulse flex items-center justify-center">
-                    <span className="text-[10px] font-mono text-white/50 bg-black/60 px-2 py-1 rounded">Align QR Code</span>
-                  </div>
-                </>
-              ) : (
-                <div className="p-6 text-center space-y-3">
-                  <div className="h-12 w-12 rounded-full bg-zinc-800/85 flex items-center justify-center mx-auto text-zinc-400">
-                    <QrCode className="w-6 h-6 animate-pulse" />
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-relaxed max-w-xs mx-auto">
-                    Initializing scanner engine... Please grant camera access if prompted.
-                  </p>
-                </div>
-              )}
-              {locationScannerError && (
-                <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center text-center p-4 space-y-3">
-                  <span className="text-xs text-rose-400 font-semibold">{locationScannerError}</span>
-                  <button
-                    type="button"
-                    onClick={startLocationQRScanning}
-                    className="px-3.5 py-1.5 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
-                  >
-                    Retry Camera
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <p className="text-[11px] text-zinc-400 text-center leading-relaxed max-w-xs mx-auto">
-              Scan the laminated QR token displayed at check-in desk, first-aid point, or room entryway to automatically register your active presence.
-            </p>
-
-            <div className="flex justify-end gap-3.5 pt-2 border-t border-zinc-850">
               <button
                 type="button"
                 onClick={() => {
                   stopLocationQRScanning();
+                  setScannedLocationData(null);
                   setShowLocationQRModal(false);
                 }}
-                className="text-xs px-4 py-2 border border-zinc-800 hover:bg-zinc-900 rounded-xl cursor-pointer font-bold text-zinc-300 w-full text-center transition-all"
+                className="p-1 hover:bg-zinc-900 rounded-lg text-zinc-400 hover:text-white transition-all cursor-pointer"
               >
-                Close Scanner
+                <X className="w-4 h-4" />
               </button>
             </div>
+
+            {scannedLocationData ? (
+              /* LOCATION VERIFICATION RESULT VIEW */
+              <div className="space-y-4 pt-1">
+                <div className="text-center space-y-1 bg-zinc-900/80 border border-zinc-800 p-4 rounded-2xl">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-800 inline-block">
+                    Verified Duty Location
+                  </span>
+                  <h3 className="text-xl font-serif font-bold text-white pt-1">
+                    {scannedLocationData.location.name}
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-medium">
+                    {scannedLocationData.location.pathLabel}
+                  </p>
+                </div>
+
+                {/* Operational Summary Grid */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Responders On Duty</span>
+                    <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-[#C59B27]" />
+                      {scannedLocationData.operationalSummary?.onDutyCount ?? 0} Active
+                    </span>
+                  </div>
+
+                  <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Readiness Status</span>
+                    <span className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-emerald-400" />
+                      {scannedLocationData.operationalSummary?.deviceReadiness || 'Ready'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Assignment Info */}
+                <div className="bg-zinc-900/90 border border-zinc-800 p-3.5 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">Duty Role Match</span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      scannedLocationData.assignment?.assigned ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-zinc-800 text-zinc-400'
+                    }`}>
+                      {scannedLocationData.assignment?.shiftStatus || 'On Duty'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-white">
+                    {scannedLocationData.assignment?.responsibility || 'General Event Duty Response'}
+                  </p>
+                </div>
+
+                {/* Special Instructions */}
+                {scannedLocationData.location?.instructions && (
+                  <div className="bg-amber-950/40 border border-amber-800/50 p-3 rounded-xl text-xs text-amber-200/90 leading-relaxed space-y-0.5">
+                    <span className="font-bold text-[9px] uppercase tracking-wider text-amber-400 block">Duty Instructions:</span>
+                    <p>{scannedLocationData.location.instructions}</p>
+                  </div>
+                )}
+
+                {/* Primary Action Button */}
+                <div className="space-y-2 pt-2 border-t border-zinc-850">
+                  <button
+                    type="button"
+                    disabled={presenceActionLoading}
+                    onClick={handleConfirmArrivalFromQR}
+                    className="w-full py-3 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-50"
+                  >
+                    {presenceActionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <span>Confirm Arrival &amp; Set Active Duty Location</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannedLocationData(null);
+                        startLocationQRScanning();
+                      }}
+                      className="py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Scan Again
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannedLocationData(null);
+                        setShowLocationQRModal(false);
+                      }}
+                      className="py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* SCANNER FEED VIEW */
+              <>
+                <div className="relative w-full aspect-square bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center">
+                  {isLocationScannerActive ? (
+                    <>
+                      <video 
+                        id="location-scan-video" 
+                        className="absolute inset-0 w-full h-full object-cover" 
+                        playsInline 
+                        muted 
+                      />
+                      {/* Decorative Scan Frame */}
+                      <div className="absolute inset-8 border-2 border-dashed border-[#C59B27] rounded-xl pointer-events-none animate-pulse flex items-center justify-center">
+                        <span className="text-[10px] font-mono text-white/50 bg-black/60 px-2 py-1 rounded">Align QR Code</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-6 text-center space-y-3">
+                      <div className="h-12 w-12 rounded-full bg-zinc-800/85 flex items-center justify-center mx-auto text-zinc-400">
+                        <QrCode className="w-6 h-6 animate-pulse text-[#C59B27]" />
+                      </div>
+                      <p className="text-xs text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                        Initializing scanner engine... Please grant camera access if prompted.
+                      </p>
+                    </div>
+                  )}
+                  {locationScannerError && (
+                    <div className="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center text-center p-4 space-y-3">
+                      <AlertTriangle className="w-8 h-8 text-rose-500" />
+                      <span className="text-xs text-rose-400 font-semibold max-w-xs leading-snug">{locationScannerError}</span>
+                      <button
+                        type="button"
+                        onClick={startLocationQRScanning}
+                        className="px-3.5 py-1.5 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer text-white"
+                      >
+                        Retry Camera
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-zinc-400 text-center leading-relaxed max-w-xs mx-auto">
+                  Scan the physical QR label displayed at check-in desk, first-aid point, or room entryway to confirm your active location presence.
+                </p>
+
+                <div className="flex justify-end gap-3.5 pt-2 border-t border-zinc-850">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopLocationQRScanning();
+                      setShowLocationQRModal(false);
+                    }}
+                    className="text-xs px-4 py-2 border border-zinc-800 hover:bg-zinc-900 rounded-xl cursor-pointer font-bold text-zinc-300 w-full text-center transition-all"
+                  >
+                    Close Scanner
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

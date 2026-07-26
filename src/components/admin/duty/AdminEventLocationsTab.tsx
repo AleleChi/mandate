@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { 
   MapPin, 
   Plus, 
   Search, 
   RefreshCw, 
-  Trash2, 
   Edit, 
   QrCode, 
   Printer, 
@@ -12,16 +12,20 @@ import {
   ShieldAlert, 
   Users, 
   Check, 
-  Eye, 
-  EyeOff, 
   X, 
-  ArrowRight,
-  Info,
   Archive,
-  Maximize2
+  DoorClosed,
+  DoorOpen,
+  Layers,
+  CheckCircle2,
+  Building2,
+  Phone,
+  Shield,
+  FileText
 } from 'lucide-react';
+import { safeStorage } from '../../../utils/storage';
 
-const REAL_EVENT_ID = 'the-general-assembly-2026';
+const REAL_EVENT_ID = 'event-ga-2026';
 
 interface EventLocation {
   id: string;
@@ -52,7 +56,16 @@ export default function AdminEventLocationsTab() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
+  // Summary counts
+  const [summary, setSummary] = useState({
+    totalLocations: 0,
+    activeLocations: 0,
+    gates: 0,
+    rooms: 0,
+    zones: 0
+  });
+
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('');
@@ -63,7 +76,7 @@ export default function AdminEventLocationsTab() {
   const [selectedCoverage, setSelectedCoverage] = useState<LocationCoverage | null>(null);
   const [coverageLoading, setCoverageLoading] = useState<boolean>(false);
 
-  // Form State
+  // Form Modal State
   const [showFormModal, setShowFormModal] = useState<boolean>(false);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [formId, setFormId] = useState<string>('');
@@ -78,56 +91,137 @@ export default function AdminEventLocationsTab() {
   const [formInstructions, setFormInstructions] = useState<string>('');
   const [formEmergencyLabel, setFormEmergencyLabel] = useState<string>('');
   const [formSortOrder, setFormSortOrder] = useState<number>(0);
+  const [savingLocation, setSavingLocation] = useState<boolean>(false);
 
-  // QR Code details state
+  // QR Code Modal State
   const [showQRModal, setShowQRModal] = useState<boolean>(false);
   const [qrToken, setQrToken] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState<boolean>(false);
+  const [confirmActionModal, setConfirmActionModal] = useState<'rotate' | 'disable' | null>(null);
+
+  // Generate real QR code matrix image whenever qrToken updates
+  useEffect(() => {
+    if (qrToken) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia.church';
+      const accessUrl = `${origin}/event-duty/location-access/${qrToken}`;
+      QRCode.toDataURL(accessUrl, {
+        margin: 2,
+        width: 320,
+        color: { dark: '#18181B', light: '#FFFFFF' },
+        errorCorrectionLevel: 'M'
+      })
+        .then(url => setQrDataUrl(url))
+        .catch(err => console.error('Error generating QR data URL:', err));
+    } else {
+      setQrDataUrl(null);
+    }
+  }, [qrToken]);
 
   // Fetch Locations
   const fetchLocations = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Include optional filterType
-      const queryParams = new URLSearchParams();
-      if (filterType) {
-        queryParams.append('type', filterType);
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-      // Let's call /api/admin/locations endpoint
-      const res = await fetch(`/api/admin/locations?${queryParams.toString()}`);
+
+      const queryParams = new URLSearchParams();
+      if (filterType) queryParams.append('type', filterType);
+      if (searchTerm) queryParams.append('search', searchTerm);
+
+      // Call primary endpoint
+      let res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations?${queryParams.toString()}`, { headers });
+      if (!res.ok) {
+        // Fallback endpoint
+        res = await fetch(`/api/admin/locations?${queryParams.toString()}`, { headers });
+      }
+
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          // If viewing archived, we can filter differently. 
-          // The backend returns all locations. 
-          setLocations(data.items || []);
+        if (data.success !== false) {
+          const rawItems = data.locations || data.items || [];
+          const normItems: EventLocation[] = rawItems.map((loc: any) => ({
+            id: loc.id,
+            eventId: loc.eventId || loc.event_id || REAL_EVENT_ID,
+            parentLocationId: loc.parentLocationId ?? loc.parent_location_id ?? null,
+            type: loc.type || loc.location_type || 'room',
+            name: loc.name,
+            shortName: loc.shortName || loc.short_name || null,
+            description: loc.description || null,
+            instructions: loc.instructions || null,
+            capacity: loc.capacity !== undefined && loc.capacity !== null ? Number(loc.capacity) : null,
+            ageGroupKey: loc.ageGroupKey || loc.age_group_key || null,
+            teamKey: loc.teamKey || loc.team_key || null,
+            emergencyLabel: loc.emergencyLabel || loc.emergency_label || null,
+            sortOrder: loc.sortOrder ?? loc.sort_order ?? 0,
+            isActive: loc.isActive !== undefined ? Boolean(loc.isActive) : loc.is_active === 1 || loc.is_active === true,
+            pathLabel: loc.pathLabel || loc.name
+          }));
+
+          setLocations(normItems);
+
+          if (data.summary) {
+            setSummary({
+              totalLocations: data.summary.totalLocations || normItems.length,
+              activeLocations: data.summary.activeLocations || normItems.filter(l => l.isActive).length,
+              gates: data.summary.gates || normItems.filter(l => ['gate', 'check_in_point', 'pickup_point'].includes(l.type)).length,
+              rooms: data.summary.rooms || normItems.filter(l => l.type === 'room').length,
+              zones: data.summary.zones || normItems.filter(l => l.type === 'zone').length
+            });
+          } else {
+            setSummary({
+              totalLocations: normItems.length,
+              activeLocations: normItems.filter(l => l.isActive).length,
+              gates: normItems.filter(l => ['gate', 'check_in_point', 'pickup_point'].includes(l.type)).length,
+              rooms: normItems.filter(l => l.type === 'room').length,
+              zones: normItems.filter(l => l.type === 'zone').length
+            });
+          }
+
+          // If a location was selected, refresh its object reference
+          if (selectedLocation) {
+            const found = normItems.find(l => l.id === selectedLocation.id);
+            if (found) setSelectedLocation(found);
+          }
         } else {
-          setError(data.error || 'Failed to fetch locations');
+          setError(data.message || data.error || 'Failed to fetch locations');
         }
       } else {
-        setError('Server returned an error fetching locations');
+        setError('We could not load event locations. Please check your connection.');
       }
     } catch (err) {
-      console.error(err);
-      setError('An error occurred connecting to the server');
+      console.error('Error fetching event locations:', err);
+      setError('We could not load event locations. Please refresh and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch coverage for selected location
+  // Fetch Coverage for selected location
   const fetchLocationCoverage = async (locId: string) => {
     setCoverageLoading(true);
     try {
-      const res = await fetch(`/api/admin/locations/${locId}/coverage`);
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${locId}/coverage`, { headers });
+      if (!res.ok) {
+        res = await fetch(`/api/admin/locations/${locId}/coverage`, { headers });
+      }
+
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
+          const coverage = data.coverage || {};
           setSelectedCoverage({
             locationId: locId,
-            activeResponders: data.responders || [],
-            activeAlerts: data.alerts || []
+            activeResponders: coverage.activePresence || data.responders || [],
+            activeAlerts: coverage.activeAlerts || data.alerts || []
           });
         }
       }
@@ -145,26 +239,48 @@ export default function AdminEventLocationsTab() {
   useEffect(() => {
     if (selectedLocation) {
       fetchLocationCoverage(selectedLocation.id);
+      
+      // Also fetch active QR token for the selected location detail view
+      const fetchQR = async () => {
+        try {
+          const token = safeStorage.getItem('koinonia_token');
+          const headers: Record<string, string> = {};
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+
+          let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { headers });
+          if (!res.ok) {
+            res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${selectedLocation.id}/code`, { headers });
+          }
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              setQrToken(data.code?.token_hash || data.token || null);
+            }
+          }
+        } catch (err) {
+          console.error('Error loading location QR:', err);
+        }
+      };
+      fetchQR();
     } else {
       setSelectedCoverage(null);
+      setQrToken(null);
     }
-  }, [selectedLocation]);
+  }, [selectedLocation?.id]);
 
-  // Handle Select Location
   const handleSelectLocation = (loc: EventLocation) => {
     setSelectedLocation(loc);
   };
 
-  // Prevent circular relationships check
+  // Circular reference check
   const wouldBeCircular = (locId: string, parentId: string): boolean => {
     if (!parentId) return false;
     if (locId === parentId) return true;
     
-    // Find the proposed parent's parent, trace up
     let currentParentId: string | null = parentId;
     const visited = new Set<string>();
     while (currentParentId) {
-      if (visited.has(currentParentId)) return true; // loop
+      if (visited.has(currentParentId)) return true;
       visited.add(currentParentId);
       if (currentParentId === locId) return true;
       
@@ -174,7 +290,7 @@ export default function AdminEventLocationsTab() {
     return false;
   };
 
-  // Open Form modal
+  // Open Form Modal
   const openCreateModal = () => {
     setIsEditing(false);
     setFormId('');
@@ -225,6 +341,7 @@ export default function AdminEventLocationsTab() {
     const payload = {
       name: formName.trim(),
       shortName: formShortName.trim() || null,
+      type: formType,
       locationType: formType,
       parentLocationId: formParentId || null,
       capacity: formCapacity ? parseInt(formCapacity) : null,
@@ -236,92 +353,93 @@ export default function AdminEventLocationsTab() {
       sortOrder: Number(formSortOrder) || 0
     };
 
-    setLoading(true);
+    setSavingLocation(true);
     try {
-      const url = isEditing ? `/api/admin/locations/${formId}` : '/api/admin/locations';
-      const method = isEditing ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const primaryUrl = isEditing 
+        ? `/api/admin/events/${REAL_EVENT_ID}/locations/${formId}` 
+        : `/api/admin/events/${REAL_EVENT_ID}/locations`;
+      const fallbackUrl = isEditing 
+        ? `/api/admin/locations/${formId}` 
+        : `/api/admin/locations`;
+      
+      const method = isEditing ? 'PATCH' : 'POST';
+
+      let res = await fetch(primaryUrl, { method, headers, body: JSON.stringify(payload) });
+      if (!res.ok && res.status === 404) {
+        res = await fetch(fallbackUrl, { method: isEditing ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) });
+      }
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          setSuccess(isEditing ? 'Location updated successfully!' : 'Location created successfully!');
+        if (data.success !== false) {
+          setSuccess(isEditing ? 'Location updated successfully.' : 'Location created successfully.');
           setShowFormModal(false);
           await fetchLocations();
-          if (isEditing && selectedLocation?.id === formId) {
-            // Refresh selected details
-            const updated = data.location;
-            if (updated) {
-              setSelectedLocation({
-                id: updated.id,
-                eventId: updated.event_id,
-                parentLocationId: updated.parent_location_id,
-                type: updated.location_type,
-                name: updated.name,
-                shortName: updated.short_name,
-                description: updated.description,
-                instructions: updated.instructions,
-                capacity: updated.capacity,
-                ageGroupKey: updated.age_group_key,
-                teamKey: updated.team_key,
-                emergencyLabel: updated.emergency_label,
-                sortOrder: updated.sort_order,
-                isActive: !!updated.is_active,
-                pathLabel: updated.name // path label will refresh on fetchLocations
-              });
-            }
-          }
         } else {
-          alert(data.error || 'Failed to save location');
+          alert(data.error || 'Failed to save location.');
         }
       } else {
-        alert('An error occurred on the server.');
+        alert('Server returned an error saving the location.');
       }
     } catch (err) {
       console.error(err);
-      alert('Network error trying to save location');
+      alert('Network error trying to save location.');
     } finally {
-      setLoading(false);
+      setSavingLocation(false);
     }
   };
 
-  // Handle Archive / Restore
+  // Archive / Restore
   const handleToggleArchive = async (loc: EventLocation) => {
     const action = loc.isActive ? 'archive' : 'restore';
     if (!confirm(`Are you sure you want to ${action} "${loc.name}"?`)) return;
 
     try {
-      const res = await fetch(`/api/admin/locations/${loc.id}/${action}`, { method: 'POST' });
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${loc.id}/${action}`, { method: 'POST', headers });
+      if (!res.ok) {
+        res = await fetch(`/api/admin/locations/${loc.id}/${action}`, { method: 'POST', headers });
+      }
+
       if (res.ok) {
         setSuccess(`Location ${action}d successfully.`);
         await fetchLocations();
-        if (selectedLocation?.id === loc.id) {
-          setSelectedLocation(null);
-        }
       } else {
         alert(`Failed to ${action} location.`);
       }
     } catch (err) {
       console.error(err);
+      alert(`Error during location ${action}.`);
     }
   };
 
-  // QR Code Actions
+  // QR Code Modal Actions
   const handleOpenQRModal = async (loc: EventLocation) => {
     setSelectedLocation(loc);
     setShowQRModal(true);
     setQrLoading(true);
     setQrToken(null);
     try {
-      const res = await fetch(`/api/admin/locations/${loc.id}/qr`);
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`/api/admin/locations/${loc.id}/qr`, { headers });
+      if (!res.ok) {
+        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${loc.id}/code`, { headers });
+      }
+
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.code) {
-          setQrToken(data.code.token_hash);
+        if (data.success) {
+          setQrToken(data.code?.token_hash || data.token || null);
         }
       }
     } catch (err) {
@@ -335,11 +453,19 @@ export default function AdminEventLocationsTab() {
     if (!selectedLocation) return;
     setQrLoading(true);
     try {
-      const res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'POST' });
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'POST', headers });
+      if (!res.ok) {
+        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${selectedLocation.id}/code`, { method: 'POST', headers });
+      }
+
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.code) {
-          setQrToken(data.code.token_hash);
+        if (data.success) {
+          setQrToken(data.token || data.code?.token_hash || null);
           setSuccess('New unguessable QR token generated.');
         }
       }
@@ -351,16 +477,21 @@ export default function AdminEventLocationsTab() {
   };
 
   const handleDisableQR = async () => {
-    if (!selectedLocation || !confirm('Are you sure you want to disable this QR code? Volunteers will no longer be able to scan it.')) return;
+    if (!selectedLocation || !confirm('Are you sure you want to disable this QR code? Volunteers will no longer be able to scan it for check-in.')) return;
     setQrLoading(true);
     try {
-      const res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'DELETE' });
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'DELETE', headers });
+      if (!res.ok) {
+        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${selectedLocation.id}/code/disable`, { method: 'POST', headers });
+      }
+
       if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setQrToken(null);
-          setSuccess('QR code code disabled.');
-        }
+        setQrToken(null);
+        setSuccess('QR code disabled.');
       }
     } catch (err) {
       console.error(err);
@@ -373,15 +504,15 @@ export default function AdminEventLocationsTab() {
     window.print();
   };
 
-  // Helper colors for type badge
+  // Helper badge styling
   const getTypeBadge = (type: string) => {
     const classes: Record<string, string> = {
-      room: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-      zone: 'bg-amber-50 text-amber-700 border-amber-100',
-      gate: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-      pickup_point: 'bg-rose-50 text-rose-700 border-rose-100',
-      check_in_point: 'bg-sky-50 text-sky-700 border-sky-100',
-      first_aid_point: 'bg-red-50 text-red-700 border-red-100',
+      room: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      zone: 'bg-amber-50 text-amber-700 border-amber-200',
+      gate: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      pickup_point: 'bg-rose-50 text-rose-700 border-rose-200',
+      check_in_point: 'bg-sky-50 text-sky-700 border-sky-200',
+      first_aid_point: 'bg-red-50 text-red-700 border-red-200',
     };
     const labels: Record<string, string> = {
       room: 'Room',
@@ -392,49 +523,54 @@ export default function AdminEventLocationsTab() {
       first_aid_point: 'First Aid Point',
     };
     return (
-      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${classes[type] || 'bg-zinc-50 text-zinc-700 border-zinc-100'}`}>
+      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${classes[type] || 'bg-zinc-50 text-zinc-700 border-zinc-200'}`}>
         {labels[type] || type}
       </span>
     );
   };
 
-  // Filter and search logic for client display
+  // Client filtering
   const filteredLocations = locations.filter(loc => {
-    const matchSearch = searchTerm.trim() === '' || 
+    const matchSearch = !searchTerm.trim() || 
       loc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (loc.shortName && loc.shortName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      loc.pathLabel.toLowerCase().includes(searchTerm.toLowerCase());
+      loc.pathLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      loc.type.toLowerCase().includes(searchTerm.toLowerCase());
     
+    const matchType = !filterType || loc.type === filterType;
     const matchArchive = showArchived ? !loc.isActive : loc.isActive;
-    return matchSearch && matchArchive;
+    return matchSearch && matchType && matchArchive;
   });
 
   return (
     <div 
-      data-view-version="admin-event-locations-v1-premium"
+      data-view-version="admin-event-locations-v2-premium"
       className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-6"
     >
-      {/* Header Panel */}
+      {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
         <div>
-          <h2 className="text-lg font-bold text-zinc-900 tracking-tight flex items-center space-x-2">
-            <MapPin className="w-5 h-5 text-[#C59B27]" />
+          <h2 className="text-xl font-bold text-zinc-900 tracking-tight flex items-center space-x-2.5">
+            <div className="p-2 bg-[#C59B27]/10 rounded-xl text-[#C59B27]">
+              <MapPin className="w-5 h-5" />
+            </div>
             <span>Event Locations Directory</span>
           </h2>
           <p className="text-xs text-zinc-500 mt-1">
-            Configure rooms, zones, check-in gates, first-aid areas, capacity metrics, and printable QR codes.
+            Manage event rooms, zones, gates, and service points, including capacity, QR access labels, and operational readiness.
           </p>
         </div>
+
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => {
               setShowArchived(!showArchived);
               setSelectedLocation(null);
             }}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
               showArchived 
                 ? 'bg-amber-50 border-amber-200 text-amber-700' 
-                : 'bg-white border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+                : 'bg-white border-[#EAE8E1] text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
             <Archive className="w-3.5 h-3.5" />
@@ -459,46 +595,122 @@ export default function AdminEventLocationsTab() {
         </div>
       </div>
 
+      {/* Success Notification */}
       {success && (
-        <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs rounded-xl flex items-center justify-between">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between shadow-xs">
           <div className="flex items-center space-x-2">
-            <Check className="w-4 h-4 text-emerald-600" />
-            <span>{success}</span>
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{success}</span>
           </div>
-          <button onClick={() => setSuccess(null)} className="text-emerald-500 hover:text-emerald-700">
+          <button onClick={() => setSuccess(null)} className="text-emerald-500 hover:text-emerald-700 p-1">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
+      {/* Error Notification */}
       {error && (
-        <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-xl flex items-center space-x-2">
-          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{error}</span>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between shadow-xs">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-bold">We could not load event locations</p>
+              <p className="text-[11px] text-rose-700 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <button 
+            onClick={fetchLocations}
+            className="px-3 py-1 bg-white border border-rose-200 text-rose-700 rounded-lg font-bold hover:bg-rose-100 transition-all cursor-pointer text-[11px]"
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      {/* Main Grid: Left List, Right Detail */}
+      {/* Summary Metrics Strip (5 Cards) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 bg-stone-100 text-stone-700 rounded-xl shrink-0">
+            <Building2 className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Total Locations</span>
+            <span className="text-lg font-bold text-zinc-900">{summary.totalLocations}</span>
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl shrink-0">
+            <DoorClosed className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Rooms</span>
+            <span className="text-lg font-bold text-zinc-900">{summary.rooms}</span>
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 bg-emerald-50 text-emerald-700 rounded-xl shrink-0">
+            <DoorOpen className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Gates & Points</span>
+            <span className="text-lg font-bold text-zinc-900">{summary.gates}</span>
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 bg-amber-50 text-amber-700 rounded-xl shrink-0">
+            <Layers className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Zones</span>
+            <span className="text-lg font-bold text-zinc-900">{summary.zones}</span>
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3 col-span-2 sm:col-span-1">
+          <div className="p-2.5 bg-[#C59B27]/10 text-[#C59B27] rounded-xl shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Active Points</span>
+            <span className="text-lg font-bold text-zinc-900">{summary.activeLocations}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid Layout: Directory (Left) + Location Details (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* Left Side: Directory List */}
-        <div className="lg:col-span-5 bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs">
-          {/* List Search Bar */}
+
+        {/* LEFT PANEL: Directory List */}
+        <div className="lg:col-span-5 bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs space-y-0">
+          
+          {/* Search & Filter Controls */}
           <div className="p-4 border-b border-[#EAE8E1] bg-zinc-50/50 space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
               <input
                 type="text"
-                placeholder="Search location name, room, path..."
+                placeholder="Search locations, rooms, gates or zones..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white pl-9 pr-4 py-2 border border-[#EAE8E1] rounded-xl text-xs focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none"
+                className="w-full bg-white pl-9 pr-8 py-2 border border-[#EAE8E1] rounded-xl text-xs focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none"
               />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')} 
+                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-            
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+
+            {/* Type Filter Chips */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
               {[
-                { key: '', label: 'All Types' },
+                { key: '', label: 'All' },
                 { key: 'room', label: 'Rooms' },
                 { key: 'zone', label: 'Zones' },
                 { key: 'gate', label: 'Gates' },
@@ -512,7 +724,7 @@ export default function AdminEventLocationsTab() {
                   className={`px-3 py-1 rounded-lg text-[11px] font-bold shrink-0 border cursor-pointer transition-all ${
                     filterType === t.key 
                       ? 'bg-[#C59B27] text-white border-[#C59B27]' 
-                      : 'bg-white border-[#EAE8E1] text-zinc-500 hover:text-zinc-950'
+                      : 'bg-white border-[#EAE8E1] text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
                   }`}
                 >
                   {t.label}
@@ -521,18 +733,37 @@ export default function AdminEventLocationsTab() {
             </div>
           </div>
 
-          {/* Directory Locations List */}
-          <div className="divide-y divide-[#EAE8E1] max-h-[550px] overflow-y-auto">
+          {/* Location List Items */}
+          <div className="divide-y divide-[#EAE8E1] max-h-[580px] overflow-y-auto">
             {loading && locations.length === 0 ? (
               <div className="p-8 text-center text-xs text-zinc-400 space-y-2">
                 <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C59B27]" />
-                <span>Loading location directory...</span>
+                <p className="font-semibold text-zinc-600">Loading directory...</p>
               </div>
             ) : filteredLocations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-zinc-400 space-y-1">
-                <MapPin className="w-5 h-5 mx-auto text-zinc-300 mb-1" />
-                <p className="font-semibold text-zinc-500">No locations found</p>
-                <p className="text-[10px]">Try adapting your search term or select another filter.</p>
+              <div className="p-8 text-center text-xs text-zinc-400 space-y-2">
+                <MapPin className="w-6 h-6 mx-auto text-zinc-300" />
+                <p className="font-bold text-zinc-700">No event locations found</p>
+                <p className="text-[11px] max-w-xs mx-auto text-zinc-400">
+                  {searchTerm || filterType 
+                    ? 'No locations match your filter settings. Try clearing your search.' 
+                    : 'Click "Add Location" to register your first room, gate, or zone.'}
+                </p>
+                {searchTerm || filterType ? (
+                  <button 
+                    onClick={() => { setSearchTerm(''); setFilterType(''); }}
+                    className="px-3 py-1 bg-zinc-100 text-zinc-700 rounded-lg text-[11px] font-bold hover:bg-zinc-200 mt-2"
+                  >
+                    Clear Filters
+                  </button>
+                ) : (
+                  <button 
+                    onClick={openCreateModal}
+                    className="px-3 py-1 bg-[#C59B27] text-white rounded-lg text-[11px] font-bold hover:bg-[#A37E1C] mt-2"
+                  >
+                    Add Location
+                  </button>
+                )}
               </div>
             ) : (
               filteredLocations.map(loc => {
@@ -550,16 +781,16 @@ export default function AdminEventLocationsTab() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center space-x-2">
-                          <span className="font-bold text-xs text-zinc-900 truncate">
+                          <span className="font-semibold text-xs text-zinc-900 truncate">
                             {loc.name}
                           </span>
                           {loc.shortName && (
-                            <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.2 rounded font-mono">
+                            <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.2 rounded font-mono border border-zinc-200">
                               {loc.shortName}
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                        <p className="text-[11px] text-zinc-500 truncate mt-0.5">
                           {loc.pathLabel || 'Event root level'}
                         </p>
                       </div>
@@ -568,15 +799,27 @@ export default function AdminEventLocationsTab() {
                       </div>
                     </div>
 
-                    <div className="mt-2.5 flex items-center gap-3 text-[10px] text-zinc-500">
-                      {loc.capacity && (
-                        <span>Cap: <strong className="text-zinc-700">{loc.capacity}</strong></span>
-                      )}
-                      {loc.teamKey && (
-                        <span className="bg-[#C59B27]/10 text-[#A37E1C] px-1.5 py-0.2 rounded-sm font-semibold">
-                          {loc.teamKey}
-                        </span>
-                      )}
+                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-zinc-500">
+                      <div className="flex items-center space-x-2">
+                        {loc.capacity ? (
+                          <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded font-medium text-[10px]">
+                            Cap: <strong>{loc.capacity}</strong>
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400 text-[10px]">No cap set</span>
+                        )}
+
+                        {loc.teamKey && (
+                          <span className="bg-[#C59B27]/10 text-[#A37E1C] px-2 py-0.5 rounded text-[10px] font-semibold">
+                            {loc.teamKey}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-1 text-[10px]">
+                        <span className={`w-2 h-2 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                        <span className="text-zinc-500">{loc.isActive ? 'Active' : 'Archived'}</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -585,149 +828,214 @@ export default function AdminEventLocationsTab() {
           </div>
         </div>
 
-        {/* Right Side: Location Detail Card & Metrics */}
+        {/* RIGHT PANEL: Selected Location Detail View */}
         <div className="lg:col-span-7 space-y-6">
           {selectedLocation ? (
             <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-xs space-y-6">
               
-              {/* Top Banner details */}
-              <div className="flex items-start justify-between gap-4 border-b border-[#EAE8E1] pb-5">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                    <h3 className="text-base font-bold text-zinc-900 tracking-tight">
+              {/* SECTION A — Header & Quick Actions */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-[#EAE8E1] pb-5">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                    <h3 className="text-xl font-serif font-bold text-zinc-900 tracking-tight">
                       {selectedLocation.name}
                     </h3>
                     {getTypeBadge(selectedLocation.type)}
-                    {!selectedLocation.isActive && (
-                      <span className="bg-zinc-100 text-zinc-600 border border-zinc-200 text-[9px] font-bold px-2 py-0.5 rounded">
-                        Archived
-                      </span>
-                    )}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                      selectedLocation.isActive 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                        : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                    }`}>
+                      {selectedLocation.isActive ? 'Active' : 'Archived'}
+                    </span>
                   </div>
-                  <p className="text-xs text-zinc-400">
-                    Path: {selectedLocation.pathLabel}
+
+                  <p className="text-xs text-zinc-500 font-medium flex items-center space-x-1">
+                    <span>Hierarchy Path:</span>
+                    <strong className="text-zinc-800">{selectedLocation.pathLabel}</strong>
                   </p>
                 </div>
 
-                <div className="flex items-center space-x-1 shrink-0">
+                <div className="flex items-center space-x-2 shrink-0">
                   <button
                     onClick={() => openEditModal(selectedLocation)}
-                    className="p-2 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 rounded-xl transition-all cursor-pointer"
-                    title="Edit Location Settings"
+                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-xs font-bold text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer"
                   >
-                    <Edit className="w-4 h-4" />
+                    <Edit className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Edit</span>
                   </button>
 
                   <button
                     onClick={() => handleOpenQRModal(selectedLocation)}
-                    className="p-2 hover:bg-[#C59B27]/10 text-zinc-600 hover:text-[#C59B27] rounded-xl transition-all cursor-pointer"
-                    title="QR Code Management"
+                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-xs font-bold text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer"
                   >
-                    <QrCode className="w-4 h-4" />
+                    <QrCode className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>QR Code</span>
                   </button>
 
                   <button
                     onClick={() => handleToggleArchive(selectedLocation)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer ${
+                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
                       selectedLocation.isActive 
-                        ? 'hover:bg-amber-50 text-amber-600 hover:text-amber-800' 
-                        : 'hover:bg-emerald-50 text-emerald-600 hover:text-emerald-800'
+                        ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100' 
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                     }`}
-                    title={selectedLocation.isActive ? 'Archive Location' : 'Restore Location'}
                   >
-                    <Archive className="w-4 h-4" />
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>{selectedLocation.isActive ? 'Archive' : 'Restore'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Detailed Specs Block */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              {/* SECTION B — Operational Summary Cards (4 Cards) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
                   <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
-                    Location Directives
+                    Capacity
                   </span>
-                  <div className="text-zinc-800 font-semibold space-y-1.5 pt-1">
-                    <p>Age Group: <span className="text-[#C59B27]">{selectedLocation.ageGroupKey || 'All kids'}</span></p>
-                    <p>Assigned Team: <span className="text-zinc-900">{selectedLocation.teamKey || 'None'}</span></p>
-                    <p>Sort Weight: <span className="text-zinc-500 font-mono">{selectedLocation.sortOrder}</span></p>
-                  </div>
+                  <span className="text-sm font-bold text-zinc-900 block">
+                    {selectedLocation.capacity ? `${selectedLocation.capacity} persons` : 'No limit set'}
+                  </span>
                 </div>
 
-                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-2">
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
                   <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
-                    Capacity Utilization
+                    Age Target
                   </span>
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center justify-between text-zinc-700 font-medium">
-                      <span>Capacity Limit:</span>
-                      <span className="font-bold">{selectedLocation.capacity || 'No limit'}</span>
-                    </div>
-                    {selectedLocation.capacity ? (
-                      <div className="space-y-1">
-                        <div className="w-full bg-zinc-200 rounded-full h-2">
-                          {/* We estimate from active responders + alerts or arbitrary */}
-                          <div 
-                            className="bg-[#C59B27] h-2 rounded-full" 
-                            style={{ width: `${Math.min(100, ((selectedCoverage?.activeResponders.length || 0) / selectedLocation.capacity) * 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[9px] text-zinc-400">
-                          <span>0% occupancy</span>
-                          <span>Estimated coverage: {selectedCoverage?.activeResponders.length || 0} active</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-zinc-400">
-                        This location does not specify an absolute room capacity.
-                      </p>
-                    )}
-                  </div>
+                  <span className="text-sm font-bold text-[#C59B27] block capitalize">
+                    {selectedLocation.ageGroupKey || 'All ages'}
+                  </span>
+                </div>
+
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
+                  <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
+                    Assigned Team
+                  </span>
+                  <span className="text-sm font-bold text-zinc-900 block truncate">
+                    {selectedLocation.teamKey || 'General'}
+                  </span>
+                </div>
+
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
+                  <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
+                    On Duty Present
+                  </span>
+                  <span className="text-sm font-bold text-emerald-700 block">
+                    {selectedCoverage?.activeResponders?.length || 0} active
+                  </span>
                 </div>
               </div>
 
-              {/* Descriptions & Instructions */}
-              <div className="space-y-3.5 text-xs">
+              {/* SECTION C — Descriptions & Directives */}
+              <div className="space-y-4 text-xs border-t border-[#EAE8E1] pt-5">
                 {selectedLocation.description && (
                   <div className="space-y-1">
-                    <h4 className="font-bold text-zinc-800">Description</h4>
-                    <p className="text-zinc-600 bg-zinc-50 p-3 rounded-xl border border-zinc-100/50 italic">
-                      "{selectedLocation.description}"
+                    <h4 className="font-bold text-zinc-800 flex items-center space-x-1.5">
+                      <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Description</span>
+                    </h4>
+                    <p className="text-zinc-600 bg-zinc-50 p-3 rounded-xl border border-zinc-200/60 text-xs">
+                      {selectedLocation.description}
                     </p>
                   </div>
                 )}
 
                 {selectedLocation.instructions && (
                   <div className="space-y-1">
-                    <h4 className="font-bold text-zinc-800">Special Instructions</h4>
-                    <p className="text-zinc-600 bg-amber-50/30 text-amber-900 p-3 rounded-xl border border-amber-100/30 whitespace-pre-line">
+                    <h4 className="font-bold text-zinc-800 flex items-center space-x-1.5">
+                      <Shield className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Special Instructions</span>
+                    </h4>
+                    <p className="text-amber-900 bg-amber-50/50 p-3 rounded-xl border border-amber-200/60 whitespace-pre-line text-xs">
                       {selectedLocation.instructions}
                     </p>
                   </div>
                 )}
 
                 {selectedLocation.emergencyLabel && (
-                  <div className="p-3.5 bg-red-50 border border-red-100 rounded-xl space-y-1">
-                    <span className="font-bold text-red-800 flex items-center space-x-1">
-                      <AlertTriangle className="w-4 h-4 text-red-600" />
-                      <span>EMERGENCY DISPATCH DIRECTIVE</span>
+                  <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+                    <span className="font-bold text-rose-800 flex items-center space-x-1.5 text-xs">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>EMERGENCY DISPATCH LABEL</span>
                     </span>
-                    <p className="text-red-700 font-semibold">
+                    <p className="text-rose-900 font-semibold text-xs">
                       {selectedLocation.emergencyLabel}
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* Location Coverage Status (Live Feed) */}
+              {/* SECTION D — Printable QR Code Card Section */}
+              <div className="border-t border-[#EAE8E1] pt-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                      Printable QR Access Card
+                    </h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      Display or print this QR card at the physical location entry point.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => handleOpenQRModal(selectedLocation)}
+                    className="px-3 py-1.5 bg-[#C59B27]/10 text-[#C59B27] hover:bg-[#C59B27]/20 border border-[#C59B27]/30 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Manage Card & Token</span>
+                  </button>
+                </div>
+
+                <div className="bg-[#FAF9F6] border-2 border-dashed border-[#EAE8E1] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-20 h-20 bg-white border border-[#EAE8E1] rounded-xl flex items-center justify-center p-2 shadow-xs shrink-0">
+                      {qrDataUrl ? (
+                        <img src={qrDataUrl} alt="Location QR Access Pass" className="w-full h-full object-contain" />
+                      ) : (
+                        <QrCode className="w-12 h-12 text-zinc-300 animate-pulse" />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] font-bold uppercase text-[#C59B27] tracking-wider block">
+                          KOINONIA EVENT ACCESS
+                        </span>
+                        {qrToken && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Active Pass
+                          </span>
+                        )}
+                      </div>
+                      <h5 className="font-bold text-sm text-zinc-900">{selectedLocation.name}</h5>
+                      <p className="text-[11px] text-zinc-500">
+                        Scan to confirm your location and open the permitted Event Duty tools.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <button
+                      onClick={handlePrintCard}
+                      className="px-3.5 py-2 bg-white border border-[#EAE8E1] text-zinc-700 hover:text-zinc-900 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shadow-xs"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>Print Label</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION E — On-Duty Coverage & Active Responders Feed */}
               <div className="border-t border-[#EAE8E1] pt-5 space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                  Location Coverage Status
+                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center justify-between">
+                  <span>Active Responders & Safety Feeds</span>
+                  <span className="text-[10px] text-zinc-400 font-normal">Real-time status</span>
                 </h4>
 
                 {coverageLoading ? (
                   <div className="p-4 text-center text-xs text-zinc-400 space-y-2">
                     <RefreshCw className="w-4 h-4 animate-spin mx-auto text-[#C59B27]" />
-                    <span>Loading coverage details...</span>
+                    <span>Loading active coverage...</span>
                   </div>
                 ) : selectedCoverage ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -737,63 +1045,63 @@ export default function AdminEventLocationsTab() {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-zinc-800 flex items-center space-x-1.5">
                           <Users className="w-4 h-4 text-zinc-500" />
-                          <span>On Duty Here</span>
+                          <span>Responders Present</span>
                         </span>
-                        <span className="bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold">
                           {selectedCoverage.activeResponders.length} active
                         </span>
                       </div>
 
                       {selectedCoverage.activeResponders.length === 0 ? (
-                        <p className="text-[10px] text-zinc-400 italic">
-                          No responders currently verified present at this location.
+                        <p className="text-[11px] text-zinc-400 italic">
+                          No responders currently logged present at this location.
                         </p>
                       ) : (
-                        <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
-                          {selectedCoverage.activeResponders.map((resp: any) => (
-                            <div key={resp.id} className="bg-white border border-[#EAE8E1] p-2 rounded-lg flex items-center justify-between text-[11px]">
+                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                          {selectedCoverage.activeResponders.map((resp: any, idx: number) => (
+                            <div key={resp.id || idx} className="bg-white border border-[#EAE8E1] p-2.5 rounded-lg flex items-center justify-between text-xs">
                               <div>
-                                <span className="font-bold text-zinc-800 block">{resp.full_name}</span>
-                                <span className="text-[9px] text-zinc-400">{resp.email}</span>
+                                <span className="font-bold text-zinc-800 block">{resp.fullName || resp.full_name}</span>
+                                <span className="text-[10px] text-zinc-400">{resp.role}</span>
                               </div>
-                              <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded font-semibold border border-emerald-100">
-                                {resp.source}
-                              </span>
+                              {resp.phone && (
+                                <a href={`tel:${resp.phone}`} className="text-[10px] text-[#C59B27] font-bold flex items-center space-x-1 bg-[#C59B27]/10 px-2 py-1 rounded">
+                                  <Phone className="w-3 h-3" />
+                                  <span>{resp.phone}</span>
+                                </a>
+                              )}
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
 
-                    {/* Active Alerts in location */}
+                    {/* Active Safety Alerts */}
                     <div className="border border-[#EAE8E1] rounded-xl p-4 bg-zinc-50/50 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-zinc-800 flex items-center space-x-1.5">
                           <ShieldAlert className="w-4 h-4 text-zinc-500" />
-                          <span>Active Safety Alerts</span>
+                          <span>Active Location Alerts</span>
                         </span>
-                        <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded text-[10px] font-bold">
                           {selectedCoverage.activeAlerts.length} open
                         </span>
                       </div>
 
                       {selectedCoverage.activeAlerts.length === 0 ? (
-                        <p className="text-[10px] text-zinc-400 italic">
-                          Clear. No active safety concerns reported here.
+                        <p className="text-[11px] text-zinc-400 italic">
+                          Clear. No open safety alerts for this location.
                         </p>
                       ) : (
-                        <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
-                          {selectedCoverage.activeAlerts.map((alert: any) => (
-                            <div key={alert.id} className="bg-white border border-[#EAE8E1] p-2 rounded-lg text-[11px] space-y-1">
+                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                          {selectedCoverage.activeAlerts.map((alert: any, idx: number) => (
+                            <div key={alert.id || idx} className="bg-white border border-rose-200 p-2.5 rounded-lg text-xs space-y-1">
                               <div className="flex items-center justify-between">
                                 <span className="font-bold text-zinc-900">{alert.title}</span>
-                                <span className={`text-[8px] font-bold uppercase px-1.5 rounded ${
-                                  alert.severity === 'urgent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                                }`}>
+                                <span className="text-[9px] font-bold uppercase bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded">
                                   {alert.severity}
                                 </span>
                               </div>
-                              <p className="text-[10px] text-zinc-500 truncate">{alert.message || 'No description'}</p>
                             </div>
                           ))}
                         </div>
@@ -806,26 +1114,38 @@ export default function AdminEventLocationsTab() {
 
             </div>
           ) : (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center text-xs text-zinc-400 space-y-2 shadow-xs">
-              <MapPin className="w-10 h-10 text-zinc-300 mx-auto" />
-              <p className="font-semibold text-zinc-500">No Location Selected</p>
-              <p className="text-[10px] max-w-sm mx-auto">
-                Select a room, zone, or gate from the directory list on the left to review occupancy capacity, print QR scanning cards, and track active responders.
-              </p>
+            /* EMPTY STATE when no location is selected */
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center text-xs text-zinc-400 space-y-4 shadow-xs">
+              <div className="w-16 h-16 bg-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center mx-auto">
+                <MapPin className="w-8 h-8" />
+              </div>
+              <div className="space-y-1 max-w-md mx-auto">
+                <h3 className="text-base font-bold text-zinc-800">No Location Selected</h3>
+                <p className="text-xs text-zinc-500">
+                  Select a room, zone, or gate from the directory list on the left to review occupancy capacity, print QR scanning cards, and track active responders.
+                </p>
+              </div>
+              <button
+                onClick={openCreateModal}
+                className="px-4 py-2 bg-[#C59B27] text-white rounded-xl text-xs font-bold hover:bg-[#A37E1C] transition-all cursor-pointer inline-flex items-center space-x-1.5 shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Location</span>
+              </button>
             </div>
           )}
         </div>
 
       </div>
 
-      {/* FORM MODAL: CREATE / EDIT LOCATION */}
+      {/* MODAL 1: ADD / EDIT LOCATION FORM */}
       {showFormModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-lg shadow-xl space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
               <h3 className="text-base font-bold text-zinc-900 tracking-tight flex items-center space-x-2">
                 <MapPin className="w-5 h-5 text-[#C59B27]" />
-                <span>{isEditing ? 'Edit Location Configuration' : 'Configure New Location'}</span>
+                <span>{isEditing ? 'Edit Location Configuration' : 'Add New Event Location'}</span>
               </h3>
               <button 
                 onClick={() => setShowFormModal(false)}
@@ -839,32 +1159,32 @@ export default function AdminEventLocationsTab() {
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Name *</label>
+                  <label className="font-bold text-zinc-700 block">Location Name *</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Room 102, Zone A"
+                    placeholder="e.g. Grace Hall Primary, Gate A"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
+                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Short Code (Optional)</label>
+                  <label className="font-bold text-zinc-700 block">Short Code / Tag</label>
                   <input
                     type="text"
-                    placeholder="e.g. R102, ZA"
+                    placeholder="e.g. GH-101, GATE-A"
                     value={formShortName}
                     onChange={(e) => setFormShortName(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none font-mono uppercase"
+                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none font-mono uppercase"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Type *</label>
+                  <label className="font-bold text-zinc-700 block">Location Type *</label>
                   <select
                     value={formType}
                     onChange={(e) => setFormType(e.target.value)}
@@ -886,7 +1206,7 @@ export default function AdminEventLocationsTab() {
                     onChange={(e) => setFormParentId(e.target.value)}
                     className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
                   >
-                    <option value="">None (Root Location)</option>
+                    <option value="">None (Root Level)</option>
                     {locations
                       .filter(l => l.id !== formId && l.isActive)
                       .map(l => (
@@ -904,7 +1224,7 @@ export default function AdminEventLocationsTab() {
                   <input
                     type="number"
                     min="1"
-                    placeholder="None"
+                    placeholder="e.g. 50"
                     value={formCapacity}
                     onChange={(e) => setFormCapacity(e.target.value)}
                     className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
@@ -912,54 +1232,54 @@ export default function AdminEventLocationsTab() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Age Group</label>
+                  <label className="font-bold text-zinc-700 block">Age Target</label>
                   <select
                     value={formAgeGroup}
                     onChange={(e) => setFormAgeGroup(e.target.value)}
                     className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
                   >
                     <option value="all">All Ages</option>
-                    <option value="nursery">Nursery</option>
+                    <option value="nursery">Nursery / Infants</option>
                     <option value="toddlers">Toddlers</option>
                     <option value="preschool">Preschool</option>
-                    <option value="kindergarten">Kindergarten</option>
+                    <option value="elementary">Elementary</option>
                     <option value="teens">Teens</option>
+                    <option value="adults">Adults</option>
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Sort Order</label>
-                  <input
-                    type="number"
-                    value={formSortOrder}
-                    onChange={(e) => setFormSortOrder(parseInt(e.target.value) || 0)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none font-mono"
-                  />
+                  <label className="font-bold text-zinc-700 block">Duty Team</label>
+                  <select
+                    value={formTeamKey}
+                    onChange={(e) => setFormTeamKey(e.target.value)}
+                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
+                  >
+                    <option value="General Response">General Response</option>
+                    <option value="Child Check-in">Child Check-in</option>
+                    <option value="Medical / First Aid">Medical / First Aid</option>
+                    <option value="Security / Safety">Security / Safety</option>
+                    <option value="Facilities">Facilities</option>
+                  </select>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Assigned Response Team / Responsibility</label>
-                <select
-                  value={formTeamKey}
-                  onChange={(e) => setFormTeamKey(e.target.value)}
+                <label className="font-bold text-zinc-700 block">Emergency Dispatch Label</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Sector 2 Emergency Point - Medical Kit Available"
+                  value={formEmergencyLabel}
+                  onChange={(e) => setFormEmergencyLabel(e.target.value)}
                   className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                >
-                  <option value="General Response">General Response Team</option>
-                  <option value="Care Lead">Care Leads</option>
-                  <option value="Security Lead">Security Leads</option>
-                  <option value="First Aid Team">First Aid Team</option>
-                  <option value="Gate/Check-in Lead">Gate/Check-in Leads</option>
-                  <option value="Pickup Lead">Pickup Leads</option>
-                  <option value="Room/Group Lead">Room/Group Leads</option>
-                </select>
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Description (Scope & Boundaries)</label>
+                <label className="font-bold text-zinc-700 block">Description</label>
                 <textarea
-                  placeholder="Describe where this room starts, boundaries, layout parameters..."
                   rows={2}
+                  placeholder="Brief operational description of room purpose or layout..."
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
@@ -967,41 +1287,31 @@ export default function AdminEventLocationsTab() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Volunteer On Duty Special Instructions</label>
+                <label className="font-bold text-zinc-700 block">Special Instructions for Duty Responders</label>
                 <textarea
-                  placeholder="Instructions shown to volunteers when they scan or select this location..."
                   rows={2}
+                  placeholder="Check wristband color before parent release. Keep fire exit clear..."
                   value={formInstructions}
                   onChange={(e) => setFormInstructions(e.target.value)}
                   className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Emergency Dispatch Directive (Evacuation/Threats)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Exit through East fire gate directly to South parking lot assembly point B"
-                  value={formEmergencyLabel}
-                  onChange={(e) => setFormEmergencyLabel(e.target.value)}
-                  className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-red-300 focus:outline-none text-red-700 font-medium"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-4 border-t border-[#EAE8E1]">
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#EAE8E1]">
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 hover:bg-zinc-100 text-zinc-600 rounded-xl font-bold cursor-pointer"
+                  className="px-4 py-2 bg-white border border-[#EAE8E1] text-zinc-600 rounded-xl font-bold hover:bg-zinc-50 transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="px-5 py-2 bg-[#C59B27] text-white rounded-xl font-bold hover:bg-[#A37E1C] disabled:opacity-50 transition-all cursor-pointer shadow-xs"
+                  disabled={savingLocation}
+                  className="px-5 py-2 bg-[#C59B27] text-white rounded-xl font-bold hover:bg-[#A37E1C] transition-all cursor-pointer shadow-xs disabled:opacity-50 flex items-center space-x-1.5"
                 >
-                  {loading ? 'Saving Settings...' : 'Save Location'}
+                  {savingLocation && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isEditing ? 'Save Changes' : 'Create Location'}</span>
                 </button>
               </div>
 
@@ -1010,16 +1320,14 @@ export default function AdminEventLocationsTab() {
         </div>
       )}
 
-      {/* QR CODE DETAILS & PRINT CARD MODAL */}
+      {/* MODAL 2: PRINT / MANAGE QR CARD */}
       {showQRModal && selectedLocation && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 print:bg-white print:p-0">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-6 max-h-[95vh] overflow-y-auto print:border-none print:shadow-none print:m-0 print:p-0 print:w-full print:max-w-none print:max-h-none">
-            
-            {/* Modal Header - Hidden in Print */}
-            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4 print:hidden">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-md shadow-xl space-y-5">
+            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
               <h3 className="text-base font-bold text-zinc-900 tracking-tight flex items-center space-x-2">
                 <QrCode className="w-5 h-5 text-[#C59B27]" />
-                <span>Location QR Card Manager</span>
+                <span>Location QR Access Label</span>
               </h3>
               <button 
                 onClick={() => setShowQRModal(false)}
@@ -1029,148 +1337,178 @@ export default function AdminEventLocationsTab() {
               </button>
             </div>
 
-            {/* QR Card Representation: Designed to be a printable physical placard */}
-            <div className="border border-zinc-200 rounded-3xl p-8 bg-white shadow-xs text-center space-y-6 mx-auto max-w-sm border-dashed border-2 print:border-solid print:border-3 print:rounded-none print:p-12 print:shadow-none print:max-w-none">
-              
-              {/* Header block on card */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-mono tracking-widest text-[#C59B27] font-bold uppercase block">
-                  KOINONIA FELLOWSHIP
-                </span>
-                <h4 className="text-xl font-black text-zinc-950 uppercase tracking-tight">
-                  {selectedLocation.name}
-                </h4>
-                {selectedLocation.shortName && (
-                  <span className="bg-zinc-100 text-zinc-800 text-[10px] font-bold px-2 py-0.5 rounded font-mono">
-                    CODE: {selectedLocation.shortName}
-                  </span>
-                )}
-                {selectedLocation.pathLabel !== selectedLocation.name && (
-                  <p className="text-[10px] text-zinc-400 font-semibold uppercase">
-                    {selectedLocation.pathLabel.replace(' › ' + selectedLocation.name, '')}
-                  </p>
-                )}
-              </div>
-
-              {/* Scannable Graphic representation - Standardized visual styling */}
-              <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-6 flex flex-col items-center justify-center space-y-3 max-w-[240px] mx-auto relative print:bg-white print:border-zinc-300">
-                {qrLoading ? (
-                  <div className="py-8 text-zinc-400 text-xs flex flex-col items-center space-y-2">
-                    <RefreshCw className="w-6 h-6 animate-spin text-[#C59B27]" />
-                    <span>Preparing security code...</span>
-                  </div>
-                ) : qrToken ? (
-                  <>
-                    <div className="p-3 bg-white border border-zinc-200 rounded-xl shadow-xs shrink-0">
-                      {/* Premium simulated high-contrast geometric vector design acting as high quality QR */}
-                      <div className="w-28 h-28 bg-zinc-950 p-2 rounded flex flex-wrap content-between justify-between relative overflow-hidden">
-                        {/* 4 corner position squares */}
-                        <div className="w-8 h-8 bg-white border-4 border-zinc-950 flex items-center justify-center">
-                          <div className="w-3 h-3 bg-zinc-950" />
-                        </div>
-                        <div className="w-8 h-8 bg-white border-4 border-zinc-950 flex items-center justify-center">
-                          <div className="w-3 h-3 bg-zinc-950" />
-                        </div>
-                        <div className="w-8 h-8 bg-white border-4 border-zinc-950 flex items-center justify-center absolute bottom-2 left-2">
-                          <div className="w-3 h-3 bg-zinc-950" />
-                        </div>
-                        {/* simulated randomized code pattern */}
-                        <div className="w-full h-full flex flex-wrap content-center justify-center gap-1 opacity-90 p-4">
-                          {[...Array(25)].map((_, i) => (
-                            <div 
-                              key={i} 
-                              className={`w-1 h-1 rounded-xs ${
-                                (i * 3 + qrToken.charCodeAt(i % qrToken.length)) % 2 === 0 ? 'bg-white' : 'bg-zinc-950'
-                              }`} 
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[9px] text-zinc-400 font-mono tracking-widest block truncate max-w-full uppercase">
-                      SECURE: {qrToken.substring(0, 16)}...
-                    </span>
-                  </>
-                ) : (
-                  <div className="py-8 text-zinc-400 text-xs font-semibold flex flex-col items-center space-y-2">
-                    <AlertTriangle className="w-6 h-6 text-zinc-300" />
-                    <span>No Active Scannable Token</span>
-                    <button 
-                      onClick={handleGenerateQR}
-                      className="px-3 py-1 bg-[#C59B27] text-white rounded-lg text-[10px] font-bold"
-                    >
-                      Generate New Token
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Instructions and footer */}
-              <div className="space-y-3 text-zinc-600 text-left text-[11px] leading-relaxed max-w-xs mx-auto">
-                <p className="font-bold text-center text-zinc-800 uppercase tracking-wide text-[10px]">
-                  Volunteer On-Duty Instructions
-                </p>
-                <ol className="list-decimal pl-4 space-y-1.5 text-zinc-600">
-                  <li>Open the <strong>Volunteer Dashboard</strong> on your device.</li>
-                  <li>Tap on <strong>"Scan Location Code"</strong> or <strong>"Change Location"</strong>.</li>
-                  <li>Scan this QR code with your camera to confirm your active presence.</li>
-                  <li>Confirming presence ensures alerts inside this room are routed to you instantly!</li>
-                </ol>
-              </div>
-
-              {selectedLocation.instructions && (
-                <div className="bg-amber-50/50 border border-amber-100 p-3 rounded-xl text-left text-[10px] text-amber-900 leading-relaxed max-w-xs mx-auto">
-                  <span className="font-bold block uppercase tracking-wide mb-1 text-[8px] text-amber-800">
-                    Room-Specific Guideline:
-                  </span>
-                  {selectedLocation.instructions}
+            <div className="space-y-4 text-center">
+              {/* QR Card Preview */}
+              <div className="bg-[#FAF9F6] border-2 border-[#EAE8E1] p-6 rounded-2xl space-y-3 max-w-xs mx-auto shadow-xs">
+                <div className="text-[10px] font-bold uppercase text-[#C59B27] tracking-widest">
+                  KOINONIA CHURCH EVENT
                 </div>
+                
+                <h4 className="font-serif font-bold text-lg text-zinc-900">{selectedLocation.name}</h4>
+                <p className="text-[11px] text-zinc-500 font-medium">{selectedLocation.pathLabel}</p>
+
+                <div className="w-44 h-44 bg-white border border-[#EAE8E1] rounded-2xl mx-auto flex items-center justify-center p-2 shadow-xs">
+                  {qrLoading ? (
+                    <RefreshCw className="w-6 h-6 animate-spin text-[#C59B27]" />
+                  ) : qrDataUrl ? (
+                    <img src={qrDataUrl} alt="Scannable Location Access QR Code" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[10px] text-zinc-400 italic">No active QR code generated</span>
+                  )}
+                </div>
+
+                {qrToken ? (
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      QR Access Active
+                    </span>
+                    <p className="text-[10px] text-zinc-500 font-medium leading-tight pt-1">
+                      Scan to confirm location &amp; open permitted Event Duty tools.
+                    </p>
+                  </div>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                    QR Access Disabled
+                  </span>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handlePrintCard}
+                  disabled={!qrToken || qrLoading}
+                  className="w-full py-2.5 bg-[#C59B27] text-white rounded-xl text-xs font-bold hover:bg-[#A37E1C] transition-all cursor-pointer shadow-xs flex items-center justify-center space-x-1.5 disabled:opacity-50"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Location Label</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setConfirmActionModal('rotate')}
+                    disabled={qrLoading}
+                    className="py-2 bg-white border border-[#EAE8E1] text-zinc-700 hover:text-zinc-900 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center space-x-1 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${qrLoading ? 'animate-spin' : ''}`} />
+                    <span>Rotate Token</span>
+                  </button>
+
+                  <button
+                    onClick={() => setConfirmActionModal('disable')}
+                    disabled={!qrToken || qrLoading}
+                    className="py-2 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    Disable Code
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION MODAL FOR ROTATE / DISABLE */}
+      {confirmActionModal && selectedLocation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-center">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${confirmActionModal === 'rotate' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+              {confirmActionModal === 'rotate' ? <RefreshCw className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+            </div>
+
+            <div className="space-y-1.5">
+              <h4 className="font-bold text-base text-zinc-900">
+                {confirmActionModal === 'rotate' ? 'Rotate QR Code Token?' : 'Disable Location QR Access?'}
+              </h4>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                {confirmActionModal === 'rotate'
+                  ? 'Rotating this code will immediately invalidate previously printed physical labels. Duty volunteers will need to scan the newly printed code to register presence.'
+                  : 'Disabling QR access will prevent volunteers from scanning this location label until a new code is generated by an administrator.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setConfirmActionModal(null)}
+                className="py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-bold cursor-pointer transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmActionModal === 'rotate') {
+                    handleGenerateQR();
+                  } else {
+                    handleDisableQR();
+                  }
+                  setConfirmActionModal(null);
+                }}
+                className={`py-2 text-white rounded-xl text-xs font-bold cursor-pointer transition-all ${confirmActionModal === 'rotate' ? 'bg-[#C59B27] hover:bg-[#A37E1C]' : 'bg-rose-600 hover:bg-rose-700'}`}
+              >
+                {confirmActionModal === 'rotate' ? 'Confirm Rotation' : 'Disable Access'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRINTABLE PHYSICAL LOCATION ACCESS LABEL */}
+      {selectedLocation && (
+        <>
+          <style>{`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #printable-location-label, #printable-location-label * {
+                visibility: visible !important;
+              }
+              #printable-location-label {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                display: block !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+              }
+            }
+          `}</style>
+          <div id="printable-location-label" className="hidden print:block p-8 bg-white text-zinc-900 font-sans max-w-lg mx-auto border-4 border-zinc-900 rounded-3xl space-y-6 text-center">
+            <div className="border-b-2 border-zinc-900 pb-4 space-y-1">
+              <div className="text-[12px] font-bold uppercase tracking-widest text-[#C59B27]">
+                KOINONIA CHURCH EVENT DUTY
+              </div>
+              <h1 className="text-3xl font-serif font-black tracking-tight text-zinc-950">{selectedLocation.name}</h1>
+              <p className="text-sm font-semibold text-zinc-600">{selectedLocation.pathLabel}</p>
+            </div>
+
+            <div className="w-64 h-64 mx-auto bg-white border-2 border-zinc-900 p-3 rounded-2xl flex items-center justify-center shadow-md">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="Location Access QR Code" className="w-full h-full object-contain" />
+              ) : (
+                <div className="text-xs text-zinc-400 italic">QR Code Not Generated</div>
               )}
             </div>
 
-            {/* Actions Bar - Hidden in Print */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-[#EAE8E1] print:hidden">
-              <div className="flex gap-2">
-                {qrToken && (
-                  <>
-                    <button
-                      onClick={handleGenerateQR}
-                      disabled={qrLoading}
-                      className="px-3.5 py-2 hover:bg-zinc-100 text-zinc-700 rounded-xl text-xs font-bold border border-[#EAE8E1] cursor-pointer"
-                    >
-                      Rotate Code Token
-                    </button>
-                    <button
-                      onClick={handleDisableQR}
-                      disabled={qrLoading}
-                      className="px-3.5 py-2 hover:bg-rose-50 text-rose-600 rounded-xl text-xs font-bold border border-rose-100 cursor-pointer"
-                    >
-                      Disable Code
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="flex gap-2 w-full sm:w-auto justify-end">
-                <button
-                  onClick={() => setShowQRModal(false)}
-                  className="px-4 py-2 hover:bg-zinc-100 text-zinc-600 rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  Close Manager
-                </button>
-                {qrToken && (
-                  <button
-                    onClick={handlePrintCard}
-                    className="flex items-center space-x-1.5 px-5 py-2 bg-zinc-900 text-white hover:bg-zinc-800 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-xs"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Print QR Card</span>
-                  </button>
-                )}
-              </div>
+            <div className="space-y-2 border-t-2 border-zinc-900 pt-4">
+              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
+                Event Duty Volunteers: Scan to Register Active Presence
+              </p>
+              <p className="text-[11px] text-zinc-600 max-w-sm mx-auto leading-relaxed">
+                Point your mobile terminal camera at this QR label to confirm active duty location presence and access permitted operational controls.
+              </p>
             </div>
 
+            <div className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest pt-2 border-t border-zinc-200">
+              Official Ministry Location Pass • Do Not Cover, Obscure or Alter
+            </div>
           </div>
-        </div>
+        </>
       )}
 
     </div>

@@ -32,7 +32,8 @@ import {
   Activity,
   Heart,
   User,
-  Smartphone
+  Smartphone,
+  CloudOff
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -92,6 +93,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [overviewData, setOverviewData] = useState<any>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [errorUpdatingDemographics, setErrorUpdatingDemographics] = useState<string>('');
+  const [dashboardError, setDashboardError] = useState<{ message: string; description: string } | null>(null);
+  const lastToastMessageRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Fallback stats for quick reference/backwards compatibility
   const [stats, setStats] = useState<any>({
@@ -243,6 +247,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   };
 
   const fetchSafetyAlerts = async () => {
+    if (!api.getToken()) return;
     try {
       const res = await api.admin.getSafetyAlerts();
       if (Array.isArray(res)) {
@@ -290,8 +295,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           }
         }
       }
-    } catch (err) {
-      console.error('Failed to fetch safety alerts:', err);
+    } catch (err: any) {
+      console.warn('[AdminOverview] Safety alerts poll fetch issue:', err?.message || err);
     }
   };
 
@@ -410,6 +415,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   // Fetch Admin Notifications
   const fetchNotificationsList = async (playFeedback = false) => {
+    if (!api.getToken()) return;
     try {
       const list = await api.parent.getNotifications(false, 'admin');
       const unreadList = list.filter((n: any) => !n.isRead);
@@ -436,8 +442,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       });
       
       setUnreadNotifCount(unreadList.length);
-    } catch (err) {
-      console.error('Error fetching admin notifications:', err);
+    } catch (err: any) {
+      console.warn('[AdminOverview] Admin notifications poll fetch issue:', err?.message || err);
     }
   };
 
@@ -452,8 +458,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const token = localStorage.getItem('koinonia_token');
       if (!token) return;
 
-      const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-      const sseUrl = `${apiBaseUrl}/api/notifications/stream?token=${token}`;
+      const sseUrl = `/api/notifications/stream?token=${token}`;
 
       console.log('[SSE Client] Connecting to:', sseUrl);
       eventSource = new EventSource(sseUrl);
@@ -683,19 +688,26 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   }, [initialTab]);
 
-  const isFetchingRef = useRef(false);
-
   const fetchDashboardData = async (isRefresh = false) => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
+    // Abort previous in-flight request if any to prevent race conditions and redundant triggers
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     try {
-      const res = await api.admin.getOverview();
+      const res = await api.admin.getOverview({ signal: controller.signal });
       if (res.success) {
         setOverviewData(res);
+        setDashboardError(null);
+        lastToastMessageRef.current = null; // reset error toast deduplicator on success
         setErrorUpdatingDemographics('');
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         setLastUpdated(timeStr);
@@ -715,14 +727,39 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         }
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // Stale request successfully aborted, do nothing
+        return;
+      }
       console.error('[AdminOverviewView - fetchDashboardData Error]:', err);
       const parsed = extractApiError(err);
-      showError('Sync Failed', parsed.message);
+      
+      // Map generic "Connection problem" or other errors to highly informative but safe/classified operation errors
+      let classifiedError = {
+        message: 'Administrative Sync Interrupted',
+        description: 'We could not reach the service to synchronize the administrative overview. Please check your network and try again.'
+      };
+      
+      if (parsed.message && parsed.message.toLowerCase().includes('auth')) {
+        classifiedError = {
+          message: 'Access Authorization Expired',
+          description: 'Your session has expired or is invalid. Please sign in again.'
+        };
+      }
+      
+      setDashboardError(classifiedError);
       setErrorUpdatingDemographics('We could not update demographics right now. Please try again.');
+
+      // Prevent duplicate stacked error toast alerts
+      if (lastToastMessageRef.current !== classifiedError.message) {
+        showError(classifiedError.message, classifiedError.description);
+        lastToastMessageRef.current = classifiedError.message;
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      isFetchingRef.current = false;
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -742,6 +779,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   useEffect(() => {
     fetchDashboardData();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -786,6 +828,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       onNavigate('/admin/volunteers');
     } else if (tab === 'training') {
       onNavigate('/admin/training/scenarios');
+    } else if (tab === 'events') {
+      onNavigate('/admin/events');
+    } else if (tab === 'duty_devices') {
+      onNavigate('/admin/duty-devices');
+    } else if (tab === 'incidents') {
+      onNavigate('/admin/incidents');
+    } else if (tab === 'escalations') {
+      onNavigate('/admin/escalations');
+    } else if (tab === 'operations') {
+      onNavigate('/admin/operations');
     }
   };
 
@@ -1483,7 +1535,34 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {/* TAB 1: OVERVIEW DASHBOARD */}
           {activeTab === 'overview' && (
             <div data-view-version="admin-overview-v2-approved-design">
-              {headerTab === 'upcoming' ? (
+              {dashboardError && !overviewData ? (
+                <div data-view-version="admin-dashboard-error-v1" className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center max-w-xl mx-auto my-12 shadow-xs animate-fade-in space-y-6">
+                  <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="font-serif text-xl font-semibold text-zinc-900">
+                      Dashboard Sync Interrupted
+                    </h3>
+                    <p className="text-xs text-zinc-600 leading-relaxed max-w-md mx-auto">
+                      {dashboardError.description}
+                    </p>
+                    <p className="text-[10px] text-zinc-400 font-mono">
+                      Error details: {dashboardError.message}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDashboardError(null);
+                      fetchDashboardData();
+                    }}
+                    className="inline-flex items-center gap-2 bg-[#C59B27] hover:bg-[#b58c22] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : headerTab === 'upcoming' ? (
                 <div className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center max-w-xl mx-auto my-12 shadow-xs animate-fade-in space-y-4">
                   <div className="w-12 h-12 bg-[#C59B27]/5 rounded-full flex items-center justify-center text-[#C59B27] mx-auto">
                     <Calendar className="w-6 h-6" />
@@ -1502,6 +1581,36 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 </div>
               ) : (
                 <>
+                  {/* Subtle Background Sync Fail Warning Banner */}
+                  {dashboardError && overviewData && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs animate-fade-in"
+                         data-component-version="sync-fail-subtle-banner-v1">
+                      <div className="flex items-center space-x-3 text-left">
+                        <div className="p-2 bg-amber-100 text-amber-700 rounded-xl">
+                          <CloudOff className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-amber-950 text-xs">
+                            Sync Delayed
+                          </p>
+                          <p className="text-[10px] text-amber-800/80 font-medium">
+                            We could not synchronize the latest analytics. Displaying last loaded data from {lastUpdated || 'earlier'}.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDashboardError(null);
+                          fetchDashboardData(true);
+                        }}
+                        className="text-[10px] bg-white border border-amber-200 hover:bg-amber-100 text-amber-900 font-bold px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Retry Sync
+                      </button>
+                    </div>
+                  )}
+
                   {/* Event Safety Alerts Panel */}
                   {safetyAlerts.filter((a: any) => a.status !== 'resolved').length > 0 && showCommandCenter && (
                     <div 
@@ -2864,6 +2973,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminReportsView 
               onBackToOverview={() => handleTabChange('overview')} 
               onNavigate={onNavigate}
+              currentRoute={currentRoute}
             />
           )}
 
@@ -2922,15 +3032,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminOperationsDashboardView 
               onBackToOverview={() => handleTabChange('overview')}
               adminUser={adminUser}
+              onNavigate={onNavigate}
+              onTabChange={handleTabChange}
             />
           )}
 
-          {/* OTHER ADMIN TABS: DYNAMIC PLACEHOLDER INSIDE THE SHELL */}
-          {activeTab !== 'overview' && activeTab !== 'settings' && activeTab !== 'applications' && activeTab !== 'review' && activeTab !== 'children' && activeTab !== 'attendance' && activeTab !== 'reports' && activeTab !== 'messages' && activeTab !== 'volunteers' && activeTab !== 'parents' && activeTab !== 'events' && activeTab !== 'duty_devices' && activeTab !== 'incidents' && activeTab !== 'escalations' && activeTab !== 'operations' && (
-            renderPlaceholderSection(
-              (activeTab as string).charAt(0).toUpperCase() + (activeTab as string).slice(1)
-            )
-          )}
+
 
         </main>
       </div>
@@ -3218,7 +3325,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : 'bg-amber-50 text-amber-700 border-amber-200'
                           }`}>
-                            {(activeUrgentRichDetail.child.passStatus || activeUrgentRichDetail.child.status).toUpperCase().replace('_', ' ')}
+                            {((activeUrgentRichDetail.child.passStatus || activeUrgentRichDetail.child.status || '').toUpperCase()).replace('_', ' ')}
                           </span>
                         </div>
                       </div>

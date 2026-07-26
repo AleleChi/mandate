@@ -13,6 +13,7 @@ import { processImage } from '../services/media/imageProcessor';
 import { broadcastSSEEvent } from '../services/sse';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
+import { adminDutyRouter } from './duty';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -3405,7 +3406,6 @@ router.post('/notifications', async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ error: 'Title and message are required' });
     }
 
-    const crypto = require('crypto');
     const notificationId = `notif-${crypto.randomUUID()}`;
     const createdAt = new Date().toISOString();
 
@@ -3474,7 +3474,6 @@ router.post('/notifications', async (req: AuthenticatedRequest, res: Response) =
 router.post('/notifications/test', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const crypto = require('crypto');
     const notificationId = `testnotif-${crypto.randomUUID()}`;
     const createdAt = new Date().toISOString();
 
@@ -3883,7 +3882,7 @@ router.get('/footer-settings', async (req, res) => {
 
     if (!settings) {
       settings = {
-        copyrightYear: 2025,
+        copyrightYear: 2026,
         copyrightText: 'Koinonia Children and Teens. All rights reserved.'
       };
     }
@@ -3916,7 +3915,7 @@ router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest
             updated_at = ?
         WHERE id = ?
       `, [
-        copyrightYear ? parseInt(copyrightYear, 10) : 2025,
+        copyrightYear ? parseInt(copyrightYear, 10) : 2026,
         copyrightText || '',
         now,
         id
@@ -3928,7 +3927,7 @@ router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest
         ) VALUES (?, ?, ?, ?, ?)
       `, [
         id,
-        copyrightYear ? parseInt(copyrightYear, 10) : 2025,
+        copyrightYear ? parseInt(copyrightYear, 10) : 2026,
         copyrightText || '',
         now,
         now
@@ -6279,9 +6278,16 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
     }
 
     const { id } = req.params;
-    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    let alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ? OR public_reference = ?', [id, id]);
     if (!alert) {
       return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    // Auto-generate public_reference if missing
+    if (!alert.public_reference) {
+      const publicRef = `ref-${crypto.randomBytes(16).toString('hex')}`;
+      await execute('UPDATE event_safety_alerts SET public_reference = ? WHERE id = ?', [publicRef, alert.id]);
+      alert.public_reference = publicRef;
     }
 
     const now = new Date().toISOString();
@@ -6289,7 +6295,7 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
       UPDATE safety_alert_recipients
       SET read_at = COALESCE(read_at, ?)
       WHERE alert_id = ? AND recipient_user_id = ? AND read_at IS NULL
-    `, [now, id, req.user.id]);
+    `, [now, alert.id, req.user.id]);
 
     const dutyRole = req.query.role as string || req.headers['x-duty-role'] as string || req.user?.role || 'admin';
 
@@ -6414,6 +6420,7 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
       success: true,
       alert: {
         id: alert.id,
+        reference: alert.public_reference || alert.id,
         severity: alert.severity,
         category: alert.category,
         status: alert.status,
@@ -6942,6 +6949,12 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
       return a.pathLabel.localeCompare(b.pathLabel);
     });
 
+    const totalLocations = allLocations.length;
+    const activeLocations = allLocations.filter(l => l.is_active === 1).length;
+    const gates = allLocations.filter(l => l.location_type === 'gate' || l.location_type === 'check_in_point' || l.location_type === 'pickup_point').length;
+    const rooms = allLocations.filter(l => l.location_type === 'room').length;
+    const zones = allLocations.filter(l => l.location_type === 'zone').length;
+
     const total = items.length;
     const totalPages = Math.ceil(total / limit);
     const startIdx = (page - 1) * limit;
@@ -6949,7 +6962,18 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
 
     return res.json({
       success: true,
+      summary: {
+        totalLocations,
+        activeLocations,
+        gates,
+        rooms,
+        zones
+      },
+      locations: items,
       items: paginatedItems,
+      filters: {
+        types: ['room', 'zone', 'gate', 'pickup_point', 'check_in_point', 'first_aid_point']
+      },
       pagination: {
         page,
         limit,
@@ -6961,7 +6985,11 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
     });
   } catch (err: any) {
     console.error('Error fetching event locations:', err);
-    return res.status(500).json({ success: false, error: 'Failed to retrieve event locations' });
+    return res.status(500).json({
+      success: false,
+      error: 'EVENT_LOCATIONS_LOAD_FAILED',
+      message: 'We could not load event locations.'
+    });
   }
 });
 
@@ -7330,6 +7358,216 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
   }
 });
 
+// Alias endpoints for /api/admin/locations (default event: event-ga-2026)
+router.get('/locations', authMiddleware, async (req: AuthenticatedRequest, res, next) => {
+  req.params.eventId = 'event-ga-2026';
+  // Forward to /events/:eventId/locations logic
+  const handleLocations = (router as any)._router.stack.find((s: any) => s.route && s.route.path === '/events/:eventId/locations' && s.route.methods.get);
+  if (handleLocations) {
+    return handleLocations.handle(req, res, next);
+  }
+  return res.redirect(307, '/api/admin/events/event-ga-2026/locations');
+});
+
+router.post('/locations', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  req.params.eventId = 'event-ga-2026';
+  const { name, shortName, type, parentLocationId, description, instructions, capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, locationType } = req.body;
+  const realType = type || locationType || 'room';
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, error: 'Location name is required.' });
+  }
+  const id = 'loc-' + crypto.randomBytes(8).toString('hex');
+  const now = new Date().toISOString();
+  const parentId = (parentLocationId && parentLocationId !== 'none') ? parentLocationId : null;
+
+  await execute(`
+    INSERT INTO event_locations (
+      id, event_id, parent_location_id, location_type, name, short_name, description,
+      instructions, capacity, age_group_key, team_key, emergency_label, sort_order,
+      is_active, created_by, updated_by, created_at, updated_at
+    ) VALUES (?, 'event-ga-2026', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+  `, [
+    id, parentId, realType, name.trim(), shortName ? shortName.trim() : null,
+    description ? description.trim() : null, instructions ? instructions.trim() : null,
+    capacity ? parseInt(String(capacity)) : null, ageGroupKey || null, teamKey || null,
+    emergencyLabel ? emergencyLabel.trim() : null, sortOrder ? parseInt(String(sortOrder)) : 0,
+    req.user?.id || null, req.user?.id || null, now, now
+  ]);
+
+  const newLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [id]);
+  return res.json({ success: true, locationId: id, location: newLoc });
+});
+
+router.get('/locations/:locationId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  req.params.eventId = 'event-ga-2026';
+  const { locationId } = req.params;
+  const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  if (!loc) {
+    return res.status(404).json({ success: false, error: 'Location not found.' });
+  }
+  const codeEntry = await queryOne('SELECT id, token_hash, is_active FROM event_location_codes WHERE event_location_id = ? AND is_active = 1', [locationId]);
+  return res.json({
+    success: true,
+    location: {
+      id: loc.id,
+      eventId: loc.event_id,
+      parentLocationId: loc.parent_location_id,
+      type: loc.location_type,
+      name: loc.name,
+      shortName: loc.short_name,
+      description: loc.description,
+      instructions: loc.instructions,
+      capacity: loc.capacity,
+      ageGroupKey: loc.age_group_key,
+      teamKey: loc.team_key,
+      emergencyLabel: loc.emergency_label,
+      sortOrder: loc.sort_order,
+      isActive: !!loc.is_active,
+      archivedAt: loc.archived_at,
+      qrCodeActive: !!codeEntry,
+      qrToken: codeEntry ? codeEntry.token_hash : null
+    }
+  });
+});
+
+const handleUpdateLocation = async (req: AuthenticatedRequest, res: Response) => {
+  const { locationId } = req.params;
+  const { name, shortName, type, locationType, parentLocationId, description, instructions, capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, isActive } = req.body;
+  const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  if (!existingLoc) {
+    return res.status(404).json({ success: false, error: 'Location not found.' });
+  }
+  const realType = type || locationType || existingLoc.location_type;
+  const parentId = parentLocationId === 'none' ? null : (parentLocationId !== undefined ? parentLocationId : existingLoc.parent_location_id);
+  const now = new Date().toISOString();
+
+  await execute(`
+    UPDATE event_locations SET
+      name = COALESCE(?, name),
+      short_name = ?,
+      location_type = COALESCE(?, location_type),
+      parent_location_id = ?,
+      description = ?,
+      instructions = ?,
+      capacity = ?,
+      age_group_key = ?,
+      team_key = ?,
+      emergency_label = ?,
+      sort_order = COALESCE(?, sort_order),
+      is_active = COALESCE(?, is_active),
+      updated_by = ?,
+      updated_at = ?
+    WHERE id = ?
+  `, [
+    name ? name.trim() : null,
+    shortName === '' ? null : (shortName ? shortName.trim() : existingLoc.short_name),
+    realType,
+    parentId,
+    description === '' ? null : (description ? description.trim() : existingLoc.description),
+    instructions === '' ? null : (instructions ? instructions.trim() : existingLoc.instructions),
+    capacity === '' ? null : (capacity !== undefined ? parseInt(String(capacity)) : existingLoc.capacity),
+    ageGroupKey === '' ? null : (ageGroupKey ? ageGroupKey : existingLoc.age_group_key),
+    teamKey === '' ? null : (teamKey ? teamKey : existingLoc.team_key),
+    emergencyLabel === '' ? null : (emergencyLabel ? emergencyLabel.trim() : existingLoc.emergency_label),
+    sortOrder !== undefined ? parseInt(String(sortOrder)) : null,
+    isActive !== undefined ? (isActive ? 1 : 0) : null,
+    req.user?.id || null,
+    now,
+    locationId
+  ]);
+
+  const updatedLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  return res.json({ success: true, location: updatedLoc });
+};
+
+router.put('/locations/:locationId', authMiddleware, handleUpdateLocation as any);
+router.patch('/locations/:locationId', authMiddleware, handleUpdateLocation as any);
+
+router.post('/locations/:locationId/archive', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute(`
+    UPDATE event_locations SET is_active = 0, archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?
+  `, [now, req.user?.id || null, now, locationId]);
+  await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+  return res.json({ success: true });
+});
+
+router.post('/locations/:locationId/restore', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute(`
+    UPDATE event_locations SET is_active = 1, archived_at = NULL, archived_by = NULL, updated_at = ? WHERE id = ?
+  `, [now, locationId]);
+  return res.json({ success: true });
+});
+
+// QR Code endpoints for /locations/:locationId/qr
+router.get('/locations/:locationId/qr', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  let codeEntry = await queryOne('SELECT id, token_hash, is_active FROM event_location_codes WHERE event_location_id = ? AND is_active = 1', [locationId]);
+  if (!codeEntry) {
+    const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+    const id = 'code-' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    await execute(`
+      INSERT INTO event_location_codes (id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at)
+      VALUES (?, ?, ?, 1, 1, ?, ?)
+    `, [id, locationId, token, req.user?.id || null, now]);
+    codeEntry = { id, token_hash: token, is_active: 1 };
+  }
+  return res.json({ success: true, code: codeEntry });
+});
+
+router.post('/locations/:locationId/qr', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+  const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+  const id = 'code-' + crypto.randomBytes(8).toString('hex');
+  await execute(`
+    INSERT INTO event_location_codes (id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at)
+    VALUES (?, ?, ?, 1, 1, ?, ?)
+  `, [id, locationId, token, req.user?.id || null, now]);
+  return res.json({ success: true, token, code: { id, token_hash: token, is_active: 1 } });
+});
+
+router.delete('/locations/:locationId/qr', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute('UPDATE event_location_codes SET is_active = 0, disabled_at = ? WHERE event_location_id = ? AND is_active = 1', [now, locationId]);
+  return res.json({ success: true });
+});
+
+router.get('/locations/:locationId/coverage', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  if (!loc) {
+    return res.status(404).json({ success: false, error: 'Location not found' });
+  }
+  const activePresence = await query(`
+    SELECT p.*, u.role, pr.full_name, pr.phone_number
+    FROM event_duty_location_presence p
+    JOIN users u ON p.user_id = u.id
+    JOIN parent_profiles pr ON u.id = pr.user_id
+    WHERE p.event_location_id = ? AND p.ended_at IS NULL
+  `, [locationId]);
+
+  return res.json({
+    success: true,
+    coverage: {
+      locationId,
+      locationName: loc.name,
+      activePresence: activePresence.map(p => ({
+        userId: p.user_id, fullName: p.full_name, role: p.role, phone: p.phone_number, startedAt: p.started_at
+      })),
+      activeAlerts: []
+    },
+    responders: activePresence,
+    alerts: []
+  });
+});
+
 // ==========================================
 // Phase 7 Admin Child Summary Endpoints
 // ==========================================
@@ -7610,7 +7848,28 @@ router.get('/events/:eventId/operations/overview', authMiddleware, async (req: A
 
     let activeProfile: any = profile || 'admin';
 
-    if (userRole !== 'admin' && userRole !== 'super_admin') {
+    if (userRole === 'super_admin') {
+      // Super Admin bypasses assignment checks and can select any presentation preview
+      activeProfile = profile || 'admin';
+    } else if (userRole === 'admin') {
+      // Event Admin must be explicitly assigned to this event
+      const assignment = await queryOne(`
+        SELECT responsibility_key FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
+        LIMIT 1
+      `, [eventId, userId]);
+
+      if (!assignment) {
+        return res.status(403).json({ success: false, error: 'Access denied: You are not assigned to this event.' });
+      }
+
+      // Event Admin cannot request a super_admin profile
+      activeProfile = profile || 'admin';
+      if (activeProfile === 'super_admin') {
+        activeProfile = 'admin';
+      }
+    } else {
+      // Functional leads, team leads, etc. must be assigned and are locked to their profile
       const assignment = await queryOne(`
         SELECT responsibility_key FROM event_duty_assignments
         WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
@@ -7622,17 +7881,21 @@ router.get('/events/:eventId/operations/overview', authMiddleware, async (req: A
       }
 
       const key = assignment.responsibility_key;
-      if (key === 'First Aid Team') {
-        activeProfile = 'first_aid';
-      } else if (key === 'Security Lead') {
-        activeProfile = 'security';
+      let allowedProfile = 'volunteer';
+      if (key === 'First Aid Team' || key === 'First Aid Lead') {
+        allowedProfile = 'first_aid';
+      } else if (key === 'Security Lead' || key === 'Security Team') {
+        allowedProfile = 'security';
       } else if (key === 'Pickup Lead') {
-        activeProfile = 'pickup';
+        allowedProfile = 'pickup';
       } else if (key === 'Care Lead' || key === 'Room/Group Lead') {
-        activeProfile = 'team_lead';
+        allowedProfile = 'team_lead';
       } else {
         return res.status(403).json({ success: false, error: 'Access denied: Scoped permissions required.' });
       }
+
+      // Always force their allowed scoped profile, ignoring external query input
+      activeProfile = allowedProfile;
     }
 
     const data = await eventOperationsService.getEventOperationsOverview(eventId, {
@@ -7659,7 +7922,7 @@ router.get('/events/:eventId/operations/activity', authMiddleware, async (req: A
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    if (userRole !== 'admin' && userRole !== 'super_admin') {
+    if (userRole !== 'super_admin') {
       const assignment = await queryOne(`
         SELECT id FROM event_duty_assignments
         WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
@@ -7667,7 +7930,7 @@ router.get('/events/:eventId/operations/activity', authMiddleware, async (req: A
       `, [eventId, userId]);
 
       if (!assignment) {
-        return res.status(403).json({ success: false, error: 'Access denied' });
+        return res.status(403).json({ success: false, error: 'Access denied: You are not assigned to this event.' });
       }
     }
 
@@ -7686,6 +7949,12 @@ router.get('/events/:eventId/operations/activity', authMiddleware, async (req: A
     console.error('Error fetching event operations activity:', err);
     res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event activity.' });
   }
+});
+
+// Alias /api/admin/events/:eventId/response-coverage to adminDutyRouter
+router.use('/events/:eventId/response-coverage', (req, res, next) => {
+  req.url = `/events/${req.params.eventId}/response-coverage`;
+  adminDutyRouter(req, res, next);
 });
 
 export default router;
