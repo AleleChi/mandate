@@ -9,6 +9,7 @@ import { uploadMedia } from '../services/media/cloudinary';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
 import { resolveAlertRecipients } from './duty';
+import { buildPublicAppUrl } from '../utils/urlHelper';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -433,7 +434,6 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
 
     // Send email verification link
     try {
-      const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
       const rawVerifyToken = crypto.randomBytes(32).toString('hex');
       const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
       const tokenId = crypto.randomUUID();
@@ -446,7 +446,7 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
 
       console.log(`Volunteer verification token created { userId: "${userId}" }`);
 
-      const verificationLink = `${baseUrl}/#/volunteer/verify-email?token=${rawVerifyToken}`;
+      const verificationLink = buildPublicAppUrl(`/volunteer/verify-email?token=${rawVerifyToken}`);
       console.log(`Volunteer verification email send started { userId: "${userId}" }`);
 
       const emailResult = await sendVolunteerVerificationEmail({
@@ -764,7 +764,6 @@ router.post('/resend-verification', async (req: AuthenticatedRequest, res: Respo
       }
     }
 
-    const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
     const now = new Date().toISOString();
 
     // Expire old unused verification tokens
@@ -787,7 +786,7 @@ router.post('/resend-verification', async (req: AuthenticatedRequest, res: Respo
     // 3. Volunteer resend token created fields: - userId
     console.log(`Volunteer resend token created { userId: "${user.id}" }`);
 
-    const verificationLink = `${baseUrl}/#/volunteer/verify-email?token=${rawVerifyToken}`;
+    const verificationLink = buildPublicAppUrl(`/volunteer/verify-email?token=${rawVerifyToken}`);
 
     // 4. Volunteer resend email send started fields: - userId, maskedEmail
     console.log(`Volunteer resend email send started { userId: "${user.id}", email: "${maskedEmail}" }`);
@@ -933,7 +932,6 @@ router.post('/forgot-password', async (req: AuthenticatedRequest, res: Response)
       }
     }
 
-    const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
     const now = new Date().toISOString();
 
     // Expire old unused password_reset tokens
@@ -956,7 +954,7 @@ router.post('/forgot-password', async (req: AuthenticatedRequest, res: Response)
     // 3. Volunteer password reset token created fields: userId, expiresAt
     console.log(`Volunteer password reset token created { userId: "${user.id}", expiresAt: "${expiresAt}" }`);
 
-    const resetLink = `${baseUrl}/#/volunteer/reset-password?token=${rawResetToken}`;
+    const resetLink = buildPublicAppUrl(`/volunteer/reset-password?token=${rawResetToken}`);
 
     // 4. Volunteer password reset email send started fields: userId, maskedEmail
     console.log(`Volunteer password reset email send started { userId: "${user.id}", email: "${maskedEmail}" }`);
@@ -1143,7 +1141,8 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       assignedTeam = profile.preferred_team;
     }
 
-    const photoUrl = profile.photo_file_id ? `/api/media/files/${profile.photo_file_id}` : null;
+    const photoRef = profile.photo_file_id || (profile as any).photo_url || (req.user as any)?.photo_url || (req.user as any)?.photo_file_id || null;
+    const photoUrl = await resolvePhotoUrl(photoRef);
 
     const volunteerProfileObj = {
       id: profile.id,
@@ -1153,7 +1152,8 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       assignedArea,
       accessScope,
       full_name: profile.full_name || 'Volunteer',
-      photoUrl: photoUrl
+      photoUrl: photoUrl || null,
+      profilePhotoUrl: photoUrl || null
     };
 
     if (!hasAccess) {
@@ -1163,7 +1163,8 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
           id: req.user.id,
           fullName: profile.full_name || 'Volunteer',
           email: req.user.email,
-          photoUrl
+          photoUrl: photoUrl || null,
+          profilePhotoUrl: photoUrl || null
         },
         profile: volunteerProfileObj,
         volunteerProfile: volunteerProfileObj,
@@ -1212,7 +1213,8 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
         id: req.user.id,
         fullName: profile.full_name || 'Volunteer',
         email: req.user.email,
-        photoUrl
+        photoUrl: photoUrl || null,
+        profilePhotoUrl: photoUrl || null
       },
       profile: volunteerProfileObj,
       volunteerProfile: volunteerProfileObj,
@@ -1264,13 +1266,15 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
     nextRoute = '/volunteer/event';
   }
 
-  const photoUrl = profile.photo_file_id ? `/api/media/files/${profile.photo_file_id}` : null;
+  const photoRef = profile.photo_file_id || (profile as any).photo_url || (req.user as any)?.photo_url || (req.user as any)?.photo_file_id || null;
+  const photoUrl = await resolvePhotoUrl(photoRef);
 
   const volunteerProfileObj = {
     id: profile.id,
     status: volunteerStatus,
     preferredTeam: profile.preferred_team,
-    photoUrl,
+    photoUrl: photoUrl || null,
+    profilePhotoUrl: photoUrl || null,
     full_name: profile.full_name,
     phone: profile.phone,
     whatsapp: profile.whatsapp,
@@ -1703,7 +1707,8 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
 
     // Query fresh volunteer profile
     const freshProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
-    const photoUrl = freshProfile.photo_file_id ? `/api/media/files/${freshProfile.photo_file_id}` : null;
+    const freshPhotoRef = freshProfile.photo_file_id || freshProfile.photo_url || (req.user as any)?.photo_url || null;
+    const photoUrl = await resolvePhotoUrl(freshPhotoRef);
 
     // Resolve assigned details for compatibility
     let assignedTeam = 'General Team';
@@ -1737,6 +1742,7 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
       serving_experience: freshProfile.serving_experience,
       note: freshProfile.note,
       photoUrl,
+      profilePhotoUrl: photoUrl,
       photo_file_id: freshProfile.photo_file_id,
       status: freshProfile.status,
       assignedTeam,
@@ -1890,8 +1896,7 @@ router.post('/admin/volunteers/:volunteerId/approve', authMiddleware, async (req
 
     // Trigger volunteer approval email trigger post-transaction
     if (approvedVolunteer) {
-      const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-      const loginLink = `${baseUrl}/#/volunteer/sign-in`;
+      const loginLink = buildPublicAppUrl('/volunteer/sign-in');
 
       sendVolunteerApprovedEmail({
         volunteerEmail: approvedVolunteer.email,

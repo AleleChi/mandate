@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ModuleLoadingState } from '../../components/common/ModuleLoadingState';
 import { 
   ShieldAlert, 
   Check, 
@@ -336,10 +337,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
           </div>
 
           {loading ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 text-center shadow-xs flex flex-col items-center justify-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-              <p className="text-xs text-zinc-500 font-medium">Loading security alerts...</p>
-            </div>
+            <ModuleLoadingState title="Loading team alerts..." />
           ) : alerts.length === 0 ? (
             <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 text-center shadow-xs space-y-4 max-w-2xl mx-auto">
               <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center mx-auto shadow-xs">

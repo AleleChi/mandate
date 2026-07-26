@@ -239,7 +239,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
     return (
       <div className="flex flex-col items-center justify-center p-12 bg-white/80 backdrop-blur-xs rounded-3xl border border-[#EAE8E1] h-96" id="coordination-loader">
         <RefreshCw className="w-8 h-8 text-[#C59B27] animate-spin mb-4" />
-        <p className="text-xs text-zinc-500 font-medium font-sans">Loading premium coordination panel...</p>
+        <p className="text-xs text-zinc-500 font-medium font-sans">Loading response coordination panel...</p>
       </div>
     );
   }

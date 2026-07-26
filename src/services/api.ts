@@ -186,6 +186,12 @@ export const api = {
     async getAccess() {
       return api.request<any>('/api/me/access');
     },
+    async switchExperience(targetExperience: 'parent' | 'volunteer') {
+      return api.request<{ success: boolean; activeExperience?: string; targetRoute?: string; error?: string }>('/api/auth/switch-experience', {
+        method: 'POST',
+        body: JSON.stringify({ targetExperience })
+      });
+    },
     async forgotPassword(email: string) {
       return api.request<any>('/api/auth/forgot-password', {
         method: 'POST',
@@ -747,6 +753,24 @@ export const api = {
         body: JSON.stringify({ reason })
       });
     },
+    async bulkRemoveChildren(applicationIds: string[], reason: string) {
+      return api.request<any>('/api/admin/applications/bulk-remove', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason })
+      });
+    },
+    async bulkRestoreChildren(applicationIds: string[], reason?: string) {
+      return api.request<any>('/api/admin/applications/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason })
+      });
+    },
+    async bulkPurgeChildren(applicationIds: string[], reason: string, confirmText: string) {
+      return api.request<any>('/api/admin/applications/bulk-purge', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason, confirmText })
+      });
+    },
     async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean }) {
       return api.request<any>(`/api/admin/applications/${id}/review`, {
         method: 'POST',
@@ -800,8 +824,41 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async verifyInvite(token: string) {
+      return api.request<any>(`/api/admin/verify-invite?token=${encodeURIComponent(token)}`);
+    },
+    async resendInvite(payload: { userId?: string; email?: string }) {
+      return api.request<any>('/api/admin/invites/resend', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async acceptInvite(payload: any) {
       return api.request<any>('/api/admin/accept-invite', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkDuplicate(payload: any) {
+      return api.request<any>('/api/admin/check-duplicate', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addParent(payload: any) {
+      return api.request<any>('/api/admin/parents', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addChild(payload: any) {
+      return api.request<any>('/api/admin/children', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addVolunteer(payload: any) {
+      return api.request<any>('/api/admin/volunteers', {
         method: 'POST',
         body: JSON.stringify(payload)
       });

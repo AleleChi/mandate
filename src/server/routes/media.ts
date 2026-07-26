@@ -16,21 +16,23 @@ if (!fs.existsSync(MEDIA_DIR)) {
   fs.mkdirSync(MEDIA_DIR, { recursive: true });
 }
 
+const FALLBACK_AVATAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" fill="none">
+  <rect width="200" height="200" rx="32" fill="#F4F4F5"/>
+  <circle cx="100" cy="75" r="35" fill="#A1A1AA"/>
+  <path d="M40 165C40 135 65 120 100 120C135 120 160 135 160 165" stroke="#A1A1AA" stroke-width="20" stroke-linecap="round"/>
+</svg>`;
+
 // Public endpoint for UI <img> tags to load media without custom auth headers
 router.get('/files/:fileId', async (req: Request, res: Response) => {
   try {
     const { fileId } = req.params;
     const media = await queryOne('SELECT * FROM media_files WHERE id = ?', [fileId]);
 
-    if (!media) {
-      return res.redirect(302, 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=200');
-    }
-
     // If media has a remote Cloudinary secure URL, redirect directly to it
-    if (media.secure_url && (media.secure_url.startsWith('http://') || media.secure_url.startsWith('https://'))) {
+    if (media && media.secure_url && (media.secure_url.startsWith('http://') || media.secure_url.startsWith('https://'))) {
       return res.redirect(302, media.secure_url);
     }
-    if (media.file_url && (media.file_url.startsWith('http://') || media.file_url.startsWith('https://'))) {
+    if (media && media.file_url && (media.file_url.startsWith('http://') || media.file_url.startsWith('https://'))) {
       return res.redirect(302, media.file_url);
     }
 
@@ -44,7 +46,7 @@ router.get('/files/:fileId', async (req: Request, res: Response) => {
           const matchedFile = files.find(f => f === fileId || f.startsWith(`${fileId}.`));
           if (matchedFile) {
             const filePath = path.join(searchDir, matchedFile);
-            res.setHeader('Content-Type', media.mime_type || 'image/jpeg');
+            res.setHeader('Content-Type', (media && media.mime_type) || 'image/jpeg');
             return fs.createReadStream(filePath).pipe(res);
           }
         } catch (e) {
@@ -53,10 +55,14 @@ router.get('/files/:fileId', async (req: Request, res: Response) => {
       }
     }
 
-    return res.redirect(302, 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=200');
+    // Canonical Fallback: Return clean vector SVG avatar to ensure zero broken image frames in production
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.status(200).send(FALLBACK_AVATAR_SVG);
   } catch (err) {
     console.error('Error serving media file:', err);
-    res.status(500).json({ error: 'Failed to retrieve media file' });
+    res.setHeader('Content-Type', 'image/svg+xml');
+    return res.status(200).send(FALLBACK_AVATAR_SVG);
   }
 });
 

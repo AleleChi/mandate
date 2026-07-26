@@ -456,6 +456,35 @@ dutyRouter.post('/assignments/:assignmentId/return', async (req: AuthenticatedRe
 const adminDutyRouter = Router();
 adminDutyRouter.use(authMiddleware);
 
+// Helper to format human role labels
+function formatDutyRoleLabel(role: string): string {
+  if (!role) return 'Volunteer';
+  const lower = role.toLowerCase().trim();
+  switch (lower) {
+    case 'super_admin':
+      return 'Super Admin';
+    case 'admin':
+    case 'administrator':
+      return 'Administrator';
+    case 'safeguarding_lead':
+      return 'Safeguarding Lead';
+    case 'attendance_lead':
+      return 'Attendance Lead';
+    case 'pickup_lead':
+      return 'Pickup Lead';
+    case 'volunteer_lead':
+      return 'Volunteer Lead';
+    case 'location_lead':
+      return 'Location Lead';
+    case 'volunteer':
+      return 'Volunteer';
+    case 'parent':
+      return 'Parent / Guardian';
+    default:
+      return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+
 // GET /api/admin/duty/devices
 adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -472,34 +501,54 @@ adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response)
     const filterDuty = req.query.dutyStatus as string;
     const filterReadiness = req.query.readiness as string;
     const filterConnection = req.query.connection as string;
+    const search = ((req.query.search || req.query.q || '') as string).trim().toLowerCase();
 
     const eventIdParam = (req.query.eventId as string) || REAL_EVENT_ID;
     let whereClause = 'WHERE d.event_id = ?';
     const params: any[] = [eventIdParam];
 
     if (filterRole) {
-      whereClause += ' AND d.role = ?';
-      params.push(filterRole);
+      whereClause += ' AND (d.role = ? OR u.role = ?)';
+      params.push(filterRole, filterRole);
     }
     if (filterDuty) {
       if (filterDuty === 'on_duty') {
         whereClause += ' AND d.duty_started_at IS NOT NULL AND d.duty_ended_at IS NULL';
+      } else if (filterDuty === 'shift_ended') {
+        whereClause += ' AND d.duty_ended_at IS NOT NULL';
       } else {
         whereClause += ' AND (d.duty_started_at IS NULL OR d.duty_ended_at IS NOT NULL)';
       }
     }
     if (filterReadiness) {
-      whereClause += ' AND d.readiness_status = ?';
-      params.push(filterReadiness);
+      if (filterReadiness === 'action_needed' || filterReadiness === 'attention') {
+        whereClause += " AND (d.readiness_status = 'action_needed' OR d.readiness_status = 'attention' OR d.push_subscription_id IS NULL)";
+      } else {
+        whereClause += ' AND d.readiness_status = ?';
+        params.push(filterReadiness);
+      }
     }
     if (filterConnection) {
-      whereClause += ' AND d.live_connection_status = ?';
-      params.push(filterConnection);
+      if (filterConnection === 'connected' || filterConnection === 'online') {
+        whereClause += " AND (d.live_connection_status = 'connected' OR d.live_connection_status = 'online')";
+      } else {
+        whereClause += " AND (d.live_connection_status != 'connected' AND d.live_connection_status != 'online')";
+      }
+    }
+    if (search) {
+      whereClause += " AND (LOWER(COALESCE(v.full_name, p.full_name, u.email, '')) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(d.device_label) LIKE ? OR LOWER(d.role) LIKE ? OR LOWER(COALESCE(loc.name, a.team_key, '')) LIKE ?)";
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
     const countQuery = `
-      SELECT COUNT(*) as total 
+      SELECT COUNT(DISTINCT d.id) as total 
       FROM event_duty_devices d
+      JOIN users u ON d.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_duty_assignments a ON a.user_id = d.user_id AND a.event_id = d.event_id AND a.status != 'cancelled'
+      LEFT JOIN event_locations loc ON loc.id = a.assigned_location_id
       ${whereClause}
     `;
     const countResult = await queryOne(countQuery, params);
@@ -507,21 +556,107 @@ adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response)
     const totalPages = Math.ceil(total / limit);
 
     const itemsQuery = `
-      SELECT d.*, COALESCE(v.full_name, p.full_name, u.email) as user_name
+      SELECT d.id,
+             d.user_id,
+             d.event_id,
+             d.device_label,
+             d.readiness_status,
+             d.sound_enabled,
+             d.voice_enabled,
+             d.vibration_enabled,
+             d.push_subscription_id,
+             d.live_connection_status,
+             d.role,
+             d.duty_started_at,
+             d.duty_ended_at,
+             d.last_seen_at,
+             d.readiness_checked_at,
+             d.created_at,
+             d.updated_at,
+             u.email as user_email,
+             MAX(v.full_name) as volunteer_name,
+             MAX(p.full_name) as parent_name,
+             COALESCE(MAX(v.full_name), MAX(p.full_name)) as profile_name,
+             COALESCE(MAX(loc.name), MAX(a.team_key), '') as assigned_area_name
       FROM event_duty_devices d
       JOIN users u ON d.user_id = u.id
       LEFT JOIN volunteer_profiles v ON v.user_id = u.id
       LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_duty_assignments a ON a.user_id = d.user_id AND a.event_id = d.event_id AND a.status != 'cancelled'
+      LEFT JOIN event_locations loc ON loc.id = a.assigned_location_id
       ${whereClause}
+      GROUP BY d.id, d.user_id, d.event_id, d.device_label, d.readiness_status, d.sound_enabled, d.voice_enabled, d.vibration_enabled, d.push_subscription_id, d.live_connection_status, d.role, d.duty_started_at, d.duty_ended_at, d.last_seen_at, d.readiness_checked_at, d.created_at, d.updated_at, u.email
       ORDER BY d.updated_at DESC
       LIMIT ? OFFSET ?
     `;
     const queryParams = [...params, limit, offset];
-    const items = await query(itemsQuery, queryParams);
+    const rows = await query(itemsQuery, queryParams);
+
+    const mappedItems = (rows || []).map((row: any) => {
+      const displayName = row.profile_name || (row.user_email ? row.user_email.split('@')[0] : 'Administrator');
+      const roleLabel = formatDutyRoleLabel(row.role);
+      const isOnDuty = row.duty_started_at && !row.duty_ended_at;
+      const isShiftEnded = Boolean(row.duty_ended_at);
+      const dutyStatus = isOnDuty ? 'on_duty' : (isShiftEnded ? 'shift_ended' : 'off_duty');
+      const dutyStatusLabel = isOnDuty ? 'On duty' : (isShiftEnded ? 'Shift ended' : 'Off duty');
+
+      const readinessCode = row.readiness_status === 'action_needed' || row.readiness_status === 'attention' || !row.push_subscription_id 
+        ? 'action_needed' 
+        : (row.readiness_status === 'limited' ? 'limited' : 'ready');
+
+      const readinessLabel = readinessCode === 'ready' ? 'Ready' : (readinessCode === 'limited' ? 'Limited' : 'Needs attention');
+      const readinessDescription = readinessCode === 'ready' 
+        ? 'Sound, voice and vibration available' 
+        : (readinessCode === 'limited' ? 'Voice alerts are unavailable' : 'Push alerts are not enabled');
+
+      const isOnline = row.live_connection_status === 'connected' || row.live_connection_status === 'online';
+      const connectionStatus = isOnline ? 'online' : (row.live_connection_status === 'recently_active' ? 'recently_active' : 'offline');
+      const connectionStatusLabel = isOnline ? 'Online' : (connectionStatus === 'recently_active' ? 'Recently active' : 'Offline');
+
+      // Resolve robust canonical lastActiveAt timestamp
+      const lastActiveAt = row.last_seen_at || row.readiness_checked_at || row.duty_started_at || row.updated_at || row.created_at || new Date().toISOString();
+
+      return {
+        id: row.id,
+        userId: row.user_id,
+        displayName,
+        email: row.user_email || '',
+        role: row.role,
+        roleLabel,
+        deviceLabel: row.device_label || 'Duty Device',
+        deviceType: row.device_label?.toLowerCase().includes('tablet') ? 'Shared duty tablet' : (row.device_label?.toLowerCase().includes('station') ? 'Coordinator station' : 'Mobile device'),
+        assignedArea: row.assigned_area_name || 'Central Command',
+        dutyStatus,
+        dutyStatusLabel,
+        notificationReadiness: readinessCode,
+        notificationReadinessLabel: readinessLabel,
+        notificationReadinessDescription: readinessDescription,
+        capabilities: {
+          alertSound: Boolean(row.sound_enabled),
+          spokenAlerts: Boolean(row.voice_enabled),
+          pushAlerts: Boolean(row.push_subscription_id),
+          vibration: Boolean(row.vibration_enabled)
+        },
+        connectionStatus,
+        connectionStatusLabel,
+        lastActiveAt,
+        allowedActions: ['test_alert', 'view_readiness', 'remove_device'],
+        // Legacy fields for backwards compatibility
+        user_name: displayName,
+        device_label: row.device_label || 'Duty Device',
+        readiness_status: readinessCode,
+        sound_enabled: row.sound_enabled,
+        voice_enabled: row.voice_enabled,
+        vibration_enabled: row.vibration_enabled,
+        last_seen_at: lastActiveAt,
+        duty_started_at: row.duty_started_at,
+        duty_ended_at: row.duty_ended_at
+      };
+    });
 
     return res.json({
       success: true,
-      items: items || [],
+      items: mappedItems,
       pagination: {
         page,
         limit,
@@ -571,20 +706,31 @@ adminDutyRouter.post('/devices/:deviceId/remind', async (req: AuthenticatedReque
       'high'
     ]);
 
-    // Send push notification too
-    await sendWebPush(device.user_id, {
-      title: 'Device readiness check required',
-      body: 'Please complete your device readiness check before starting event duty.'
+    // Send push notification
+    const pushRes = await sendWebPush(device.user_id, {
+      title: 'Koinonia Duty Readiness Alert',
+      body: `Test alert sent to ${device.device_label || 'Duty Device'}. All alert channels active.`,
+      metadata: {
+        deviceId: device.id,
+        timestamp: now
+      }
     });
+
+    if (!pushRes.success && pushRes.sentCount === 0) {
+      return res.status(400).json({
+        success: false,
+        error: `The device (${device.device_label || 'Device'}) could not receive the test alert. Push subscription is missing or expired.`
+      });
+    }
 
     return res.json({
       success: true,
-      message: `Readiness reminder sent to ${device.device_label || 'device'}.`,
+      message: `Test alert sent to ${device.device_label || 'device'}.`,
       deviceLabel: device.device_label
     });
   } catch (err: any) {
     console.error('Error in POST /api/admin/duty/devices/:deviceId/remind:', err);
-    return res.status(500).json({ error: 'An unexpected error occurred while reminding team member' });
+    return res.status(500).json({ error: 'An unexpected error occurred while sending test alert' });
   }
 });
 
@@ -606,7 +752,7 @@ adminDutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, r
 
     return res.json({
       success: true,
-      message: 'Device registration removed successfully',
+      message: `Device removed.`,
       deviceId,
       deviceLabel: device.device_label
     });

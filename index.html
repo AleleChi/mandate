@@ -7,7 +7,7 @@
       // Safe environment check to prevent test/headless/extension-injection crash on undefined matchMedia or chrome runtime APIs
       (function() {
         if (typeof window !== 'undefined') {
-          // Narrow matchMedia polyfill: only define or expand if missing/incomplete
+          // 1. Narrow matchMedia polyfill: only define or expand if missing/incomplete
           if (!window.matchMedia) {
             window.matchMedia = function(query) {
               return {
@@ -22,95 +22,73 @@
               };
             };
           } else {
-            // Ensure compatibility without overwriting the native implementation
             try {
-              const testMedia = window.matchMedia('(max-width: 0px)');
+              var testMedia = window.matchMedia('(max-width: 0px)');
               if (testMedia) {
-                if (typeof testMedia.addListener !== 'function') {
-                  testMedia.addListener = function() {};
-                }
-                if (typeof testMedia.removeListener !== 'function') {
-                  testMedia.removeListener = function() {};
-                }
+                if (typeof testMedia.addListener !== 'function') testMedia.addListener = function() {};
+                if (typeof testMedia.removeListener !== 'function') testMedia.removeListener = function() {};
               }
             } catch (e) {}
           }
 
-          // Defensive guard against incomplete runtime or onMessage under headless/automation testing
+          // 2. Comprehensive chrome.runtime.onMessage defensive polyfill
           try {
-            let mockChrome = {
-              runtime: {
-                onMessage: {
-                  addListener: function() {},
-                  removeListener: function() {},
-                  emit: function() {}
-                }
-              }
+            var createOnMessage = function(existing) {
+              var om = (typeof existing === 'object' && existing !== null) ? existing : {};
+              if (typeof om.addListener !== 'function') om.addListener = function() {};
+              if (typeof om.removeListener !== 'function') om.removeListener = function() {};
+              if (typeof om.hasListener !== 'function') om.hasListener = function() { return false; };
+              if (typeof om.hasListeners !== 'function') om.hasListeners = function() { return false; };
+              if (typeof om.emit !== 'function') om.emit = function() {};
+              if (typeof om.dispatch !== 'function') om.dispatch = function() {};
+              return om;
             };
 
-            // Merge with existing chrome properties if they exist
-            if (typeof window.chrome === 'object' && window.chrome !== null) {
-              for (let key in window.chrome) {
-                try {
-                  mockChrome[key] = window.chrome[key];
-                } catch (e) {}
-              }
-              
-              if (window.chrome.runtime) {
-                for (let rKey in window.chrome.runtime) {
-                  try {
-                    mockChrome.runtime[rKey] = window.chrome.runtime[rKey];
-                  } catch (e) {}
-                }
-                
-                if (window.chrome.runtime.onMessage) {
-                  for (let mKey in window.chrome.runtime.onMessage) {
-                    try {
-                      mockChrome.runtime.onMessage[mKey] = window.chrome.runtime.onMessage[mKey];
-                    } catch (e) {}
+            var createRuntime = function(existing) {
+              var rt = (typeof existing === 'object' && existing !== null) ? existing : {};
+              rt.onMessage = createOnMessage(rt.onMessage);
+              if (typeof rt.sendMessage !== 'function') rt.sendMessage = function() {};
+              if (typeof rt.connect !== 'function') rt.connect = function() {};
+              return rt;
+            };
+
+            var existingChrome = (typeof window.chrome === 'object' && window.chrome !== null) ? window.chrome : {};
+            var safeChrome = existingChrome;
+
+            if (typeof Proxy === 'function') {
+              safeChrome = new Proxy(existingChrome, {
+                get: function(target, prop) {
+                  if (prop === 'runtime') {
+                    return createRuntime(target.runtime);
                   }
+                  return target[prop];
                 }
-              }
+              });
+            } else {
+              safeChrome.runtime = createRuntime(safeChrome.runtime);
             }
 
-            // Redefine window.chrome safely using Object.defineProperty
-            Object.defineProperty(window, 'chrome', {
-              value: mockChrome,
-              writable: true,
-              configurable: true,
-              enumerable: true
-            });
-          } catch (e) {
-            // Fallback direct assignment if Object.defineProperty is blocked
             try {
-              if (typeof window.chrome === 'undefined') {
-                window.chrome = {};
-              }
-              if (!window.chrome.runtime) {
-                window.chrome.runtime = {};
-              }
-              if (!window.chrome.runtime.onMessage) {
-                window.chrome.runtime.onMessage = {};
-              }
-              if (typeof window.chrome.runtime.onMessage.addListener !== 'function') {
-                window.chrome.runtime.onMessage.addListener = function() {};
-              }
-              if (typeof window.chrome.runtime.onMessage.removeListener !== 'function') {
-                window.chrome.runtime.onMessage.removeListener = function() {};
-              }
-              if (typeof window.chrome.runtime.onMessage.emit !== 'function') {
-                window.chrome.runtime.onMessage.emit = function() {};
-              }
-            } catch (err) {}
-          }
+              Object.defineProperty(window, 'chrome', {
+                value: safeChrome,
+                writable: true,
+                configurable: true,
+                enumerable: true
+              });
+            } catch (e) {
+              window.chrome = safeChrome;
+            }
+          } catch (e) {}
         }
       })();
     </script>
     <title>Koinonia Children and Teens Event Registration</title>
     <meta name="description" content="Register, manage child details, receive event updates, and access secure check-in and pickup support for Koinonia Children and Teens events." />
-    <link rel="icon" type="image/png" sizes="32x32" href="/api/media/favicon/32.png" />
-    <link rel="shortcut icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/api/media/favicon/180.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" id="favicon-32" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" id="favicon-16" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" id="favicon-svg" />
+    <link rel="shortcut icon" href="/favicon.ico" id="favicon-ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" id="favicon-apple" />
     <link rel="manifest" href="/manifest.json" />
   </head>
   <body>

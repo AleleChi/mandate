@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -29,6 +29,8 @@ interface ParentHomeViewProps {
   selectedChildId?: string;
   volunteerProfile?: any;
   activeEvent?: any;
+  onSwitchExperience?: (target: 'parent' | 'volunteer') => Promise<boolean>;
+  isSwitchingExperience?: boolean;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -90,7 +92,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   onDeleteChild,
   selectedChildId,
   volunteerProfile,
-  activeEvent
+  activeEvent,
+  onSwitchExperience,
+  isSwitchingExperience = false
 }) => {
   const { showInfo, showSuccess, showError } = useNotification();
   const [selectedDetailChild, setSelectedDetailChild] = useState<ChildItem | null>(null);
@@ -1078,9 +1082,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <Button
             variant="primary"
             fullWidth
-            onClick={() => onNavigate('/volunteer/event')}
+            disabled={isSwitchingExperience}
+            onClick={() => {
+              if (onSwitchExperience) {
+                onSwitchExperience('volunteer');
+              } else {
+                onNavigate('/volunteer/event');
+              }
+            }}
           >
-            Switch to Volunteer Access
+            {isSwitchingExperience ? 'Switching…' : 'Switch to Volunteer Access'}
           </Button>
         </div>
       )}
@@ -1386,14 +1397,27 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         ) : (
           <button
             type="button"
-            onClick={() => onNavigate('/volunteer/event')}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in"
+            disabled={isSwitchingExperience}
+            onClick={() => {
+              if (onSwitchExperience) {
+                onSwitchExperience('volunteer');
+              } else {
+                onNavigate('/volunteer/event');
+              }
+            }}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in disabled:opacity-50"
           >
             <div className="flex items-center space-x-3.5">
               <ShieldCheck className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-              <span className="text-sm font-medium text-[#18181B]">Switch to Volunteer Access</span>
+              <span className="text-sm font-medium text-[#18181B]">
+                {isSwitchingExperience ? 'Switching…' : 'Switch to Volunteer Access'}
+              </span>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+            {isSwitchingExperience ? (
+              <RefreshCw className="w-4 h-4 text-[#C59B27] animate-spin" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+            )}
           </button>
         )}
 

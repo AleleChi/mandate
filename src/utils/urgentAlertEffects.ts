@@ -230,23 +230,19 @@ export const urgentAlertEffectsManager = {
     // Filter down to active, non-resolved safety alerts
     const activeAlerts = alerts.filter(a => a.status !== 'resolved' && !a.resolved_at);
 
-    // First-load Quiet Guard: Mark all currently open alerts on first load as already "sounded"
-    // to prevent sudden loud alarms when the user opens the dashboard.
     if (isFirstSync) {
-      activeAlerts.forEach(a => {
-        soundedAlertIds.add(a.id);
-      });
       isFirstSync = false;
-    } else {
-      // Subsequent syncs: detect newly arrived, un-sounded alerts
-      const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
-      const sndPref = localStorage.getItem('koinonia_device_sound') !== 'false';
-      const vibePref = localStorage.getItem('koinonia_device_vibration') !== 'false';
-      const silenced = getSilencedAlertIds();
+    }
 
-      const newAlerts = activeAlerts.filter(a => !soundedAlertIds.has(a.id) && !silenced.has(a.id));
+    // Subsequent/current syncs: detect newly arrived or un-sounded open alerts
+    const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
+    const sndPref = localStorage.getItem('koinonia_device_sound') !== 'false';
+    const vibePref = localStorage.getItem('koinonia_device_vibration') !== 'false';
+    const silenced = getSilencedAlertIds();
 
-      if (newAlerts.length > 0 && rxUrgentPref) {
+    const newAlerts = activeAlerts.filter(a => a.status === 'open' && !soundedAlertIds.has(a.id) && !silenced.has(a.id));
+
+    if (newAlerts.length > 0 && rxUrgentPref) {
         const hasUrgent = newAlerts.some(a => a.severity === 'urgent');
         const hasImportant = newAlerts.some(a => a.severity === 'important');
         const hasNormal = newAlerts.some(a => a.severity === 'normal' || !a.severity);
@@ -309,7 +305,6 @@ export const urgentAlertEffectsManager = {
           newAlerts.forEach(a => soundedAlertIds.add(a.id));
         }
       }
-    }
 
     currentActiveAlerts = activeAlerts;
     this.evaluateEffects();

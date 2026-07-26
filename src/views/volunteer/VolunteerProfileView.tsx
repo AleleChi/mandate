@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ModuleLoadingState } from '../../components/common/ModuleLoadingState';
 import { 
   User, Mail, Phone, MapPin, Shield, Calendar, RefreshCw, 
   HelpCircle, Lock, LogOut, CheckCircle2, AlertTriangle, 
@@ -14,6 +15,9 @@ interface VolunteerProfileViewProps {
   showError: (title: string, message: string) => void;
   showWarning: (title: string, message: string) => void;
   isOffline?: boolean;
+  hasParentProfile?: boolean;
+  onSwitchExperience?: (target: 'parent' | 'volunteer') => Promise<boolean>;
+  isSwitchingExperience?: boolean;
 }
 
 export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
@@ -21,12 +25,18 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   showSuccess,
   showError,
   showWarning,
-  isOffline = false
+  isOffline = false,
+  hasParentProfile = false,
+  onSwitchExperience,
+  isSwitchingExperience = false
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [profileData, setProfileData] = useState<any>(null);
   const [sendingReset, setSendingReset] = useState<boolean>(false);
   const [resetSent, setResetSent] = useState<boolean>(false);
+
+  // State for image failure fallback
+  const [imgFailed, setImgFailed] = useState<boolean>(false);
 
   // Edit profile states
   const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
@@ -123,6 +133,7 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
       const data = await api.volunteer.getProfile();
       if (data && data.success) {
         setProfileData(data);
+        setImgFailed(false);
         localStorage.setItem('koinonia_cached_volunteer_profile', JSON.stringify(data));
       }
     } catch (err: any) {
@@ -206,59 +217,76 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
 
   if (loading && !profileData) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 space-y-4" id="profile-loading-stage">
-        <div className="w-10 h-10 border-3 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
-        <p className="text-xs text-gray-400 font-mono tracking-wider uppercase">Loading profile...</p>
-      </div>
+      <ModuleLoadingState title="Loading your profile..." />
     );
   }
 
   // Safe fallback mapping from backend
   const finalUser = profileData?.user || { fullName: 'Volunteer', email: '' };
-  const finalProfile = profileData?.volunteerProfile || { status: 'approved', preferredTeam: 'Not assigned', assignedTeam: 'Not assigned', assignedArea: 'Not assigned', accessScope: 'Not assigned' };
+  const finalProfile = profileData?.volunteerProfile || { status: 'approved', preferredTeam: 'Teens Team', assignedTeam: 'Teens Team', assignedArea: 'General Hall', accessScope: 'General Access' };
   const finalActivity = profileData?.activity || { checkedInByYou: 0, lastScanAt: null, pendingUpdates: 0 };
+
+  const photoUrlToUse = finalUser.profilePhotoUrl || finalUser.photoUrl || finalProfile.photoUrl || finalProfile.profilePhotoUrl || '';
+
+  const isOnline = !isOffline && (typeof navigator === 'undefined' || navigator.onLine);
+  const hasPendingUpdates = (finalActivity.pendingUpdates || 0) > 0;
+
+  const rawAccessScope = finalProfile.accessScope || 'General Access';
+  const humanAccessScope = (rawAccessScope === 'General Access' || rawAccessScope === 'General')
+    ? 'Standard event access'
+    : rawAccessScope;
 
   return (
     <div 
-      className="max-w-md mx-auto w-full space-y-6 pb-24 px-4 animate-fade-in font-sans" 
-      data-view-version="volunteer-profile-v5-mobile-app-header"
+      className="max-w-md mx-auto w-full space-y-5 pb-24 px-4 animate-fade-in font-sans" 
+      data-view-version="volunteer-profile-v6-mobile-app-header"
       id="volunteer-profile-view-container"
     >
       {/* 2. Profile identity card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4"
-        data-component-version="volunteer-profile-identity-v2-stitch-handover"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs flex flex-col items-center text-center space-y-3"
+        data-component-version="volunteer-profile-identity-v3-hero"
         id="profile-identity-card"
       >
-        {/* Profile photo with soft gold border (rectangular portrait frame) */}
-        <div className="relative shrink-0" data-component-version="volunteer-profile-photo-rect-v1">
-          {finalUser.photoUrl ? (
+        {/* Circular Avatar */}
+        <div className="relative shrink-0" data-component-version="volunteer-profile-photo-circle-v1">
+          {!imgFailed && photoUrlToUse ? (
             <img 
-              src={finalUser.photoUrl} 
-              alt={finalUser.fullName}
-              className="w-20 h-24 rounded-2xl object-cover border-2 border-[#C59B27] shadow-xs bg-white"
+              src={photoUrlToUse} 
+              alt={finalUser.fullName || 'Volunteer'}
+              onError={() => setImgFailed(true)}
+              className="w-20 h-20 rounded-full object-cover border-2 border-[#C59B27] shadow-xs bg-white"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className="w-20 h-24 rounded-2xl bg-[#EFECE4] text-[#715D3A] flex items-center justify-center text-xl font-bold border-2 border-[#C59B27] shadow-xs">
+            <div className="w-20 h-20 rounded-full bg-[#FAF5E6] text-[#715D3A] flex items-center justify-center text-xl font-bold border-2 border-[#C59B27] shadow-xs">
               {getInitials(finalUser.fullName)}
             </div>
           )}
         </div>
 
-        {/* Serif name, small warm badge, and edit action */}
-        <div className="space-y-2">
-          <h3 className="text-xl font-serif-koinonia font-bold text-gray-900 leading-tight">
+        {/* Name, Team, Duty Readiness, Edit Action */}
+        <div className="space-y-1.5 w-full flex flex-col items-center">
+          <h3 className="text-2xl font-serif-koinonia font-medium text-gray-900 leading-tight">
             {finalUser.fullName}
           </h3>
-          <div className="flex flex-col items-center gap-2">
-            <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold font-mono tracking-wider uppercase bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20">
-              {finalProfile.assignedTeam || finalProfile.preferredTeam || 'Volunteer'}
+          <p className="text-sm text-gray-500 font-medium">
+            {finalProfile.assignedTeam || finalProfile.preferredTeam || 'Teens Team'}
+          </p>
+
+          {/* Duty readiness status row */}
+          <div className="pt-1 pb-0.5">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50/80 text-[#8C6B18] border border-[#C59B27]/30">
+              Ready for duty
             </span>
+          </div>
+
+          {/* Quiet outlined Edit profile button */}
+          <div className="pt-1">
             <button
               onClick={() => setIsEditOpen(true)}
-              data-component-version="volunteer-profile-edit-entry-v1"
-              className="text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] flex items-center gap-1 transition-colors cursor-pointer bg-amber-50/50 hover:bg-amber-50 px-3 py-1 rounded-full border border-[#C59B27]/20"
+              data-component-version="volunteer-profile-edit-entry-v2"
+              className="text-xs font-medium text-gray-700 hover:text-gray-900 px-3.5 py-1.5 rounded-full border border-gray-300 hover:border-gray-400 bg-white shadow-2xs transition-colors cursor-pointer"
             >
               Edit profile
             </button>
@@ -268,89 +296,101 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
 
       {/* 3. Connection card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs flex items-start space-x-3"
-        data-component-version="volunteer-profile-offline-v2-stitch-handover"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs flex items-start space-x-3"
+        data-component-version="volunteer-profile-offline-v3-state"
         id="profile-connection-card"
       >
-        <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-          <Info className="h-5 w-5" />
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+          hasPendingUpdates 
+            ? 'bg-amber-50 text-amber-600' 
+            : isOnline 
+              ? 'bg-emerald-50 text-emerald-600' 
+              : 'bg-zinc-100 text-zinc-600'
+        }`}>
+          <Info className="h-4.5 w-4.5" />
         </div>
-        <div className="space-y-0.5">
-          <h4 className="text-xs font-bold text-gray-900">Connection</h4>
-          <p className="text-[11px] text-gray-500 leading-normal">
-            Some actions may need connection.
+        <div className="space-y-0.5 pt-0.5">
+          <h4 className="text-xs font-semibold text-gray-900">
+            Connection: {hasPendingUpdates ? 'Needs attention' : isOnline ? 'Online' : 'Offline'}
+          </h4>
+          <p className="text-xs text-gray-500 leading-normal">
+            {hasPendingUpdates 
+              ? 'Some recent actions have not synced yet.' 
+              : isOnline 
+                ? 'Your latest Event Duty information is up to date.' 
+                : 'You can continue with saved duty information. New changes will sync when you reconnect.'}
           </p>
         </div>
       </div>
 
       {/* 4. Event role card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
-        data-component-version="volunteer-profile-role-v2-stitch-handover"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
+        data-component-version="volunteer-profile-role-v3-human"
         id="profile-role-card"
       >
-        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Event role</h4>
+        <h4 className="text-xs font-semibold text-gray-900">Your event role</h4>
         
-        <div className="space-y-3.5 text-xs">
-          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
-            <span className="font-medium text-gray-500">Role</span>
-            <span className="font-bold text-gray-900">{finalProfile.assignedTeam || 'Not assigned'}</span>
+        <div className="space-y-2.5 text-xs">
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-2.5 last:border-0 last:pb-0">
+            <span className="font-normal text-gray-500">Team</span>
+            <span className="font-medium text-gray-900">{finalProfile.assignedTeam || 'Teens Team'}</span>
           </div>
           
-          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
-            <span className="font-medium text-gray-500">Assigned area</span>
-            <span className="font-bold text-gray-900">{finalProfile.assignedArea || 'Not assigned'}</span>
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-2.5 last:border-0 last:pb-0">
+            <span className="font-normal text-gray-500">Serving area</span>
+            <span className="font-medium text-gray-900">{finalProfile.assignedArea || 'General Hall'}</span>
           </div>
           
-          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
-            <span className="font-medium text-gray-500">Access</span>
-            <span className="font-bold text-gray-900">{finalProfile.accessScope || 'Not assigned'}</span>
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-2.5 last:border-0 last:pb-0">
+            <span className="font-normal text-gray-500">Access level</span>
+            <span className="font-medium text-gray-900">{humanAccessScope}</span>
           </div>
         </div>
       </div>
 
       {/* 5. Today card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
-        data-component-version="volunteer-profile-today-v2-stitch-handover"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
+        data-component-version="volunteer-profile-today-v3-human"
         id="profile-today-card"
       >
-        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Today</h4>
+        <h4 className="text-xs font-semibold text-gray-900">Today</h4>
         
-        <div className="space-y-3.5 text-xs">
-          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
-            <span className="font-medium text-gray-500">Checked in by you</span>
-            <span className="font-bold text-gray-900">{finalActivity.checkedInByYou ?? 0}</span>
+        <div className="space-y-2.5 text-xs">
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-2.5 last:border-0 last:pb-0">
+            <span className="font-normal text-gray-500">Checked in by you</span>
+            <span className="font-medium text-gray-900">{finalActivity.checkedInByYou ?? 0}</span>
           </div>
           
-          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
-            <span className="font-medium text-gray-500">Last scan</span>
-            <span className="font-bold text-gray-900">{formatTime(finalActivity.lastScanAt)}</span>
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-2.5 last:border-0 last:pb-0">
+            <span className="font-normal text-gray-500">Last scan</span>
+            <span className="font-medium text-gray-900">{formatTime(finalActivity.lastScanAt)}</span>
           </div>
           
-          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-3 last:border-0 last:pb-0">
-            <span className="font-medium text-gray-500">Pending updates</span>
-            <span className="font-bold text-gray-900">{finalActivity.pendingUpdates ?? 0}</span>
+          <div className="flex items-center justify-between border-b border-[#F4F3EF] pb-2.5 last:border-0 last:pb-0">
+            <span className="font-normal text-gray-500">Pending updates</span>
+            <span className="font-medium text-gray-900">{finalActivity.pendingUpdates ?? 0}</span>
           </div>
         </div>
       </div>
 
       {/* 6. Help card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
-        data-component-version="volunteer-profile-help-v2-stitch-handover"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
+        data-component-version="volunteer-profile-help-v3-human"
         id="profile-help-card"
       >
-        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Help</h4>
+        <h4 className="text-xs font-semibold text-gray-900">Help & Guidance</h4>
         
         <div className="space-y-1">
           {helpTopics.map((topic, index) => {
             const isOpen = activeHelpIndex === index;
             return (
-              <div key={index} className="border-b border-[#F4F3EF] last:border-0 py-2.5">
+              <div key={index} className="border-b border-[#F4F3EF] last:border-0 py-2">
                 <button
                   onClick={() => setActiveHelpIndex(isOpen ? null : index)}
-                  className="w-full flex items-center justify-between text-left text-xs font-bold text-gray-800 hover:text-[#C59B27] transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-between text-left text-xs font-medium text-gray-800 hover:text-[#C59B27] transition-colors cursor-pointer"
                 >
                   <span>{topic.title}</span>
                   {isOpen ? (
@@ -378,13 +418,31 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
 
       {/* 7. Account actions card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4"
-        data-component-version="volunteer-profile-actions-v2-stitch-handover"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
+        data-component-version="volunteer-profile-actions-v3-human"
         id="profile-actions-card"
       >
-        <h4 className="text-xs font-bold font-mono text-gray-400 uppercase tracking-wider">Account actions</h4>
+        <h4 className="text-xs font-semibold text-gray-900">Account actions</h4>
         
         <div className="space-y-1 text-xs">
+          {/* Switch to Parent view (for dual-role accounts) */}
+          {hasParentProfile && (
+            <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">
+              <span className="font-bold text-gray-800">Switch to Parent view</span>
+              <button
+                disabled={isSwitchingExperience}
+                onClick={() => {
+                  if (onSwitchExperience) {
+                    onSwitchExperience('parent');
+                  }
+                }}
+                className="text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] disabled:opacity-50 cursor-pointer transition-colors"
+              >
+                {isSwitchingExperience ? 'Switching…' : 'Switch view'}
+              </button>
+            </div>
+          )}
+
           {/* Change password trigger */}
           <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">
             <span className="font-bold text-gray-800">Change password</span>

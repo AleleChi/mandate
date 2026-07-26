@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { api } from '../../services/api';
+import { updateDocumentFavicon } from '../../utils/faviconHelper';
 import { AdminLandingView } from './AdminLandingView';
 import { SafeImage } from '../../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
@@ -402,6 +403,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           default_event_hero: res.media.default_event_hero || '',
           site_favicon: res.media.site_favicon || ''
         });
+        if (res.media.site_favicon) {
+          updateDocumentFavicon(res.media.site_favicon);
+        }
       }
     } catch (err: any) {
       console.error('Failed to load media settings:', err);
@@ -422,6 +426,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           ...prev,
           [slot]: res.media.url
         }));
+        if (slot === 'site_favicon') {
+          updateDocumentFavicon(res.media.url, Date.now());
+        }
         setMediaFeedback('Custom image uploaded and saved successfully.');
         setTimeout(() => setMediaFeedback(''), 4000);
       }
@@ -447,6 +454,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           ...prev,
           [slot]: ''
         }));
+        if (slot === 'site_favicon') {
+          updateDocumentFavicon(null);
+        }
         setMediaFeedback('Custom image removed successfully.');
         setTimeout(() => setMediaFeedback(''), 4000);
       }
@@ -1824,33 +1834,66 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                   <div 
                     className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
                     data-slot-key="site_favicon"
-                    data-component-version="admin-media-favicon-v1"
+                    data-component-version="admin-media-favicon-v2"
                   >
                     <div className="p-4 border-b border-[#EAE8E1] bg-white">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-[#18181B]">Favicon / App Icon</h4>
+                        <h4 className="text-xs font-semibold text-[#18181B]">Favicon and app icon</h4>
                         <span className="px-1.5 py-0.5 bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-bold rounded">Bird Mark Only</span>
                       </div>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">Used across browser tabs, shortcuts & PWA manifest.</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Upload the bird mark used in browser tabs and installed app icons.</p>
                     </div>
-                    <div className="relative aspect-video bg-zinc-900/90 flex items-center justify-center border-b border-[#EAE8E1] p-4">
-                      {/* Split / Checkerboard Preview Container for transparency clarity */}
-                      <div className="flex items-center justify-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-white p-2 shadow-sm border border-zinc-200 flex items-center justify-center overflow-hidden">
-                          <img 
-                            src={mediaUrls.site_favicon || '/api/media/favicon/180.png'} 
-                            alt="Favicon Light Preview" 
-                            className="w-full h-full object-contain"
-                            onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
-                          />
+                    <div className="relative bg-zinc-100 border-b border-[#EAE8E1] p-4 flex flex-col items-center justify-center space-y-3">
+                      {/* Realistic Sizes Preview: 16x16, 32x32, 48x48 */}
+                      <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Realistic Tab Previews</div>
+                      <div className="flex items-end justify-center gap-6">
+                        {/* 16x16 */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-8 h-8 rounded-lg bg-white border border-zinc-200 flex items-center justify-center p-1 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/favicon-16x16.png'} 
+                              alt="16x16 Preview" 
+                              className="w-4 h-4 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400">16px</span>
                         </div>
-                        <div className="w-12 h-12 rounded-xl bg-zinc-900 p-2 shadow-sm border border-zinc-700 flex items-center justify-center overflow-hidden">
-                          <img 
-                            src={mediaUrls.site_favicon || '/api/media/favicon/180.png'} 
-                            alt="Favicon Dark Preview" 
-                            className="w-full h-full object-contain"
-                            onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
-                          />
+                        {/* 32x32 */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-10 h-10 rounded-lg bg-white border border-zinc-200 flex items-center justify-center p-1 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/favicon-32x32.png'} 
+                              alt="32x32 Light Preview" 
+                              className="w-8 h-8 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400">32px Light</span>
+                        </div>
+                        {/* 32x32 Dark Tab */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center p-1 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/favicon-32x32.png'} 
+                              alt="32x32 Dark Preview" 
+                              className="w-8 h-8 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400">32px Dark</span>
+                        </div>
+                        {/* 48x48 App Icon */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-14 h-14 rounded-xl bg-white border border-zinc-200 flex items-center justify-center p-1.5 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/apple-touch-icon.png'} 
+                              alt="48x48 Preview" 
+                              className="w-11 h-11 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400">48px App</span>
                         </div>
                       </div>
                       {uploadingSlot === 'site_favicon' && (
@@ -1859,16 +1902,13 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         </div>
                       )}
                     </div>
-                    <div className="p-3 bg-amber-50/50 border-b border-[#EAE8E1] text-[10px] text-amber-900 leading-tight">
-                      Auto-cropped to square and generated in 16x16, 32x32, 48x48, 180x180, 192x192, and 512x512 sizes with transparent background support.
-                    </div>
                     <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
                       <div className="relative">
                         <input
                           type="file"
                           id="file-site-favicon"
                           className="sr-only"
-                          accept="image/png,image/jpeg,image/webp"
+                          accept="image/png,image/svg+xml,image/webp"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) handleUploadMedia('site_favicon', file);
@@ -1876,19 +1916,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         />
                         <label
                           htmlFor="file-site-favicon"
-                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                          className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1.5 transition-all shadow-xs"
                         >
-                          <Upload className="w-3 h-3" />
-                          <span>Upload / Replace</span>
+                          <Upload className="w-3.5 h-3.5 text-[#C59B27]" />
+                          <span>{mediaUrls.site_favicon ? 'Replace icon' : 'Upload icon'}</span>
                         </label>
                       </div>
                       {mediaUrls.site_favicon && (
                         <button
                           onClick={() => handleResetMedia('site_favicon')}
-                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
-                          title="Reset to default bird mark favicon"
+                          className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-semibold transition-all border border-rose-200 flex items-center space-x-1 cursor-pointer"
+                          title="Remove custom icon and revert to default bird mark"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove icon</span>
                         </button>
                       )}
                     </div>

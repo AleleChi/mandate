@@ -22,6 +22,11 @@ import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 import { EventLocationSelector } from '../components/volunteer/EventLocationSelector';
 import { ChildEmergencySummary } from '../components/ChildEmergencySummary';
 import { offlineService, OutboxAction } from '../services/offlineService';
+import { ModuleLoadingState } from '../components/common/ModuleLoadingState';
+import { KoinoniaInlineLoader } from '../components/common/KoinoniaInlineLoader';
+import { CardSkeleton, ListSkeleton } from '../components/common/KoinoniaSkeletons';
+import { KoinoniaEmptyState } from '../components/common/KoinoniaEmptyState';
+import { KoinoniaErrorState } from '../components/common/KoinoniaErrorState';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt && !endsAt) return '18th to 22nd November 2026';
@@ -152,6 +157,8 @@ interface VolunteerEventDashboardViewProps {
   isOffline?: boolean;
   hasParentProfile?: boolean;
   currentRoute?: string;
+  onSwitchExperience?: (target: 'parent' | 'volunteer') => Promise<boolean>;
+  isSwitchingExperience?: boolean;
 }
 
 export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewProps> = ({
@@ -160,7 +167,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   onSignOut,
   isOffline = false,
   hasParentProfile = false,
-  currentRoute = '/volunteer/event'
+  currentRoute = '/volunteer/event',
+  onSwitchExperience,
+  isSwitchingExperience = false
 }) => {
   const { showSuccess, showWarning, showError } = useNotification();
 
@@ -2285,7 +2294,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           <div className="text-center">
             <span className="font-serif font-black text-sm text-[#18181B] tracking-widest uppercase leading-none">
               {(() => {
-                if (cleanRoute === '/volunteer/event') return 'KOINONIA';
+                if (cleanRoute === '/volunteer/event') return 'DUTY';
                 if (cleanRoute === '/volunteer/scan') {
                   if (checkedInSuccessChild) return 'CHECKED IN';
                   if (lookedUpChild) return 'CHILD FOUND';
@@ -2302,27 +2311,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
           {/* Right: Profile Avatar */}
           <div className="flex items-center space-x-2">
-            {hasParentProfile && cleanRoute === '/volunteer/event' && (
+            {hasParentProfile && (
               <button
-                onClick={() => onNavigate('/parent/home')}
-                className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-[#FAF6EB] flex items-center justify-center cursor-pointer transition-colors"
+                disabled={isSwitchingExperience}
+                onClick={() => {
+                  if (onSwitchExperience) {
+                    onSwitchExperience('parent');
+                  } else {
+                    onNavigate('/parent/home');
+                  }
+                }}
+                className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-[#FAF6EB] flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
                 title="Switch to Parent Access"
               >
-                <Home className="h-4.5 w-4.5" />
+                {isSwitchingExperience ? (
+                  <RefreshCw className="h-4.5 w-4.5 animate-spin" />
+                ) : (
+                  <Home className="h-4.5 w-4.5" />
+                )}
               </button>
             )}
-
-            {/* Device readiness compact status badge */}
-            <button
-              onClick={() => setShowReadinessModal(true)}
-              className="flex items-center space-x-1 px-2.5 py-1.5 bg-[#C59B27]/5 border border-[#C59B27]/20 hover:bg-[#C59B27]/10 text-zinc-700 text-[10px] font-bold rounded-full transition-all cursor-pointer mr-1"
-              title="Device readiness status"
-              data-component-version="event-duty-readiness-entry-v1"
-            >
-              <Smartphone className="w-3.5 h-3.5 text-[#C59B27]" />
-              <span className="hidden sm:inline">Device:</span>
-              <span className="text-emerald-700">Ready</span>
-            </button>
 
             {/* Live Notification Bell with Dropdown */}
             <div className="relative">
@@ -4608,10 +4616,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           selectedChildId ? (
             /* ==================== CHILD PROFILE VIEW ==================== */
             childProfileLoading || !childProfileData ? (
-              <div className="flex flex-col items-center justify-center py-20 space-y-4">
-                <div className="w-12 h-12 border-4 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
-                <p className="text-sm font-semibold text-gray-500 font-mono">Loading child profile...</p>
-              </div>
+              <ModuleLoadingState title="Loading child details..." />
             ) : (
               <div className="space-y-6 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v1-stitch">
                 
@@ -5114,10 +5119,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               {/* Child List Cards */}
               <div className="space-y-3.5" data-component-version="volunteer-children-list-v1-stitch">
                 {searching ? (
-                  <div className="flex flex-col items-center justify-center py-16 space-y-3">
-                    <div className="w-8 h-8 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
-                    <p className="text-xs text-gray-400 font-mono">Loading children...</p>
-                  </div>
+                  <ListSkeleton items={4} />
                 ) : directoryError ? (
                   <div className="bg-white border border-[#EAE8E1] rounded-3xl p-10 text-center text-red-500">
                     <p className="text-xs font-semibold">We could not load children right now. Please try again.</p>
@@ -5408,10 +5410,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           </div>
 
           {reportsLoading && !reportsData ? (
-            <div className="py-12 flex flex-col items-center justify-center space-y-3">
-              <div className="w-10 h-10 border-3 border-[#C59B27]/20 border-t-[#C59B27] rounded-full animate-spin"></div>
-              <p className="text-xs text-gray-400 font-medium">Loading reports...</p>
-            </div>
+            <ModuleLoadingState title="Preparing report data..." />
           ) : (
             <>
               {/* Today Summary Grid */}
@@ -6940,6 +6939,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           showError={showError}
           showWarning={showWarning}
           isOffline={isOffline}
+          hasParentProfile={hasParentProfile}
+          onSwitchExperience={onSwitchExperience}
+          isSwitchingExperience={isSwitchingExperience}
         />
       )}
 
@@ -7005,10 +7007,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             {/* List and Cards */}
             {loadingTeamAlerts ? (
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center shadow-xs">
-                <div className="inline-block animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-[#C59B27] mb-3"></div>
-                <p className="text-xs text-zinc-400 font-medium">Checking room safety status...</p>
-              </div>
+              <ModuleLoadingState title="Loading alerts..." />
             ) : (() => {
               // Filtering logic based on tab
               const filteredAlerts = teamAlerts.filter(alert => {

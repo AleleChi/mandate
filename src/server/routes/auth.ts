@@ -4,6 +4,7 @@ import { queryOne, execute, transaction, query } from '../db';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
+import { buildPublicAppUrl } from '../utils/urlHelper';
 
 const router = Router();
 
@@ -124,8 +125,6 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
 
     // Generate secure email verification reference and send notification email
     try {
-      const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-
       const rawVerifyToken = crypto.randomBytes(32).toString('hex');
       const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
       const tokenId = crypto.randomUUID();
@@ -135,7 +134,7 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
         VALUES (?, ?, ?, 'email_verification', ?, ?)
       `, [tokenId, userId, verifyTokenHash, expiresAt, now]);
 
-      const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
+      const verificationLink = buildPublicAppUrl(`/parent/verify-email?token=${rawVerifyToken}`);
       sendEmailVerificationEmail({
         parentEmail: cleanEmail,
         parentFirstName: fullName,
@@ -247,8 +246,6 @@ router.post('/resend-verification', async (req, res) => {
       });
     }
 
-    const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-
     const now = new Date().toISOString();
 
     // Expire old unused verification tokens
@@ -271,7 +268,7 @@ router.post('/resend-verification', async (req, res) => {
     const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
     const fullName = profile ? profile.full_name : undefined;
 
-    const verificationLink = `${baseUrl}/#/parent/verify-email?token=${rawVerifyToken}`;
+    const verificationLink = buildPublicAppUrl(`/parent/verify-email?token=${rawVerifyToken}`);
     const emailResult = await sendEmailVerificationEmail({
       parentEmail: cleanEmail,
       parentFirstName: fullName,
@@ -311,8 +308,6 @@ router.post('/forgot-password', async (req, res) => {
     const cleanEmail = emailVal.normalizedEmail!;
     const user = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
     if (user) {
-      const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-
       const rawResetToken = crypto.randomBytes(32).toString('hex');
       const resetTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex');
       const tokenId = crypto.randomUUID();
@@ -326,7 +321,7 @@ router.post('/forgot-password', async (req, res) => {
       const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
       const fullName = profile ? profile.full_name : undefined;
 
-      const resetLink = `${baseUrl}/#/parent/new-password?token=${rawResetToken}&email=${encodeURIComponent(cleanEmail)}`;
+      const resetLink = buildPublicAppUrl(`/parent/new-password?token=${rawResetToken}&email=${encodeURIComponent(cleanEmail)}`);
       sendPasswordResetEmail({
         parentEmail: cleanEmail,
         parentFirstName: fullName,
@@ -350,7 +345,7 @@ router.post('/test-email', async (req, res) => {
     const result = await sendEmailVerificationEmail({
       parentEmail: to,
       parentFirstName: 'Test Parent',
-      verificationLink: `${process.env.APP_BASE_URL || 'https://koinonia12.netlify.app'}/#/parent/verify-email?token=test-token`
+      verificationLink: buildPublicAppUrl('/parent/verify-email?token=test-token')
     });
     if (!result.success) {
       return res.status(500).json({ error: result.error || 'We could not send the email right now. Please try again.' });
@@ -525,6 +520,55 @@ router.post('/reset-password', async (req, res) => {
 
 router.post('/sign-out', (req, res) => {
   res.json({ success: true });
+});
+
+// POST /api/auth/switch-experience - Safely switch active experience after server-side verification
+router.post('/switch-experience', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { targetExperience } = req.body;
+    if (!targetExperience || !['parent', 'volunteer'].includes(targetExperience)) {
+      return res.status(400).json({ success: false, error: 'We could not switch views. Please try again.' });
+    }
+
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    if (targetExperience === 'volunteer') {
+      const volProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+      const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(req.user?.role || '');
+      const isApprovedOrActive = volProfile && (volProfile.status === 'active' || volProfile.status === 'approved');
+
+      if (!isStaffOrAdmin && !isApprovedOrActive) {
+        return res.status(403).json({ success: false, error: 'We could not switch views. Please try again.' });
+      }
+
+      return res.json({
+        success: true,
+        activeExperience: 'volunteer',
+        targetRoute: '/volunteer/event',
+        user: req.user,
+        volunteerProfile: volProfile
+      });
+    }
+
+    if (targetExperience === 'parent') {
+      const parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [userId]);
+      return res.json({
+        success: true,
+        activeExperience: 'parent',
+        targetRoute: '/parent/home',
+        user: req.user,
+        parentProfile: parentProfile
+      });
+    }
+
+    return res.status(400).json({ success: false, error: 'We could not switch views. Please try again.' });
+  } catch (err) {
+    console.error('Switch experience error:', err);
+    res.status(500).json({ success: false, error: 'We could not switch views. Please try again.' });
+  }
 });
 
 router.get('/me', authMiddleware, (req: AuthenticatedRequest, res: Response) => {

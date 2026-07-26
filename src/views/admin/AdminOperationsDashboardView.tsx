@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useTransition } from 'react';
+import { ModuleLoadingState } from '../../components/common/ModuleLoadingState';
 import { 
   Users, 
   UserCheck, 
@@ -322,10 +323,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
   if (loading && !overview) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]" data-view-version="live-event-operations-dashboard-v1-premium">
-        <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin mb-4" />
-        <p className="text-stone-600 font-sans">Preparing live operations control console...</p>
-      </div>
+      <ModuleLoadingState title="Loading event activity..." />
     );
   }
 

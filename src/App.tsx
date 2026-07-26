@@ -37,6 +37,8 @@ import { AddChildDraft } from './types';
 import { Button } from './components/common/Button';
 import { AppPreloader } from './components/common/AppPreloader';
 import { KoinoniaInlineLoader } from './components/common/KoinoniaInlineLoader';
+import { AppLoadingScreen } from './components/common/AppLoadingScreen';
+import { ModuleLoadingState } from './components/common/ModuleLoadingState';
 import { safeStorage } from './utils/storage';
 
 import { AdminSignInView } from './views/admin/AdminSignInView';
@@ -252,6 +254,8 @@ export default function App() {
 
   const [user, setUser] = useState<any>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [activeExperience, setActiveExperience] = useState<'parent' | 'volunteer' | 'admin' | null>(null);
+  const [isSwitchingExperience, setIsSwitchingExperience] = useState<boolean>(false);
 
   const checkAuth = async () => {
     const token = api.getToken();
@@ -260,6 +264,8 @@ export default function App() {
       setParentProfile(initialParentProfile);
       setVolunteerProfile(null);
       setChildrenList([]);
+      setActiveExperience(null);
+      safeStorage.removeItem('koinonia_active_experience');
       setIsCheckingAuth(false);
       return;
     }
@@ -296,11 +302,13 @@ export default function App() {
           }
         }
 
+        let loadedVolProfile: any = null;
         if (accessData.access.volunteer && accessData.access.volunteer.exists) {
           try {
             const volMe = await api.volunteer.getMe() as any;
             if (volMe) {
-              setVolunteerProfile(volMe.profile || volMe.volunteerProfile);
+              loadedVolProfile = volMe.profile || volMe.volunteerProfile;
+              setVolunteerProfile(loadedVolProfile);
             }
           } catch (e) {
             console.error('Failed to load initial volunteer profile:', e);
@@ -308,12 +316,37 @@ export default function App() {
         } else {
           setVolunteerProfile(null);
         }
+
+        // Determine active experience state
+        const storedExp = safeStorage.getItem('koinonia_active_experience');
+        const isVolApproved = loadedVolProfile && (loadedVolProfile.status === 'active' || loadedVolProfile.status === 'approved');
+        const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(accessData.user.role);
+        const hasVolAccess = isVolApproved || isStaffOrAdmin;
+        const hasParentAccess = accessData.access.parent && accessData.access.parent.exists;
+
+        if (storedExp === 'volunteer' && hasVolAccess) {
+          setActiveExperience('volunteer');
+        } else if (storedExp === 'parent' && (hasParentAccess || accessData.user.role === 'parent')) {
+          setActiveExperience('parent');
+        } else {
+          if (hasVolAccess && window.location.hash.includes('/volunteer')) {
+            setActiveExperience('volunteer');
+          } else if (hasParentAccess) {
+            setActiveExperience('parent');
+          } else if (hasVolAccess) {
+            setActiveExperience('volunteer');
+          } else {
+            setActiveExperience(accessData.user.role === 'admin' || accessData.user.role === 'super_admin' ? 'admin' : 'parent');
+          }
+        }
       } else {
         api.clearToken();
         setUser(null);
         setParentProfile(initialParentProfile);
         setVolunteerProfile(null);
         setChildrenList([]);
+        setActiveExperience(null);
+        safeStorage.removeItem('koinonia_active_experience');
       }
     } catch (err) {
       console.error('Initial checkAuth failed:', err);
@@ -322,8 +355,37 @@ export default function App() {
       setParentProfile(initialParentProfile);
       setVolunteerProfile(null);
       setChildrenList([]);
+      setActiveExperience(null);
+      safeStorage.removeItem('koinonia_active_experience');
     } finally {
       setIsCheckingAuth(false);
+    }
+  };
+
+  const handleSwitchExperience = async (targetExperience: 'parent' | 'volunteer'): Promise<boolean> => {
+    if (isSwitchingExperience) return false;
+    setIsSwitchingExperience(true);
+    try {
+      const res = await api.auth.switchExperience(targetExperience);
+      if (res && res.success) {
+        setActiveExperience(targetExperience);
+        safeStorage.setItem('koinonia_active_experience', targetExperience);
+        await checkAuth();
+        if (targetExperience === 'volunteer') {
+          navigate('/volunteer/event');
+        } else {
+          navigate('/parent/home');
+        }
+        return true;
+      } else {
+        showError('Action Failed', 'We could not switch views. Please try again.');
+        return false;
+      }
+    } catch (err) {
+      showError('Action Failed', 'We could not switch views. Please try again.');
+      return false;
+    } finally {
+      setIsSwitchingExperience(false);
     }
   };
 
@@ -463,7 +525,9 @@ export default function App() {
     setVolunteerProfile(null);
     setChildrenList([]);
     setAddChildDraft(null);
+    setActiveExperience(null);
     safeStorage.removeItem('koinonia_active_draft_id');
+    safeStorage.removeItem('koinonia_active_experience');
     navigate('/');
     showSuccess('Signed out', 'You have been successfully signed out.');
   };
@@ -689,12 +753,7 @@ export default function App() {
     }, [next]);
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6]">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-          <p className="text-sm text-gray-500 font-medium">Redirecting to Sign In...</p>
-        </div>
-      </div>
+      <AppLoadingScreen title="Redirecting to sign in..." />
     );
   };
 
@@ -704,12 +763,7 @@ export default function App() {
     }, [route]);
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6]">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-          <p className="text-sm text-gray-500 font-medium">Redirecting...</p>
-        </div>
-      </div>
+      <AppLoadingScreen title="Redirecting..." />
     );
   };
 
@@ -724,12 +778,7 @@ export default function App() {
   }) => {
     if (isCheckingAuth) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-            <p className="text-sm text-[#52525B] font-medium tracking-wide">Checking access...</p>
-          </div>
-        </div>
+        <AppLoadingScreen title="Checking access..." />
       );
     }
 
@@ -737,13 +786,21 @@ export default function App() {
       return <RedirectToSignIn next={currentRoute} />;
     }
 
-    if (requiredRole && user.role !== requiredRole) {
-      const isParentHybrid = requiredRole === 'parent' && 
-        ['volunteer', 'staff', 'admin', 'super_admin', 'team'].includes(user.role) && 
-        parentProfile && parentProfile.fullName && parentProfile.fullName.trim() !== '';
+    // Redirect to volunteer dashboard if user explicitly selected volunteer experience
+    if (activeExperience === 'volunteer' && currentRoute.startsWith('/parent')) {
+      return <RedirectToRoute route="/volunteer/event" />;
+    }
 
-      if (isParentHybrid) {
-        // Allow access to parent routes for hybrid users!
+    if (requiredRole && user.role !== requiredRole) {
+      const hasValidParentProfile = parentProfile && (parentProfile.fullName?.trim() || parentProfile.phone?.trim());
+      const isParentAllowed = requiredRole === 'parent' && (
+        ['volunteer', 'staff', 'admin', 'super_admin', 'team'].includes(user.role) ||
+        hasValidParentProfile ||
+        activeExperience === 'parent'
+      );
+
+      if (isParentAllowed) {
+        // Allowed to view parent pages
       } else if (user.role === 'volunteer' || user.role === 'staff') {
         return <RedirectToRoute route="/volunteer/event" />;
       } else if (user.role === 'admin' || user.role === 'super_admin') {
@@ -822,12 +879,7 @@ export default function App() {
   }) => {
     if (isCheckingAuth) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-            <p className="text-sm text-[#52525B] font-medium tracking-wide">Checking access...</p>
-          </div>
-        </div>
+        <AppLoadingScreen title="Checking access..." />
       );
     }
 
@@ -835,8 +887,15 @@ export default function App() {
       return <RedirectToRoute route="/volunteer/sign-in" />;
     }
 
+    // Redirect to parent home if user explicitly selected parent experience
+    if (activeExperience === 'parent' && currentRoute.startsWith('/volunteer')) {
+      return <RedirectToRoute route="/parent/home" />;
+    }
+
     const allowedRoles = ['volunteer', 'staff', 'admin', 'super_admin'];
-    if (!allowedRoles.includes(user.role) && !volunteerProfile) {
+    const isVolunteerApproved = volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved');
+
+    if (!allowedRoles.includes(user.role) && !isVolunteerApproved) {
       return <RedirectToRoute route="/parent/home" />;
     }
 
@@ -891,12 +950,7 @@ export default function App() {
   }) => {
     if (isCheckingAuth) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27] mb-4"></div>
-            <p className="text-sm text-[#52525B] font-medium tracking-wide">Checking administrator access...</p>
-          </div>
-        </div>
+        <AppLoadingScreen title="Checking administrator access..." />
       );
     }
 
@@ -1220,6 +1274,8 @@ export default function App() {
               initialTab="Home"
               volunteerProfile={volunteerProfile}
               activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
             />
           </ProtectedRoute>
         );
@@ -1238,6 +1294,8 @@ export default function App() {
               initialTab="Profile"
               volunteerProfile={volunteerProfile}
               activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
             />
           </ProtectedRoute>
         );
@@ -1256,6 +1314,8 @@ export default function App() {
               initialTab="Children"
               volunteerProfile={volunteerProfile}
               activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
             />
           </ProtectedRoute>
         );
@@ -1338,6 +1398,8 @@ export default function App() {
               initialTab="Passes"
               volunteerProfile={volunteerProfile}
               activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
             />
           </ProtectedRoute>
         );
@@ -1435,6 +1497,8 @@ export default function App() {
               isOffline={isOffline}
               hasParentProfile={!!parentProfile && !!parentProfile.email}
               currentRoute={currentRoute}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
             />
           </VolunteerProtectedRoute>
         );

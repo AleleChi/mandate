@@ -1,4 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <circle cx="16" cy="16" r="14" fill="#FAF9F6" stroke="#C59B27" stroke-width="2"/>
-  <text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" font-family="'Plus Jakarta Sans', 'Inter', sans-serif" font-weight="bold" font-size="14" fill="#18181B">K</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <defs>
+    <linearGradient id="koinoniaBirdGoldGrad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D8AC33" />
+      <stop offset="50%" stop-color="#C59B27" />
+      <stop offset="100%" stop-color="#96731C" />
+    </linearGradient>
+    <filter id="koinoniaSoftGlow" x="-10%" y="-10%" width="120%" height="120%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#C59B27" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="#FAF9F5" stroke="#EAE8E1" stroke-width="1.5" />
+
+  <g filter="url(#koinoniaSoftGlow)">
+    <path d="M17 38C22 30 28 20 44 16C40 22 35 28 32 35C29 42 22 46 17 38Z" fill="url(#koinoniaBirdGoldGrad)" />
+    <path d="M22 35C27 28 34 23 47 19C42 25 36 32 32 38C28 43 25 41 22 35Z" fill="#E6C458" opacity="0.9" />
+    <path d="M16 39C13 41 12 45 15 47C18 49 21 46 23 41C20 42 18 41 16 39Z" fill="url(#koinoniaBirdGoldGrad)" />
+    <circle cx="45" cy="17" r="3.2" fill="#8C6B18" />
+  </g>
 </svg>

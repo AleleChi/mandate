@@ -2,8 +2,9 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
 import { sendWebPush } from './push';
 import { sendWhatsApp } from './notifications';
-import { sendEmail } from './email';
+import { sendEmail, sendEscalationAlertEmail } from './email';
 import { broadcastSSEEvent } from './sse';
+import { buildPublicAppUrl } from '../utils/urlHelper';
 
 // Proof: data-component-version="shared-escalation-service-v1"
 // Proof: data-component-version="escalation-policy-schema-v1"
@@ -480,13 +481,27 @@ async function executeStep(cycle: any, step: EscalationPolicyStep, execution: an
     targetUserIds = adminUsers.map(u => u.id);
   }
 
-  // 2. Format a completely generic, privacy-safe message
+  // Deduplicate target users
+  targetUserIds = [...new Set(targetUserIds)];
+
+  // 2. Format a completely generic, privacy-safe fallback push/SMS message
   const subjectStr = cycle.subject_type === 'alert' ? 'Safety Alert' : cycle.subject_type === 'incident' ? 'Incident Report' : 'Follow-up Item';
-  const privacySafeMessage = `Urgent Escalation: A ${subjectStr} requires immediate attention. Please access your secure Koinonia Dashboard. (Code: ESC-${cycle.id.substring(0, 6).toUpperCase()})`;
+  const escalationCode = `ESC-${cycle.id.substring(0, 6).toUpperCase()}`;
+  const privacySafeMessage = `Urgent Escalation: A ${subjectStr} requires immediate attention. Code: ${escalationCode}`;
 
-  const channels = step.channels.split(',').map(c => c.trim().toLowerCase());
+  // Deduplicate channels
+  const channels = [...new Set(step.channels.split(',').map(c => c.trim().toLowerCase()))];
 
-  // 3. Dispatch to all target users
+  // Determine specific frontend target URL for escalation alert details
+  const targetRoute = cycle.alert_id 
+    ? `/admin/incidents/${cycle.alert_id}`
+    : cycle.incident_id 
+      ? `/admin/incidents/${cycle.incident_id}`
+      : `/admin/escalations/${cycle.id}`;
+
+  const actionUrl = buildPublicAppUrl(targetRoute);
+
+  // 3. Dispatch to all target users with idempotency protection
   for (const userId of targetUserIds) {
     const user = await queryOne('SELECT email FROM users WHERE id = ?', [userId]);
     const parentProfile = await queryOne('SELECT phone_number, full_name FROM parent_profiles WHERE user_id = ?', [userId]);
@@ -494,20 +509,36 @@ async function executeStep(cycle: any, step: EscalationPolicyStep, execution: an
 
     const userPhone = parentProfile?.phone_number || volunteerProfile?.phone;
     const userEmail = user?.email;
+    const userFirstName = parentProfile?.full_name || volunteerProfile?.full_name || '';
 
     for (const channel of channels) {
-      const deliveryId = crypto.randomUUID();
-      await execute(`
-        INSERT INTO escalation_deliveries (id, execution_id, user_id, channel, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'pending', ?, ?)
-      `, [deliveryId, execution.id, userId, channel, now, now]);
+      // Idempotency Check: Prevent duplicate email/push sends if execution step is re-run
+      const existingDelivery = await queryOne(`
+        SELECT id, status FROM escalation_deliveries 
+        WHERE execution_id = ? AND user_id = ? AND channel = ?
+        ORDER BY created_at DESC LIMIT 1
+      `, [execution.id, userId, channel]);
+
+      if (existingDelivery && existingDelivery.status === 'delivered') {
+        console.log(`[Escalation] Delivery already completed for execution ${execution.id}, user ${userId}, channel ${channel}. Skipping duplicate.`);
+        continue;
+      }
+
+      let deliveryId = existingDelivery?.id;
+      if (!deliveryId) {
+        deliveryId = crypto.randomUUID();
+        await execute(`
+          INSERT INTO escalation_deliveries (id, execution_id, user_id, channel, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'pending', ?, ?)
+        `, [deliveryId, execution.id, userId, channel, now, now]);
+      }
 
       try {
         if (channel === 'push') {
           const res = await sendWebPush(userId, {
             title: 'Urgent Safety Escalation',
             body: privacySafeMessage,
-            metadata: { cycleId: cycle.id, subjectType: cycle.subject_type }
+            metadata: { cycleId: cycle.id, subjectType: cycle.subject_type, targetUrl: actionUrl }
           });
           if (res.sentCount > 0) {
             await execute(`UPDATE escalation_deliveries SET status = 'delivered', delivered_at = ? WHERE id = ?`, [now, deliveryId]);
@@ -515,15 +546,24 @@ async function executeStep(cycle: any, step: EscalationPolicyStep, execution: an
             await execute(`UPDATE escalation_deliveries SET status = 'failed', failure_code = 'NO_PUSH_SUBSCRIPTION' WHERE id = ?`, [deliveryId]);
           }
         } else if (channel === 'email' && userEmail) {
-          await sendEmail({
-            to: userEmail,
-            subject: `[Koinonia ESC] Urgent Action Required`,
-            text: privacySafeMessage,
-            html: `<p>${privacySafeMessage}</p><p><a href="http://localhost:3000/">Go to Dashboard</a></p>`
+          const sendRes = await sendEscalationAlertEmail({
+            recipientEmail: userEmail,
+            recipientFirstName: userFirstName,
+            eventTitle: 'The General Assembly',
+            subjectType: cycle.subject_type,
+            escalationCode,
+            actionUrl,
+            raisedAt: execution.created_at || now
           });
-          await execute(`UPDATE escalation_deliveries SET status = 'delivered', delivered_at = ? WHERE id = ?`, [now, deliveryId]);
+          if (sendRes.success) {
+            await execute(`UPDATE escalation_deliveries SET status = 'delivered', delivered_at = ? WHERE id = ?`, [now, deliveryId]);
+          } else {
+            await execute(`UPDATE escalation_deliveries SET status = 'failed', failure_code = ? WHERE id = ?`, [
+              sendRes.error || 'EMAIL_SEND_FAILED', deliveryId
+            ]);
+          }
         } else if (channel === 'whatsapp' && userPhone) {
-          await sendWhatsApp(userPhone, privacySafeMessage);
+          await sendWhatsApp(userPhone, `${privacySafeMessage}\n\nAccess alert: ${actionUrl}`);
           await execute(`UPDATE escalation_deliveries SET status = 'delivered', delivered_at = ? WHERE id = ?`, [now, deliveryId]);
         }
       } catch (err: any) {

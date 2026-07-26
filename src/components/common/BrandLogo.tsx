@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
+import { updateDocumentFavicon } from '../../utils/faviconHelper';
 
 interface BrandLogoProps {
   context?: 'landing' | 'admin' | 'parent' | 'volunteer' | 'auth' | 'compact';
@@ -27,10 +28,15 @@ export const fetchLogoUrl = async (): Promise<string | null> => {
   globalPromise = (async () => {
     try {
       const res = await api.landing.getPublicPage();
-      if (res && res.success && res.settings && res.settings.site_logo) {
-        globalSiteLogo = res.settings.site_logo;
-        if (typeof window !== 'undefined') {
-          (window as any)._site_logo = globalSiteLogo;
+      if (res && res.success && res.settings) {
+        if (res.settings.site_logo) {
+          globalSiteLogo = res.settings.site_logo;
+          if (typeof window !== 'undefined') {
+            (window as any)._site_logo = globalSiteLogo;
+          }
+        }
+        if (res.settings.site_favicon) {
+          updateDocumentFavicon(res.settings.site_favicon);
         }
         return globalSiteLogo;
       }

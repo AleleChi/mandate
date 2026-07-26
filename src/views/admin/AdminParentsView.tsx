@@ -16,12 +16,15 @@ import {
   ArrowLeft,
   AlertTriangle,
   RotateCcw,
-  Trash2
+  Trash2,
+  UserPlus,
+  Send
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { AddParentModal } from '../../components/admin/modals/AddParentModal';
 
 import { AppRoute } from '../../types';
 
@@ -46,6 +49,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
 
   const [parentToRestore, setParentToRestore] = useState<any | null>(null);
   const [submittingRestore, setSubmittingRestore] = useState(false);
+
+  // Add Parent modal state
+  const [showAddParentModal, setShowAddParentModal] = useState(false);
+  const [resendingInvite, setResendingInvite] = useState(false);
 
   // Permanent Delete states
   const [parentToDelete, setParentToDelete] = useState<any | null>(null);
@@ -232,6 +239,25 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
     }
   };
 
+  const handleResendParentInvite = async () => {
+    if (!parentDetails?.userId && !parentDetails?.email) return;
+    setResendingInvite(true);
+    try {
+      const res = await api.admin.resendInvite({
+        userId: parentDetails.userId,
+        email: parentDetails.email
+      });
+      if (res.success) {
+        showSuccess('Invitation Sent', res.message || 'Invitation link successfully resent.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Failed to Send', parsed.message || 'Could not resend invitation email.');
+    } finally {
+      setResendingInvite(false);
+    }
+  };
+
   return (
     <div 
       className="space-y-6 animate-fade-in" 
@@ -246,6 +272,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
         </div>
         
         <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setShowAddParentModal(true)}
+            variant="primary"
+            className="text-xs px-4 py-2 flex items-center space-x-1.5"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Add Parent</span>
+          </Button>
           <Button 
             onClick={onBackToOverview} 
             variant="secondary" 
@@ -642,12 +676,23 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
                       <div className="text-center sm:text-left space-y-1 min-w-0 flex-1">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <h4 className="font-serif font-bold text-lg text-[#18181B] leading-none">{parentDetails.fullName}</h4>
-                          <button
-                            onClick={() => setIsEditing(true)}
-                            className="px-3 py-1 text-[11px] font-semibold text-[#C59B27] border border-[#C59B27]/20 hover:bg-[#C59B27]/5 rounded-xl cursor-pointer focus:outline-none inline-flex items-center gap-1 self-center sm:self-start transition-all"
-                          >
-                            <Edit3 className="w-3 h-3" /> Edit Profile
-                          </button>
+                          <div className="flex items-center gap-2 self-center sm:self-start">
+                            <button
+                              onClick={handleResendParentInvite}
+                              disabled={resendingInvite}
+                              className="px-3 py-1 text-[11px] font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl cursor-pointer focus:outline-none inline-flex items-center gap-1 transition-all disabled:opacity-50"
+                              title="Resend password setup invitation email"
+                            >
+                              <Send className="w-3 h-3 text-[#C59B27]" />
+                              <span>{resendingInvite ? 'Sending...' : 'Resend Invite'}</span>
+                            </button>
+                            <button
+                              onClick={() => setIsEditing(true)}
+                              className="px-3 py-1 text-[11px] font-semibold text-[#C59B27] border border-[#C59B27]/20 hover:bg-[#C59B27]/5 rounded-xl cursor-pointer focus:outline-none inline-flex items-center gap-1 transition-all"
+                            >
+                              <Edit3 className="w-3 h-3" /> Edit Profile
+                            </button>
+                          </div>
                         </div>
                         
                         <p className="text-[11px] text-zinc-500 font-medium flex items-center gap-1 justify-center sm:justify-start">
@@ -954,6 +999,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onBackToOver
           </div>
         </div>
       )}
+
+      {/* Add Parent Modal */}
+      <AddParentModal
+        isOpen={showAddParentModal}
+        onClose={() => setShowAddParentModal(false)}
+        onSuccess={() => fetchParents()}
+      />
     </div>
   );
 };

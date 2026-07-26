@@ -21,6 +21,7 @@ import { seedDefaultEscalationPolicies, runEscalationScheduler } from './src/ser
 import { getDb } from './src/server/db';
 import { processPendingNotifications } from './src/server/services/notifications';
 import { authMiddleware, AuthenticatedRequest } from './src/server/auth';
+import { validatePublicAppUrlOnStartup } from './src/server/utils/urlHelper';
 
 async function startServer() {
   const app = express();
@@ -305,6 +306,13 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+
+    // Validate canonical public application URL configuration
+    try {
+      validatePublicAppUrlOnStartup();
+    } catch (urlErr) {
+      console.error('[Server Start] URL validation warning:', urlErr);
+    }
 
     // Initialize reports database schema on boot
     initReportSchema().then(() => {

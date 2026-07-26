@@ -33,6 +33,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
+import { AddChildModal } from '../../components/admin/modals/AddChildModal';
 
 interface AdminChildrenViewProps {
   onBackToOverview: () => void;
@@ -41,6 +42,7 @@ interface AdminChildrenViewProps {
 export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOverview }) => {
   const { showError, showSuccess } = useNotification();
   const [loading, setLoading] = useState(true);
+  const [showAddChildModal, setShowAddChildModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalChildren: 0,
@@ -81,6 +83,20 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
   const [childToRestore, setChildToRestore] = useState<any | null>(null);
   const [submittingRestore, setSubmittingRestore] = useState(false);
+
+  // Multi-selection states
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
+  const [showBulkRemoveModal, setShowBulkRemoveModal] = useState(false);
+  const [bulkRemoveReason, setBulkRemoveReason] = useState('');
+  const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
+  const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
+  const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
+
+  // Bulk Permanent Removal states
+  const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
+  const [purgeReason, setPurgeReason] = useState('');
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
+  const [submittingPurge, setSubmittingPurge] = useState(false);
 
   const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
 
@@ -216,6 +232,105 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     }
   };
 
+  const toggleSelectAllVisible = () => {
+    if (selectedChildIds.length === children.length && children.length > 0) {
+      setSelectedChildIds([]);
+    } else {
+      setSelectedChildIds(children.map(c => c.applicationId));
+    }
+  };
+
+  const toggleSelectChild = (id: string) => {
+    if (selectedChildIds.includes(id)) {
+      setSelectedChildIds(selectedChildIds.filter(i => i !== id));
+    } else {
+      setSelectedChildIds([...selectedChildIds, id]);
+    }
+  };
+
+  const handleBulkRemoveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedChildIds.length === 0 || !bulkRemoveReason.trim()) return;
+    setSubmittingBulkRemove(true);
+    try {
+      const res = await api.admin.bulkRemoveChildren(selectedChildIds, bulkRemoveReason);
+      if (res.success) {
+        if (res.result?.skipped > 0 && res.result?.failures?.length > 0) {
+          const failureMsgs = res.result.failures.map((f: any) => f.reason).join('; ');
+          showError('Partial Removal Result', `${res.result.removed} removed. ${res.result.skipped} skipped: ${failureMsgs}`);
+        } else {
+          showSuccess('Children Removed', `${res.result?.removed || selectedChildIds.length} children removed from active event records.`);
+        }
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setShowBulkRemoveModal(false);
+        setBulkRemoveReason('');
+        setSelectedChildIds([]);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Bulk Removal Failed', err.message || 'Could not remove selected children.');
+    } finally {
+      setSubmittingBulkRemove(false);
+    }
+  };
+
+  const handleBulkRestoreSubmit = async () => {
+    if (selectedChildIds.length === 0) return;
+    setSubmittingBulkRestore(true);
+    try {
+      const res = await api.admin.bulkRestoreChildren(selectedChildIds);
+      if (res.success) {
+        showSuccess('Children Restored', `${res.restoredCount || selectedChildIds.length} children restored successfully.`);
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setShowBulkRestoreModal(false);
+        setSelectedChildIds([]);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Bulk Restore Failed', err.message || 'Could not restore selected children.');
+    } finally {
+      setSubmittingBulkRestore(false);
+    }
+  };
+
+  const handleBulkPurgeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const confirmationIsValid = purgeConfirmText.trim().toUpperCase() === 'REMOVE';
+    if (selectedChildIds.length === 0 || !purgeReason.trim() || !confirmationIsValid || submittingPurge) return;
+    setSubmittingPurge(true);
+    try {
+      const res = await api.admin.bulkPurgeChildren(selectedChildIds, purgeReason, 'REMOVE');
+      if (res.success) {
+        const removed = res.result?.permanentlyRemoved || 0;
+        const retained = res.result?.retained || 0;
+        if (retained > 0 && removed > 0) {
+          showSuccess('Permanent Removal Result', `${removed} ${removed === 1 ? 'record' : 'records'} permanently removed. ${retained} ${retained === 1 ? 'record was' : 'records were'} retained because they contain protected attendance or safeguarding history.`);
+        } else if (removed > 0) {
+          showSuccess('Permanent Removal Completed', `${removed} ${removed === 1 ? 'record' : 'records'} permanently removed.`);
+        } else {
+          showError('Records Retained', `0 records removed. ${retained} ${retained === 1 ? 'record was' : 'records were'} retained because they contain protected attendance or safeguarding history.`);
+        }
+
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setShowBulkPurgeModal(false);
+        setPurgeReason('');
+        setPurgeConfirmText('');
+        setSelectedChildIds([]);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Permanent Removal Failed', err.message || 'We could not complete the permanent removal right now. Please try again.');
+    } finally {
+      setSubmittingPurge(false);
+    }
+  };
+
   const handleRestoreChildSubmit = async () => {
     if (!childToRestore) return;
     setSubmittingRestore(true);
@@ -223,6 +338,9 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
       const res = await api.admin.restoreChild(childToRestore.applicationId);
       if (res.success) {
         showSuccess('Child Restored', 'The child record has been successfully restored.');
+        if (res.summary) {
+          setStats(res.summary);
+        }
         setChildToRestore(null);
         fetchChildren();
       }
@@ -259,7 +377,10 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     try {
       const res = await api.admin.removeChild(childToRemove.applicationId, removeReason);
       if (res.success) {
-        showSuccess('Child Removed', 'The child record has been archived/soft-removed.');
+        showSuccess('Child Removed', 'The child record has been removed from active event records.');
+        if (res.summary) {
+          setStats(res.summary);
+        }
         setChildToRemove(null);
         setRemoveReason('');
         fetchChildren();
@@ -417,6 +538,24 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <p className="text-xs text-zinc-500 font-medium">
             View each child’s review status, entry status, pickup status, parent, pickup person, and care notes.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setShowAddChildModal(true)}
+            variant="primary"
+            className="text-xs px-4 py-2 flex items-center space-x-1.5"
+          >
+            <Users className="w-4 h-4" />
+            <span>Add Child</span>
+          </Button>
+          <Button
+            onClick={onBackToOverview}
+            variant="secondary"
+            className="text-xs px-4 py-2"
+          >
+            Back to Overview
+          </Button>
         </div>
       </div>
 
@@ -596,6 +735,15 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                    <th className="py-3 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={children.length > 0 && selectedChildIds.length === children.length}
+                        onChange={toggleSelectAllVisible}
+                        className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4 cursor-pointer"
+                        title="Select all visible children"
+                      />
+                    </th>
                     <th className="py-3 px-4">Child</th>
                     <th className="py-3 px-4">Age</th>
                     <th className="py-3 px-4">Group</th>
@@ -611,8 +759,16 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   {children.map((c) => (
                     <tr 
                       key={c.id}
-                      className={`hover:bg-[#FAF9F6]/40 transition-colors ${c.isDeleted ? 'opacity-70 bg-zinc-50/50' : ''}`}
+                      className={`hover:bg-[#FAF9F6]/40 transition-colors ${selectedChildIds.includes(c.applicationId) ? 'bg-[#C59B27]/5' : ''} ${c.isDeleted ? 'opacity-70 bg-zinc-50/50' : ''}`}
                     >
+                      <td className="py-3 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedChildIds.includes(c.applicationId)}
+                          onChange={() => toggleSelectChild(c.applicationId)}
+                          className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4 cursor-pointer"
+                        />
+                      </td>
                       {/* Child info */}
                       <td className="py-3 px-4">
                         <div className="flex items-center space-x-3">
@@ -1237,7 +1393,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
             <div className="text-xs bg-red-50 text-red-700 p-3 rounded-xl border border-red-100 space-y-1">
               <span className="font-semibold block">⚠️ Important Information:</span>
               <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-red-600">
-                <li>This child will be soft-removed and excluded from active event rosters.</li>
+                <li>This child will be removed and excluded from active event rosters.</li>
                 <li>Admins can view and restore this child record anytime from the Removed tab.</li>
               </ul>
             </div>
@@ -1371,6 +1527,276 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           </div>
         </div>
       )}
+
+      {/* Sticky Bulk Selection Bar */}
+      {selectedChildIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-zinc-900 text-white rounded-2xl px-5 py-3 shadow-2xl flex items-center space-x-4 border border-zinc-800 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center space-x-2">
+            <span className="bg-[#C59B27] text-black font-extrabold text-xs px-2.5 py-1 rounded-lg">
+              {selectedChildIds.length} selected
+            </span>
+            <span className="text-xs text-zinc-300 font-medium hidden sm:inline">
+              {activeFilter === 'removed' ? 'Removed records selected' : 'Child registrations selected'}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-zinc-800" />
+          <div className="flex items-center space-x-2">
+            {activeFilter === 'removed' ? (
+              <>
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl"
+                  onClick={() => setShowBulkRestoreModal(true)}
+                  id="bulk-restore-btn"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Restore selected ({selectedChildIds.length})
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-rose-700 hover:bg-rose-800 text-white font-semibold text-xs rounded-xl shadow-xs"
+                  onClick={() => setShowBulkPurgeModal(true)}
+                  id="bulk-purge-btn"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Permanently remove ({selectedChildIds.length})
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl"
+                onClick={() => setShowBulkRemoveModal(true)}
+                id="bulk-remove-btn"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Bulk Remove ({selectedChildIds.length})
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-zinc-400 hover:text-white hover:bg-zinc-800 text-xs rounded-xl"
+              onClick={() => setSelectedChildIds([])}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Removal Confirmation Modal */}
+      {showBulkRemoveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-bulk-remove-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkRemoveModal(false)} />
+          <div className="relative bg-[#FFFDF9] border border-zinc-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-rose-600">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Bulk Remove ({selectedChildIds.length}) Children</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to remove <strong>{selectedChildIds.length}</strong> selected child registrations?
+            </p>
+            <div className="text-xs bg-rose-50 text-rose-800 p-3 rounded-xl border border-rose-100 space-y-1">
+              <span className="font-semibold block">⚠️ Data Integrity & Safeguarding Note:</span>
+              <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-rose-700">
+                <li>Selected children will be removed and excluded from active attendance counts.</li>
+                <li>Checked-in children will be safely skipped to prevent attendance discrepancy.</li>
+                <li>Historical audit logs, attendance history, and safeguarding records remain fully intact.</li>
+              </ul>
+            </div>
+
+            <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason for Bulk Removal (Required)</label>
+                <textarea
+                  required
+                  value={bulkRemoveReason}
+                  onChange={(e) => setBulkRemoveReason(e.target.value)}
+                  placeholder="Provide an audit reason for bulk removing these child records..."
+                  className="w-full h-20 px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 transition-all resize-none placeholder-zinc-400 text-zinc-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+                <Button
+                  type="button"
+                  onClick={() => setShowBulkRemoveModal(false)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingBulkRemove}
+                  disabled={submittingBulkRemove || !bulkRemoveReason.trim()}
+                  className="px-5 py-2 text-xs bg-rose-600 hover:bg-rose-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50"
+                  id="confirm-bulk-remove-btn"
+                >
+                  Remove {selectedChildIds.length} Children
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Permanent Removal Confirmation Modal */}
+      {showBulkPurgeModal && (() => {
+        const confirmationIsValid = purgeConfirmText.trim().toUpperCase() === 'REMOVE';
+        const reasonIsSelected = purgeReason.trim() !== '';
+
+        const selectedRecords = children.filter(c => selectedChildIds.includes(c.applicationId));
+        const ineligibleRecords = selectedRecords.filter(c => 
+          ['checked_in', 'inside', 'picked_up'].includes(c.entryStatus) ||
+          c.checkedInAt != null ||
+          c.pickedUpAt != null ||
+          c.hasProtectedHistory === true
+        );
+        const eligibleCount = selectedRecords.length - ineligibleRecords.length;
+
+        const canSubmit = selectedChildIds.length > 0 && reasonIsSelected && confirmationIsValid && !submittingPurge && (selectedRecords.length === 0 || eligibleCount > 0);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-bulk-purge-modal">
+            <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkPurgeModal(false)} />
+            <div className="relative bg-[#FFFDF9] border border-rose-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center space-x-2 text-rose-700">
+                <Trash2 className="w-5 h-5 shrink-0 text-rose-700" />
+                <h3 className="font-serif font-bold text-lg text-zinc-900">
+                  Permanently remove {selectedChildIds.length} {selectedChildIds.length === 1 ? 'child' : 'children'}?
+                </h3>
+              </div>
+              
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                This action cannot be undone. Eligible records will be permanently removed. Records that must be retained for attendance, safeguarding or audit purposes will not be deleted.
+              </p>
+
+              <div className="text-xs bg-rose-50 text-rose-900 p-3 rounded-xl border border-rose-200 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">Selected records:</span>
+                  <span className="font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">{selectedChildIds.length}</span>
+                </div>
+                {ineligibleRecords.length > 0 && (
+                  <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 leading-snug">
+                    <span className="font-bold block">Protected Retention Notice:</span>
+                    {ineligibleRecords.length} of {selectedRecords.length} selected {selectedRecords.length === 1 ? 'record contains' : 'records contain'} protected attendance history or safeguarding records and will be retained. {eligibleCount > 0 ? `${eligibleCount} eligible ${eligibleCount === 1 ? 'record' : 'records'} will be permanently removed.` : 'No selected records can be permanently removed.'}
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleBulkPurgeSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider block">Reason for removal (Required)</label>
+                  <select
+                    required
+                    value={purgeReason}
+                    onChange={(e) => setPurgeReason(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 transition-all text-zinc-800"
+                    id="bulk-purge-reason-select"
+                  >
+                    <option value="">Select a reason...</option>
+                    <option value="Test records">Test records</option>
+                    <option value="Duplicate records">Duplicate records</option>
+                    <option value="Approved data-removal request">Approved data-removal request</option>
+                    <option value="Incorrect records">Incorrect records</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  {!reasonIsSelected && (
+                    <p className="text-[11px] text-amber-700 font-medium mt-0.5">Please select a reason for removal.</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider block">To confirm permanent removal, type REMOVE</label>
+                  <input
+                    type="text"
+                    required
+                    value={purgeConfirmText}
+                    onChange={(e) => setPurgeConfirmText(e.target.value)}
+                    placeholder="REMOVE"
+                    className="w-full px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 transition-all font-mono uppercase text-zinc-800 tracking-wider"
+                    id="bulk-purge-confirm-input"
+                  />
+                  {!confirmationIsValid && (
+                    <p className="text-[11px] text-zinc-500 mt-0.5">Type REMOVE in the field above to enable removal.</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+                  <Button
+                    type="button"
+                    onClick={() => setShowBulkPurgeModal(false)}
+                    variant="secondary"
+                    className="px-4 py-2 text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <button
+                    type="submit"
+                    disabled={!canSubmit}
+                    id="confirm-bulk-purge-btn"
+                    className={`px-5 py-2 text-xs font-serif font-bold rounded-xl transition-all ${
+                      canSubmit
+                        ? 'bg-rose-700 hover:bg-rose-800 text-white shadow-md shadow-rose-900/20 active:scale-[0.98] cursor-pointer'
+                        : 'bg-zinc-200 text-zinc-400 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    {submittingPurge ? 'Removing…' : 'Permanently remove'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Bulk Restore Confirmation Modal */}
+      {showBulkRestoreModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-bulk-restore-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkRestoreModal(false)} />
+          <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600">
+              <RotateCcw className="w-5 h-5 shrink-0 animate-spin-reverse" />
+              <h3 className="font-serif font-bold text-lg text-zinc-900">Bulk Restore ({selectedChildIds.length}) Children</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to restore <strong>{selectedChildIds.length}</strong> removed child registrations?
+            </p>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Restoring these child records will return their registration statuses to Under Review and update all active platform statistics immediately.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+              <Button
+                type="button"
+                onClick={() => setShowBulkRestoreModal(false)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleBulkRestoreSubmit}
+                loading={submittingBulkRestore}
+                disabled={submittingBulkRestore}
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                id="confirm-bulk-restore-btn"
+              >
+                Restore {selectedChildIds.length} Children
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Child Modal */}
+      <AddChildModal
+        isOpen={showAddChildModal}
+        onClose={() => setShowAddChildModal(false)}
+        onSuccess={() => fetchChildren()}
+      />
     </div>
   );
 };

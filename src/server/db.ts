@@ -950,6 +950,18 @@ function initSqliteSchema(db: Database.Database) {
   }
 
   try {
+    db.exec(`ALTER TABLE auth_tokens ADD COLUMN revoked_at TEXT;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
+  try {
+    db.exec(`ALTER TABLE auth_tokens ADD COLUMN revoked_by TEXT;`);
+  } catch (e) {
+    // Column likely already exists
+  }
+
+  try {
     db.exec(`ALTER TABLE child_event_entries ADD COLUMN withdrawn_at TEXT;`);
   } catch (e) {
     // Column likely already exists
@@ -2530,6 +2542,14 @@ async function initPostgresSchema(pool: any) {
 
     try {
       await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMP;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMP;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS revoked_by VARCHAR(255);`);
     } catch (e) {}
 
     try {

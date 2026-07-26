@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+import { buildPublicAppUrl } from '../utils/urlHelper';
 
 export interface SendEmailOptions {
   to: string;
@@ -381,7 +382,7 @@ export async function sendChildReviewDecisionEmail(params: {
   let text = '';
   let actionButton: { label: string; url: string } | undefined;
 
-  const resolvedStatusLink = params.statusLink || `${process.env.APP_BASE_URL || 'https://koinonia12.netlify.app'}/#/parent/children`;
+  const resolvedStatusLink = params.statusLink || buildPublicAppUrl('/parent/children');
   const resolvedPassLink = params.passLink || resolvedStatusLink;
 
   if (statusLower === 'selected' || statusLower === 'pass_ready' || statusLower === 'approved' || statusLower === 'active') {
@@ -571,3 +572,236 @@ export async function sendVolunteerApprovedEmail(params: {
 
   return sendEmail({ to: params.volunteerEmail, subject, html, text });
 }
+
+// Helper to generate professional escalation HTML emails
+function wrapEscalationHtmlTemplate(title: string, bodyHtml: string, actionButton?: { label: string; url: string }): string {
+  const buttonHtml = actionButton ? `
+    <div style="margin: 24px 0;">
+      <a href="${actionButton.url}" style="background-color: #991B1B; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+        ${actionButton.label}
+      </a>
+    </div>
+  ` : '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #FAF8F4; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #18181B; -webkit-font-smoothing: antialiased;">
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #FAF8F4; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="540" border="0" cellpadding="0" cellspacing="0" style="max-width: 540px; background-color: #FFFFFF; border: 1px solid #EAE8E1; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <!-- Top Accent Bar (Antique Gold) -->
+          <tr>
+            <td style="background-color: #C59B27; height: 3px; font-size: 0; line-height: 0;">&nbsp;</td>
+          </tr>
+          <!-- Header -->
+          <tr>
+            <td style="padding: 24px 32px 16px 32px; border-bottom: 1px solid #FAF8F4;">
+              <h1 style="margin: 0; font-size: 18px; font-weight: 600; color: #18181B; letter-spacing: -0.01em;">
+                Koinonia Safety &amp; Escalations
+              </h1>
+            </td>
+          </tr>
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 28px 32px; font-size: 15px; line-height: 1.6; color: #27272A;">
+              ${bodyHtml}
+              ${buttonHtml}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; background-color: #FAFAFA; border-top: 1px solid #EAE8E1; font-size: 12px; color: #71717A; text-align: center;">
+              Koinonia Safety Alert &bull; Escalation Service
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
+ * Send an Urgent Escalation Safety Alert Email to administrators / responders
+ */
+export async function sendEscalationAlertEmail(params: {
+  recipientEmail: string;
+  recipientFirstName?: string;
+  eventTitle?: string;
+  subjectType?: 'alert' | 'incident' | 'follow_up' | string;
+  escalationCode?: string;
+  actionUrl: string;
+  raisedAt?: Date | string;
+}): Promise<SendEmailResult> {
+  const subject = 'Urgent safety alert requires attention';
+  const firstName = getFirstName(params.recipientFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const eventName = params.eventTitle || 'The General Assembly';
+
+  const formattedDate = params.raisedAt
+    ? new Date(params.raisedAt).toLocaleString('en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC'
+      }) + ' UTC'
+    : new Date().toLocaleString('en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC'
+      }) + ' UTC';
+
+  const escRef = params.escalationCode
+    ? `<div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #EAE8E1; font-size: 12px; color: #71717A;">Alert reference: ${params.escalationCode}</div>`
+    : '';
+
+  const bodyHtml = `
+    <p style="margin-top: 0; font-weight: 600; color: #991B1B; font-size: 16px;">Urgent safety alert</p>
+    <p style="margin-top: 4px;">${greeting}</p>
+    <p>A safety alert from <strong>${eventName}</strong> requires immediate review.</p>
+    <table border="0" cellpadding="0" cellspacing="0" style="margin: 16px 0; width: 100%; background-color: #FAF8F4; border-radius: 6px; padding: 12px 16px; font-size: 14px;">
+      <tr>
+        <td style="padding: 4px 0; color: #71717A; width: 80px;">Event:</td>
+        <td style="padding: 4px 0; font-weight: 600; color: #18181B;">${eventName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; color: #71717A;">Raised:</td>
+        <td style="padding: 4px 0; font-weight: 500; color: #18181B;">${formattedDate}</td>
+      </tr>
+    </table>
+    <p style="margin-top: 16px; color: #3F3F46;">Please review and acknowledge this alert as soon as possible. If you are unable to respond, the escalation process will notify the next available responder.</p>
+    ${escRef}
+  `;
+
+  const escRefText = params.escalationCode ? `\n\nAlert reference: ${params.escalationCode}` : '';
+
+  const text = `${greeting}\n\nUrgent safety alert\nA safety alert from ${eventName} requires immediate review.\n\nEvent: ${eventName}\nRaised: ${formattedDate}\n\nPlease review and acknowledge this alert as soon as possible. If you are unable to respond, the escalation process will notify the next available responder.\n\nOpen urgent alert:\n${params.actionUrl}${escRefText}\n\nKoinonia Safety & Escalations`;
+
+  const actionButton = {
+    label: 'Open urgent alert',
+    url: params.actionUrl
+  };
+
+  const html = wrapEscalationHtmlTemplate(subject, bodyHtml, actionButton);
+
+  return sendEmail({
+    to: params.recipientEmail,
+    subject,
+    html,
+    text
+  });
+}
+
+/**
+ * Format invitation expiration date for user-facing email copy
+ * Example: "15 July 2026 at 11:26 AM"
+ */
+export function formatInvitationExpiry(expiresAt: Date | string): string {
+  const dateObj = new Date(expiresAt);
+  if (isNaN(dateObj.getTime())) return String(expiresAt);
+  
+  const day = dateObj.getDate();
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const month = monthNames[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  
+  let hours = dateObj.getHours();
+  const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  
+  return `${day} ${month} ${year} at ${hours}:${minutes} ${ampm}`;
+}
+
+/**
+ * Fallback greeting resolver:
+ * 1. preferred name
+ * 2. first name
+ * 3. full name (first word)
+ * 4. neutral fallback ("there")
+ */
+export function resolveGreetingName(params: {
+  preferredName?: string;
+  firstName?: string;
+  fullName?: string;
+}): string {
+  if (params.preferredName && params.preferredName.trim()) {
+    return params.preferredName.trim();
+  }
+  if (params.firstName && params.firstName.trim()) {
+    return params.firstName.trim();
+  }
+  if (params.fullName && params.fullName.trim()) {
+    const parts = params.fullName.trim().split(/\s+/);
+    if (parts[0] && parts[0].toLowerCase() !== 'invited' && parts[0].toLowerCase() !== 'admin') {
+      return parts[0];
+    }
+  }
+  return 'there';
+}
+
+/**
+ * Unified invitation email sender with personalized greeting and clear expiration notice
+ */
+export async function sendInvitationEmail(params: {
+  recipientEmail: string;
+  recipientName?: string;
+  preferredName?: string;
+  firstName?: string;
+  role: string;
+  inviteLink: string;
+  expiresAt: Date | string;
+}): Promise<SendEmailResult> {
+  const nameToUse = resolveGreetingName({
+    preferredName: params.preferredName,
+    firstName: params.firstName,
+    fullName: params.recipientName
+  });
+  
+  const greeting = nameToUse === 'there' ? 'Hello there,' : `Hello ${nameToUse},`;
+  
+  let roleTitle = 'Administrator';
+  if (params.role === 'super_admin') roleTitle = 'Super Administrator';
+  else if (params.role === 'admin') roleTitle = 'Administrator';
+  else if (params.role === 'parent') roleTitle = 'Parent Access';
+  else if (params.role === 'volunteer') roleTitle = 'Volunteer Access';
+  else if (params.role) roleTitle = params.role.charAt(0).toUpperCase() + params.role.slice(1);
+
+  const formattedExpiry = formatInvitationExpiry(params.expiresAt);
+  const subject = "You’ve been invited to help manage Koinonia Children and Teens";
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>You have been invited to support the Koinonia Children and Teens team.</p>
+    <p style="margin-top: 16px; margin-bottom: 8px;"><strong>Your access:</strong> ${roleTitle}</p>
+    <p style="margin-top: 0; color: #52525B; font-size: 14px;">You will be able to help with the areas permitted for this role.</p>
+    <div style="margin: 28px 0;">
+      <a href="${params.inviteLink}" style="background-color: #C59B27; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+        Accept Invitation
+      </a>
+    </div>
+    <p style="font-size: 13px; color: #71717A;">This invitation expires on <strong>${formattedExpiry}</strong>.</p>
+    <p style="margin-top: 20px; font-size: 13px; color: #A1A1AA;">If you were not expecting this invitation, you can safely ignore this email.</p>
+    <p style="margin-top: 24px; margin-bottom: 0;">Regards,<br/><strong>Koinonia Children and Teens Team</strong></p>
+  `;
+
+  const text = `${greeting}\n\nYou have been invited to support the Koinonia Children and Teens team.\n\nYour access: ${roleTitle}\nYou will be able to help with the areas permitted for this role.\n\nAccept your invitation using this link:\n${params.inviteLink}\n\nThis invitation expires on ${formattedExpiry}.\n\nIf you were not expecting this invitation, you can safely ignore this email.\n\nRegards,\nKoinonia Children and Teens Team`;
+
+  return sendEmail({
+    to: params.recipientEmail,
+    subject,
+    html: wrapHtmlTemplate(subject, bodyHtml),
+    text
+  });
+}
+

@@ -302,12 +302,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   };
 
   const handleAcknowledgeAlert = async (alertId: string) => {
+    // INSTANT SOUND TERMINATION: Stop device alarm sound synchronously on click before waiting for network API call
+    stopActiveUrgentAlertEffects(alertId);
+    urgentAlertEffectsManager.silenceAlert(alertId);
+
     setIsAcknowledgeInProgress(alertId);
     try {
       const res = await api.admin.acknowledgeSafetyAlert(alertId);
       if (res && res.success) {
         showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
-        stopActiveUrgentAlertEffects(alertId);
         setSafetyAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'acknowledged', acknowledged_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
       } else {
         showError('Acknowledge Failed', 'Could not acknowledge alert at this moment.');
@@ -316,7 +319,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const apiErr = extractApiError(err);
       if (err.status === 409 || apiErr.message?.toLowerCase().includes('already')) {
         showInfo('Already Responded', apiErr.message || 'This alert has already been acknowledged.');
-        stopActiveUrgentAlertEffects(alertId);
         fetchSafetyAlerts();
       } else {
         showError('Error', apiErr.message || 'Error acknowledging alert.');
@@ -331,12 +333,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       showError('Required', 'Please specify what actions were taken to resolve this safety concern.');
       return;
     }
+
+    // INSTANT SOUND TERMINATION: Stop device alarm sound synchronously on click
+    stopActiveUrgentAlertEffects(alertId);
+    urgentAlertEffectsManager.silenceAlert(alertId);
+
     setResolvingAlertId(alertId);
     try {
       const res = await api.admin.resolveSafetyAlert(alertId, resolutionNote);
       if (res && res.success) {
         showSuccess('Resolved', 'Safety concern has been successfully resolved and logged.');
-        stopActiveUrgentAlertEffects(alertId);
         setSafetyAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'resolved', resolution_note: resolutionNote, resolved_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
         setActiveAlertDetail(null);
         setResolutionNote('');
@@ -347,7 +353,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       const apiErr = extractApiError(err);
       if (err.status === 409 || apiErr.message?.toLowerCase().includes('already')) {
         showInfo('Already Resolved', apiErr.message || 'This alert has already been resolved.');
-        stopActiveUrgentAlertEffects(alertId);
         setActiveAlertDetail(null);
         setResolutionNote('');
         fetchSafetyAlerts();
@@ -498,6 +503,24 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             });
 
             const alertId = payload.alertId || payload.data?.id || (payload.data && payload.data.alertId);
+
+            if (payload.type === 'safety_alert_created') {
+              const alertObj = {
+                id: alertId,
+                severity: payload.data?.severity || 'urgent',
+                category: payload.data?.category || 'general_help',
+                status: 'open',
+                created_at: payload.timestamp || new Date().toISOString()
+              };
+              // Trigger local sound & effects INSTANTLY from SSE packet before network fetch finishes
+              urgentAlertEffectsManager.syncAlerts([alertObj]);
+            } else if (payload.type === 'safety_alert_acknowledged' || payload.type === 'safety_alert_resolved') {
+              if (alertId) {
+                stopActiveUrgentAlertEffects(alertId);
+                urgentAlertEffectsManager.silenceAlert(alertId);
+              }
+            }
+
             window.dispatchEvent(new CustomEvent('sse-alert-update', { detail: { alertId } }));
             fetchSafetyAlerts();
             fetchNotificationsList();
@@ -3191,7 +3214,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
             {/* CARD BODY (Scrollable) */}
             <div 
-              className="px-8 py-4 overflow-y-auto flex-1 space-y-4 relative z-10 text-xs text-left"
+              className="px-8 py-4 overflow-y-auto flex-1 space-y-4 relative z-10 text-xs text-left [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-safe"
               data-component-version="urgent-alert-scroll-container-v2"
             >
               {/* Role Simulation Switcher */}
@@ -3375,21 +3398,19 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       {/* Authorized Pickup Card */}
                       {activeUrgentRichDetail.pickup ? (
                         <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center space-x-3">
-                          {activeUrgentRichDetail.pickup.photoUrl ? (
-                            <img
-                              src={activeUrgentRichDetail.pickup.photoUrl}
-                              alt={activeUrgentRichDetail.pickup.fullName}
-                              referrerPolicy="no-referrer"
-                              className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
-                            />
-                          ) : (
-                            <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0 text-center p-1">
-                              <UserCheck className="w-6 h-6" />
-                              <span className="text-[8px] font-bold uppercase mt-1 leading-tight text-zinc-500">
-                                Photo unavailable
-                              </span>
-                            </div>
-                          )}
+                          <SafeImage
+                            src={activeUrgentRichDetail.pickup.photoUrl}
+                            alt={activeUrgentRichDetail.pickup.fullName}
+                            className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
+                            fallbackComponent={
+                              <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex flex-col items-center justify-center text-zinc-400 shrink-0 text-center p-1">
+                                <UserCheck className="w-5 h-5 text-zinc-400" />
+                                <span className="text-[7px] font-bold uppercase mt-0.5 leading-tight text-zinc-500">
+                                  No photo
+                                </span>
+                              </div>
+                            }
+                          />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
                               <span>Authorized Pickup</span>
@@ -3545,8 +3566,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     {/* Primary Red Acknowledge Alert Button */}
                     <button
                       onClick={async () => {
+                        // INSTANT SOUND TERMINATION: Stop device alarm sound synchronously on click before waiting for network API call
+                        stopActiveUrgentAlertEffects(activeUrgentAlert.id);
+                        urgentAlertEffectsManager.silenceAlert(activeUrgentAlert.id);
+
                         if (activeUrgentAlert.isTest) {
-                          stopActiveUrgentAlertEffects(activeUrgentAlert.id);
                           showSuccess('Test Acknowledged', 'Local browser test marked as acknowledged.');
                           return;
                         }
@@ -3554,7 +3578,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           const res = await api.admin.acknowledgeSafetyAlert(activeUrgentAlert.id);
                           if (res && res.success) {
                             showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
-                            stopActiveUrgentAlertEffects(activeUrgentAlert.id);
                             fetchSafetyAlerts();
                           }
                         } catch (err) {

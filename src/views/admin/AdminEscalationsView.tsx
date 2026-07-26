@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { ModuleLoadingState } from '../../components/common/ModuleLoadingState';
+import { KoinoniaErrorState } from '../../components/common/KoinoniaErrorState';
 import { 
   ShieldAlert, Plus, Settings, RefreshCw, Trash2, Calendar, 
   CheckCircle, HelpCircle, Eye, AlertTriangle, X, ChevronRight, 
@@ -26,6 +28,9 @@ export const AdminEscalationsView: React.FC = () => {
   const [partialHistoryError, setPartialHistoryError] = useState<boolean>(false);
   const [partialCyclesError, setPartialCyclesError] = useState<boolean>(false);
   const [viewTab, setViewTab] = useState<'policies' | 'cycles' | 'history'>('policies');
+
+  // Delete Policy Modal State
+  const [deletingPolicyId, setDeletingPolicyId] = useState<string | null>(null);
 
   // Preview Policy Modal State
   const [previewPolicy, setPreviewPolicy] = useState<any | null>(null);
@@ -257,17 +262,67 @@ export const AdminEscalationsView: React.FC = () => {
     }
   };
 
-  const handleDelete = async (policyId: string) => {
-    if (!window.confirm('Are you sure you want to permanently delete this escalation policy? This cannot be undone.')) {
-      return;
-    }
+  const confirmDeletePolicy = async (policyId: string) => {
     try {
       await api.escalation.deletePolicy(policyId);
-      showSuccess('Policy Removed', 'Escalation sequence removed from active events.');
+      showSuccess('Rule Removed', 'The escalation rule was successfully removed.');
+      setDeletingPolicyId(null);
       loadModuleData(selectedEventId, true);
     } catch (err) {
       showError('Action Failed', extractApiError(err).message || 'Failed to remove escalation policy.');
     }
+  };
+
+  const handleDelete = (policyId: string) => {
+    setDeletingPolicyId(policyId);
+  };
+
+  // Human readability helper formatters
+  const getHumanPriority = (priorityNum: number) => {
+    if (priorityNum >= 20) return 'Critical priority';
+    if (priorityNum >= 10) return 'High priority';
+    if (priorityNum >= 5) return 'Standard priority';
+    return 'Low priority';
+  };
+
+  const getHumanTrigger = (key: string) => {
+    switch (key) {
+      case 'alert_not_acknowledged':
+        return 'A safety alert has not been acknowledged';
+      case 'alert_handover_unanswered':
+        return 'A handover request has not been answered';
+      case 'alert_assistance_unanswered':
+        return 'An assistance request is waiting for response';
+      case 'incident_follow_up_overdue':
+        return 'An incident follow-up is overdue';
+      default:
+        return key ? key.replace(/_/g, ' ') : 'Alert condition triggered';
+    }
+  };
+
+  const humanizeChannels = (channelsStr: string) => {
+    if (!channelsStr) return 'push notification';
+    const parts = channelsStr.split(',').map(c => c.trim().toLowerCase());
+    const mapped = parts.map(c => {
+      if (c === 'push') return 'push notification';
+      if (c === 'email') return 'email';
+      if (c === 'whatsapp') return 'WhatsApp';
+      if (c === 'sms') return 'SMS';
+      return c;
+    });
+    if (mapped.length === 1) return mapped[0];
+    if (mapped.length === 2) return `${mapped[0]} and ${mapped[1]}`;
+    return `${mapped.slice(0, -1).join(', ')} and ${mapped[mapped.length - 1]}`;
+  };
+
+  const humanizeTarget = (targetKey: string | undefined | null) => {
+    if (!targetKey) return 'administrators and coordinators';
+    if (targetKey === 'Admins') return 'administrators and coordinators';
+    if (targetKey === 'Medical Team') return 'medical response team';
+    if (targetKey.includes('Ages')) return `${targetKey} supervisors`;
+    if (targetKey === 'admin') return 'platform administrators';
+    if (targetKey === 'volunteer') return 'on-duty volunteers';
+    return targetKey;
   };
 
   // Active Cycles Manual Controls
@@ -395,10 +450,10 @@ export const AdminEscalationsView: React.FC = () => {
   // B. LOADING STATE
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] text-zinc-500 bg-[#FAF9F5]" id="escalations-loading-panel">
-        <RefreshCw className="w-8 h-8 animate-spin mb-4 text-[#C59B27]" />
-        <p className="font-mono text-xs uppercase tracking-wider text-zinc-400 font-semibold animate-pulse">Loading escalation policies...</p>
-      </div>
+      <ModuleLoadingState
+        title="Preparing escalation rules..."
+        supportingText="This should only take a moment."
+      />
     );
   }
 
@@ -409,26 +464,26 @@ export const AdminEscalationsView: React.FC = () => {
     <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-[#18181B] bg-[#FAF9F5]" id="escalations-main-view">
       
       {/* 1. Header Banner & Global Controls */}
-      <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 md:p-8 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-2xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
         <div>
           <div className="flex items-center space-x-2 text-[#C59B27] mb-2">
-            <ShieldAlert className="w-6 h-6" />
-            <span className="font-mono text-xs font-bold uppercase tracking-widest">Koinonia Sentinel Matrix</span>
+            <ShieldAlert className="w-5 h-5" />
+            <span className="text-xs font-bold uppercase tracking-wider font-sans">Koinonia Safeguarding Rules</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-bold font-serif text-[#18181B] tracking-tight">
-            Escalation Rules & Unanswered Alert Protection
+          <h1 className="text-2xl font-bold font-serif text-[#18181B] tracking-tight">
+            Escalation Rules & Safety Protections
           </h1>
-          <p className="text-zinc-500 text-sm mt-1 max-w-2xl">
-            Configure backend-authoritative, durable rules to protect children and staff. Escalates alerts, handovers, and incidents that fail to receive timely response.
+          <p className="text-zinc-500 text-xs mt-1 max-w-2xl leading-relaxed">
+            Configure rules to automatically escalate unanswered safety alerts and assistance requests to secondary coordinators and team leads.
           </p>
           
           {/* Active Event Selector */}
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="text-xs font-semibold uppercase text-zinc-400 tracking-wider font-mono">Current Event Context:</span>
+            <span className="text-xs font-medium text-zinc-500">Active event:</span>
             <select
               value={selectedEventId}
               onChange={(e) => handleEventChange(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] text-xs font-medium focus:ring-1 focus:ring-[#C59B27] outline-none"
+              className="px-3 py-1.5 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] text-xs font-medium focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
             >
               {events.length === 0 ? (
                 <option value="event-ga-2026">No Events Configured</option>
@@ -445,18 +500,18 @@ export const AdminEscalationsView: React.FC = () => {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center space-x-2 px-4 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-xs font-medium transition-all min-h-[44px]"
+            className="flex items-center space-x-2 px-4 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-xs font-medium transition-all cursor-pointer min-h-[40px]"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Sync Engine</span>
+            <span>Refresh rules</span>
           </button>
           {!isEditing && (
             <button
               onClick={handleCreateNew}
-              className="flex items-center space-x-2 px-5 py-2 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-sm transition-all min-h-[44px]"
+              className="flex items-center space-x-2 px-4 py-2 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer min-h-[40px]"
             >
               <Plus className="w-4 h-4" />
-              <span>Create Policy</span>
+              <span>Create rule</span>
             </button>
           )}
         </div>
@@ -712,41 +767,41 @@ export const AdminEscalationsView: React.FC = () => {
           <div className="border-b border-[#EAE8E1] flex flex-wrap gap-2">
             <button
               onClick={() => setViewTab('policies')}
-              className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 font-mono transition-all min-h-[44px] flex items-center gap-2 ${
+              className={`pb-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer min-h-[40px] flex items-center gap-2 ${
                 viewTab === 'policies' 
                   ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-800'
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
-              <span>Policies Matrix ({policies.length})</span>
+              <span>Escalation rules ({policies.length})</span>
             </button>
             <button
               onClick={() => setViewTab('cycles')}
-              className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 font-mono transition-all min-h-[44px] flex items-center gap-2 ${
+              className={`pb-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer min-h-[40px] flex items-center gap-2 ${
                 viewTab === 'cycles' 
                   ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-800'
               }`}
             >
               <BellRing className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-              <span>Active Escalations ({cycles.length})</span>
+              <span>Active escalations ({cycles.length})</span>
               {cycles.length > 0 && (
-                <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full text-[9px] font-bold">
+                <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
                   {cycles.length}
                 </span>
               )}
             </button>
             <button
               onClick={() => setViewTab('history')}
-              className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 font-mono transition-all min-h-[44px] flex items-center gap-2 ${
+              className={`pb-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer min-h-[40px] flex items-center gap-2 ${
                 viewTab === 'history' 
                   ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-800'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Sentinel Logs ({history.length})</span>
+              <span>Activity history ({history.length})</span>
             </button>
           </div>
 
@@ -754,103 +809,105 @@ export const AdminEscalationsView: React.FC = () => {
           {viewTab === 'policies' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest font-mono">Active Rules Matrix</h2>
+                <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider">Active escalation rules</h2>
               </div>
 
               {/* Event empty state */}
               {policies.length === 0 ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-12 text-center text-zinc-500 space-y-4" id="empty-policies-state">
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-10 text-center text-zinc-500 space-y-3" id="empty-policies-state">
                   <div className="mx-auto w-12 h-12 bg-[#FAF9F5] text-zinc-400 rounded-full flex items-center justify-center border border-[#EAE8E1]">
                     <ShieldAlert className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="font-serif font-bold text-base text-[#18181B]">No escalation rules have been created for this event.</h3>
-                    <p className="text-xs text-zinc-400 max-w-sm mx-auto mt-1">
-                      Configure backend-authoritative fallback sequences to ensure unanswered alerts are automatically routed to secondary coordinators.
+                    <h3 className="font-serif font-bold text-base text-[#18181B]">No escalation rules have been created for this event</h3>
+                    <p className="text-xs text-zinc-500 max-w-md mx-auto mt-1">
+                      Configure fallback sequences to ensure unanswered alerts are automatically routed to secondary coordinators.
                     </p>
                   </div>
                   <button
                     onClick={handleCreateNew}
-                    className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-sm transition-all min-h-[44px]"
+                    className="px-4 py-2 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer"
                   >
-                    Create Escalation Rule
+                    Create escalation rule
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {policies.map((policy) => (
-                    <div key={policy.id} className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs hover:shadow-md transition-all space-y-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
+                    <div key={policy.id} className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-all space-y-4">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleTogglePolicyEnabled(policy)}
-                              title="Click to toggle rule"
-                              className={`w-2.5 h-2.5 rounded-full transition-all ${policy.is_enabled === 1 || policy.is_enabled === true ? 'bg-emerald-500' : 'bg-zinc-300'}`}
-                            />
-                            <h3 className="font-serif font-bold text-base text-[#18181B] tracking-tight">{policy.name}</h3>
+                              title="Click to toggle rule status"
+                              className={`px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors ${
+                                policy.is_enabled === 1 || policy.is_enabled === true 
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
+                                  : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
+                              }`}
+                            >
+                              {policy.is_enabled === 1 || policy.is_enabled === true ? 'Active' : 'Paused'}
+                            </button>
+                            <span className="text-xs bg-amber-50 text-amber-800 border border-amber-200/80 px-2.5 py-0.5 rounded-full font-medium">
+                              {getHumanPriority(policy.priority)}
+                            </span>
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            <span className="font-mono text-[9px] bg-zinc-100 px-2 py-0.5 rounded-md text-zinc-500">
-                              Priority: {policy.priority}
-                            </span>
-                            <span className="font-mono text-[9px] bg-[#C59B27]/10 px-2 py-0.5 rounded-md text-[#C59B27] font-semibold">
-                              Trigger: {policy.condition_key.replace(/_/g, ' ')}
-                            </span>
-                            <span className="font-mono text-[9px] bg-blue-50 px-2 py-0.5 rounded-md text-blue-600 font-semibold">
-                              Scope: {policy.policy_scope.replace(/_/g, ' ')}
-                            </span>
-                            {policy.category_key && (
-                              <span className="font-mono text-[9px] bg-purple-50 px-2 py-0.5 rounded-md text-purple-600 font-bold uppercase">
-                                {policy.category_key}
-                              </span>
-                            )}
-                          </div>
+                          <h3 className="font-serif font-bold text-base text-[#18181B] tracking-tight">{policy.name}</h3>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => setPreviewPolicy(policy)}
-                            title="Preview Recipients Matrix"
-                            className="p-2 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-zinc-600 transition-all min-h-[38px] min-w-[38px] flex items-center justify-center"
+                            title="View rule simulation"
+                            className="p-2 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-zinc-600 transition-colors cursor-pointer"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleEdit(policy)}
-                            title="Edit policy"
-                            className="p-2 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-zinc-600 transition-all min-h-[38px] min-w-[38px] flex items-center justify-center"
+                            title="Edit rule"
+                            className="p-2 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-zinc-600 transition-colors cursor-pointer"
                           >
                             <Settings className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(policy.id)}
-                            title="Delete policy"
-                            className="p-2 border border-red-100 hover:bg-red-50 text-red-500 rounded-xl transition-all min-h-[38px] min-w-[38px] flex items-center justify-center"
+                            title="Delete rule"
+                            className="p-2 border border-red-100 hover:bg-red-50 text-red-600 rounded-xl transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
 
-                      {/* Step Timelines */}
-                      <div className="border-t border-[#FAF9F5] pt-4 space-y-3">
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-mono">Escalation Sequence</span>
-                        <div className="relative pl-6 space-y-4 border-l border-[#EAE8E1]/80">
-                          {policy.steps && policy.steps.map((step: any) => (
-                            <div key={step.id || step.step_order} className="relative">
-                              {/* Circle node indicator */}
-                              <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full border border-[#C59B27] bg-white flex items-center justify-center">
-                                <span className="text-[8px] font-bold text-[#C59B27]">{step.step_order}</span>
-                              </div>
-                              <div>
-                                <p className="text-xs font-semibold text-zinc-800">
-                                  After <span className="font-mono text-[#C59B27]">{step.wait_seconds}s</span>, notify{' '}
-                                  <span className="font-mono bg-[#FAF9F6] border border-[#EAE8E1]/80 px-1.5 py-0.5 rounded text-zinc-700 text-[10px]">
-                                    {step.target_team_key || step.target_responsibility_key || 'Admins & Coordinators'}
-                                  </span>
+                      {/* Rule details: Trigger & Scope */}
+                      <div className="space-y-1.5 text-xs text-zinc-600 bg-[#FAF9F6] border border-[#EAE8E1]/80 rounded-xl p-3">
+                        <div>
+                          <span className="font-semibold text-zinc-800">Trigger: </span>
+                          <span>{getHumanTrigger(policy.condition_key)}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-zinc-800">Scope: </span>
+                          <span>{policy.policy_scope === 'event_default' ? 'This event' : (policy.category_key ? `Category: ${policy.category_key}` : 'Category specific')}</span>
+                        </div>
+                      </div>
+
+                      {/* Step Timelines / Notification Sequence */}
+                      <div className="space-y-2 border-t border-[#F4F3EF] pt-3">
+                        <span className="text-xs font-semibold text-zinc-700">Notification sequence</span>
+                        <div className="space-y-2">
+                          {policy.steps && policy.steps.map((step: any, idx: number) => (
+                            <div key={step.id || idx} className="flex items-start gap-2.5 text-xs text-zinc-700 bg-white border border-[#EAE8E1] rounded-xl p-3">
+                              <span className="font-bold text-[#C59B27] shrink-0">{idx + 1}.</span>
+                              <div className="space-y-0.5">
+                                <p className="font-medium text-zinc-900">
+                                  After {step.wait_seconds} seconds
                                 </p>
-                                <p className="text-[10px] text-zinc-400 mt-0.5 font-mono">
-                                  Channels: <span className="text-[#C59B27] font-semibold">{step.channels}</span> • Wait: {step.wait_seconds}s
+                                <p className="text-zinc-600">
+                                  Notify {humanizeTarget(step.target_team_key || step.target_responsibility_key)} by {humanizeChannels(step.channels)}.
                                 </p>
                               </div>
                             </div>
@@ -868,42 +925,42 @@ export const AdminEscalationsView: React.FC = () => {
           {viewTab === 'cycles' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest font-mono">Active Escalation Engine Cycles</h2>
+                <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider">Active escalations</h2>
               </div>
 
               {partialCyclesError && (
                 <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3.5 rounded-xl flex items-center gap-2">
                   <AlertIcon className="w-4 h-4 shrink-0" />
-                  <p><strong>Partial Section Failure:</strong> Could not reach active cycles endpoint. Other features remain fully operational.</p>
+                  <p><strong>Note:</strong> Could not reach active escalations endpoint. Other features remain fully operational.</p>
                 </div>
               )}
 
               {cycles.length === 0 ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-12 text-center text-zinc-400 space-y-2">
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-10 text-center text-zinc-500 space-y-2">
                   <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto" />
-                  <p className="text-sm font-serif font-bold text-zinc-700">All systems quiet. No active escalation loops running.</p>
-                  <p className="text-xs max-w-sm mx-auto">
-                    When active safety alerts are created, the backend scheduler evaluates policies and boots timed cycles automatically.
+                  <p className="text-sm font-serif font-bold text-zinc-800">All quiet. No active escalations in progress.</p>
+                  <p className="text-xs max-w-sm mx-auto text-zinc-500">
+                    When active safety alerts are created, the system evaluates rules and triggers escalation sequences automatically if unanswered.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {cycles.map((cycle) => (
-                    <div key={cycle.id} className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6" id={`cycle-${cycle.id}`}>
-                      <div className="space-y-2 max-w-xl">
+                    <div key={cycle.id} className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-5" id={`cycle-${cycle.id}`}>
+                      <div className="space-y-1.5 max-w-xl">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-[9px] bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
-                            ACTIVE {cycle.status.toUpperCase()}
+                          <span className="text-[10px] bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider animate-pulse">
+                            Active escalation
                           </span>
-                          <span className="text-xs text-zinc-400 font-mono">ID: {cycle.id.substring(0, 8)}</span>
+                          <span className="text-xs text-zinc-400">Reference: {cycle.id.substring(0, 8)}</span>
                         </div>
                         <h4 className="font-serif font-bold text-base text-[#18181B] tracking-tight">
-                          {cycle.alert_title || `${cycle.subject_type.toUpperCase()} Escalation`}
+                          {cycle.alert_title || `${cycle.subject_type || 'Safety'} escalation`}
                         </h4>
-                        <p className="text-xs text-zinc-500 font-sans leading-relaxed">
-                          Currently evaluating <strong>{cycle.policy_name || 'Event Policy'}</strong> at <strong>Step #{cycle.current_step_order}</strong>. Next dispatch check scheduled for <span className="font-mono text-[#C59B27]">{new Date(cycle.next_due_at || Date.now()).toLocaleTimeString()}</span>.
+                        <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                          Currently evaluating <strong>{cycle.policy_name || 'Event Rule'}</strong> at <strong>Step #{cycle.current_step_order}</strong>. Next check scheduled for <span className="font-semibold text-[#8C6B18]">{new Date(cycle.next_due_at || Date.now()).toLocaleTimeString()}</span>.
                         </p>
-                        <div className="flex flex-wrap gap-2 pt-1 font-mono text-[9px] text-zinc-400">
+                        <div className="flex flex-wrap gap-2 pt-1 text-[11px] text-zinc-400">
                           <span>Started: {new Date(cycle.started_at).toLocaleString()}</span>
                           <span>•</span>
                           <span>Category: {cycle.alert_category || 'General'}</span>
@@ -914,25 +971,25 @@ export const AdminEscalationsView: React.FC = () => {
                       <div className="flex flex-wrap gap-2 shrink-0">
                         <button
                           onClick={() => handleNotifyBackup(cycle.id)}
-                          className="flex items-center space-x-1 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl text-xs font-semibold transition-all min-h-[40px]"
-                          title="Manually dispatch backup notify sequence now"
+                          className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                          title="Notify backup leads immediately"
                         >
                           <BellRing className="w-3.5 h-3.5" />
-                          <span>Dispatch Backup</span>
+                          <span>Notify backup leads</span>
                         </button>
                         <button
                           onClick={() => handleRestartCycle(cycle.id)}
-                          className="flex items-center space-x-1 px-3 py-2 border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-600 rounded-xl text-xs font-semibold transition-all min-h-[40px]"
+                          className="flex items-center space-x-1.5 px-3 py-1.5 border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-colors cursor-pointer"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Restart Matrix</span>
+                          <span>Restart sequence</span>
                         </button>
                         <button
                           onClick={() => handleCancelCycle(cycle.id)}
-                          className="flex items-center space-x-1 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold transition-all min-h-[40px]"
+                          className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-medium transition-colors cursor-pointer"
                         >
                           <Square className="w-3.5 h-3.5" />
-                          <span>Terminate</span>
+                          <span>Cancel escalation</span>
                         </button>
                       </div>
                     </div>
@@ -946,28 +1003,28 @@ export const AdminEscalationsView: React.FC = () => {
           {viewTab === 'history' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest font-mono">Sentinel Log Journal</h2>
+                <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider">Activity history</h2>
               </div>
 
               {partialHistoryError && (
                 <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3.5 rounded-xl flex items-center gap-2">
                   <AlertIcon className="w-4 h-4 shrink-0" />
-                  <p><strong>Partial Section Failure:</strong> Could not reach history log endpoint. Active matrices remain fully functional.</p>
+                  <p><strong>Note:</strong> Could not reach history log endpoint. Active rules remain fully operational.</p>
                 </div>
               )}
 
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs max-h-[600px] overflow-y-auto space-y-4">
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs max-h-[600px] overflow-y-auto space-y-3">
                 {history.length === 0 ? (
-                  <p className="text-xs text-zinc-400 font-mono py-6 text-center">No sentinel execution logs generated yet.</p>
+                  <p className="text-xs text-zinc-400 py-6 text-center">No escalation activity recorded yet.</p>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {history.map((log) => (
-                      <div key={log.id} className="border-b border-[#FAF9F5] pb-3 last:border-0 last:pb-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="font-mono text-[9px] text-[#C59B27] font-bold uppercase bg-[#C59B27]/5 px-2 py-0.5 rounded">
-                            {log.action_type.replace(/_/g, ' ')}
+                      <div key={log.id} className="border-b border-[#FAF9F5] pb-3 last:border-0 last:pb-0 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-[#C59B27] font-semibold bg-[#C59B27]/10 px-2 py-0.5 rounded-md">
+                            {log.action_type ? log.action_type.replace(/_/g, ' ') : 'Action'}
                           </span>
-                          <span className="text-[10px] text-zinc-400 font-mono">
+                          <span className="text-[11px] text-zinc-400">
                             {new Date(log.created_at).toLocaleString()}
                           </span>
                         </div>
@@ -979,6 +1036,41 @@ export const AdminEscalationsView: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Delete Rule Confirmation Modal Dialog */}
+      {deletingPolicyId && (
+        <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="delete-policy-modal">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-xl max-w-md w-full space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-red-50 text-red-600 rounded-xl shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-serif font-bold text-base text-zinc-900">Delete escalation rule</h3>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Are you sure you want to delete this escalation rule? Unanswered alerts will no longer trigger this automated notification sequence.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setDeletingPolicyId(null)}
+                className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmDeletePolicy(deletingPolicyId)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+              >
+                Delete rule
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

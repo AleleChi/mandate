@@ -23,6 +23,9 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { IncidentEditModal } from '../../components/common/IncidentEditModal';
+import { TableSkeleton } from '../../components/common/KoinoniaSkeletons';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { KoinoniaEmptyState } from '../../components/common/KoinoniaEmptyState';
 
 // Proof: data-component-version="admin-incident-records-centre-v1"
 
@@ -538,16 +541,13 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
             {/* List */}
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-20 space-y-2">
-                <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-                <span className="text-xs text-zinc-400">Querying incident logs...</span>
-              </div>
+              <TableSkeleton rows={4} cols={4} />
             ) : filteredIncidents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center space-y-2">
-                <ShieldAlert className="w-10 h-10 text-zinc-300" />
-                <span className="text-xs text-zinc-500 font-bold">No incident records matched selection</span>
-                <p className="text-[10px] text-zinc-400 max-w-xs">Use filters or search bar to change filters.</p>
-              </div>
+              <KoinoniaEmptyState
+                icon={ShieldAlert}
+                title="No incident records found"
+                description="No incident reports match your current filter settings."
+              />
             ) : (
               <div className="space-y-3">
                 {filteredIncidents.map((inc) => {
@@ -642,9 +642,8 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
               </div>
 
               {loadingDetail ? (
-                <div className="p-12 flex flex-col items-center justify-center space-y-2 flex-1">
-                  <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
-                  <span className="text-xs text-zinc-400">Inspecting database audit log...</span>
+                <div className="p-12 flex flex-col items-center justify-center flex-1">
+                  <KoinoniaInlineLoader label="Loading incident details..." size="sm" />
                 </div>
               ) : selectedIncidentDetail ? (
                 <div className="p-5 space-y-6 flex-1 overflow-y-auto max-h-[80vh]">

@@ -12,10 +12,10 @@ router.use(authMiddleware);
 router.get('/stream', (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id;
   const role = req.user?.role;
-  if (!userId || (role !== 'admin' && role !== 'super_admin' && role !== 'team')) {
-    return res.status(403).json({ error: 'Access denied: Admin/Team role required' });
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
   }
-  addSSEClient(userId, role, res);
+  addSSEClient(userId, role || 'guest', res);
 });
 
 // GET /api/notifications

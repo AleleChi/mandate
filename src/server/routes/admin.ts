@@ -6,14 +6,16 @@ import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
 import { broadcastSSEEvent } from '../services/sse';
+import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
 import { adminDutyRouter } from './duty';
+import { buildPublicAppUrl } from '../utils/urlHelper';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -113,8 +115,7 @@ router.post('/forgot-password', async (req, res) => {
       VALUES (?, ?, ?, 'password_reset', ?, ?)
     `, [tokenId, user.id, resetTokenHash, expiresAt, now]);
 
-    const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-    const resetLink = `${baseUrl}/#/admin/reset-password?token=${rawResetToken}`;
+    const resetLink = buildPublicAppUrl(`/admin/reset-password?token=${rawResetToken}`);
 
     const htmlContent = `
       <p>Hello,</p>
@@ -180,6 +181,94 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+router.get('/verify-invite', async (req, res) => {
+  try {
+    const token = req.query.token as string;
+    if (!token) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'No invitation token provided.'
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const dbToken = await queryOne(
+      "SELECT * FROM auth_tokens WHERE token_hash = ?",
+      [tokenHash]
+    );
+
+    if (!dbToken) {
+      return res.status(404).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'Invitation record not found or link is broken.'
+      });
+    }
+
+    // Check revoked / replaced
+    if (dbToken.revoked_at || dbToken.used_at === 'replaced' || dbToken.used_at === 'revoked') {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_REVOKED',
+        message: 'A newer invitation has been issued. Please use the link from your most recent email.'
+      });
+    }
+
+    // Check used
+    if (dbToken.used_at) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_USED',
+        message: 'This invitation has already been used.'
+      });
+    }
+
+    // Check expired
+    if (new Date(dbToken.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_EXPIRED',
+        message: 'This invitation link has expired. For your security, invitation links are available for a limited time.'
+      });
+    }
+
+    // Fetch user details
+    const user = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [dbToken.user_id]);
+    if (!user) {
+      return res.status(404).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'Invited user account not found.'
+      });
+    }
+
+    // Fetch recipient name from profile
+    let recipientName = '';
+    const pProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (pProfile) {
+      recipientName = pProfile.preferred_name || pProfile.first_name || pProfile.full_name || '';
+    }
+    if (!recipientName) {
+      const vProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM volunteer_profiles WHERE user_id = ?', [user.id]);
+      if (vProfile) {
+        recipientName = vProfile.preferred_name || vProfile.first_name || vProfile.full_name || '';
+      }
+    }
+
+    return res.json({
+      valid: true,
+      email: user.email,
+      role: user.role,
+      recipientName: recipientName || undefined,
+      expiresAt: dbToken.expires_at
+    });
+  } catch (err: any) {
+    console.error('Verify invite error:', err);
+    return res.status(500).json({ valid: false, code: 'SERVER_ERROR', message: 'Unable to verify invitation.' });
+  }
+});
+
 router.post('/accept-invite', async (req, res) => {
   try {
     const { token, password } = req.body;
@@ -200,26 +289,74 @@ router.post('/accept-invite', async (req, res) => {
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const dbToken = await queryOne(
-      "SELECT * FROM auth_tokens WHERE token_hash = ? AND token_type = 'admin_invite'",
+      "SELECT * FROM auth_tokens WHERE token_hash = ?",
       [tokenHash]
     );
 
-    if (!dbToken || dbToken.used_at || new Date(dbToken.expires_at).getTime() < Date.now()) {
-      return res.status(400).json({ success: false, error: 'This invitation link is invalid or has expired.' });
+    if (!dbToken) {
+      return res.status(400).json({ success: false, code: 'INVITATION_INVALID', error: 'This invitation link is invalid.' });
+    }
+
+    if (dbToken.revoked_at || dbToken.used_at === 'replaced' || dbToken.used_at === 'revoked') {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_REVOKED',
+        error: 'A newer invitation has been issued. Please use the most recent email.'
+      });
+    }
+
+    if (dbToken.used_at) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_USED',
+        error: 'This invitation has already been used.'
+      });
+    }
+
+    if (new Date(dbToken.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_EXPIRED',
+        error: 'This invitation link has expired. For your security, invitation links are available for a limited time.'
+      });
     }
 
     const nowStr = new Date().toISOString();
     const hashedPwd = hashPassword(password);
 
     await transaction(async () => {
+      // Mark current token used
       await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [nowStr, dbToken.id]);
+      
+      // Revoke any other unused invitation tokens for this user
+      await execute(
+        "UPDATE auth_tokens SET revoked_at = ?, used_at = 'revoked' WHERE user_id = ? AND id != ? AND used_at IS NULL",
+        [nowStr, dbToken.user_id, dbToken.id]
+      );
+
+      // Activate user account
       await execute(
         'UPDATE users SET password_hash = ?, email_verified = 1, updated_at = ? WHERE id = ?',
         [hashedPwd, nowStr, dbToken.user_id]
       );
+
+      // Audit log
+      try {
+        await execute(
+          `INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [crypto.randomUUID(), dbToken.user_id, 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
+        );
+      } catch (e) {}
     });
 
-    return res.json({ success: true, message: 'Your admin account has been activated.' });
+    const user = await queryOne('SELECT role FROM users WHERE id = ?', [dbToken.user_id]);
+
+    return res.json({
+      success: true,
+      message: 'Your account credentials have been activated successfully.',
+      role: user?.role || 'admin'
+    });
   } catch (err: any) {
     console.error('Admin Accept Invite Error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -253,6 +390,10 @@ router.get('/public-landing-page', async (req, res) => {
     const settings: Record<string, string> = {};
     for (const row of rows) {
       settings[row.setting_key] = row.setting_value || '';
+    }
+    const faviconSetting = await queryOne("SELECT url FROM app_media_settings WHERE slot = 'site_favicon'");
+    if (faviconSetting && faviconSetting.url) {
+      settings.site_favicon = faviconSetting.url;
     }
     return res.json({ success: true, settings });
   } catch (err: any) {
@@ -358,34 +499,38 @@ router.get('/admins', async (req: AuthenticatedRequest, res: Response) => {
 // POST invite other admins
 router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Only super_admin can invite other admins
-    if (req.user?.role !== 'super_admin') {
+    // Only super_admin or admin can send invitations
+    if (req.user?.role !== 'super_admin' && req.user?.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only super_admin can invite new admins.'
+        error: 'Admin permission required to issue invitations.'
       });
     }
 
-    const { email, role } = req.body;
+    const { email, role, recipientName, fullName, preferredName, firstName, lastName } = req.body;
     if (!email || !role) {
       return res.status(400).json({ success: false, error: 'Email and role are required.' });
     }
 
-    if (role !== 'admin' && role !== 'super_admin' && role !== 'team') {
-      return res.status(400).json({ success: false, error: 'Invalid admin role requested.' });
-    }
-
     const cleanEmail = String(email).trim().toLowerCase();
+    const nameForRecipient = recipientName || fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || 'Invited User';
 
     // Check existing user
-    const existingUser = await queryOne('SELECT * FROM users WHERE email = ?', [cleanEmail]);
+    let existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+    let invitedUserId = '';
+    const nowStr = new Date().toISOString();
+
     if (existingUser) {
-      if (existingUser.role === 'admin' || existingUser.role === 'super_admin' || existingUser.role === 'team') {
-        return res.status(400).json({
-          success: false,
-          code: 'ALREADY_ADMIN',
-          message: 'Account with this email already has admin access.'
-        });
+      if (existingUser.role === 'admin' || existingUser.role === 'super_admin') {
+        if (existingUser.password_hash !== 'invited_pending') {
+          return res.status(400).json({
+            success: false,
+            code: 'ALREADY_ADMIN',
+            message: 'Account with this email already has active admin access.'
+          });
+        }
+        // If user exists and is pending, reuse user ID
+        invitedUserId = existingUser.id;
       } else {
         return res.status(400).json({
           success: false,
@@ -393,60 +538,65 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
           message: 'Account exists as a parent/volunteer. Please upgrade their role via the Users panel instead.'
         });
       }
+    } else {
+      invitedUserId = crypto.randomUUID();
+      // Create user record
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES (?, ?, 'invited_pending', ?, 0, ?, ?)
+      `, [invitedUserId, cleanEmail, role, nowStr, nowStr]);
+
+      // Create profile record
+      const profileId = crypto.randomUUID();
+      await execute(`
+        INSERT INTO parent_profiles (id, user_id, full_name, preferred_name, first_name, last_name, email, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [profileId, invitedUserId, nameForRecipient, preferredName || null, firstName || null, lastName || null, cleanEmail, nowStr, nowStr]);
     }
 
-    const invitedUserId = crypto.randomUUID();
-    const nowStr = new Date().toISOString();
+    // Revoke any previous pending invitation tokens for this user
+    await execute(
+      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ?, used_at = 'replaced' WHERE user_id = ? AND used_at IS NULL",
+      [nowStr, req.user?.id || null, invitedUserId]
+    );
 
-    // Create the invited user record
-    await execute(`
-      INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
-      VALUES (?, ?, 'invited_pending', ?, 0, ?, ?)
-    `, [invitedUserId, cleanEmail, role, nowStr, nowStr]);
-
-    // Create profile
-    const profileId = crypto.randomUUID();
-    await execute(`
-      INSERT INTO parent_profiles (id, user_id, full_name, email, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [profileId, invitedUserId, 'Invited Admin', cleanEmail, nowStr, nowStr]);
-
-    // Generate secure invite token
+    // Generate secure 72-hour invite token
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const tokenId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // 48 hours
+    const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+    const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
 
     await execute(`
       INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
       VALUES (?, ?, ?, 'admin_invite', ?, ?)
     `, [tokenId, invitedUserId, tokenHash, expiresAt, nowStr]);
 
-    const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-    const inviteLink = `${baseUrl}/#/admin/accept-invite?token=${rawToken}`;
+    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
 
-    const htmlContent = `
-      <p>Hello,</p>
-      <p>You have been invited to help manage Koinonia Children and Teens event review, attendance, and reports.</p>
-      <p>Role assigned: <strong>${role === 'super_admin' ? 'Super Admin' : 'Admin'}</strong></p>
-      <p>Please click the button below to accept this invitation and set up your password:</p>
-      <div style="margin: 28px 0;">
-        <a href="${inviteLink}" style="background-color: #C59B27; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
-          Accept Invitation
-        </a>
-      </div>
-      <p>If you were not expecting this, you can safely ignore this email.</p>
-      <p>Best regards,<br/>Koinonia Children and Teens Team</p>
-    `;
-
-    // Send invite email
-    await sendEmail({
-      to: cleanEmail,
-      subject: "You're invited to Koinonia Admin Access",
-      html: htmlContent
+    // Send invitation email with personalized greeting and expiry notice
+    await sendInvitationEmail({
+      recipientEmail: cleanEmail,
+      recipientName: nameForRecipient,
+      preferredName,
+      firstName,
+      role,
+      inviteLink,
+      expiresAt
     }).catch(err => {
-      console.error('Error sending admin invitation email:', err);
+      console.error('Error sending invitation email:', err);
     });
+
+    // Audit log
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user?.id || 'system', 'SEND_INVITATION', 'user', invitedUserId,
+        JSON.stringify({ email: cleanEmail, role, expiresAt }), nowStr
+      ]);
+    } catch (e) {}
 
     return res.json({
       success: true,
@@ -455,6 +605,617 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
   } catch (err: any) {
     console.error('Admin Invitation Error:', err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST resend invitation
+router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const { userId, email } = req.body;
+    let targetUser: any = null;
+
+    if (userId) {
+      targetUser = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    } else if (email) {
+      targetUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [String(email).trim().toLowerCase()]);
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'User record not found.' });
+    }
+
+    const cleanEmail = targetUser.email;
+    const nowStr = new Date().toISOString();
+
+    // Revoke any previous pending tokens for this user
+    await execute(
+      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ?, used_at = 'replaced' WHERE user_id = ? AND used_at IS NULL",
+      [nowStr, req.user.id, targetUser.id]
+    );
+
+    // Fetch profile for recipient name
+    let recipientName = '';
+    let preferredName = '';
+    let firstName = '';
+    const pProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM parent_profiles WHERE user_id = ?', [targetUser.id]);
+    if (pProfile) {
+      recipientName = pProfile.full_name || '';
+      preferredName = pProfile.preferred_name || '';
+      firstName = pProfile.first_name || '';
+    }
+    if (!recipientName) {
+      const vProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM volunteer_profiles WHERE user_id = ?', [targetUser.id]);
+      if (vProfile) {
+        recipientName = vProfile.full_name || '';
+        preferredName = vProfile.preferred_name || '';
+        firstName = vProfile.first_name || '';
+      }
+    }
+
+    // Generate new token with fresh 72-hour expiry
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const tokenId = crypto.randomUUID();
+    const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+    const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+    await execute(`
+      INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+      VALUES (?, ?, ?, 'admin_invite', ?, ?)
+    `, [tokenId, targetUser.id, tokenHash, expiresAt, nowStr]);
+
+    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
+
+    await sendInvitationEmail({
+      recipientEmail: cleanEmail,
+      recipientName: recipientName || undefined,
+      preferredName: preferredName || undefined,
+      firstName: firstName || undefined,
+      role: targetUser.role,
+      inviteLink,
+      expiresAt
+    });
+
+    // Audit log
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, 'RESEND_INVITATION', 'user', targetUser.id,
+        JSON.stringify({ email: cleanEmail, role: targetUser.role }), nowStr
+      ]);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: `Invitation successfully resent to ${cleanEmail}.`
+    });
+  } catch (err: any) {
+    console.error('Resend invitation error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to resend invitation.' });
+  }
+});
+
+// POST check duplicate records
+router.post('/check-duplicate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const { type, email, phone, firstName, lastName, parentId } = req.body;
+
+    if (type === 'parent' || type === 'user') {
+      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+      const cleanPhone = phone ? String(phone).trim() : '';
+
+      if (cleanEmail) {
+        const existingByEmail = await queryOne('SELECT p.*, u.role FROM parent_profiles p JOIN users u ON p.user_id = u.id WHERE LOWER(p.email) = ? OR LOWER(u.email) = ?', [cleanEmail, cleanEmail]);
+        if (existingByEmail) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'email',
+            existingRecord: {
+              id: existingByEmail.id,
+              userId: existingByEmail.user_id,
+              fullName: existingByEmail.full_name,
+              email: existingByEmail.email,
+              phone: existingByEmail.phone_number
+            },
+            message: `A parent record already exists with email "${cleanEmail}".`
+          });
+        }
+      }
+
+      if (cleanPhone) {
+        const existingByPhone = await queryOne('SELECT * FROM parent_profiles WHERE phone_number = ?', [cleanPhone]);
+        if (existingByPhone) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'phone',
+            existingRecord: {
+              id: existingByPhone.id,
+              userId: existingByPhone.user_id,
+              fullName: existingByPhone.full_name,
+              email: existingByPhone.email,
+              phone: existingByPhone.phone_number
+            },
+            message: `A parent record already exists with phone number "${phone}".`
+          });
+        }
+      }
+    }
+
+    if (type === 'child') {
+      if (firstName && lastName && parentId) {
+        const existingChild = await queryOne(
+          `SELECT c.* FROM children c
+           WHERE LOWER(c.first_name) = ? AND LOWER(c.last_name) = ? AND c.parent_profile_id = ?`,
+          [String(firstName).trim().toLowerCase(), String(lastName).trim().toLowerCase(), parentId]
+        );
+        if (existingChild) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'name_parent',
+            existingRecord: existingChild,
+            message: `A child named "${firstName} ${lastName}" is already registered under this parent/guardian.`
+          });
+        }
+      }
+    }
+
+    if (type === 'volunteer') {
+      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+      if (cleanEmail) {
+        const existingVol = await queryOne('SELECT v.*, u.role FROM volunteer_profiles v JOIN users u ON v.user_id = u.id WHERE LOWER(v.email) = ? OR LOWER(u.email) = ?', [cleanEmail, cleanEmail]);
+        if (existingVol) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'email',
+            existingRecord: {
+              id: existingVol.id,
+              userId: existingVol.user_id,
+              fullName: existingVol.full_name,
+              email: existingVol.email
+            },
+            message: `A volunteer profile already exists with email "${cleanEmail}".`
+          });
+        }
+      }
+    }
+
+    return res.json({ duplicateFound: false });
+  } catch (err: any) {
+    console.error('Check duplicate error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to check duplicate records.' });
+  }
+});
+
+// POST add parent
+router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const {
+      firstName,
+      lastName,
+      preferredName,
+      email,
+      phone,
+      whatsappPhone,
+      homeAddress,
+      city,
+      stateProvince,
+      postalCode,
+      country,
+      preferredContactMethod,
+      emergencyContactName,
+      emergencyContactPhone,
+      isKoinoniaWorker,
+      workerDepartment,
+      sendInvitation,
+      overrideDuplicate,
+      childDetails
+    } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ success: false, error: 'First name, last name, and email are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = phone ? String(phone).trim() : '';
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const nowStr = new Date().toISOString();
+
+    if (!overrideDuplicate) {
+      const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_RECORD',
+          message: `A user record with email "${cleanEmail}" already exists.`,
+          existingUserId: existingUser.id
+        });
+      }
+    }
+
+    const parentUserId = crypto.randomUUID();
+    const parentProfileId = crypto.randomUUID();
+
+    let inviteTokenRaw = '';
+    let inviteExpiresAt = '';
+
+    await transaction(async () => {
+      // 1. Create User
+      const initialPwdHash = sendInvitation ? 'invited_pending' : 'profile_no_account';
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES (?, ?, ?, 'parent', 0, ?, ?)
+      `, [parentUserId, cleanEmail, initialPwdHash, nowStr, nowStr]);
+
+      // 2. Create Parent Profile
+      await execute(`
+        INSERT INTO parent_profiles (
+          id, user_id, full_name, preferred_name, first_name, last_name, email, phone_number,
+          whatsapp_number, address, city, state_province, postal_code, country,
+          preferred_contact_method, emergency_contact_name, emergency_contact_phone,
+          is_koinonia_worker, worker_department, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        parentProfileId, parentUserId, fullName, preferredName || null, firstName.trim(), lastName.trim(),
+        cleanEmail, cleanPhone || null, whatsappPhone || null, homeAddress || null,
+        city || null, stateProvince || null, postalCode || null, country || 'UK',
+        preferredContactMethod || 'email', emergencyContactName || null, emergencyContactPhone || null,
+        isKoinoniaWorker ? 1 : 0, workerDepartment || null, nowStr, nowStr
+      ]);
+
+      // 3. Optional Child Creation
+      if (childDetails && childDetails.firstName && childDetails.lastName) {
+        const childId = crypto.randomUUID();
+        const childFullName = `${childDetails.firstName.trim()} ${childDetails.lastName.trim()}`;
+
+        await execute(`
+          INSERT INTO children (
+            id, parent_profile_id, full_name, first_name, last_name, preferred_name,
+            date_of_birth, gender, age_group, medical_notes, allergies, special_needs,
+            media_consent, medical_consent, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          childId, parentProfileId, childFullName, childDetails.firstName.trim(), childDetails.lastName.trim(),
+          childDetails.preferredName || null, childDetails.dateOfBirth || null, childDetails.gender || null,
+          childDetails.ageGroup || null, childDetails.medicalNotes || null, childDetails.allergies || null,
+          childDetails.specialNeeds || null, childDetails.mediaConsent ? 1 : 0, childDetails.medicalConsent ? 1 : 0,
+          nowStr, nowStr
+        ]);
+
+        if (childDetails.registerForCurrentEvent) {
+          const entryId = crypto.randomUUID();
+          await execute(`
+            INSERT INTO child_event_entries (
+              id, child_id, event_id, status, review_status, registration_date, created_at, updated_at
+            ) VALUES (?, ?, ?, 'registered', 'selected', ?, ?, ?)
+          `, [entryId, childId, REAL_EVENT_ID, nowStr, nowStr, nowStr]);
+        }
+      }
+
+      // 4. Create Invitation Token
+      if (sendInvitation) {
+        inviteTokenRaw = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(inviteTokenRaw).digest('hex');
+        const tokenId = crypto.randomUUID();
+        const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+        inviteExpiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+        await execute(`
+          INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+          VALUES (?, ?, ?, 'admin_invite', ?, ?)
+        `, [tokenId, parentUserId, tokenHash, inviteExpiresAt, nowStr]);
+      }
+
+      // 5. Audit Log
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_PARENT', 'parent_profile', parentProfileId,
+          JSON.stringify({ fullName, email: cleanEmail, sendInvitation: !!sendInvitation }), nowStr
+        ]);
+      } catch (e) {}
+    });
+
+    if (sendInvitation && inviteTokenRaw) {
+      const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
+      await sendInvitationEmail({
+        recipientEmail: cleanEmail,
+        recipientName: fullName,
+        preferredName,
+        firstName,
+        role: 'parent',
+        inviteLink,
+        expiresAt: inviteExpiresAt
+      }).catch(err => {
+        console.error('Error sending parent invitation email:', err);
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: sendInvitation
+        ? `Parent record created and invitation sent to ${cleanEmail}.`
+        : `Parent record created successfully without active login account.`,
+      parentId: parentProfileId,
+      userId: parentUserId
+    });
+  } catch (err: any) {
+    console.error('Admin Add Parent Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to create parent record.' });
+  }
+});
+
+// POST add child
+router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const {
+      parentProfileId,
+      firstName,
+      lastName,
+      preferredName,
+      dateOfBirth,
+      gender,
+      ageGroup,
+      medicalNotes,
+      allergies,
+      specialNeeds,
+      mediaConsent,
+      medicalConsent,
+      authorizedPickups,
+      registerForCurrentEvent,
+      overrideDuplicate
+    } = req.body;
+
+    if (!parentProfileId || !firstName || !lastName) {
+      return res.status(400).json({ success: false, error: 'Parent ID, child first name, and child last name are required.' });
+    }
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentProfileId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found.' });
+    }
+
+    const childFullName = `${firstName.trim()} ${lastName.trim()}`;
+    const nowStr = new Date().toISOString();
+
+    if (!overrideDuplicate) {
+      const existingChild = await queryOne(
+        'SELECT * FROM children WHERE LOWER(first_name) = ? AND LOWER(last_name) = ? AND parent_profile_id = ?',
+        [firstName.trim().toLowerCase(), lastName.trim().toLowerCase(), parentProfileId]
+      );
+      if (existingChild) {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_RECORD',
+          message: `A child named "${childFullName}" is already registered under this parent/guardian.`,
+          existingChildId: existingChild.id
+        });
+      }
+    }
+
+    const childId = crypto.randomUUID();
+
+    await transaction(async () => {
+      // 1. Insert child record
+      await execute(`
+        INSERT INTO children (
+          id, parent_profile_id, full_name, first_name, last_name, preferred_name,
+          date_of_birth, gender, age_group, medical_notes, allergies, special_needs,
+          media_consent, medical_consent, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        childId, parentProfileId, childFullName, firstName.trim(), lastName.trim(),
+        preferredName || null, dateOfBirth || null, gender || null, ageGroup || null,
+        medicalNotes || null, allergies || null, specialNeeds || null,
+        mediaConsent ? 1 : 0, medicalConsent ? 1 : 0, nowStr, nowStr
+      ]);
+
+      // 2. Insert pickup people
+      if (Array.isArray(authorizedPickups)) {
+        for (const pickup of authorizedPickups) {
+          if (pickup.fullName) {
+            await execute(`
+              INSERT INTO pickup_people (id, child_id, full_name, phone_number, relationship_to_child, created_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `, [crypto.randomUUID(), childId, pickup.fullName.trim(), pickup.phone || null, pickup.relationship || null, nowStr]);
+          }
+        }
+      }
+
+      // 3. Register for event if requested
+      if (registerForCurrentEvent) {
+        const entryId = crypto.randomUUID();
+        await execute(`
+          INSERT INTO child_event_entries (
+            id, child_id, event_id, status, review_status, registration_date, created_at, updated_at
+          ) VALUES (?, ?, ?, 'registered', 'selected', ?, ?, ?)
+        `, [entryId, childId, REAL_EVENT_ID, nowStr, nowStr, nowStr]);
+
+        try {
+          await issuePassForChild({ childId, eventId: REAL_EVENT_ID });
+        } catch (e) {
+          console.error('Error generating event pass for admin created child:', e);
+        }
+      }
+
+      // 4. Audit log
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_CHILD', 'child', childId,
+          JSON.stringify({ childFullName, parentProfileId, registerForCurrentEvent: !!registerForCurrentEvent }), nowStr
+        ]);
+      } catch (e) {}
+    });
+
+    return res.json({
+      success: true,
+      message: `Child record for "${childFullName}" created successfully.`,
+      childId
+    });
+  } catch (err: any) {
+    console.error('Admin Add Child Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to create child record.' });
+  }
+});
+
+// POST add volunteer
+router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const {
+      firstName,
+      lastName,
+      preferredName,
+      email,
+      phone,
+      emergencyContactName,
+      emergencyContactPhone,
+      preferredTeam,
+      skillsExperience,
+      availabilityNotes,
+      assignedDutyRole,
+      sendInvitation,
+      overrideDuplicate
+    } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ success: false, error: 'First name, last name, and email are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = phone ? String(phone).trim() : '';
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const nowStr = new Date().toISOString();
+
+    if (!overrideDuplicate) {
+      const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_RECORD',
+          message: `A user account with email "${cleanEmail}" already exists.`,
+          existingUserId: existingUser.id
+        });
+      }
+    }
+
+    const volUserId = crypto.randomUUID();
+    const volProfileId = crypto.randomUUID();
+
+    let inviteTokenRaw = '';
+    let inviteExpiresAt = '';
+
+    await transaction(async () => {
+      // 1. Create User
+      const initialPwdHash = sendInvitation ? 'invited_pending' : 'profile_no_account';
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES (?, ?, ?, 'volunteer', 0, ?, ?)
+      `, [volUserId, cleanEmail, initialPwdHash, nowStr, nowStr]);
+
+      // 2. Create Volunteer Profile
+      await execute(`
+        INSERT INTO volunteer_profiles (
+          id, user_id, full_name, preferred_name, first_name, last_name, email, phone_number,
+          emergency_contact_name, emergency_contact_phone, preferred_team, skills_experience,
+          availability_notes, approval_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+      `, [
+        volProfileId, volUserId, fullName, preferredName || null, firstName.trim(), lastName.trim(),
+        cleanEmail, cleanPhone || null, emergencyContactName || null, emergencyContactPhone || null,
+        preferredTeam || 'General Assistance', skillsExperience || null, availabilityNotes || null,
+        nowStr, nowStr
+      ]);
+
+      // 3. Optional duty assignment
+      if (assignedDutyRole) {
+        try {
+          await execute(`
+            INSERT INTO volunteer_event_duties (id, user_id, event_id, role_title, created_at)
+            VALUES (?, ?, ?, ?, ?)
+          `, [crypto.randomUUID(), volUserId, REAL_EVENT_ID, assignedDutyRole, nowStr]);
+        } catch (e) {}
+      }
+
+      // 4. Send invitation token
+      if (sendInvitation) {
+        inviteTokenRaw = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(inviteTokenRaw).digest('hex');
+        const tokenId = crypto.randomUUID();
+        const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+        inviteExpiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+        await execute(`
+          INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+          VALUES (?, ?, ?, 'admin_invite', ?, ?)
+        `, [tokenId, volUserId, tokenHash, inviteExpiresAt, nowStr]);
+      }
+
+      // 5. Audit log
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_VOLUNTEER', 'volunteer_profile', volProfileId,
+          JSON.stringify({ fullName, email: cleanEmail, sendInvitation: !!sendInvitation }), nowStr
+        ]);
+      } catch (e) {}
+    });
+
+    if (sendInvitation && inviteTokenRaw) {
+      const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
+      await sendInvitationEmail({
+        recipientEmail: cleanEmail,
+        recipientName: fullName,
+        preferredName,
+        firstName,
+        role: 'volunteer',
+        inviteLink,
+        expiresAt: inviteExpiresAt
+      }).catch(err => {
+        console.error('Error sending volunteer invitation email:', err);
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: sendInvitation
+        ? `Volunteer record created and invitation sent to ${cleanEmail}.`
+        : `Volunteer record created successfully.`,
+      volunteerId: volProfileId,
+      userId: volUserId
+    });
+  } catch (err: any) {
+    console.error('Admin Add Volunteer Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to create volunteer record.' });
   }
 });
 
@@ -654,19 +1415,8 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const filter = typeof req.query.filter === 'string' ? req.query.filter : '';
 
-    // 1. Fetch overall stats
-    const totalRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [eventId]);
-    const selectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
-    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
-    const insideRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside')", [eventId]);
-    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up'", [eventId]);
-    
-    const needsAttentionRes = await queryOne(`
-      SELECT COUNT(*) as count 
-      FROM child_event_entries e
-      JOIN children c ON c.id = e.child_id
-      WHERE e.event_id = ? AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
-    `, [eventId]);
+    // 1. Fetch overall canonical stats
+    const summaryStats = await getChildSummaryStats(eventId);
 
     // 2. Fetch Children Records
     let filterClauses = 'e.event_id = ?';
@@ -829,12 +1579,13 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({
       success: true,
       stats: {
-        totalChildren: totalRes?.count || 0,
-        selected: selectedRes?.count || 0,
-        checkedIn: checkedInRes?.count || 0,
-        inside: insideRes?.count || 0,
-        pickedUp: pickedUpRes?.count || 0,
-        needsAttention: needsAttentionRes?.count || 0
+        totalChildren: summaryStats.totalChildren,
+        selected: summaryStats.selected,
+        checkedIn: summaryStats.checkedIn,
+        inside: summaryStats.inside,
+        pickedUp: summaryStats.pickedUp,
+        removed: summaryStats.removed,
+        needsAttention: summaryStats.needsAttention
       },
       children: formatted,
       total: totalFiltered,
@@ -880,16 +1631,16 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     };
 
     // 1. Fetch stats
-    const totalRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
-    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
-    const insideRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside')", [eventId]);
-    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up'", [eventId]);
-    const notArrivedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready')", [eventId]);
+    const totalRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
+    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
+    const insideRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('checked_in', 'inside')", [eventId]);
+    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status = 'picked_up'", [eventId]);
+    const notArrivedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('selected', 'pass_ready')", [eventId]);
     const needsAttentionRes = await queryOne(`
       SELECT COUNT(*) as count 
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      WHERE e.event_id = ? AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
+      WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
     `, [eventId]);
 
     // 2. Query matching records for rows
@@ -912,7 +1663,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
-      WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+      WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
     `;
 
     const queryParams: any[] = [eventId];
@@ -4914,8 +5665,7 @@ router.post('/volunteers/:id/resend-approval-email', async (req: AuthenticatedRe
       return res.status(400).json({ success: false, error: 'Only approved volunteers can receive an approval email.' });
     }
 
-    const baseUrl = process.env.APP_BASE_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-    const loginLink = `${baseUrl}/#/volunteer/sign-in`;
+    const loginLink = buildPublicAppUrl('/volunteer/sign-in');
 
     await sendVolunteerApprovedEmail({
       volunteerEmail: v.email,
@@ -4964,8 +5714,7 @@ router.post('/volunteers/:id/review', async (req: AuthenticatedRequest, res: Res
         await execute("UPDATE users SET role = 'volunteer', updated_at = ? WHERE id = ?", [nowStr, v.user_id]);
       }
       
-      const baseUrl = process.env.APP_BASE_URL || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-      const loginLink = `${baseUrl}/#/volunteer/sign-in`;
+      const loginLink = buildPublicAppUrl('/volunteer/sign-in');
       
       await sendVolunteerApprovedEmail({
         volunteerEmail: v.email,
@@ -5720,6 +6469,270 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
   }
 });
 
+// POST /api/admin/applications/bulk-remove - Bulk soft-delete children
+router.post('/applications/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one application ID is required' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Removal reason is required' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    let removedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of applicationIds) {
+      try {
+        const entry = await queryOne(`SELECT child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+        if (!entry) {
+          failures.push({ id, reason: 'Record not found' });
+          continue;
+        }
+
+        // Protected condition check
+        if (entry.status === 'checked_in' || entry.status === 'inside') {
+          failures.push({ id, reason: 'Child is currently checked in. Please check out or pick up before removal.' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE child_event_entries 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed'
+          WHERE id = ?
+        `, [now, adminId, reason, id]);
+
+        await execute(`
+          UPDATE children 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [now, adminId, reason, entry.child_id]);
+
+        try {
+          await revokePassForChild(entry.child_id, undefined, `Bulk child registration removed: ${reason}`, adminId);
+        } catch (passErr) {
+          // ignore pass revocation error
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            Math.random().toString(36).substring(2, 15),
+            adminId,
+            'admin',
+            'Bulk Remove Child',
+            'child_event_entry',
+            id,
+            JSON.stringify({ reason }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        removedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Removal failed' });
+      }
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      result: {
+        requested: applicationIds.length,
+        removed: removedCount,
+        skipped: failures.length,
+        failures
+      },
+      summary
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-remove:', err);
+    return res.status(500).json({ success: false, error: 'Bulk removal failed' });
+  }
+});
+
+// POST /api/admin/applications/bulk-purge - Controlled bulk permanent removal of eligible records
+router.post('/applications/bulk-purge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason, confirmText } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one record is required for permanent removal.' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Removal reason is required.' });
+    }
+    if (confirmText !== 'REMOVE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be REMOVE.' });
+    }
+
+    const adminId = req.user?.id || 'admin';
+    const now = new Date().toISOString();
+
+    let permanentlyRemoved = 0;
+    let retained = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of applicationIds) {
+      try {
+        const entry = await queryOne(`
+          SELECT e.id, e.child_id, e.status, e.checked_in_at, e.picked_up_at, c.full_name
+          FROM child_event_entries e
+          JOIN children c ON c.id = e.child_id
+          WHERE e.id = ?
+        `, [id]);
+
+        if (!entry) {
+          failures.push({ id, reason: 'Record not found.' });
+          continue;
+        }
+
+        // Determine eligibility & protected history constraints
+        let hasProtectedHistory = false;
+        let protectionReason = '';
+
+        // 1. Attendance / Active status check
+        if (
+          ['checked_in', 'inside', 'picked_up'].includes(entry.status) ||
+          entry.checked_in_at != null ||
+          entry.picked_up_at != null
+        ) {
+          hasProtectedHistory = true;
+          protectionReason = 'This record must be retained because it contains protected attendance history.';
+        }
+
+        // 2. Safeguarding alerts check
+        if (!hasProtectedHistory) {
+          try {
+            const alertCheck = await queryOne(`SELECT COUNT(*) as count FROM event_safety_alerts WHERE child_id = ?`, [entry.child_id]);
+            if (alertCheck && alertCheck.count > 0) {
+              hasProtectedHistory = true;
+              protectionReason = 'This record must be retained because it contains linked safeguarding alerts or reports.';
+            }
+          } catch (e) {}
+        }
+
+        // 3. Incident reports check
+        if (!hasProtectedHistory) {
+          try {
+            const incidentCheck = await queryOne(`SELECT COUNT(*) as count FROM incident_reports WHERE child_id = ?`, [entry.child_id]);
+            if (incidentCheck && incidentCheck.count > 0) {
+              hasProtectedHistory = true;
+              protectionReason = 'This record must be retained because it contains linked incident reports.';
+            }
+          } catch (e) {}
+        }
+
+        if (hasProtectedHistory) {
+          retained++;
+          failures.push({ id, reason: protectionReason });
+          continue;
+        }
+
+        // Record is eligible for permanent deletion
+        try {
+          await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
+        } catch (e) {}
+
+        try {
+          await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
+        } catch (e) {}
+
+        await execute(`DELETE FROM child_event_entries WHERE id = ?`, [id]);
+
+        // If no other entries exist for this child profile, delete child row
+        const otherEntries = await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE child_id = ?`, [entry.child_id]);
+        if (!otherEntries || otherEntries.count === 0) {
+          await execute(`DELETE FROM children WHERE id = ?`, [entry.child_id]);
+        }
+
+        // Audit log
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            Math.random().toString(36).substring(2, 15),
+            adminId,
+            'admin',
+            'Permanently Remove Child',
+            'child_event_entry',
+            id,
+            JSON.stringify({ reason, confirmText }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        permanentlyRemoved++;
+      } catch (err: any) {
+        failures.push({ id, reason: 'Record could not be removed.' });
+      }
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      result: {
+        requested: applicationIds.length,
+        permanentlyRemoved,
+        retained,
+        failures
+      },
+      summary
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-purge:', err);
+    return res.status(500).json({ success: false, error: 'We could not complete the permanent removal right now. Please try again.' });
+  }
+});
+
+// POST /api/admin/applications/bulk-restore - Bulk restore removed children
+router.post('/applications/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one application ID is required' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    let restoredCount = 0;
+
+    for (const id of applicationIds) {
+      const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+      if (!entry) continue;
+
+      await execute(`
+        UPDATE child_event_entries 
+        SET is_deleted = 0, restored_at = ?, restored_by = ?, status = 'under_review'
+        WHERE id = ?
+      `, [now, adminId, id]);
+
+      await execute(`
+        UPDATE children 
+        SET is_deleted = 0, restored_at = ?, restored_by = ?
+        WHERE id = ?
+      `, [now, adminId, entry.child_id]);
+
+      restoredCount++;
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      restoredCount,
+      summary
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-restore:', err);
+    return res.status(500).json({ success: false, error: 'Bulk restore failed' });
+  }
+});
+
 // POST /api/admin/applications/:id/remove - Soft-delete a child registration
 router.post('/applications/:id/remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -5729,9 +6742,13 @@ router.post('/applications/:id/remove', authMiddleware, async (req: Authenticate
       return res.status(400).json({ success: false, error: 'Removal reason is required' });
     }
 
-    const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+    const entry = await queryOne(`SELECT child_id, status FROM child_event_entries WHERE id = ?`, [id]);
     if (!entry) {
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    if (entry.status === 'checked_in' || entry.status === 'inside') {
+      return res.status(400).json({ success: false, error: 'This child is currently checked in. Complete or reverse attendance before removal.' });
     }
 
     const now = new Date().toISOString();
@@ -5777,7 +6794,8 @@ router.post('/applications/:id/remove', authMiddleware, async (req: Authenticate
       console.error('[Safe Audit Warning] Failed to log child removal:', auditErr);
     }
 
-    return res.json({ success: true, message: 'Child registration removed successfully.' });
+    const summary = await getChildSummaryStats();
+    return res.json({ success: true, message: 'Child registration removed successfully.', summary });
   } catch (err: any) {
     console.error('Error removing child:', err);
     return res.status(400).json({ success: false, error: 'We could not remove this child right now. Please try again.' });
@@ -5831,7 +6849,8 @@ router.post('/applications/:id/restore', authMiddleware, async (req: Authenticat
       console.error('[Safe Audit Warning] Failed to log child restore:', auditErr);
     }
 
-    return res.json({ success: true, message: 'Child registration restored successfully. Status reset to Under Review.' });
+    const summary = await getChildSummaryStats();
+    return res.json({ success: true, message: 'Child registration restored successfully. Status reset to Under Review.', summary });
   } catch (err: any) {
     console.error('Error restoring child:', err);
     return res.status(400).json({ success: false, error: 'We could not restore this child right now. Please try again.' });

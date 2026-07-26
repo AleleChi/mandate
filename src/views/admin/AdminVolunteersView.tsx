@@ -27,6 +27,7 @@ import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { AddVolunteerModal } from '../../components/admin/modals/AddVolunteerModal';
 
 interface AdminVolunteersViewProps {
   onBackToOverview: () => void;
@@ -36,6 +37,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   const { showError, showSuccess } = useNotification();
   const [volunteers, setVolunteers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAddVolunteerModal, setShowAddVolunteerModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
@@ -311,6 +313,14 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         </div>
         
         <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setShowAddVolunteerModal(true)}
+            variant="primary"
+            className="text-xs px-4 py-2 flex items-center space-x-1.5"
+          >
+            <Users className="w-4 h-4" />
+            <span>Add Volunteer</span>
+          </Button>
           <Button 
             onClick={onBackToOverview} 
             variant="secondary" 
@@ -1227,6 +1237,13 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
           </div>
         </div>
       )}
+
+      {/* Add Volunteer Modal */}
+      <AddVolunteerModal
+        isOpen={showAddVolunteerModal}
+        onClose={() => setShowAddVolunteerModal(false)}
+        onSuccess={() => fetchVolunteers()}
+      />
     </div>
   );
 };
