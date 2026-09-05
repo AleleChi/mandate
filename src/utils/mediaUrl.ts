@@ -103,3 +103,25 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
   }
   return `/${cleanInput}`;
 }
+
+/**
+ * Injects responsive width and automatic compression/format (q_auto, f_auto)
+ * into Cloudinary image delivery URLs without modifying other media providers.
+ */
+export function getOptimizedThumbnailUrl(input?: string | null, width = 500): string {
+  const resolved = resolveMediaUrl(input);
+  if (!resolved) return '';
+
+  // Only transform Cloudinary URLs
+  if (resolved.includes('res.cloudinary.com') && resolved.includes('/image/upload/')) {
+    // Avoid double-transforming
+    if (resolved.includes('/w_') && resolved.includes('q_auto')) {
+      return resolved;
+    }
+    const transform = `w_${width},c_limit,q_auto,f_auto`;
+    return resolved.replace('/image/upload/', `/image/upload/${transform}/`);
+  }
+
+  return resolved;
+}
+

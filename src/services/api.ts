@@ -1480,5 +1480,62 @@ export const api = {
         const queryStr = queryParams.toString();
         return api.request<any>(`/api/admin/events/${eventId}/operations/activity${queryStr ? `?${queryStr}` : ''}`, options);
       }
+    },
+    gallery: {
+      async getPublicItems() {
+        return api.request<{ success: boolean; items: PublicGalleryItem[] }>('/api/public/gallery');
+      },
+      async getAdminItems() {
+        return api.request<{ success: boolean; items: AdminGalleryItem[] }>('/api/admin/gallery');
+      },
+      async createItem(formDataOrPayload: FormData | { media_file_id: string; alt_text: string; caption?: string; is_active?: boolean | number; sort_order?: number }) {
+        if (formDataOrPayload instanceof FormData) {
+          return api.request<{ success: boolean; message: string; item: AdminGalleryItem }>('/api/admin/gallery', {
+            method: 'POST',
+            body: formDataOrPayload
+          });
+        }
+        return api.request<{ success: boolean; message: string; item: AdminGalleryItem }>('/api/admin/gallery', {
+          method: 'POST',
+          body: JSON.stringify(formDataOrPayload)
+        });
+      },
+      async updateItem(id: string, payload: Partial<{ alt_text: string; caption: string | null; is_active: boolean | number; sort_order: number }>) {
+        return api.request<{ success: boolean; message: string; item: AdminGalleryItem }>(`/api/admin/gallery/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      },
+      async reorderItems(orderedIds: string[]) {
+        return api.request<{ success: boolean; message: string }>('/api/admin/gallery/reorder', {
+          method: 'POST',
+          body: JSON.stringify({ orderedIds })
+        });
+      },
+      async deleteItem(id: string) {
+        return api.request<{ success: boolean; message: string }>(`/api/admin/gallery/${id}`, {
+          method: 'DELETE'
+        });
+      }
     }
 };
+
+export interface PublicGalleryItem {
+  id: string;
+  image_url: string;
+  alt_text: string;
+  caption: string | null;
+  sort_order: number;
+}
+
+export interface AdminGalleryItem extends PublicGalleryItem {
+  media_file_id: string;
+  is_active: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  width?: number | null;
+  height?: number | null;
+  file_size?: number | null;
+  mime_type?: string | null;
+}

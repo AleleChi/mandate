@@ -20,9 +20,13 @@ export function getDb() {
     isPostgres = true;
     try {
       pgPool = new Pool({ connectionString: dbUrl });
-      pgInitPromise = initPostgresSchema(pgPool).catch((e) => {
-        console.error('Error during initPostgresSchema:', e);
-      });
+      if (process.env.SKIP_DB_SCHEMA_INIT !== 'true') {
+        pgInitPromise = initPostgresSchema(pgPool).catch((e) => {
+          console.error('Error during initPostgresSchema:', e);
+        });
+      } else {
+        pgInitPromise = Promise.resolve();
+      }
     } catch (e) {
       console.error('Failed to initialize PostgreSQL pool, falling back to SQLite', e);
       isPostgres = false;
@@ -580,6 +584,22 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS landing_gallery_items (
+      id TEXT PRIMARY KEY,
+      media_file_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+      image_url TEXT NOT NULL,
+      alt_text TEXT NOT NULL,
+      caption TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_landing_gallery_active_sort ON landing_gallery_items(is_active, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_landing_gallery_media_file ON landing_gallery_items(media_file_id);
 
     CREATE TABLE IF NOT EXISTS child_attention_items (
       id TEXT PRIMARY KEY,
@@ -2141,6 +2161,22 @@ async function initPostgresSchema(pool: any) {
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS landing_gallery_items (
+        id VARCHAR(64) PRIMARY KEY,
+        media_file_id VARCHAR(64) NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+        image_url TEXT NOT NULL,
+        alt_text VARCHAR(255) NOT NULL,
+        caption TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_landing_gallery_active_sort ON landing_gallery_items(is_active, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_landing_gallery_media_file ON landing_gallery_items(media_file_id);
 
       CREATE TABLE IF NOT EXISTS child_attention_items (
         id VARCHAR(255) PRIMARY KEY,

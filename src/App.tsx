@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { AppRoute, ChildItem, ParentProfile } from './types';
 import { initialChildren, initialParentProfile } from './data/mockData';
 import { api, extractApiError } from './services/api';
@@ -17,14 +17,14 @@ import { ForgotPasswordView } from './views/ForgotPasswordView';
 import { NewPasswordView } from './views/NewPasswordView';
 import { ProfileSetupView } from './views/ProfileSetupView';
 import { ParentHomeView } from './views/ParentHomeView';
-import { VolunteerSignInView } from './views/VolunteerSignInView';
-import { VolunteerCreateAccountView } from './views/VolunteerCreateAccountView';
-import { VolunteerVerifyEmailView } from './views/VolunteerVerifyEmailView';
-import { VolunteerForgotPasswordView } from './views/VolunteerForgotPasswordView';
-import { VolunteerResetPasswordView } from './views/VolunteerResetPasswordView';
-import { VolunteerPendingReviewView } from './views/VolunteerPendingReviewView';
-import { VolunteerEventDashboardView } from './views/VolunteerEventDashboardView';
-import { VolunteerRequestView } from './views/VolunteerRequestView';
+const VolunteerSignInView = React.lazy(() => import('./views/VolunteerSignInView').then(m => ({ default: m.VolunteerSignInView })));
+const VolunteerCreateAccountView = React.lazy(() => import('./views/VolunteerCreateAccountView').then(m => ({ default: m.VolunteerCreateAccountView })));
+const VolunteerVerifyEmailView = React.lazy(() => import('./views/VolunteerVerifyEmailView').then(m => ({ default: m.VolunteerVerifyEmailView })));
+const VolunteerForgotPasswordView = React.lazy(() => import('./views/VolunteerForgotPasswordView').then(m => ({ default: m.VolunteerForgotPasswordView })));
+const VolunteerResetPasswordView = React.lazy(() => import('./views/VolunteerResetPasswordView').then(m => ({ default: m.VolunteerResetPasswordView })));
+const VolunteerPendingReviewView = React.lazy(() => import('./views/VolunteerPendingReviewView').then(m => ({ default: m.VolunteerPendingReviewView })));
+const VolunteerEventDashboardView = React.lazy(() => import('./views/VolunteerEventDashboardView').then(m => ({ default: m.VolunteerEventDashboardView })));
+const VolunteerRequestView = React.lazy(() => import('./views/VolunteerRequestView').then(m => ({ default: m.VolunteerRequestView })));
 import { AddChildStep1View } from './views/AddChildStep1View';
 import { AddChildStep2View } from './views/AddChildStep2View';
 import { AddChildStep3View } from './views/AddChildStep3View';
@@ -41,24 +41,24 @@ import { AppLoadingScreen } from './components/common/AppLoadingScreen';
 import { ModuleLoadingState } from './components/common/ModuleLoadingState';
 import { safeStorage } from './utils/storage';
 
-import { AdminSignInView } from './views/admin/AdminSignInView';
-import { AdminForgotPasswordView } from './views/admin/AdminForgotPasswordView';
-import { AdminResetPasswordView } from './views/admin/AdminResetPasswordView';
-import { AdminOverviewView } from './views/admin/AdminOverviewView';
-import { AdminAcceptInviteView } from './views/admin/AdminAcceptInviteView';
-import { TeamAlertsView } from './views/admin/TeamAlertsView';
+const AdminSignInView = React.lazy(() => import('./views/admin/AdminSignInView').then(m => ({ default: m.AdminSignInView })));
+const AdminForgotPasswordView = React.lazy(() => import('./views/admin/AdminForgotPasswordView').then(m => ({ default: m.AdminForgotPasswordView })));
+const AdminResetPasswordView = React.lazy(() => import('./views/admin/AdminResetPasswordView').then(m => ({ default: m.AdminResetPasswordView })));
+const AdminOverviewView = React.lazy(() => import('./views/admin/AdminOverviewView').then(m => ({ default: m.AdminOverviewView })));
+const AdminAcceptInviteView = React.lazy(() => import('./views/admin/AdminAcceptInviteView').then(m => ({ default: m.AdminAcceptInviteView })));
+const TeamAlertsView = React.lazy(() => import('./views/admin/TeamAlertsView').then(m => ({ default: m.TeamAlertsView })));
 import { Seo } from './components/common/Seo';
 import { LegalPagesView } from './views/LegalPagesView';
 
 // Training & Simulation Mode Views
-import { PersistentTrainingBanner } from './views/training/PersistentTrainingBanner';
-import { TrainingScenarioLibrary } from './views/training/TrainingScenarioLibrary';
-import { TrainingScenarioBuilder } from './views/training/TrainingScenarioBuilder';
-import { TrainingSessionSetup } from './views/training/TrainingSessionSetup';
-import { TrainingHome } from './views/training/TrainingHome';
-import { TrainingFacilitatorConsole } from './views/training/TrainingFacilitatorConsole';
-import { TrainingObserverMode } from './views/training/TrainingObserverMode';
-import { TrainingDebrief } from './views/training/TrainingDebrief';
+const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
+const TrainingScenarioLibrary = React.lazy(() => import('./views/training/TrainingScenarioLibrary').then(m => ({ default: m.TrainingScenarioLibrary })));
+const TrainingScenarioBuilder = React.lazy(() => import('./views/training/TrainingScenarioBuilder').then(m => ({ default: m.TrainingScenarioBuilder })));
+const TrainingSessionSetup = React.lazy(() => import('./views/training/TrainingSessionSetup').then(m => ({ default: m.TrainingSessionSetup })));
+const TrainingHome = React.lazy(() => import('./views/training/TrainingHome').then(m => ({ default: m.TrainingHome })));
+const TrainingFacilitatorConsole = React.lazy(() => import('./views/training/TrainingFacilitatorConsole').then(m => ({ default: m.TrainingFacilitatorConsole })));
+const TrainingObserverMode = React.lazy(() => import('./views/training/TrainingObserverMode').then(m => ({ default: m.TrainingObserverMode })));
+const TrainingDebrief = React.lazy(() => import('./views/training/TrainingDebrief').then(m => ({ default: m.TrainingDebrief })));
 
 const getSeoPropsForRoute = (route: string) => {
   const cleanRoute = route.split('?')[0];
@@ -1534,9 +1534,11 @@ export default function App() {
           </span>
         </div>
       )}
-      {renderCurrentRoute()}
+      <Suspense fallback={<AppLoadingScreen title="Loading module..." />}>
+        {renderCurrentRoute()}
+      </Suspense>
 
-      {showPreloader && (
+      {showPreloader && currentRoute !== '/' && (
         <AppPreloader 
           isAppReady={!isCheckingAuth} 
           onComplete={() => setShowPreloader(false)} 

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Calendar, Clock, Key, QrCode, Smartphone, Monitor, ArrowRight, Check, Mail, BookOpen, Sparkles, Menu, X } from 'lucide-react';
+import { ShieldCheck, Calendar, Clock, QrCode, Smartphone, Monitor, ArrowRight, Check, Mail, BookOpen, Sparkles, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppRoute } from '../types';
 import { PastMomentsCarousel } from '../components/common/PastMomentsCarousel';
+import { CurvedPhotoGallery } from '../components/common/CurvedPhotoGallery';
 import { ParentProcessSection } from '../components/common/ParentProcessSection';
 import { SafetySection } from '../components/common/SafetySection';
 import { BrandLogo } from '../components/common/BrandLogo';
@@ -378,25 +379,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     </button>
                   </div>
 
-                  {/* Auth actions only: stacked */}
+                  {/* Auth actions: primary Parent sign in, secondary Volunteer sign in */}
                   <div className="flex flex-col space-y-3 pt-2">
                     <button
                       onClick={() => {
                         onNavigate('/parent/sign-in');
                         setSimMobileMenuOpen(false);
                       }}
-                      className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                      className="w-full flex items-center justify-between bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white text-sm font-semibold py-3 px-4 rounded-xl shadow-xs transition-all cursor-pointer group"
                     >
-                      Parent Sign In
+                      <span>Parent sign in</span>
+                      <ArrowRight className="w-4 h-4 text-white/90 group-hover:translate-x-0.5 transition-transform shrink-0" />
                     </button>
                     <button
                       onClick={() => {
                         onNavigate('/volunteer/sign-in');
                         setSimMobileMenuOpen(false);
                       }}
-                      className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                      className="w-full flex items-center justify-between bg-white hover:bg-[#FAF6EB] active:bg-[#F5F2E9] text-[#262626] border border-[#D9D6CE] text-sm font-semibold py-3 px-4 rounded-xl shadow-2xs transition-all cursor-pointer group"
                     >
-                      Volunteer Sign In
+                      <span>Volunteer sign in</span>
+                      <ArrowRight className="w-4 h-4 text-[#71717A] group-hover:text-[#262626] group-hover:translate-x-0.5 transition-all shrink-0" />
                     </button>
                   </div>
                 </div>
@@ -451,16 +454,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="space-y-3 pt-1" data-component-version="landing-hero-cta-v2-clean">
               <button
                 onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-                className="w-full h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-bold rounded-xl text-sm shadow-sm transition-all flex items-center justify-center space-x-2 uppercase tracking-wider cursor-pointer"
+                className="w-full h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all flex items-center justify-center space-x-2 uppercase tracking-wider cursor-pointer"
               >
-                <span>Begin Parent Access</span>
+                <span>Register your child</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-                className="w-full h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold rounded-xl text-sm transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
+                className="w-full h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
               >
-                <span>Volunteer Access</span>
+                <span>Volunteer sign in</span>
               </button>
             </div>
 
@@ -479,6 +482,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   iconType="sparkles"
                   label="General Assembly Gathering"
                   className="w-full h-full object-cover object-top"
+                  loading="eager"
+                  fetchpriority="high"
                 />
               </div>
             </div>
@@ -527,119 +532,111 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* Pass Preview Card Block - Subtle Scan-to-Details Animation */}
           <HeroPassPreview className="!rounded-3xl !p-5 shadow-xl" isMobile={true} avatarUrl={assets.passAvatar} />
 
-          {/* Past Moments Section (3D Carousel Reel) */}
-          <PastMomentsCarousel loaded={true} customAssets={assets.gallery} />
+          {/* Curved Orbital Photo Gallery Section */}
+          <CurvedPhotoGallery />
 
-          {/* How it works Section */}
-          <section className="space-y-6 pt-4 border-t border-[#EAE8E1]">
-            <div>
-              <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">
-                How it works
+          {/* For Parents & Guardians (Mobile Editorial Section) */}
+          <section id="process" className="pt-8 pb-4 space-y-6 text-left border-t border-[#EAE8E1]">
+            <div className="space-y-3">
+              <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase block font-sans">
+                FOR PARENTS &amp; GUARDIANS
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
+                Register your child for the gathering
               </h2>
-              <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
-                A simple process to ensure every child is ready and secure before the event begins.
+              <p className="text-xs sm:text-sm text-[#6B7280] leading-relaxed">
+                Create your parent profile, add your child’s details, and submit them for review.
               </p>
+              <div className="pt-2">
+                <button
+                  onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+                  className="w-full inline-flex items-center justify-center space-x-2 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold py-3.5 px-6 rounded-xl text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer group"
+                >
+                  <span>Register your child</span>
+                  <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+                </button>
+              </div>
+              <div className="pt-1">
+                <button
+                  onClick={() => onNavigate('/parent/sign-in')}
+                  className="text-xs font-semibold text-[#9A7326] hover:underline"
+                >
+                  Already have an account? Sign in
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-6">
-              <div className="flex items-start space-x-4">
-                <div className="w-7 h-7 rounded-full bg-[#C59B27] text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                  1
-                </div>
-                <div>
-                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Create parent account</h3>
-                  <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">Add your contact details and photo so the team can reach you when needed.</p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="w-7 h-7 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                  2
-                </div>
-                <div>
-                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Add each child</h3>
-                  <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">Add each child’s details, age group, photo, care notes, and pickup person.</p>
+            {/* 3 Editorial Process Steps */}
+            <div className="space-y-4 pt-3 border-t border-[#EAE8E1]/80">
+              <div className="flex items-start space-x-3.5">
+                <span className="font-serif-koinonia font-bold text-sm text-[#9A7326] pt-0.5 shrink-0">
+                  01
+                </span>
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Create your profile</h3>
+                  <p className="text-xs text-[#6B7280] leading-relaxed">Add your contact details and basic information.</p>
                 </div>
               </div>
 
-              <div className="flex items-start space-x-4">
-                <div className="w-7 h-7 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                  3
-                </div>
-                <div>
-                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Send details for review</h3>
-                  <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">The team checks the details before a child is selected for the event.</p>
+              <div className="flex items-start space-x-3.5">
+                <span className="font-serif-koinonia font-bold text-sm text-[#9A7326] pt-0.5 shrink-0">
+                  02
+                </span>
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Add your child’s details</h3>
+                  <p className="text-xs text-[#6B7280] leading-relaxed">Add their age group, photo, care information and designated pickup person.</p>
                 </div>
               </div>
 
-              <div className="flex items-start space-x-4">
-                <div className="w-7 h-7 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                  4
-                </div>
-                <div>
-                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Receive event pass</h3>
-                  <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">If selected, the child’s event pass appears in the parent account.</p>
+              <div className="flex items-start space-x-3.5">
+                <span className="font-serif-koinonia font-bold text-sm text-[#9A7326] pt-0.5 shrink-0">
+                  03
+                </span>
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">Submit for review</h3>
+                  <p className="text-xs text-[#6B7280] leading-relaxed">We’ll review the details before an event pass is issued.</p>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* For Volunteers (Mobile Editorial Section) */}
+          <section id="volunteers" className="pt-6 pb-2 space-y-3.5 text-left border-t border-[#EAE8E1]">
+            <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase block font-sans">
+              FOR VOLUNTEERS
+            </span>
+            <h2 className="text-2xl font-serif-koinonia font-bold text-[#18181B] leading-snug">
+              Volunteering with Children &amp; Teens?
+            </h2>
+            <p className="text-xs sm:text-sm text-[#6B7280] leading-relaxed">
+              Approved volunteers can sign in to use check-in, pickup and other event-day tools.
+            </p>
+            <div className="pt-1">
+              <button
+                onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
+                className="w-full inline-flex items-center justify-center space-x-2 bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] hover:border-[#C59B27]/60 font-semibold py-3.5 px-6 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer group"
+              >
+                <span>Volunteer sign in</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#9A7326] transition-transform duration-200 group-hover:translate-x-0.5" />
+              </button>
             </div>
           </section>
 
           {/* Safety Section (Mobile View) */}
           <SafetySection customImage={assets.safetySection} />
 
-          {/* Volunteer Section (Mobile) */}
-          <section className="bg-[#FAF8F3] rounded-3xl border border-[#E5D5AE]/60 p-5 shadow-2xs space-y-4 text-center">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">
-              Event Team
-            </span>
-            <h2 className="text-lg font-serif-koinonia font-bold text-[#18181B]">
-              Serving with Children and Teens?
-            </h2>
-            <p className="text-xs text-[#6B7280] leading-relaxed">
-              Approved volunteers and event team members can sign in to support check-in, pickup, and care during the event.
-            </p>
-            <button
-              onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-              className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3 px-6 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
-            >
-              Open Volunteer Access
-            </button>
-            <p className="text-[11px] text-[#9A7326]/80 italic">
-              Volunteer access is reviewed before event tools are opened.
-            </p>
-          </section>
-
-          {/* Final CTA Block */}
-          <section className="pt-8 pb-4 text-center space-y-4 border-t border-[#EAE8E1]">
-            <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">
-              Start with parent access
-            </h2>
-            <p className="text-xs text-[#6B7280] leading-relaxed max-w-xs mx-auto">
-              Create your account first. You can add children and save progress before sending details for review.
-            </p>
-            <button
-              onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-              className="w-full bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3.5 px-6 rounded-xl text-sm shadow-sm transition-all uppercase tracking-wider cursor-pointer"
-            >
-              BEGIN PARENT ACCESS
-            </button>
-            <button
-              onClick={() => onNavigate('/parent/sign-in')}
-              className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase hover:underline pt-2 block w-full cursor-pointer"
-            >
-              I ALREADY HAVE AN ACCOUNT
-            </button>
-          </section>
+          {/* Past Moments Section (Mobile 3D Carousel Reel) */}
+          <PastMomentsCarousel loaded={true} customAssets={assets.gallery} />
         </main>
 
         {/* Sticky Bottom Action Bar */}
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-[#EAE8E1] p-3 flex items-center space-x-3 shadow-2xl">
           <button
             onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-            className="flex-1 bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
+            className="flex-1 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
           >
-            <Key className="w-3.5 h-3.5" />
-            <span>BEGIN PARENT ACCESS</span>
+            <span>Register your child</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => scrollToSection('footer')}
@@ -722,7 +719,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               onClick={() => onNavigate(parentCtaRoute as AppRoute)}
               className="bg-[#C59B27] hover:bg-[#B89047] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all cursor-pointer"
             >
-              Parent Access
+              Register Your Child
             </button>
           </div>
 
@@ -791,25 +788,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   </button>
                 </div>
 
-                {/* Auth actions only: stacked */}
+                {/* Auth actions: primary Parent sign in, secondary Volunteer sign in */}
                 <div className="flex flex-col space-y-3 pt-2">
                   <button
                     onClick={() => {
                       onNavigate('/parent/sign-in');
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white text-sm font-semibold py-3 px-4 rounded-xl shadow-xs transition-all cursor-pointer group"
                   >
-                    Parent Sign In
+                    <span>Parent sign in</span>
+                    <ArrowRight className="w-4 h-4 text-white/90 group-hover:translate-x-0.5 transition-transform shrink-0" />
                   </button>
                   <button
                     onClick={() => {
                       onNavigate('/volunteer/sign-in');
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-bold py-3 px-4 rounded-xl text-center tracking-wider uppercase transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between bg-white hover:bg-[#FAF6EB] active:bg-[#F5F2E9] text-[#262626] border border-[#D9D6CE] text-sm font-semibold py-3 px-4 rounded-xl shadow-2xs transition-all cursor-pointer group"
                   >
-                    Volunteer Sign In
+                    <span>Volunteer sign in</span>
+                    <ArrowRight className="w-4 h-4 text-[#71717A] group-hover:text-[#262626] group-hover:translate-x-0.5 transition-all shrink-0" />
                   </button>
                 </div>
               </div>
@@ -869,14 +868,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 onClick={() => onNavigate(parentCtaRoute as AppRoute)}
                 className="w-full sm:w-64 h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
               >
-                <span>Begin Parent Access</span>
+                <span>Register your child</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
                 className="w-full sm:w-64 h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
               >
-                <span>Volunteer Access</span>
+                <span>Volunteer sign in</span>
               </button>
             </div>
 
@@ -910,6 +909,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 iconType="sparkles"
                 label="Main Hero Gathering"
                 className="w-full h-full object-cover object-top"
+                loading="eager"
+                fetchpriority="high"
               />
             </div>
 
@@ -976,65 +977,44 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* 4. Past Moments Section (3D Editorial Reel) */}
-      <PastMomentsCarousel loaded={loaded} customAssets={assets.gallery} />
+      {/* Curved Orbital Photo Gallery Section */}
+      <CurvedPhotoGallery />
 
-      {/* 5. Parent Process Section */}
-      <ParentProcessSection />
+      {/* 4. For Parents & Guardians (Editorial Two-Column with Process) */}
+      <ParentProcessSection onNavigate={onNavigate} parentCtaRoute={parentCtaRoute} />
 
-      {/* 6. Safety Section */}
-      <SafetySection customImage={assets.safetySection} />
+      {/* 5. For Volunteers (Editorial Connected Layout) */}
+      <section id="volunteers" className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full border-t border-[#EAE8E1]">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-10">
+          <div className="max-w-lg space-y-3 text-left">
+            <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase block font-sans">
+              FOR VOLUNTEERS
+            </span>
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-snug">
+              Volunteering with Children &amp; Teens?
+            </h2>
+            <p className="text-sm sm:text-base text-[#6B7280] leading-relaxed">
+              Approved volunteers can sign in to use check-in, pickup and other event-day tools.
+            </p>
+          </div>
 
-      {/* Volunteer Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center border-t border-[#EAE8E1]">
-        <div className="bg-[#FAF8F3] border border-[#E5D5AE]/60 rounded-3xl p-8 sm:p-10 shadow-2xs space-y-5">
-          <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase block">
-            Event Team
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
-            Serving with Children and Teens?
-          </h2>
-          <p className="text-sm text-[#6B7280] max-w-xl mx-auto leading-relaxed">
-            Approved volunteers and event team members can sign in to support check-in, pickup, and care during the event.
-          </p>
-          <div className="pt-2">
+          <div className="shrink-0 pt-2 md:pt-0 md:pb-1">
             <button
               onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-              className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-bold py-3 px-8 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] hover:border-[#C59B27]/60 font-semibold py-3 px-6 sm:px-7 rounded-xl text-sm shadow-2xs hover:shadow-sm transition-all duration-200 cursor-pointer group whitespace-nowrap"
             >
-              Open Volunteer Access
+              <span>Volunteer sign in</span>
+              <ArrowRight className="w-4 h-4 text-[#9A7326] transition-transform duration-200 group-hover:translate-x-1" />
             </button>
           </div>
-          <p className="text-xs text-[#9A7326]/80 italic mt-2">
-            Volunteer access is reviewed before event tools are opened.
-          </p>
         </div>
       </section>
 
-      {/* 7. Final CTA */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center space-y-6">
-        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EB] border border-[#E5D5AE] flex items-center justify-center mx-auto text-[#C59B27] shadow-2xs">
-          <Key className="w-7 h-7" />
-        </div>
+      {/* 6. Safety Section (Remaining Lower Content) */}
+      <SafetySection customImage={assets.safetySection} />
 
-        <h2 className="text-3xl sm:text-5xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
-          Begin with parent access
-        </h2>
-
-        <p className="text-base text-[#6B7280] max-w-xl mx-auto leading-relaxed">
-          Create your account first. You can add children and save progress before sending details for review.
-        </p>
-
-        <div className="pt-4">
-          <button
-            onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-            className="bg-[#C59B27] hover:bg-[#B89047] text-white font-bold py-4 px-10 rounded-xl text-sm shadow-md transition-all uppercase tracking-wider inline-flex items-center space-x-2 cursor-pointer"
-          >
-            <span>Begin Parent Access</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      </section>
+      {/* 7. Past Moments Section (3D Editorial Reel) */}
+      <PastMomentsCarousel loaded={loaded} customAssets={assets.gallery} />
 
       {/* 8. Footer (Stitch Footer) */}
       <footer id="footer" className="bg-[#FAF9F6] border-t border-[#EAE8E1] py-14 px-4 sm:px-6 lg:px-8 mt-auto">

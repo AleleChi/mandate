@@ -62,7 +62,7 @@ export const SafetySection: React.FC<SafetySectionProps> = ({ customImage }) => 
     <section
       id="safety"
       ref={sectionRef}
-      className="bg-[#18181B] text-white py-24 sm:py-32 my-12 relative overflow-hidden border-t border-b border-white/10"
+      className="bg-[#18181B] text-white py-20 sm:py-28 my-6 relative overflow-hidden border-t border-b border-white/10"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">

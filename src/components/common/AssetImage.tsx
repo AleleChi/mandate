@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Image as ImageIcon, Camera, Sparkles, Shield, Users, Heart } from 'lucide-react';
-import { resolveMediaUrl } from '../../utils/mediaUrl';
+import { resolveMediaUrl, getOptimizedThumbnailUrl } from '../../utils/mediaUrl';
 
 interface AssetImageProps {
   src?: string;
@@ -8,7 +8,10 @@ interface AssetImageProps {
   className?: string;
   iconType?: 'camera' | 'sparkles' | 'shield' | 'users' | 'heart' | 'default';
   label?: string;
+  hideText?: boolean;
   loading?: 'lazy' | 'eager';
+  fetchpriority?: 'high' | 'low' | 'auto';
+  thumbnailWidth?: number;
 }
 
 export const AssetImage: React.FC<AssetImageProps> = ({
@@ -17,7 +20,10 @@ export const AssetImage: React.FC<AssetImageProps> = ({
   className = '',
   iconType = 'default',
   label,
-  loading = 'lazy'
+  hideText = false,
+  loading = 'lazy',
+  fetchpriority,
+  thumbnailWidth
 }) => {
   const [hasError, setHasError] = useState(false);
 
@@ -33,13 +39,15 @@ export const AssetImage: React.FC<AssetImageProps> = ({
   };
 
   if (src && src.trim() !== '' && !hasError) {
-    const resolved = resolveMediaUrl(src);
+    const resolved = thumbnailWidth ? getOptimizedThumbnailUrl(src, thumbnailWidth) : resolveMediaUrl(src);
     return (
       <img
         src={resolved}
         alt={alt}
         className={className}
         loading={loading}
+        // @ts-ignore - fetchpriority is valid in modern browsers but sometimes missing in React types
+        fetchpriority={fetchpriority}
         onError={() => setHasError(true)}
         referrerPolicy="no-referrer"
       />
@@ -57,17 +65,19 @@ export const AssetImage: React.FC<AssetImageProps> = ({
           backgroundSize: '16px 16px'
         }}
       />
-      <div className="relative z-10 w-14 h-14 rounded-2xl bg-white border border-[#EAE8E1] shadow-sm flex items-center justify-center mb-3.5">
+      <div className="relative z-10 w-14 h-14 rounded-2xl bg-white border border-[#EAE8E1] shadow-sm flex items-center justify-center mb-1">
         {getIcon()}
       </div>
-      <div className="relative z-10 max-w-[85%]">
-        <p className="text-xs font-serif-koinonia font-bold text-[#18181B] tracking-tight truncate">
-          {label || alt}
-        </p>
-        <p className="text-[10px] font-sans text-[#71717A] mt-0.5">
-          Awaiting Asset Upload
-        </p>
-      </div>
+      {!hideText && label !== '' && (
+        <div className="relative z-10 max-w-[85%] mt-2">
+          <p className="text-xs font-serif-koinonia font-bold text-[#18181B] tracking-tight truncate">
+            {label || alt}
+          </p>
+          <p className="text-[10px] font-sans text-[#71717A] mt-0.5">
+            Awaiting Asset Upload
+          </p>
+        </div>
+      )}
     </div>
   );
 };

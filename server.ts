@@ -1,6 +1,17 @@
-import express from 'express';
-import path from 'path';
+import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
+
+// Load base .env if present
+dotenv.config();
+
+// Load .env.local with override if present (matching Vite precedence for local development)
+const localEnvPath = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(localEnvPath)) {
+  dotenv.config({ path: localEnvPath, override: true });
+}
+
+import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import authRoutes from './src/server/routes/auth';
 import parentRoutes from './src/server/routes/parent';
@@ -16,6 +27,7 @@ import incidentRoutes from './src/server/routes/incidents';
 import escalationRoutes from './src/server/routes/escalations';
 import trainingRoutes from './src/server/routes/training';
 import reportsRoutes from './src/server/routes/reports';
+import { publicGalleryRouter, adminGalleryRouter } from './src/server/routes/gallery';
 import { initReportSchema, processQueuedReportJobs } from './src/server/services/reportService';
 import { seedDefaultEscalationPolicies, runEscalationScheduler } from './src/server/services/escalationService';
 import { getDb } from './src/server/db';
@@ -178,6 +190,8 @@ async function startServer() {
 
   app.use('/api/parent', parentRoutes);
   app.use('/api/media', mediaRoutes);
+  app.use('/api/public/gallery', publicGalleryRouter);
+  app.use('/api/admin/gallery', adminGalleryRouter);
   app.use('/api/admin/reports', reportsRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/jobs', jobsRoutes);

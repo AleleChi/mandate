@@ -188,36 +188,33 @@ export const PastMomentsCarousel: React.FC<PastMomentsCarouselProps> = ({ loaded
   };
 
   return (
-    <section id="moments" className="pt-28 pb-24 sm:pt-36 sm:pb-32 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full overflow-hidden">
+    <section id="moments" className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full overflow-hidden">
       {/* Section Title & Controls */}
-      <div className={`flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-14 sm:mb-16 transition-all duration-1000 ease-out ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
-        <div className="max-w-2xl">
+      <div className={`flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10 sm:mb-12 transition-all duration-1000 ease-out ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
+        <div className="max-w-2xl text-left">
+          <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase block font-sans mb-3">
+            PAST GATHERINGS
+          </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-tight">
-            Past moments from the Children and Teens experience.
+            Moments from previous gatherings
           </h2>
         </div>
 
-        <div className="flex items-center justify-between sm:justify-end space-x-6 shrink-0 pb-1">
-          <span className="text-xs font-bold tracking-widest text-[#9A7326] uppercase">
-            Drag to explore &rarr;
-          </span>
-
-          <div className="flex items-center space-x-2.5">
-            <button
-              onClick={handlePrev}
-              aria-label="Previous moment"
-              className="w-10 h-10 rounded-full bg-white border border-[#EAE8E1] flex items-center justify-center text-[#18181B] hover:bg-[#FAF6EB] hover:border-[#E5D5AE] transition-all duration-300 shadow-2xs"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleNext}
-              aria-label="Next moment"
-              className="w-10 h-10 rounded-full bg-white border border-[#EAE8E1] flex items-center justify-center text-[#18181B] hover:bg-[#FAF6EB] hover:border-[#E5D5AE] transition-all duration-300 shadow-2xs"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="flex items-center justify-end space-x-2.5 shrink-0 pb-1">
+          <button
+            onClick={handlePrev}
+            aria-label="Previous moment"
+            className="w-10 h-10 rounded-full bg-white border border-[#EAE8E1] flex items-center justify-center text-[#18181B] hover:bg-[#FAF6EB] hover:border-[#E5D5AE] transition-all duration-300 shadow-2xs cursor-pointer"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleNext}
+            aria-label="Next moment"
+            className="w-10 h-10 rounded-full bg-white border border-[#EAE8E1] flex items-center justify-center text-[#18181B] hover:bg-[#FAF6EB] hover:border-[#E5D5AE] transition-all duration-300 shadow-2xs cursor-pointer"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
         </div>
       </div>
 

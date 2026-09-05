@@ -4,5 +4,28 @@ dist/
 coverage/
 .DS_Store
 *.log
+
+# Environment files
+.env
+.env.local
+.env.production.local
+.env.*.local
 .env*
 !.env.example
+
+# Local development databases and media
+data/media/
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/*.corrupt-*
+
+# Database dumps / backups
+*.dump
+*.backup
+*.bak
+*.sql.gz
+
+# Generated reports
+data/reports/
+koinonia.db
