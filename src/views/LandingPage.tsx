@@ -1028,10 +1028,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
           {/* Links */}
           <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8 font-medium">
-            <span className="hover:text-[#18181B] cursor-pointer">Privacy Policy</span>
-            <span className="hover:text-[#18181B] cursor-pointer">Terms of Service</span>
-            <span className="hover:text-[#18181B] cursor-pointer">Child Safety Policy</span>
-            <span className="hover:text-[#18181B] cursor-pointer">Contact Us</span>
+            <span onClick={() => onNavigate('/privacy')} className="hover:text-[#18181B] cursor-pointer">Privacy Policy</span>
+            <span onClick={() => onNavigate('/terms')} className="hover:text-[#18181B] cursor-pointer">Terms of Service</span>
+            <span onClick={() => onNavigate('/child-safety')} className="hover:text-[#18181B] cursor-pointer">Child Safety Policy</span>
+            <span onClick={() => onNavigate('/contact')} className="hover:text-[#18181B] cursor-pointer">Contact Us</span>
           </div>
 
           {/* Copyright */}

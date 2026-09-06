@@ -2,34 +2,28 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Image as ImageIcon, 
   Camera, 
-  Sparkles, 
-  Shield, 
-  Users, 
   Video, 
   Upload, 
   Trash2, 
-  AlertCircle, 
   Check, 
   Loader2, 
   RefreshCw,
-  HelpCircle,
-  FileVideo,
-  Plus,
-  ArrowUp,
-  ArrowDown,
-  Eye,
-  EyeOff,
-  Edit3,
-  X,
-  Globe,
-  Maximize2,
-  Search,
-  LayoutGrid,
-  List,
-  ChevronLeft,
-  ChevronRight
+  Plus, 
+  ArrowUp, 
+  ArrowDown, 
+  Eye, 
+  EyeOff, 
+  Pencil, 
+  X, 
+  Search, 
+  LayoutGrid, 
+  List, 
+  ChevronLeft, 
+  ChevronRight,
+  MoreHorizontal,
+  GripVertical
 } from 'lucide-react';
-import { api, AdminGalleryItem, PublicGalleryItem } from '../../services/api';
+import { api, AdminGalleryItem } from '../../services/api';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AssetImage } from '../../components/common/AssetImage';
 import { CurvedPhotoGallery } from '../../components/common/CurvedPhotoGallery';
@@ -45,7 +39,7 @@ interface MediaSlot {
   dimensions: string;
   type: 'image' | 'video';
   purpose: 'landing_image' | 'event_video';
-  icon: 'camera' | 'sparkles' | 'shield' | 'users' | 'video' | 'default';
+  icon: 'camera' | 'video' | 'default';
   category: 'brand' | 'hero' | 'interactive' | 'gallery';
 }
 
@@ -57,7 +51,7 @@ const MEDIA_SLOTS: MediaSlot[] = [
     dimensions: '128x128px (PNG or WebP with transparent background recommended)',
     type: 'image',
     purpose: 'landing_image',
-    icon: 'sparkles',
+    icon: 'default',
     category: 'brand'
   },
   {
@@ -101,120 +95,30 @@ const MEDIA_SLOTS: MediaSlot[] = [
     category: 'hero'
   },
   {
-    key: 'passAvatar',
-    label: 'Interactive Pass - Child Avatar Demo',
-    description: 'The child avatar headshot used inside the live interactive scan-pass preview.',
-    dimensions: '256x256px (Aspect ratio 1:1, high contrast face photo)',
+    key: 'interactiveSample',
+    label: 'Interactive Feature Preview Cover',
+    description: 'Preview cover image for interactive attendance demonstrations.',
+    dimensions: '640x360px (Aspect ratio 16:9)',
     type: 'image',
     purpose: 'landing_image',
-    icon: 'users',
+    icon: 'camera',
     category: 'interactive'
   },
   {
-    key: 'workerAvatar',
-    label: 'Interactive Pass - Worker Avatar Demo',
-    description: 'The volunteer check-in staff photo used inside the live interactive scan-pass preview.',
-    dimensions: '256x256px (Aspect ratio 1:1, warm portrait photo)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'users',
-    category: 'interactive'
-  },
-  {
-    key: 'safetySection',
-    label: 'Child Care & Safety Section Photo',
-    description: 'Photograph showcasing child protection, check-in desks, or safe volunteer environments.',
-    dimensions: '1200x800px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'shield',
-    category: 'interactive'
-  },
-  {
-    key: 'galleryArrival',
-    label: 'Gallery - Arrival Step',
-    description: 'Photo showing family arrival and welcome in the 8-step past moments reel.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
+    key: 'gallerySample',
+    label: 'Fellowship Reel Fallback Cover',
+    description: 'Fallback cover image for the fellowship gallery reel.',
+    dimensions: '600x800px (Aspect ratio 3:4)',
     type: 'image',
     purpose: 'landing_image',
     icon: 'camera',
     category: 'gallery'
   },
   {
-    key: 'galleryCheckIn',
-    label: 'Gallery - Check-in Step',
-    description: 'Photo illustrating the security check-in desk phase in the 8-step past moments reel.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryActivities',
-    label: 'Gallery - Activities Step',
-    description: 'Photo showing high-energy games and social activities in the 8-step past moments reel.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryTeaching',
-    label: 'Gallery - Teaching Step',
-    description: 'Photo representing kids learning and curriculum sessions in the 8-step past moments reel.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryCareTeam',
-    label: 'Gallery - Care Team Step',
-    description: 'Photo highlighting the warm volunteer care team staff members in the 8-step past moments reel.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryPickup',
-    label: 'Gallery - Safe Checkout Step',
-    description: 'Photo demonstrating secure child checkout/parent matches in the 8-step past moments reel.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryParentUpdates',
-    label: 'Gallery - Parent Updates Step',
-    description: 'Photo showing parents receiving updates and live push notifications.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryEventMoments',
-    label: 'Gallery - Event Highlight Video Cover',
-    description: 'Cover photo shown initially over the video card play trigger.',
-    dimensions: '900x600px (Aspect ratio 3:2, landscape image)',
-    type: 'image',
-    purpose: 'landing_image',
-    icon: 'camera',
-    category: 'gallery'
-  },
-  {
-    key: 'galleryEventVideo',
-    label: 'Gallery - Event Highlights Video Clip',
-    description: 'Active highlight video clip played when clicking the video gallery moment.',
-    dimensions: '1080p MP4 or WebM format, optimized compression (<25MB recommended)',
+    key: 'pastMomentsVideo',
+    label: 'Highlights Video Preview',
+    description: 'Short video preview for past general assembly highlights.',
+    dimensions: '720p or 1080p MP4 format',
     type: 'video',
     purpose: 'event_video',
     icon: 'video',
@@ -223,8 +127,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
 ];
 
 export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin }) => {
-  // Main view switcher: 'slots' for individual slot overrides, 'gallery' for the orbital photo gallery
-  const [mainTab, setMainTab] = useState<'slots' | 'gallery'>('slots');
+  // Main view switcher: 'gallery' (primary photo gallery) vs 'slots' (fixed hero/brand images)
+  const [mainTab, setMainTab] = useState<'gallery' | 'slots'>('gallery');
 
   // Core Slots state
   const [loading, setLoading] = useState(true);
@@ -235,19 +139,84 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   const [errorSlot, setErrorSlot] = useState<{ [key: string]: string }>({});
   const [successSlot, setSuccessSlot] = useState<{ [key: string]: string }>({});
 
-  // Orbital Photo Gallery state
+  // Photo Gallery state
   const [galleryItems, setGalleryItems] = useState<AdminGalleryItem[]>([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<AdminGalleryItem | null>(null);
   const [showLivePreview, setShowLivePreview] = useState(false);
 
-  // Gallery Filters, View Modes & Pagination for Large Collections (40+ photos)
+  // Gallery Filters, View Modes & Pagination
   const [gallerySearch, setGallerySearch] = useState('');
   const [galleryStatusFilter, setGalleryStatusFilter] = useState<'all' | 'active' | 'draft'>('all');
   const [galleryViewMode, setGalleryViewMode] = useState<'cards' | 'compact'>('cards');
   const [galleryPage, setGalleryPage] = useState(1);
   const [galleryPageSize, setGalleryPageSize] = useState<number>(12);
+
+  // Card overflow action menu state
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  // Drag & drop state for reordering
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  // Add / Edit Modal state
+  const [modalFile, setModalFile] = useState<File | null>(null);
+  const [modalPreview, setModalPreview] = useState<string | null>(null);
+  const [modalAltText, setModalAltText] = useState('');
+  const [modalCaption, setModalCaption] = useState('');
+  const [modalIsActive, setModalIsActive] = useState(true);
+  const [isSavingItem, setIsSavingItem] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Dismiss card dropdown on outside click
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-card-menu]')) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openMenuId]);
+
+  // 1. Fetch Landing Settings (Slots)
+  const fetchSettings = async () => {
+    try {
+      setLoading(true);
+      const res = await api.admin.getLandingSettings();
+      if (res.success) {
+        setSettings(res.settings || {});
+      }
+    } catch (err: any) {
+      console.error('Failed to load landing settings:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. Fetch Photo Gallery Items
+  const fetchGalleryItems = async () => {
+    try {
+      setLoadingGallery(true);
+      const res = await api.gallery.getAdminItems();
+      if (res.success) {
+        setGalleryItems(res.items || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load gallery items:', err);
+    } finally {
+      setLoadingGallery(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+    fetchGalleryItems();
+  }, []);
 
   // Filtered & Paginated gallery items
   const filteredGalleryItems = React.useMemo(() => {
@@ -270,52 +239,6 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     const start = (galleryPage - 1) * galleryPageSize;
     return filteredGalleryItems.slice(start, start + galleryPageSize);
   }, [filteredGalleryItems, galleryPage, galleryPageSize]);
-
-  // Add / Edit Modal state
-  const [modalFile, setModalFile] = useState<File | null>(null);
-  const [modalPreview, setModalPreview] = useState<string | null>(null);
-  const [modalAltText, setModalAltText] = useState('');
-  const [modalCaption, setModalCaption] = useState('');
-  const [modalIsActive, setModalIsActive] = useState(true);
-  const [isSavingItem, setIsSavingItem] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // 1. Fetch Landing Settings (Slots)
-  const fetchSettings = async () => {
-    try {
-      setLoading(true);
-      const res = await api.admin.getLandingSettings();
-      if (res.success) {
-        setSettings(res.settings || {});
-      }
-    } catch (err: any) {
-      console.error('Failed to load landing settings:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 2. Fetch Orbital Gallery Items
-  const fetchGalleryItems = async () => {
-    try {
-      setLoadingGallery(true);
-      const res = await api.gallery.getAdminItems();
-      if (res.success) {
-        setGalleryItems(res.items || []);
-      }
-    } catch (err: any) {
-      console.error('Failed to load gallery items:', err);
-    } finally {
-      setLoadingGallery(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSettings();
-    fetchGalleryItems();
-  }, []);
 
   // Handler for Core Slots Upload
   const handleFileUpload = async (slotKey: string, file: File, purpose: 'landing_image' | 'event_video') => {
@@ -383,7 +306,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   };
 
   const handleResetSlot = async (slotKey: string) => {
-    if (!window.confirm('Restore this media frame to its default branded visual illustration?')) return;
+    if (!window.confirm('Restore this image to its default branded visual illustration?')) return;
     try {
       setResettingSlot(slotKey);
       setErrorSlot(prev => ({ ...prev, [slotKey]: '' }));
@@ -398,7 +321,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   };
 
   // ----------------------------------------------------
-  // Orbital Photo Gallery Actions
+  // Photo Gallery Actions
   // ----------------------------------------------------
   const handleMoveGalleryItem = async (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -408,11 +331,43 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     const [moved] = newItems.splice(index, 1);
     newItems.splice(targetIndex, 0, moved);
     setGalleryItems(newItems);
+    setOpenMenuId(null);
 
     try {
       await api.gallery.reorderItems(newItems.map(i => i.id));
     } catch (err) {
-      console.error('Failed to save gallery order:', err);
+      console.error('Failed to save photo order:', err);
+      fetchGalleryItems();
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const newItems = [...galleryItems];
+    const [moved] = newItems.splice(draggedIndex, 1);
+    newItems.splice(targetIndex, 0, moved);
+    setGalleryItems(newItems);
+    setDraggedIndex(null);
+
+    try {
+      await api.gallery.reorderItems(newItems.map(i => i.id));
+    } catch (err) {
+      console.error('Failed to save photo order:', err);
       fetchGalleryItems();
     }
   };
@@ -420,6 +375,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   const handleToggleGalleryActive = async (item: AdminGalleryItem) => {
     const nextState = item.is_active === 1 ? 0 : 1;
     setGalleryItems(prev => prev.map(i => i.id === item.id ? { ...i, is_active: nextState } : i));
+    setOpenMenuId(null);
     try {
       await api.gallery.updateItem(item.id, { is_active: nextState });
     } catch (err) {
@@ -429,7 +385,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   };
 
   const handleDeleteGalleryItem = async (id: string) => {
-    if (!window.confirm('Are you sure you want to remove this photograph from the landing page gallery?')) return;
+    setOpenMenuId(null);
+    if (!window.confirm('Are you sure you want to remove this photo from the landing page gallery?')) return;
     try {
       await api.gallery.deleteItem(id);
       setGalleryItems(prev => prev.filter(i => i.id !== id));
@@ -460,11 +417,11 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   const handleSaveNewGalleryItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalFile) {
-      setModalError('Please choose a photograph to upload (JPG, PNG, or WebP).');
+      setModalError('Please choose a photo to upload (JPG, PNG, or WebP).');
       return;
     }
     if (!modalAltText.trim()) {
-      setModalError('Accessible Alt Text is required for screen readers and search engines.');
+      setModalError('Accessible description is required.');
       return;
     }
 
@@ -503,7 +460,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     e.preventDefault();
     if (!editingItem) return;
     if (!editingItem.alt_text.trim()) {
-      alert('Accessible Alt Text cannot be empty.');
+      alert('Accessible description cannot be empty.');
       return;
     }
 
@@ -531,12 +488,9 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
   const getSlotIcon = (iconName: string) => {
     switch (iconName) {
-      case 'camera': return <Camera className="w-5 h-5 text-[#C59B27]" />;
-      case 'sparkles': return <Sparkles className="w-5 h-5 text-[#C59B27]" />;
-      case 'shield': return <Shield className="w-5 h-5 text-[#C59B27]" />;
-      case 'users': return <Users className="w-5 h-5 text-[#C59B27]" />;
-      case 'video': return <Video className="w-5 h-5 text-[#C59B27]" />;
-      default: return <ImageIcon className="w-5 h-5 text-[#C59B27]" />;
+      case 'camera': return <Camera className="w-4 h-4 text-stone-500" />;
+      case 'video': return <Video className="w-4 h-4 text-stone-500" />;
+      default: return <ImageIcon className="w-4 h-4 text-stone-500" />;
     }
   };
 
@@ -554,107 +508,94 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     );
   }
 
-  // Active items count for summary
   const activeGalleryCount = galleryItems.filter(i => i.is_active === 1).length;
+  const hiddenGalleryCount = galleryItems.length - activeGalleryCount;
 
   return (
-    <div className="space-y-8" id="admin-landing-manager">
-      {/* Intro Header Card */}
-      <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 shadow-2xs">
-        <div className="space-y-1.5 max-w-2xl">
-          <span className="text-[10px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans">
-            Koinonia Content Management
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
-            Landing Page Manager
+    <div className="space-y-8 font-sans" id="admin-landing-manager">
+      {/* Editorial Page Header */}
+      <div className="border-b border-[#EAE8E1]/80 pb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-serif-koinonia font-normal text-stone-900 tracking-tight">
+            Landing Page
           </h2>
-          <p className="text-xs sm:text-sm text-[#6B7280]">
-            Curate core page media slots and manage the continuous 3D orbital photo gallery showcasing ministry fellowship, children, and teens.
+          <p className="text-xs sm:text-sm text-stone-500 mt-1">
+            Manage the images shown on your public landing page.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button 
-            onClick={() => {
-              fetchSettings();
-              fetchGalleryItems();
-            }}
-            className="flex items-center space-x-1.5 text-xs font-semibold bg-white border border-[#EAE8E1] hover:bg-[#FAF9F6] text-zinc-700 px-4 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Sync State</span>
-          </button>
-        </div>
+
+        <button 
+          onClick={() => {
+            fetchSettings();
+            fetchGalleryItems();
+          }}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-600 bg-white border border-[#EAE8E1] hover:bg-stone-50 hover:text-stone-900 px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs"
+          title="Refresh current data"
+        >
+          <RefreshCw className="w-3.5 h-3.5 text-stone-400" />
+          <span>Refresh</span>
+        </button>
       </div>
 
-      {/* Top Segmented Navigation: Core Slots vs Orbital Gallery */}
-      <div className="flex bg-[#FAF8F3] p-1.5 rounded-2xl border border-[#E5D5AE]/80 max-w-md shadow-2xs">
-        <button
-          onClick={() => setMainTab('slots')}
-          className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === 'slots'
-              ? 'bg-white text-[#18181B] shadow-2xs border border-[#EAE8E1]'
-              : 'text-[#71717A] hover:text-[#18181B]'
-          }`}
-        >
-          <ImageIcon className="w-3.5 h-3.5 text-[#C59B27]" />
-          <span>Core Media Slots</span>
-        </button>
-
+      {/* Understated Main Tabs */}
+      <div className="flex border-b border-[#EAE8E1] gap-6 text-xs">
         <button
           onClick={() => setMainTab('gallery')}
-          className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 ${
             mainTab === 'gallery'
-              ? 'bg-[#C59B27] text-white shadow-2xs'
-              : 'text-[#71717A] hover:text-[#18181B]'
+              ? 'border-[#C59B27] text-stone-950 font-semibold'
+              : 'border-transparent text-stone-500 hover:text-stone-800'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Orbital Photo Gallery</span>
-          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-            mainTab === 'gallery' ? 'bg-white/20 text-white' : 'bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE]'
-          }`}>
+          <span>Photo Gallery</span>
+          <span className="text-[11px] font-mono text-stone-400">
             {galleryItems.length}
           </span>
         </button>
+
+        <button
+          onClick={() => setMainTab('slots')}
+          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 ${
+            mainTab === 'slots'
+              ? 'border-[#C59B27] text-stone-950 font-semibold'
+              : 'border-transparent text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          <span>Featured Images</span>
+          <span className="text-[11px] font-mono text-stone-400">
+            {MEDIA_SLOTS.length}
+          </span>
+        </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. ORBITAL PHOTO GALLERY MANAGER VIEW */}
+      {/* 1. PHOTO GALLERY MANAGEMENT VIEW */}
       {/* ========================================================================= */}
       {mainTab === 'gallery' && (
         <div className="space-y-6">
-          {/* Gallery Sub-Header & Controls */}
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-serif-koinonia font-bold text-[#18181B]">
-                  Orbital Photo Carousel
+          {/* Section Heading & Actions Bar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-base font-semibold text-stone-900">
+                  Photo Gallery
+                </h3>
+                <span className="text-xs text-stone-500 font-normal">
+                  {activeGalleryCount} published{hiddenGalleryCount > 0 ? `, ${hiddenGalleryCount} hidden` : ''}
                 </span>
-                <span className="text-[10px] bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] px-2 py-0.5 rounded-full font-bold">
-                  {activeGalleryCount} Active on Landing
-                </span>
-                {galleryItems.length - activeGalleryCount > 0 && (
-                  <span className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full font-bold">
-                    {galleryItems.length - activeGalleryCount} Drafts
-                  </span>
-                )}
               </div>
-              <p className="text-xs text-[#71717A]">
-                Photographs orbit smoothly along a curved globe on the landing page. Drag or use the arrows to reorder.
+              <p className="text-xs text-stone-500 mt-0.5">
+                Manage the photos shown in the gallery on the landing page.
               </p>
             </div>
 
-            <div className="flex items-center space-x-3 w-full md:w-auto">
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
               <button
-                onClick={() => setShowLivePreview(!showLivePreview)}
-                className={`flex-1 md:flex-initial flex items-center justify-center space-x-2 text-xs font-bold px-4 py-2.5 rounded-xl border transition-all cursor-pointer ${
-                  showLivePreview
-                    ? 'bg-[#18181B] text-white border-[#18181B]'
-                    : 'bg-[#FAF8F3] hover:bg-[#FAF6EB] text-[#18181B] border-[#EAE8E1]'
-                }`}
+                onClick={() => setShowLivePreview(true)}
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-[#EAE8E1] px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs"
               >
-                <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
-                <span>{showLivePreview ? 'Hide Preview' : 'Live Preview'}</span>
+                <Eye className="w-3.5 h-3.5 text-stone-400" />
+                <span>Preview on homepage</span>
               </button>
 
               <button
@@ -667,52 +608,21 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                   setModalError(null);
                   setIsAddModalOpen(true);
                 }}
-                className="flex-1 md:flex-initial flex items-center justify-center space-x-2 text-xs font-bold bg-[#C59B27] hover:bg-[#B38A22] text-white px-5 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#C59B27] hover:bg-[#B38A22] text-white px-4 py-2 rounded-lg shadow-2xs transition-colors cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>Add Photograph</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add photo</span>
               </button>
             </div>
           </div>
 
-          {/* LIVE SIMULATION PREVIEW DRAWER */}
-          {showLivePreview && (
-            <div className="bg-[#FAF9F6] border border-[#E5D5AE] rounded-3xl p-6 shadow-md overflow-hidden animate-in fade-in duration-300">
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#EAE8E1]">
-                <div className="flex items-center space-x-2">
-                  <Globe className="w-4 h-4 text-[#C59B27]" />
-                  <span className="text-xs font-serif-koinonia font-bold text-[#18181B]">
-                    Live Orbital Simulation
-                  </span>
-                  <span className="text-[10px] text-[#71717A]">
-                    (Showing currently active photographs)
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowLivePreview(false)}
-                  className="text-xs text-[#71717A] hover:text-[#18181B] cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-
-              {/* Render the actual public gallery component */}
-              <div className="rounded-2xl overflow-hidden border border-[#EAE8E1] bg-white">
-                <CurvedPhotoGallery 
-                  customItems={galleryItems.filter(i => i.is_active === 1)} 
-                  className="!py-8"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Controls Bar: Search, Status Filter, View Mode, Pagination size */}
+          {/* Filtering & View Switcher */}
           {galleryItems.length > 0 && (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3 sm:p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-2xs">
-              {/* Search & Filter pills */}
-              <div className="flex flex-wrap items-center gap-2 flex-1">
-                <div className="relative flex-1 min-w-[180px] max-w-xs">
-                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+              {/* Search & Status Filters */}
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={gallerySearch}
@@ -720,8 +630,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       setGallerySearch(e.target.value);
                       setGalleryPage(1);
                     }}
-                    placeholder="Search caption or alt text..."
-                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-[#18181B] placeholder:text-zinc-400 focus:outline-none focus:border-[#C59B27]"
+                    placeholder="Search caption or description..."
+                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-[#EAE8E1] rounded-lg text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-[#C59B27]"
                   />
                   {gallerySearch && (
                     <button
@@ -729,14 +639,14 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         setGallerySearch('');
                         setGalleryPage(1);
                       }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
                     >
                       <X className="w-3 h-3" />
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center space-x-1 bg-[#FAF9F6] p-1 rounded-xl border border-[#EAE8E1]">
+                <div className="flex items-center gap-1 text-xs">
                   {(['all', 'active', 'draft'] as const).map(tab => (
                     <button
                       key={tab}
@@ -744,36 +654,36 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         setGalleryStatusFilter(tab);
                         setGalleryPage(1);
                       }}
-                      className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all cursor-pointer capitalize ${
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                         galleryStatusFilter === tab
-                          ? 'bg-white text-[#18181B] shadow-2xs border border-[#EAE8E1]'
-                          : 'text-[#71717A] hover:text-[#18181B]'
+                          ? 'bg-stone-900 text-white'
+                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
                       }`}
                     >
-                      {tab === 'all' ? `All (${galleryItems.length})` : tab === 'active' ? `Live (${activeGalleryCount})` : `Drafts (${galleryItems.length - activeGalleryCount})`}
+                      {tab === 'all' ? `All (${galleryItems.length})` : tab === 'active' ? `Published (${activeGalleryCount})` : `Hidden (${hiddenGalleryCount})`}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* View mode & Page Size switcher */}
-              <div className="flex items-center space-x-2 self-end md:self-auto">
-                <div className="flex items-center bg-[#FAF9F6] p-1 rounded-xl border border-[#EAE8E1]">
+              {/* View Mode & Page Size */}
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <div className="flex items-center border border-[#EAE8E1] rounded-lg bg-white p-0.5">
                   <button
                     onClick={() => setGalleryViewMode('cards')}
-                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                      galleryViewMode === 'cards' ? 'bg-white text-[#C59B27] shadow-2xs' : 'text-zinc-400 hover:text-zinc-600'
+                    className={`p-1.5 rounded text-xs transition-colors cursor-pointer ${
+                      galleryViewMode === 'cards' ? 'bg-stone-100 text-stone-900 font-medium' : 'text-stone-400 hover:text-stone-600'
                     }`}
-                    title="Card View"
+                    title="Grid view"
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => setGalleryViewMode('compact')}
-                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                      galleryViewMode === 'compact' ? 'bg-white text-[#C59B27] shadow-2xs' : 'text-zinc-400 hover:text-zinc-600'
+                    className={`p-1.5 rounded text-xs transition-colors cursor-pointer ${
+                      galleryViewMode === 'compact' ? 'bg-stone-100 text-stone-900 font-medium' : 'text-stone-400 hover:text-stone-600'
                     }`}
-                    title="Compact Table View"
+                    title="List view"
                   >
                     <List className="w-3.5 h-3.5" />
                   </button>
@@ -785,179 +695,222 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     setGalleryPageSize(Number(e.target.value));
                     setGalleryPage(1);
                   }}
-                  className="text-xs bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-2.5 py-1.5 text-zinc-700 focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                  className="text-xs bg-white border border-[#EAE8E1] rounded-lg px-2.5 py-1.5 text-stone-600 focus:outline-none focus:border-[#C59B27] cursor-pointer"
                 >
-                  <option value={12}>12 / page</option>
-                  <option value={24}>24 / page</option>
-                  <option value={999}>View All</option>
+                  <option value={12}>12 per page</option>
+                  <option value={24}>24 per page</option>
+                  <option value={999}>View all</option>
                 </select>
               </div>
             </div>
           )}
 
-          {/* GALLERY ITEMS LIST / GRID */}
+          {/* GALLERY CONTENT: CARDS OR LIST */}
           {galleryItems.length === 0 ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-3xl p-12 text-center space-y-4">
-              <div className="w-12 h-12 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] flex items-center justify-center mx-auto">
-                <Camera className="w-6 h-6" />
+            <div className="border border-dashed border-[#EAE8E1] rounded-2xl p-12 text-center space-y-4 bg-white">
+              <div className="w-10 h-10 rounded-full bg-stone-100 text-stone-500 flex items-center justify-center mx-auto">
+                <Camera className="w-5 h-5" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
-                  No Custom Gallery Photos Uploaded Yet
-                </h3>
-                <p className="text-xs text-[#71717A] max-w-md mx-auto">
-                  Upload photos of children, teens, and fellowship moments to activate the continuous 3D orbital gallery on the public landing page!
+                <h4 className="text-sm font-semibold text-stone-900">
+                  No photos uploaded yet
+                </h4>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  Upload photos of children, teens, and fellowship gatherings to display in the landing page gallery.
                 </p>
               </div>
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="inline-flex items-center space-x-2 text-xs font-bold bg-[#C59B27] hover:bg-[#B38A22] text-white px-5 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#C59B27] hover:bg-[#B38A22] text-white px-4 py-2 rounded-lg shadow-2xs transition-colors cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>Upload First Photo</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Upload first photo</span>
               </button>
             </div>
           ) : filteredGalleryItems.length === 0 ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center space-y-2">
-              <p className="text-xs text-[#71717A]">No photos matched your filter criteria.</p>
+            <div className="border border-[#EAE8E1] rounded-xl p-8 text-center space-y-2 bg-white">
+              <p className="text-xs text-stone-500">No photos matched your filter criteria.</p>
               <button
                 onClick={() => {
                   setGallerySearch('');
                   setGalleryStatusFilter('all');
                 }}
-                className="text-xs font-bold text-[#9A7326] hover:underline"
+                className="text-xs font-medium text-[#9A7326] hover:underline cursor-pointer"
               >
                 Reset filters
               </button>
             </div>
           ) : galleryViewMode === 'cards' ? (
-            /* CARDS VIEW */
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            /* CLEAN RESPONSIVE PHOTO CARDS GRID */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {paginatedGalleryItems.map((item) => {
                 const trueIdx = galleryItems.findIndex(i => i.id === item.id);
+                const isMenuOpen = openMenuId === item.id;
+
                 return (
                   <div
                     key={item.id}
-                    className={`bg-white border rounded-2xl p-3.5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-shadow relative overflow-hidden ${
-                      item.is_active === 1 ? 'border-[#EAE8E1]' : 'border-zinc-200 opacity-75 bg-zinc-50/50'
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, trueIdx)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, trueIdx)}
+                    className={`bg-white border rounded-xl overflow-hidden shadow-2xs hover:border-[#C59B27]/40 transition-all flex flex-col justify-between group ${
+                      item.is_active === 1 ? 'border-[#EAE8E1]' : 'border-stone-200 opacity-80'
                     }`}
                   >
-                    <div className="space-y-2.5">
-                      {/* Top status bar & Reorder buttons */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-1.5">
-                          <span className="w-5 h-5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] font-bold text-[11px] flex items-center justify-center">
-                            {trueIdx + 1}
-                          </span>
-                          <button
-                            onClick={() => handleToggleGalleryActive(item)}
-                            className={`flex items-center space-x-1 text-[9px] font-bold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
-                              item.is_active === 1
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-zinc-100 text-zinc-500 border-zinc-200'
-                            }`}
-                            title="Click to toggle visibility on public landing page"
-                          >
-                            {item.is_active === 1 ? (
-                              <>
-                                <Eye className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>Live</span>
-                              </>
-                            ) : (
-                              <>
-                                <EyeOff className="w-2.5 h-2.5 text-zinc-400" />
-                                <span>Draft</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        {/* Reorder Buttons */}
-                        <div className="flex items-center space-x-1">
-                          <button
-                            onClick={() => handleMoveGalleryItem(trueIdx, 'up')}
-                            disabled={trueIdx === 0}
-                            className="w-6 h-6 rounded-md border border-[#EAE8E1] hover:bg-[#FAF8F3] text-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
-                            title="Move Earlier"
-                          >
-                            <ArrowUp className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => handleMoveGalleryItem(trueIdx, 'down')}
-                            disabled={trueIdx === galleryItems.length - 1}
-                            className="w-6 h-6 rounded-md border border-[#EAE8E1] hover:bg-[#FAF8F3] text-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
-                            title="Move Later"
-                          >
-                            <ArrowDown className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Image Viewport */}
-                      <div className="w-full h-36 rounded-xl overflow-hidden bg-[#FAF8F3] border border-[#EAE8E1] relative">
+                    <div>
+                      {/* Photo Viewport */}
+                      <div className="relative aspect-[4/3] w-full overflow-hidden bg-stone-100">
                         <AssetImage
                           src={item.image_url}
                           alt={item.alt_text}
                           thumbnailWidth={400}
                           iconType="camera"
-                          label={item.caption || 'Event Moment'}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
                         />
+
+                        {/* Top Overlay Badges: Order & Status */}
+                        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+                          <span className="font-mono text-[10px] text-stone-700 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded border border-stone-200/80 shadow-2xs flex items-center gap-1 pointer-events-auto cursor-grab" title="Drag to reorder">
+                            <GripVertical className="w-2.5 h-2.5 text-stone-400" />
+                            <span>{trueIdx + 1}</span>
+                          </span>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleGalleryActive(item);
+                            }}
+                            className={`pointer-events-auto px-2 py-0.5 rounded-full text-[10px] font-medium border shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer ${
+                              item.is_active === 1
+                                ? 'bg-white/95 text-emerald-800 border-emerald-200'
+                                : 'bg-white/95 text-stone-500 border-stone-200'
+                            }`}
+                            title="Click to toggle publication status"
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${item.is_active === 1 ? 'bg-emerald-500' : 'bg-stone-300'}`} />
+                            <span>{item.is_active === 1 ? 'Published' : 'Hidden'}</span>
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Captions & Alt Text */}
-                      <div className="space-y-1">
-                        <p className="text-xs font-serif-koinonia font-bold text-[#18181B] line-clamp-1">
-                          {item.caption || 'Untitled Moment'}
+                      {/* Content Area */}
+                      <div className="p-3.5 space-y-1">
+                        <h4 className="text-sm font-medium text-stone-900 truncate">
+                          {item.caption ? item.caption : <span className="text-stone-400 italic font-normal">No caption</span>}
+                        </h4>
+                        <p className="text-xs text-stone-500 line-clamp-1">
+                          {item.alt_text}
                         </p>
-                        <div className="bg-[#FAF8F3] p-1.5 rounded-lg border border-[#EAE8E1]/80">
-                          <p className="text-[10px] text-[#71717A] line-clamp-2">
-                            {item.alt_text}
-                          </p>
-                        </div>
                       </div>
                     </div>
 
                     {/* Card Actions Footer */}
-                    <div className="pt-3 border-t border-[#EAE8E1] flex items-center justify-between mt-2.5">
+                    <div className="px-3.5 py-2.5 border-t border-[#EAE8E1]/80 flex items-center justify-between bg-stone-50/40 text-xs relative" data-card-menu>
                       <button
                         onClick={() => setEditingItem(item)}
-                        className="flex items-center space-x-1 text-xs text-zinc-600 hover:text-[#18181B] font-medium transition-colors cursor-pointer"
+                        className="text-stone-600 hover:text-stone-900 font-medium inline-flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        <Edit3 className="w-3 h-3 text-[#C59B27]" />
+                        <Pencil className="w-3 h-3 text-stone-400" />
                         <span>Edit</span>
                       </button>
 
-                      <button
-                        onClick={() => handleDeleteGalleryItem(item.id)}
-                        className="w-7 h-7 rounded-md hover:bg-rose-50 text-zinc-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
-                        title="Remove from gallery"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Three-Dot Overflow Menu */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuId(isMenuOpen ? null : item.id);
+                          }}
+                          className="w-7 h-7 rounded hover:bg-stone-200/60 text-stone-500 hover:text-stone-800 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Actions"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+
+                        {isMenuOpen && (
+                          <div className="absolute right-0 bottom-full mb-1 w-44 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1 z-30 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
+                            <button
+                              onClick={() => {
+                                setEditingItem(item);
+                                setOpenMenuId(null);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 cursor-pointer"
+                            >
+                              <Pencil className="w-3 h-3 text-stone-400" />
+                              <span>Edit details</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleToggleGalleryActive(item)}
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 cursor-pointer"
+                            >
+                              {item.is_active === 1 ? (
+                                <>
+                                  <EyeOff className="w-3 h-3 text-stone-400" />
+                                  <span>Hide from homepage</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3 h-3 text-stone-400" />
+                                  <span>Publish to homepage</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              onClick={() => handleMoveGalleryItem(trueIdx, 'up')}
+                              disabled={trueIdx === 0}
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              <ArrowUp className="w-3 h-3 text-stone-400" />
+                              <span>Move earlier</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleMoveGalleryItem(trueIdx, 'down')}
+                              disabled={trueIdx === galleryItems.length - 1}
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              <ArrowDown className="w-3 h-3 text-stone-400" />
+                              <span>Move later</span>
+                            </button>
+
+                            <div className="border-t border-[#EAE8E1] my-1" />
+
+                            <button
+                              onClick={() => handleDeleteGalleryItem(item.id)}
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-lg flex items-center gap-2 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-500" />
+                              <span>Delete photo</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            /* COMPACT TABLE / LIST VIEW (Optimized for 40+ items) */
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs">
+            /* COMPACT TABLE / LIST VIEW */
+            <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
               <div className="divide-y divide-[#EAE8E1]">
                 {paginatedGalleryItems.map((item) => {
                   const trueIdx = galleryItems.findIndex(i => i.id === item.id);
                   return (
                     <div
                       key={item.id}
-                      className="p-3 sm:p-4 flex items-center justify-between gap-3 hover:bg-[#FAF9F6] transition-colors"
+                      className="p-3 sm:p-4 flex items-center justify-between gap-4 hover:bg-stone-50/60 transition-colors"
                     >
                       {/* Left: Thumbnail & Info */}
-                      <div className="flex items-center space-x-3 min-w-0 flex-1">
-                        <span className="w-6 h-6 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] font-bold text-xs flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <span className="font-mono text-xs text-stone-400 w-5 shrink-0 text-center">
                           {trueIdx + 1}
                         </span>
 
-                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#FAF8F3] border border-[#EAE8E1] shrink-0">
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 border border-[#EAE8E1] shrink-0">
                           <AssetImage
                             src={item.image_url}
                             alt={item.alt_text}
@@ -968,52 +921,43 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <h4 className="text-xs font-serif-koinonia font-bold text-[#18181B] truncate">
-                            {item.caption || 'Untitled Moment'}
+                          <h4 className="text-xs font-medium text-stone-900 truncate">
+                            {item.caption ? item.caption : <span className="text-stone-400 italic font-normal">No caption</span>}
                           </h4>
-                          <p className="text-[11px] text-[#71717A] truncate mt-0.5">
+                          <p className="text-[11px] text-stone-500 truncate mt-0.5">
                             {item.alt_text}
                           </p>
                         </div>
                       </div>
 
-                      {/* Right: Actions & Status */}
-                      <div className="flex items-center space-x-2 shrink-0">
+                      {/* Right: Status & Actions */}
+                      <div className="flex items-center gap-2 shrink-0 text-xs">
                         <button
                           onClick={() => handleToggleGalleryActive(item)}
-                          className={`flex items-center space-x-1 text-[10px] font-bold px-2 py-1 rounded-full border transition-colors cursor-pointer ${
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
                             item.is_active === 1
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-stone-100 text-stone-600 border-stone-200'
                           }`}
                         >
-                          {item.is_active === 1 ? (
-                            <>
-                              <Eye className="w-3 h-3 text-emerald-600" />
-                              <span className="hidden sm:inline">Live</span>
-                            </>
-                          ) : (
-                            <>
-                              <EyeOff className="w-3 h-3 text-zinc-400" />
-                              <span className="hidden sm:inline">Draft</span>
-                            </>
-                          )}
+                          <span className={`w-1.5 h-1.5 rounded-full ${item.is_active === 1 ? 'bg-emerald-500' : 'bg-stone-400'}`} />
+                          <span className="hidden sm:inline">{item.is_active === 1 ? 'Published' : 'Hidden'}</span>
                         </button>
 
-                        <div className="flex items-center space-x-0.5">
+                        <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleMoveGalleryItem(trueIdx, 'up')}
                             disabled={trueIdx === 0}
-                            className="w-7 h-7 rounded-lg border border-[#EAE8E1] hover:bg-[#FAF8F3] text-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
-                            title="Move Earlier"
+                            className="w-7 h-7 rounded border border-[#EAE8E1] hover:bg-stone-50 text-stone-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
+                            title="Move earlier"
                           >
                             <ArrowUp className="w-3 h-3" />
                           </button>
                           <button
                             onClick={() => handleMoveGalleryItem(trueIdx, 'down')}
                             disabled={trueIdx === galleryItems.length - 1}
-                            className="w-7 h-7 rounded-lg border border-[#EAE8E1] hover:bg-[#FAF8F3] text-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
-                            title="Move Later"
+                            className="w-7 h-7 rounded border border-[#EAE8E1] hover:bg-stone-50 text-stone-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
+                            title="Move later"
                           >
                             <ArrowDown className="w-3 h-3" />
                           </button>
@@ -1021,15 +965,15 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                         <button
                           onClick={() => setEditingItem(item)}
-                          className="w-7 h-7 rounded-lg border border-[#EAE8E1] hover:bg-[#FAF8F3] text-zinc-600 flex items-center justify-center transition-colors cursor-pointer"
-                          title="Edit Details"
+                          className="w-7 h-7 rounded border border-[#EAE8E1] hover:bg-stone-50 text-stone-600 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Edit"
                         >
-                          <Edit3 className="w-3 h-3 text-[#C59B27]" />
+                          <Pencil className="w-3 h-3 text-stone-500" />
                         </button>
 
                         <button
                           onClick={() => handleDeleteGalleryItem(item.id)}
-                          className="w-7 h-7 rounded-lg hover:bg-rose-50 text-zinc-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
+                          className="w-7 h-7 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1042,54 +986,103 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
             </div>
           )}
 
-          {/* PAGINATION BAR */}
+          {/* PAGINATION */}
           {filteredGalleryItems.length > 0 && totalPages > 1 && (
-            <div className="flex items-center justify-between bg-white border border-[#EAE8E1] rounded-2xl p-3 shadow-2xs text-xs text-zinc-600">
+            <div className="flex items-center justify-between border-t border-[#EAE8E1]/80 pt-4 text-xs text-stone-500">
               <span>
                 Showing {((galleryPage - 1) * galleryPageSize) + 1} to {Math.min(galleryPage * galleryPageSize, filteredGalleryItems.length)} of {filteredGalleryItems.length} photos
               </span>
-              <div className="flex items-center space-x-1.5">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setGalleryPage(prev => Math.max(1, prev - 1))}
                   disabled={galleryPage === 1}
-                  className="px-2.5 py-1 rounded-lg border border-[#EAE8E1] hover:bg-[#FAF8F3] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center space-x-1"
+                  className="px-2.5 py-1 rounded border border-[#EAE8E1] hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Prev</span>
+                  <span>Prev</span>
                 </button>
-                <span className="font-bold px-2">
-                  Page {galleryPage} of {totalPages}
+                <span className="font-mono px-2 text-stone-700">
+                  {galleryPage} of {totalPages}
                 </span>
                 <button
                   onClick={() => setGalleryPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={galleryPage === totalPages}
-                  className="px-2.5 py-1 rounded-lg border border-[#EAE8E1] hover:bg-[#FAF8F3] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center space-x-1"
+                  className="px-2.5 py-1 rounded border border-[#EAE8E1] hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                 >
-                  <span className="hidden sm:inline">Next</span>
+                  <span>Next</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
           )}
 
-          {/* ADD PHOTOGRAPH MODAL */}
+          {/* ========================================================================= */}
+          {/* HOMEPAGE PREVIEW MODAL (ON-DEMAND) */}
+          {/* ========================================================================= */}
+          {showLivePreview && (
+            <div 
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setShowLivePreview(false);
+              }}
+            >
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl max-w-5xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                {/* Modal Header */}
+                <div className="px-6 py-4 border-b border-[#EAE8E1] flex items-center justify-between bg-white">
+                  <div>
+                    <h3 className="text-sm font-semibold text-stone-900 font-sans">
+                      Homepage preview
+                    </h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      See how your published photos appear on the landing page.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowLivePreview(false)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-stone-600 hover:text-stone-900 px-3 py-1.5 rounded-lg border border-[#EAE8E1] hover:bg-stone-50 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Close preview</span>
+                  </button>
+                </div>
+
+                {/* Modal Body: CurvedPhotoGallery with actual published items */}
+                <div className="p-4 sm:p-6 overflow-y-auto bg-[#FAF9F6]">
+                  <div className="rounded-xl overflow-hidden border border-[#EAE8E1] bg-white">
+                    <CurvedPhotoGallery
+                      customItems={galleryItems.filter(i => i.is_active === 1)}
+                      className="!py-10"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* ADD PHOTO MODAL */}
+          {/* ========================================================================= */}
           {isAddModalOpen && (
             <div 
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
               role="dialog"
               aria-modal="true"
             >
-              <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
                 <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-                  <div className="flex items-center space-x-2">
-                    <Camera className="w-4 h-4 text-[#C59B27]" />
-                    <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">
-                      Add Photo to Orbital Gallery
+                  <div>
+                    <h3 className="text-sm font-semibold text-stone-900 font-sans">
+                      Add photo
                     </h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      Upload a photo for the landing page gallery.
+                    </p>
                   </div>
                   <button
                     onClick={() => setIsAddModalOpen(false)}
-                    className="w-7 h-7 rounded-full hover:bg-zinc-200 text-zinc-500 flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600 flex items-center justify-center cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1098,8 +1091,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                 <form onSubmit={handleSaveNewGalleryItem} className="space-y-4">
                   {/* File Upload Zone */}
                   <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#6B7280] block mb-1.5">
-                      Photograph File (JPG, PNG, or WebP &bull; Max 10MB) *
+                    <label className="text-xs font-medium text-stone-700 block mb-1.5">
+                      Photo file (JPG, PNG, or WebP &bull; Max 10MB) *
                     </label>
                     <input
                       type="file"
@@ -1110,7 +1103,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     />
 
                     {modalPreview ? (
-                      <div className="relative h-48 rounded-2xl overflow-hidden border border-[#EAE8E1] bg-white group">
+                      <div className="relative h-44 rounded-xl overflow-hidden border border-[#EAE8E1] bg-stone-50 group">
                         <img 
                           src={modalPreview} 
                           alt="Upload Preview" 
@@ -1119,60 +1112,60 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-bold text-xs transition-opacity cursor-pointer"
+                          className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-medium text-xs transition-opacity cursor-pointer"
                         >
-                          Change Photo
+                          Change photo
                         </button>
                       </div>
                     ) : (
                       <div
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-40 rounded-2xl border-2 border-dashed border-[#E5D5AE] hover:border-[#C59B27] bg-white flex flex-col items-center justify-center p-4 text-center cursor-pointer transition-colors"
+                        className="h-36 rounded-xl border border-dashed border-stone-300 hover:border-[#C59B27] bg-stone-50/50 flex flex-col items-center justify-center p-4 text-center cursor-pointer transition-colors"
                       >
-                        <Upload className="w-6 h-6 text-[#C59B27] mb-2" />
-                        <span className="text-xs font-bold text-[#18181B]">Click to browse photo file</span>
-                        <span className="text-[10px] text-[#71717A] mt-1">High resolution landscape or portrait</span>
+                        <Upload className="w-5 h-5 text-stone-400 mb-1.5" />
+                        <span className="text-xs font-medium text-stone-800">Click to browse photo file</span>
+                        <span className="text-[11px] text-stone-400 mt-0.5">High-resolution portrait or landscape</span>
                       </div>
                     )}
                   </div>
 
                   {/* Alt Text (Required) */}
                   <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#6B7280] block mb-1">
-                      Accessible Alt Text *
+                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                      Accessible description *
                     </label>
                     <input
                       type="text"
                       value={modalAltText}
                       onChange={(e) => setModalAltText(e.target.value)}
                       placeholder="e.g. Children smiling and singing during morning praise session"
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
                       required
                     />
-                    <span className="text-[10px] text-[#71717A] mt-1 block">
-                      Used by screen readers for parents with visual impairments and indexed by search engines.
+                    <span className="text-[11px] text-stone-400 mt-1 block">
+                      Read by assistive tools for parents with visual impairments.
                     </span>
                   </div>
 
                   {/* Caption (Optional) */}
                   <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#6B7280] block mb-1">
-                      Editorial Caption (Optional)
+                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                      Caption (optional)
                     </label>
                     <input
                       type="text"
                       value={modalCaption}
                       onChange={(e) => setModalCaption(e.target.value)}
                       placeholder="e.g. Worship & Praise in Fellowship"
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
                     />
                   </div>
 
-                  {/* Active Switch */}
-                  <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-[#EAE8E1]">
+                  {/* Publish Switch */}
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-[#EAE8E1] bg-stone-50/40">
                     <div>
-                      <span className="text-xs font-bold text-[#18181B] block">Visible on Landing Page</span>
-                      <span className="text-[10px] text-[#71717A]">Publish immediately to the orbital belt</span>
+                      <span className="text-xs font-medium text-stone-900 block">Publish on homepage</span>
+                      <span className="text-[11px] text-stone-400">Make visible in the landing page gallery immediately</span>
                     </div>
                     <input
                       type="checkbox"
@@ -1183,33 +1176,33 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                   </div>
 
                   {modalError && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700">
                       {modalError}
                     </div>
                   )}
 
-                  <div className="pt-2 flex items-center justify-end space-x-3">
+                  <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#EAE8E1]">
                     <button
                       type="button"
                       onClick={() => setIsAddModalOpen(false)}
-                      className="text-xs font-semibold px-4 py-2.5 rounded-xl border border-[#EAE8E1] bg-white text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                      className="text-xs font-medium px-3.5 py-2 rounded-lg border border-[#EAE8E1] bg-white text-stone-600 hover:bg-stone-50 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isSavingItem}
-                      className="flex items-center space-x-1.5 text-xs font-bold bg-[#C59B27] hover:bg-[#B38A22] text-white px-5 py-2.5 rounded-xl shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#C59B27] hover:bg-[#B38A22] text-white px-4 py-2 rounded-lg shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       {isSavingItem ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Uploading & Processing...</span>
+                          <span>Uploading...</span>
                         </>
                       ) : (
                         <>
                           <Check className="w-3.5 h-3.5" />
-                          <span>Publish Photo</span>
+                          <span>Add photo</span>
                         </>
                       )}
                     </button>
@@ -1219,32 +1212,36 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
             </div>
           )}
 
-          {/* EDIT PHOTOGRAPH MODAL */}
+          {/* ========================================================================= */}
+          {/* EDIT PHOTO MODAL */}
+          {/* ========================================================================= */}
           {editingItem && (
             <div 
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
               role="dialog"
               aria-modal="true"
             >
-              <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
                 <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-                  <div className="flex items-center space-x-2">
-                    <Edit3 className="w-4 h-4 text-[#C59B27]" />
-                    <h3 className="text-sm font-serif-koinonia font-bold text-[#18181B]">
-                      Edit Photo Details
+                  <div>
+                    <h3 className="text-sm font-semibold text-stone-900 font-sans">
+                      Edit photo
                     </h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      Update caption, description, or publication status.
+                    </p>
                   </div>
                   <button
                     onClick={() => setEditingItem(null)}
-                    className="w-7 h-7 rounded-full hover:bg-zinc-200 text-zinc-500 flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600 flex items-center justify-center cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
                 <form onSubmit={handleSaveEditGalleryItem} className="space-y-4">
-                  {/* Photo Preview Thumbnail */}
-                  <div className="h-36 rounded-2xl overflow-hidden border border-[#EAE8E1] bg-[#FAF8F3]">
+                  {/* Photo Preview */}
+                  <div className="h-32 rounded-xl overflow-hidden border border-[#EAE8E1] bg-stone-100">
                     <AssetImage
                       src={editingItem.image_url}
                       alt={editingItem.alt_text}
@@ -1254,36 +1251,37 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                   {/* Alt Text */}
                   <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#6B7280] block mb-1">
-                      Accessible Alt Text *
+                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                      Accessible description *
                     </label>
                     <input
                       type="text"
                       value={editingItem.alt_text}
                       onChange={(e) => setEditingItem({ ...editingItem, alt_text: e.target.value })}
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
                       required
                     />
                   </div>
 
                   {/* Caption */}
                   <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#6B7280] block mb-1">
-                      Editorial Caption (Optional)
+                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                      Caption (optional)
                     </label>
                     <input
                       type="text"
                       value={editingItem.caption || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, caption: e.target.value })}
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      placeholder="e.g. Worship & Praise in Fellowship"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
                     />
                   </div>
 
-                  {/* Active Switch */}
-                  <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-[#EAE8E1]">
+                  {/* Publish Switch */}
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-[#EAE8E1] bg-stone-50/40">
                     <div>
-                      <span className="text-xs font-bold text-[#18181B] block">Visible on Landing Page</span>
-                      <span className="text-[10px] text-[#71717A]">Active in orbital circulation</span>
+                      <span className="text-xs font-medium text-stone-900 block">Publish on homepage</span>
+                      <span className="text-[11px] text-stone-400">Make visible in the landing page gallery</span>
                     </div>
                     <input
                       type="checkbox"
@@ -1293,28 +1291,28 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     />
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end space-x-3">
+                  <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#EAE8E1]">
                     <button
                       type="button"
                       onClick={() => setEditingItem(null)}
-                      className="text-xs font-semibold px-4 py-2.5 rounded-xl border border-[#EAE8E1] bg-white text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                      className="text-xs font-medium px-3.5 py-2 rounded-lg border border-[#EAE8E1] bg-white text-stone-600 hover:bg-stone-50 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isSavingItem}
-                      className="flex items-center space-x-1.5 text-xs font-bold bg-[#C59B27] hover:bg-[#B38A22] text-white px-5 py-2.5 rounded-xl shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#C59B27] hover:bg-[#B38A22] text-white px-4 py-2 rounded-lg shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       {isSavingItem ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Saving Changes...</span>
+                          <span>Saving...</span>
                         </>
                       ) : (
                         <>
                           <Check className="w-3.5 h-3.5" />
-                          <span>Save Changes</span>
+                          <span>Save changes</span>
                         </>
                       )}
                     </button>
@@ -1327,26 +1325,36 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       )}
 
       {/* ========================================================================= */}
-      {/* 2. CORE MEDIA SLOTS VIEW (Existing slot overrides) */}
+      {/* 2. FEATURED IMAGES VIEW (Fixed Hero & Page Slot Overrides) */}
       {/* ========================================================================= */}
       {mainTab === 'slots' && (
         <div className="space-y-6">
+          {/* Header */}
+          <div>
+            <h3 className="text-base font-semibold text-stone-900">
+              Featured Images
+            </h3>
+            <p className="text-xs text-stone-500 mt-0.5">
+              Manage fixed images and media across the hero and header sections.
+            </p>
+          </div>
+
           {/* Categories Toolbar */}
-          <div className="flex border-b border-[#EAE8E1] overflow-x-auto gap-1 scrollbar-none pb-0.5">
+          <div className="flex border-b border-[#EAE8E1] overflow-x-auto gap-2 pb-0.5">
             {[
-              { id: 'all', label: 'All Content Slots' },
-              { id: 'brand', label: 'Header & Brand' },
-              { id: 'hero', label: 'Hero Cover & Composition' },
-              { id: 'interactive', label: 'Demo Cards' },
-              { id: 'gallery', label: 'Past Moments Reel' },
+              { id: 'all', label: 'All images' },
+              { id: 'brand', label: 'Brand & header' },
+              { id: 'hero', label: 'Hero section' },
+              { id: 'interactive', label: 'Demonstrations' },
+              { id: 'gallery', label: 'Reels' },
             ].map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id as any)}
-                className={`py-2.5 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap focus:outline-none cursor-pointer ${
+                className={`py-2 px-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap focus:outline-none cursor-pointer ${
                   activeCategory === cat.id 
-                    ? 'border-[#C59B27] text-[#C59B27]' 
-                    : 'border-transparent text-zinc-500 hover:text-zinc-800'
+                    ? 'border-[#C59B27] text-stone-950 font-semibold' 
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
                 }`}
               >
                 {cat.label}
@@ -1354,140 +1362,120 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
             ))}
           </div>
 
-          {/* Grid of Slots */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Slots List */}
+          <div className="space-y-4">
             {filteredSlots.map((slot) => {
-              const customUrl = settings[slot.key];
+              const currentVal = settings[slot.key];
               const isUploading = uploadingSlot === slot.key;
               const isResetting = resettingSlot === slot.key;
-              const errorMsg = errorSlot[slot.key];
-              const successMsg = successSlot[slot.key];
+              const slotError = errorSlot[slot.key];
+              const slotSuccess = successSlot[slot.key];
 
               return (
                 <div 
                   key={slot.key}
-                  className="bg-white border border-[#EAE8E1] rounded-3xl p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-shadow relative overflow-hidden"
+                  className="bg-white border border-[#EAE8E1] rounded-xl p-5 shadow-2xs hover:border-[#C59B27]/40 transition-colors"
                 >
-                  {/* Slot Header */}
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2.5 bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl shrink-0">
-                          {getSlotIcon(slot.icon)}
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-[#18181B] font-serif-koinonia">
-                            {slot.label}
-                          </h3>
-                          <span className="text-[10px] font-mono text-zinc-400 block mt-0.5">
-                            {slot.key} &bull; {slot.type.toUpperCase()}
-                          </span>
-                        </div>
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                    {/* Left: Info & Specs */}
+                    <div className="space-y-1.5 max-w-xl">
+                      <div className="flex items-center gap-2">
+                        {getSlotIcon(slot.icon)}
+                        <h4 className="text-sm font-semibold text-stone-900">
+                          {slot.label}
+                        </h4>
+                        <span className="text-[10px] uppercase font-mono px-2 py-0.5 bg-stone-100 text-stone-600 rounded">
+                          {slot.type}
+                        </span>
                       </div>
-
-                      {customUrl ? (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold rounded-full shrink-0">
-                          <Check className="w-3 h-3 text-emerald-600" />
-                          <span>Custom Active</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-zinc-100 border border-zinc-200 text-zinc-500 text-[10px] font-medium rounded-full shrink-0">
-                          <span>Default Fallback</span>
-                        </span>
-                      )}
+                      <p className="text-xs text-stone-500">
+                        {slot.description}
+                      </p>
+                      <p className="text-[11px] font-mono text-stone-400">
+                        Recommended: {slot.dimensions}
+                      </p>
                     </div>
 
-                    <p className="text-xs text-[#71717A] leading-relaxed">
-                      {slot.description}
-                    </p>
-
-                    <div className="bg-[#FAF8F3] border border-[#EAE8E1] rounded-xl p-2.5 text-[10px] text-zinc-500 flex items-center space-x-2">
-                      <HelpCircle className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
-                      <span>{slot.dimensions}</span>
-                    </div>
-
-                    {/* Preview Frame */}
-                    <div className="relative w-full h-44 rounded-2xl overflow-hidden bg-[#FAF8F3] border border-[#EAE8E1] flex items-center justify-center">
-                      {isUploading && (
-                        <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex flex-col items-center justify-center z-20 space-y-2">
-                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
-                          <span className="text-[11px] font-semibold text-zinc-700">Uploading media...</span>
-                        </div>
-                      )}
-
-                      {slot.type === 'video' ? (
-                        customUrl ? (
-                          <video 
-                            src={customUrl} 
-                            controls 
-                            className="w-full h-full object-cover" 
+                    {/* Right: Preview Thumbnail & Upload Control */}
+                    <div className="flex items-center gap-4">
+                      {/* Image Thumbnail */}
+                      <div className="w-20 h-20 rounded-lg overflow-hidden border border-[#EAE8E1] bg-stone-50 shrink-0 relative">
+                        {slot.type === 'video' ? (
+                          currentVal ? (
+                            <video 
+                              src={currentVal} 
+                              className="w-full h-full object-cover" 
+                              muted 
+                              loop 
+                              autoPlay 
+                              playsInline 
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
+                              <Video className="w-5 h-5 mb-0.5" />
+                              <span className="text-[9px]">Default video</span>
+                            </div>
+                          )
+                        ) : (
+                          <AssetImage
+                            src={currentVal || undefined}
+                            label={slot.label}
+                            alt={slot.label}
+                            className="w-full h-full object-cover"
+                            thumbnailWidth={160}
                           />
-                        ) : (
-                          <div className="flex flex-col items-center space-y-2 text-zinc-400">
-                            <FileVideo className="w-8 h-8 text-[#C59B27]/50" />
-                            <span className="text-[10px]">Default background loop active</span>
-                          </div>
-                        )
-                      ) : (
-                        <AssetImage
-                          src={customUrl}
-                          alt={slot.label}
-                          iconType={slot.icon as any}
-                          label={slot.label}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </div>
-
-                    {/* Error / Success Feedback */}
-                    {errorMsg && (
-                      <div className="flex items-center space-x-2 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        <span>{errorMsg}</span>
-                      </div>
-                    )}
-                    {successMsg && (
-                      <div className="flex items-center space-x-2 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs">
-                        <Check className="w-4 h-4 shrink-0 text-emerald-600" />
-                        <span>{successMsg}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions Footer */}
-                  <div className="pt-4 border-t border-[#EAE8E1] flex items-center space-x-2 mt-4">
-                    <label className="flex-1">
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        accept={slot.type === 'video' ? 'video/mp4,video/webm' : 'image/jpeg,image/jpg,image/png,image/webp'}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleFileUpload(slot.key, file, slot.purpose);
-                        }}
-                        disabled={isUploading || isResetting}
-                      />
-                      <div className="flex items-center justify-center space-x-1.5 bg-[#FAF6EB] hover:bg-[#FAF2DF] active:bg-[#F3E6C7] text-[#9A7326] border border-[#E5D5AE] text-xs font-bold px-4 py-3 rounded-xl shadow-2xs transition-colors cursor-pointer select-none">
-                        <Upload className="w-3.5 h-3.5 shrink-0" />
-                        <span>{customUrl ? 'Replace Media' : 'Upload Media'}</span>
-                      </div>
-                    </label>
-
-                    {customUrl && (
-                      <button
-                        onClick={() => handleResetSlot(slot.key)}
-                        disabled={isUploading || isResetting}
-                        className="bg-white border border-[#EAE8E1] hover:bg-rose-50 text-zinc-400 hover:text-rose-600 active:bg-rose-100 p-3 rounded-xl shadow-2xs transition-all cursor-pointer focus:outline-none"
-                        title="Restore Default Fallback"
-                      >
-                        {isResetting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
                         )}
-                      </button>
-                    )}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="space-y-2">
+                        <label className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-[#EAE8E1] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs">
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
+                              <span>Uploading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5 text-stone-400" />
+                              <span>{currentVal ? 'Replace image' : 'Upload image'}</span>
+                            </>
+                          )}
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            accept={slot.type === 'video' ? 'video/mp4,video/webm,video/quicktime' : 'image/jpeg,image/png,image/webp'}
+                            disabled={isUploading || isResetting}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleFileUpload(slot.key, file, slot.purpose);
+                            }}
+                          />
+                        </label>
+
+                        {currentVal && (
+                          <button
+                            onClick={() => handleResetSlot(slot.key)}
+                            disabled={isResetting || isUploading}
+                            className="block text-[11px] text-stone-500 hover:text-stone-900 transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            Restore default
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+
+                  {slotError && (
+                    <p className="text-xs text-rose-600 mt-3 pt-3 border-t border-rose-100">
+                      {slotError}
+                    </p>
+                  )}
+                  {slotSuccess && (
+                    <p className="text-xs text-emerald-600 mt-3 pt-3 border-t border-emerald-100">
+                      {slotSuccess}
+                    </p>
+                  )}
                 </div>
               );
             })}
@@ -1497,3 +1485,5 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     </div>
   );
 };
+
+export default AdminLandingView;

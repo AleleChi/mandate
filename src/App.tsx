@@ -49,6 +49,7 @@ const AdminAcceptInviteView = React.lazy(() => import('./views/admin/AdminAccept
 const TeamAlertsView = React.lazy(() => import('./views/admin/TeamAlertsView').then(m => ({ default: m.TeamAlertsView })));
 import { Seo } from './components/common/Seo';
 import { LegalPagesView } from './views/LegalPagesView';
+import { PrivacyPolicyView } from './views/PrivacyPolicyView';
 
 // Training & Simulation Mode Views
 const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
@@ -72,6 +73,17 @@ const getSeoPropsForRoute = (route: string) => {
   const defaults = {
     robots: 'noindex, nofollow',
   };
+
+  if (cleanRoute === '/privacy') {
+    return {
+      title: 'Privacy Notice | Koinonia Children and Teens',
+      description: "Privacy Notice for The Koinonia General Assembly Children & Teens services and events.",
+      canonical: 'https://koinonia12.netlify.app/#/privacy',
+      robots: 'index, follow',
+      ogTitle: 'Privacy Notice | Koinonia Children and Teens',
+      ogDescription: "How we access, collect, store, and process personal information for Children's Session.",
+    };
+  }
 
   // Auth & Private Route Titles
   if (cleanRoute === '/parent/sign-in') {
@@ -978,7 +990,7 @@ export default function App() {
     const cleanRoute = currentRoute.split('?')[0];
 
     if (cleanRoute === '/privacy') {
-      return <LegalPagesView page="privacy" onNavigate={navigate} />;
+      return <PrivacyPolicyView onNavigate={navigate} />;
     }
     if (cleanRoute === '/terms') {
       return <LegalPagesView page="terms" onNavigate={navigate} />;
@@ -1538,7 +1550,7 @@ export default function App() {
         {renderCurrentRoute()}
       </Suspense>
 
-      {showPreloader && currentRoute !== '/' && (
+      {showPreloader && currentRoute !== '/' && !['/privacy', '/terms', '/child-safety', '/contact'].includes(currentRoute.split('?')[0]) && (
         <AppPreloader 
           isAppReady={!isCheckingAuth} 
           onComplete={() => setShowPreloader(false)} 

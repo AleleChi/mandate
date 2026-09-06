@@ -858,7 +858,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
           { id: 'team-access', label: 'Event team access', icon: ShieldCheck },
           { id: 'message-channels', label: 'Message channels', icon: MessageSquare },
           { id: 'alert-delivery', label: 'Alert delivery & device preferences', icon: ShieldAlert },
-          { id: 'landing-page', label: 'Landing page manager', icon: SettingsIcon },
+          { id: 'landing-page', label: 'Landing page', icon: SettingsIcon },
           { id: 'app-media', label: 'App media', icon: Image },
           { id: 'device-security', label: 'Device security', icon: Lock },
           { id: 'footer-settings', label: 'Footer & copyright settings', icon: FileText }
