@@ -592,7 +592,7 @@ export const CurvedPhotoGallery: React.FC<CurvedPhotoGalleryProps> = ({
                 >
                   <BrandLogo context="compact" className="scale-85 sm:scale-95" />
                   <span className="text-[7px] sm:text-[8px] font-sans text-[#9A7326] font-bold tracking-widest uppercase mt-0.5 opacity-90">
-                    GA 2026
+                    TGA 2026
                   </span>
                 </div>
               </div>

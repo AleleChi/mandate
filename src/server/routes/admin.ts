@@ -245,14 +245,14 @@ router.get('/verify-invite', async (req, res) => {
 
     // Fetch recipient name from profile
     let recipientName = '';
-    const pProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM parent_profiles WHERE user_id = ?', [user.id]);
-    if (pProfile) {
-      recipientName = pProfile.preferred_name || pProfile.first_name || pProfile.full_name || '';
+    const pProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (pProfile && pProfile.full_name) {
+      recipientName = pProfile.full_name;
     }
     if (!recipientName) {
-      const vProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM volunteer_profiles WHERE user_id = ?', [user.id]);
-      if (vProfile) {
-        recipientName = vProfile.preferred_name || vProfile.first_name || vProfile.full_name || '';
+      const vProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [user.id]);
+      if (vProfile && vProfile.full_name) {
+        recipientName = vProfile.full_name;
       }
     }
 
@@ -512,6 +512,15 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ success: false, error: 'Email and role are required.' });
     }
 
+    // Role mapping & authorization rule: only super_admin can invite another super_admin
+    if (role === 'super_admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'SUPER_ADMIN_REQUIRED',
+        error: 'Only Super Administrators can invite another Super Administrator.'
+      });
+    }
+
     const cleanEmail = String(email).trim().toLowerCase();
     const nameForRecipient = recipientName || fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || 'Invited User';
 
@@ -521,21 +530,24 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
     const nowStr = new Date().toISOString();
 
     if (existingUser) {
-      if (existingUser.role === 'admin' || existingUser.role === 'super_admin') {
+      if (existingUser.role === 'admin' || existingUser.role === 'super_admin' || existingUser.role === 'team') {
         if (existingUser.password_hash !== 'invited_pending') {
           return res.status(400).json({
             success: false,
             code: 'ALREADY_ADMIN',
-            message: 'Account with this email already has active admin access.'
+            error: 'This email already has active admin access.'
           });
         }
-        // If user exists and is pending, reuse user ID
+        // If user exists and is pending, reuse user ID and update role if changed
         invitedUserId = existingUser.id;
+        if (existingUser.role !== role) {
+          await execute('UPDATE users SET role = ?, updated_at = ? WHERE id = ?', [role, nowStr, invitedUserId]);
+        }
       } else {
         return res.status(400).json({
           success: false,
           code: 'ACCOUNT_EXISTS_CONFIRM_UPGRADE_REQUIRED',
-          message: 'Account exists as a parent/volunteer. Please upgrade their role via the Users panel instead.'
+          error: 'This account already exists as a parent or volunteer. You can update their role from Event Team Access.'
         });
       }
     } else {
@@ -546,12 +558,12 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
         VALUES (?, ?, 'invited_pending', ?, 0, ?, ?)
       `, [invitedUserId, cleanEmail, role, nowStr, nowStr]);
 
-      // Create profile record
+      // Create profile record with schema-valid columns
       const profileId = crypto.randomUUID();
       await execute(`
-        INSERT INTO parent_profiles (id, user_id, full_name, preferred_name, first_name, last_name, email, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [profileId, invitedUserId, nameForRecipient, preferredName || null, firstName || null, lastName || null, cleanEmail, nowStr, nowStr]);
+        INSERT INTO parent_profiles (id, user_id, full_name, email, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [profileId, invitedUserId, nameForRecipient, cleanEmail, nowStr, nowStr]);
     }
 
     // Revoke any previous pending invitation tokens for this user
@@ -639,20 +651,14 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
 
     // Fetch profile for recipient name
     let recipientName = '';
-    let preferredName = '';
-    let firstName = '';
-    const pProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM parent_profiles WHERE user_id = ?', [targetUser.id]);
-    if (pProfile) {
-      recipientName = pProfile.full_name || '';
-      preferredName = pProfile.preferred_name || '';
-      firstName = pProfile.first_name || '';
+    const pProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [targetUser.id]);
+    if (pProfile && pProfile.full_name) {
+      recipientName = pProfile.full_name;
     }
     if (!recipientName) {
-      const vProfile = await queryOne('SELECT full_name, preferred_name, first_name FROM volunteer_profiles WHERE user_id = ?', [targetUser.id]);
-      if (vProfile) {
-        recipientName = vProfile.full_name || '';
-        preferredName = vProfile.preferred_name || '';
-        firstName = vProfile.first_name || '';
+      const vProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [targetUser.id]);
+      if (vProfile && vProfile.full_name) {
+        recipientName = vProfile.full_name;
       }
     }
 
@@ -673,11 +679,11 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
     await sendInvitationEmail({
       recipientEmail: cleanEmail,
       recipientName: recipientName || undefined,
-      preferredName: preferredName || undefined,
-      firstName: firstName || undefined,
       role: targetUser.role,
       inviteLink,
       expiresAt
+    }).catch(err => {
+      console.error('Error sending resend invitation email:', err);
     });
 
     // Audit log
@@ -5020,6 +5026,87 @@ router.post('/team/edit-status', async (req: AuthenticatedRequest, res: Response
   } catch (err: any) {
     console.error('Error updating team member status:', err);
     return res.status(500).json({ success: false, error: 'Failed to update team member status.' });
+  }
+});
+
+// POST remove team member access (Super Admin only, cannot remove self, cannot remove last super admin)
+router.post('/team/remove-access', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Super Administrators can remove administrative access.'
+      });
+    }
+
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID is required.' });
+    }
+
+    if (req.user?.id === userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'You cannot remove your own administrative access.'
+      });
+    }
+
+    const targetUser = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'Team member not found.' });
+    }
+
+    // Rule 2: Cannot remove the last active Super Admin
+    if (targetUser.role === 'super_admin') {
+      const activeSuperAdmins = await queryOne(
+        "SELECT COUNT(*) as count FROM users WHERE role = 'super_admin' AND (status = 'active' OR status IS NULL) AND id != ?",
+        [userId]
+      );
+      if (!activeSuperAdmins || Number(activeSuperAdmins.count) === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot remove the last active Super Administrator.'
+        });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Safely remove administrative access by demoting role to 'parent' and status to 'revoked'
+    // This immediately removes the user from the admin directory, denies admin access,
+    // while preserving all existing parent profiles, children, and historical audit records.
+    await execute(
+      "UPDATE users SET role = 'parent', status = 'revoked', updated_at = ? WHERE id = ?",
+      [now, userId]
+    );
+
+    // Invalidate any pending invitation or active tokens
+    await execute(
+      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ?, used_at = 'removed' WHERE user_id = ? AND used_at IS NULL",
+      [now, req.user?.id || null, userId]
+    );
+
+    // Write audit log
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+        VALUES (?, ?, 'REMOVE_ADMIN_ACCESS', 'user', ?, ?, ?)
+      `, [
+        crypto.randomUUID(),
+        req.user?.id || 'system',
+        userId,
+        JSON.stringify({ email: targetUser.email, previousRole: targetUser.role }),
+        now
+      ]);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: 'Access removed successfully.'
+    });
+  } catch (err: any) {
+    console.error('Error removing team member access:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove team member access.' });
   }
 });
 

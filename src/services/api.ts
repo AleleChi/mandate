@@ -1040,6 +1040,12 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async removeTeamMemberAccess(payload: { userId: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/team/remove-access', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async getVolunteers(params?: { q?: string; status?: string; team?: string; page?: number; limit?: number }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);

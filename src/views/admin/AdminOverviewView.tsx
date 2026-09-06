@@ -2936,6 +2936,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminSettingsView 
               onBackToOverview={() => handleTabChange('overview')}
               isSuperAdmin={isSuperAdmin}
+              adminUser={adminUser}
               onTriggerTestAlert={(testAlert) => {
                 setActiveUrgentAlert(testAlert);
               }}

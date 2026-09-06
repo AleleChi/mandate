@@ -26,6 +26,7 @@ import {
 import { api, AdminGalleryItem } from '../../services/api';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AssetImage } from '../../components/common/AssetImage';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 import { CurvedPhotoGallery } from '../../components/common/CurvedPhotoGallery';
 
 interface AdminLandingViewProps {
@@ -37,6 +38,7 @@ interface MediaSlot {
   label: string;
   description: string;
   dimensions: string;
+  previewClass: string;
   type: 'image' | 'video';
   purpose: 'landing_image' | 'event_video';
   icon: 'camera' | 'video' | 'default';
@@ -48,7 +50,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'site_logo',
     label: 'Brand Header Logo',
     description: 'Header logo displayed on the top-left of all public pages.',
-    dimensions: '128x128px (PNG or WebP with transparent background recommended)',
+    dimensions: '128 × 128 px · 1:1 square (PNG or WebP)',
+    previewClass: 'w-20 aspect-square',
     type: 'image',
     purpose: 'landing_image',
     icon: 'default',
@@ -56,9 +59,10 @@ const MEDIA_SLOTS: MediaSlot[] = [
   },
   {
     key: 'heroMain',
-    label: 'Main Hero Foreground Image',
+    label: 'Main Hero Foreground',
     description: 'The large foreground curved image in the editorial hero section.',
-    dimensions: '800x1000px (Aspect ratio 4:5, high quality portrait image)',
+    dimensions: '800 × 1000 px · 4:5 portrait',
+    previewClass: 'w-20 aspect-[4/5]',
     type: 'image',
     purpose: 'landing_image',
     icon: 'camera',
@@ -68,7 +72,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'heroUpper',
     label: 'Hero Back Background Image',
     description: 'The background stacked card image positioned behind the main hero image.',
-    dimensions: '600x800px (Aspect ratio 3:4, portrait image)',
+    dimensions: '600 × 800 px · 3:4 portrait',
+    previewClass: 'w-20 aspect-[3/4]',
     type: 'image',
     purpose: 'landing_image',
     icon: 'camera',
@@ -78,7 +83,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'heroRight',
     label: 'Hero Front Right Image',
     description: 'The smaller foreground stacked card image floating on the right side.',
-    dimensions: '500x500px (Aspect ratio 1:1, square portrait image)',
+    dimensions: '500 × 500 px · 1:1 square',
+    previewClass: 'w-20 aspect-square',
     type: 'image',
     purpose: 'landing_image',
     icon: 'camera',
@@ -88,7 +94,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'heroVideo',
     label: 'Hero Ambient Background Video',
     description: 'Muted atmospheric video looping softly behind the hero text content.',
-    dimensions: '1080p MP4 or WebM format, optimized compression (<20MB recommended)',
+    dimensions: '1080p MP4 or WebM · 16:9 widescreen (<20 MB)',
+    previewClass: 'w-28 aspect-video',
     type: 'video',
     purpose: 'event_video',
     icon: 'video',
@@ -98,7 +105,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'interactiveSample',
     label: 'Interactive Feature Preview Cover',
     description: 'Preview cover image for interactive attendance demonstrations.',
-    dimensions: '640x360px (Aspect ratio 16:9)',
+    dimensions: '640 × 360 px · 16:9 landscape',
+    previewClass: 'w-28 aspect-video',
     type: 'image',
     purpose: 'landing_image',
     icon: 'camera',
@@ -108,7 +116,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'gallerySample',
     label: 'Fellowship Reel Fallback Cover',
     description: 'Fallback cover image for the fellowship gallery reel.',
-    dimensions: '600x800px (Aspect ratio 3:4)',
+    dimensions: '600 × 800 px · 3:4 portrait',
+    previewClass: 'w-20 aspect-[3/4]',
     type: 'image',
     purpose: 'landing_image',
     icon: 'camera',
@@ -118,7 +127,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
     key: 'pastMomentsVideo',
     label: 'Highlights Video Preview',
     description: 'Short video preview for past general assembly highlights.',
-    dimensions: '720p or 1080p MP4 format',
+    dimensions: '1080p or 720p MP4 · 16:9 widescreen',
+    previewClass: 'w-28 aspect-video',
     type: 'video',
     purpose: 'event_video',
     icon: 'video',
@@ -538,31 +548,31 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       </div>
 
       {/* Understated Main Tabs */}
-      <div className="flex border-b border-[#EAE8E1] gap-6 text-xs">
+      <div className="flex border-b border-[#EAE8E1] gap-6 text-xs font-sans">
         <button
           onClick={() => setMainTab('gallery')}
-          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 ${
+          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 font-sans ${
             mainTab === 'gallery'
               ? 'border-[#C59B27] text-stone-950 font-semibold'
               : 'border-transparent text-stone-500 hover:text-stone-800'
           }`}
         >
           <span>Photo Gallery</span>
-          <span className="text-[11px] font-mono text-stone-400">
+          <span className="text-[11px] font-sans font-medium text-stone-400">
             {galleryItems.length}
           </span>
         </button>
 
         <button
           onClick={() => setMainTab('slots')}
-          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 ${
+          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 font-sans ${
             mainTab === 'slots'
               ? 'border-[#C59B27] text-stone-950 font-semibold'
               : 'border-transparent text-stone-500 hover:text-stone-800'
           }`}
         >
           <span>Featured Images</span>
-          <span className="text-[11px] font-mono text-stone-400">
+          <span className="text-[11px] font-sans font-medium text-stone-400">
             {MEDIA_SLOTS.length}
           </span>
         </button>
@@ -781,14 +791,13 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                               e.stopPropagation();
                               handleToggleGalleryActive(item);
                             }}
-                            className={`pointer-events-auto px-2 py-0.5 rounded-full text-[10px] font-medium border shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            className={`pointer-events-auto px-2 py-0.5 rounded text-[10px] font-medium border shadow-2xs transition-colors cursor-pointer ${
                               item.is_active === 1
-                                ? 'bg-white/95 text-emerald-800 border-emerald-200'
-                                : 'bg-white/95 text-stone-500 border-stone-200'
+                                ? 'bg-emerald-50/80 text-emerald-800 border-emerald-200/80'
+                                : 'bg-stone-50 text-stone-600 border-stone-200'
                             }`}
                             title="Click to toggle publication status"
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${item.is_active === 1 ? 'bg-emerald-500' : 'bg-stone-300'}`} />
                             <span>{item.is_active === 1 ? 'Published' : 'Hidden'}</span>
                           </button>
                         </div>
@@ -934,13 +943,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       <div className="flex items-center gap-2 shrink-0 text-xs">
                         <button
                           onClick={() => handleToggleGalleryActive(item)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
+                          className={`px-2.5 py-0.5 rounded border text-[11px] font-medium transition-colors cursor-pointer ${
                             item.is_active === 1
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                               : 'bg-stone-100 text-stone-600 border-stone-200'
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${item.is_active === 1 ? 'bg-emerald-500' : 'bg-stone-400'}`} />
                           <span className="hidden sm:inline">{item.is_active === 1 ? 'Published' : 'Hidden'}</span>
                         </button>
 
@@ -1328,30 +1336,30 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       {/* 2. FEATURED IMAGES VIEW (Fixed Hero & Page Slot Overrides) */}
       {/* ========================================================================= */}
       {mainTab === 'slots' && (
-        <div className="space-y-6">
+        <div className="space-y-6 font-sans">
           {/* Header */}
           <div>
-            <h3 className="text-base font-semibold text-stone-900">
+            <h3 className="text-lg font-semibold text-stone-900 font-sans tracking-tight">
               Featured Images
             </h3>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Manage fixed images and media across the hero and header sections.
+            <p className="text-sm text-stone-500 mt-1 font-sans">
+              Manage the fixed images used across the landing page.
             </p>
           </div>
 
           {/* Categories Toolbar */}
-          <div className="flex border-b border-[#EAE8E1] overflow-x-auto gap-2 pb-0.5">
+          <div className="flex border-b border-[#EAE8E1] overflow-x-auto gap-1 sm:gap-2 pb-px">
             {[
               { id: 'all', label: 'All images' },
               { id: 'brand', label: 'Brand & header' },
-              { id: 'hero', label: 'Hero section' },
+              { id: 'hero', label: 'Hero' },
               { id: 'interactive', label: 'Demonstrations' },
               { id: 'gallery', label: 'Reels' },
             ].map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id as any)}
-                className={`py-2 px-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap focus:outline-none cursor-pointer ${
+                className={`py-2 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap focus:outline-none cursor-pointer font-sans ${
                   activeCategory === cat.id 
                     ? 'border-[#C59B27] text-stone-950 font-semibold' 
                     : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1363,7 +1371,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           </div>
 
           {/* Slots List */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             {filteredSlots.map((slot) => {
               const currentVal = settings[slot.key];
               const isUploading = uploadingSlot === slot.key;
@@ -1374,62 +1382,66 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               return (
                 <div 
                   key={slot.key}
-                  className="bg-white border border-[#EAE8E1] rounded-xl p-5 shadow-2xs hover:border-[#C59B27]/40 transition-colors"
+                  className="bg-white border border-[#EAE8E1] rounded-xl p-4 sm:p-5 transition-colors"
                 >
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                    {/* Left: Info & Specs */}
-                    <div className="space-y-1.5 max-w-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6">
+                    {/* Left Zone: Info & Specs */}
+                    <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2">
                         {getSlotIcon(slot.icon)}
-                        <h4 className="text-sm font-semibold text-stone-900">
+                        <h4 className="text-sm sm:text-base font-semibold text-stone-900 font-sans tracking-tight">
                           {slot.label}
                         </h4>
-                        <span className="text-[10px] uppercase font-mono px-2 py-0.5 bg-stone-100 text-stone-600 rounded">
-                          {slot.type}
-                        </span>
                       </div>
-                      <p className="text-xs text-stone-500">
+                      <p className="text-xs sm:text-sm text-stone-500 font-sans leading-relaxed">
                         {slot.description}
                       </p>
-                      <p className="text-[11px] font-mono text-stone-400">
+                      <p className="text-xs text-stone-400 font-sans pt-0.5">
                         Recommended: {slot.dimensions}
                       </p>
                     </div>
 
-                    {/* Right: Preview Thumbnail & Upload Control */}
-                    <div className="flex items-center gap-4">
-                      {/* Image Thumbnail */}
-                      <div className="w-20 h-20 rounded-lg overflow-hidden border border-[#EAE8E1] bg-stone-50 shrink-0 relative">
-                        {slot.type === 'video' ? (
-                          currentVal ? (
-                            <video 
-                              src={currentVal} 
-                              className="w-full h-full object-cover" 
-                              muted 
-                              loop 
-                              autoPlay 
-                              playsInline 
-                            />
+                    {/* Right Zone: Preview Thumbnail & Upload Control */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-5 shrink-0">
+                      {/* Thumbnail Preview frame with slot aspect ratio */}
+                      <div className="flex items-center justify-center w-[120px] shrink-0 self-start sm:self-center">
+                        <div className={`${slot.previewClass} rounded-lg overflow-hidden border border-[#EAE8E1] bg-stone-50 relative shrink-0 flex items-center justify-center`}>
+                          {slot.type === 'video' ? (
+                            currentVal ? (
+                              <video 
+                                src={currentVal} 
+                                className="w-full h-full object-cover object-center" 
+                                muted 
+                                loop 
+                                autoPlay 
+                                playsInline 
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
+                                <Video className="w-4 h-4 text-stone-400" />
+                                <span className="text-[11px] font-sans font-medium text-stone-400">No video</span>
+                              </div>
+                            )
                           ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
-                              <Video className="w-5 h-5 mb-0.5" />
-                              <span className="text-[9px]">Default video</span>
-                            </div>
-                          )
-                        ) : (
-                          <AssetImage
-                            src={currentVal || undefined}
-                            label={slot.label}
-                            alt={slot.label}
-                            className="w-full h-full object-cover"
-                            thumbnailWidth={160}
-                          />
-                        )}
+                            currentVal ? (
+                              <img
+                                src={resolveMediaUrl(currentVal)}
+                                alt={slot.label}
+                                className="w-full h-full object-cover object-center"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
+                                <ImageIcon className="w-4 h-4 text-stone-400" />
+                                <span className="text-[11px] font-sans font-medium text-stone-400">No image</span>
+                              </div>
+                            )
+                          )}
+                        </div>
                       </div>
 
                       {/* Action buttons */}
-                      <div className="space-y-2">
-                        <label className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-[#EAE8E1] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs">
+                      <div className="w-full sm:w-[150px] shrink-0 flex flex-col items-stretch sm:items-end">
+                        <label className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-[#EAE8E1] px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs font-sans w-full text-center select-none">
                           {isUploading ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
@@ -1438,7 +1450,11 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           ) : (
                             <>
                               <Upload className="w-3.5 h-3.5 text-stone-400" />
-                              <span>{currentVal ? 'Replace image' : 'Upload image'}</span>
+                              <span>
+                                {currentVal 
+                                  ? (slot.type === 'video' ? 'Replace video' : 'Replace image') 
+                                  : (slot.type === 'video' ? 'Upload video' : 'Upload image')}
+                              </span>
                             </>
                           )}
                           <input 
@@ -1457,7 +1473,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           <button
                             onClick={() => handleResetSlot(slot.key)}
                             disabled={isResetting || isUploading}
-                            className="block text-[11px] text-stone-500 hover:text-stone-900 transition-colors cursor-pointer disabled:opacity-40"
+                            className="text-[11px] font-sans text-stone-400 hover:text-stone-700 transition-colors text-center w-full mt-1.5 cursor-pointer disabled:opacity-40"
                           >
                             Restore default
                           </button>
@@ -1467,12 +1483,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                   </div>
 
                   {slotError && (
-                    <p className="text-xs text-rose-600 mt-3 pt-3 border-t border-rose-100">
+                    <p className="text-xs font-sans text-rose-600 mt-3 pt-3 border-t border-rose-100">
                       {slotError}
                     </p>
                   )}
                   {slotSuccess && (
-                    <p className="text-xs text-emerald-600 mt-3 pt-3 border-t border-emerald-100">
+                    <p className="text-xs font-sans text-emerald-600 mt-3 pt-3 border-t border-emerald-100">
                       {slotSuccess}
                     </p>
                   )}
