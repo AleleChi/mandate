@@ -68,6 +68,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
 
   // Modals for bulk actions
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [bulkLoadingAction, setBulkLoadingAction] = useState<string | null>(null);
   const [modalBulkSelectOpen, setModalBulkSelectOpen] = useState(false);
   const [modalBulkWaitlistOpen, setModalBulkWaitlistOpen] = useState(false);
   const [modalBulkNotSelectedOpen, setModalBulkNotSelectedOpen] = useState(false);
@@ -78,6 +79,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   const [revokeReason, setRevokeReason] = useState('');
   const [modalBulkResetOpen, setModalBulkResetOpen] = useState(false);
   const [resetMode, setResetMode] = useState<'review' | 'attendance'>('review');
+  const [modalBulkResetAndRemoveOpen, setModalBulkResetAndRemoveOpen] = useState(false);
+  const [resetAndRemoveReason, setResetAndRemoveReason] = useState('');
   const [modalBulkRemoveOpen, setModalBulkRemoveOpen] = useState(false);
   const [removeReason, setRemoveReason] = useState('');
   const [modalBulkRestoreOpen, setModalBulkRestoreOpen] = useState(false);
@@ -205,6 +208,13 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       !a.isDeleted &&
       a.status !== 'removed' &&
       (isAttending(a) || a.checkedInAt != null || a.pickedUpAt != null || a.hasPass || a.status !== 'under_review')
+    );
+  }, [selectedApps]);
+
+  const eligibleResetAndRemoveApps = useMemo(() => {
+    return selectedApps.filter(a => 
+      !a.isDeleted &&
+      a.status !== 'removed'
     );
   }, [selectedApps]);
 
@@ -364,6 +374,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
     const ids = eligibleResetApps.map(a => a.id);
     if (ids.length === 0) return;
     setBulkActionLoading(true);
+    setBulkLoadingAction('reset');
     try {
       const res = await api.admin.bulkResetEventProgress({
         applicationIds: ids,
@@ -380,6 +391,51 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       showError('Reset Failed', parsed.message || "We couldn't reset event progress. Nothing was changed.");
     } finally {
       setBulkActionLoading(false);
+      setBulkLoadingAction(null);
+    }
+  };
+
+  const handleConfirmBulkResetAndRemove = async () => {
+    const ids = eligibleResetAndRemoveApps.map(a => a.id);
+    if (ids.length === 0) return;
+    setBulkActionLoading(true);
+    setBulkLoadingAction('reset_and_remove');
+    try {
+      const res = await api.admin.bulkResetAndRemove({
+        applicationIds: ids,
+        reason: resetAndRemoveReason.trim() || 'Reset and removed by Super Admin'
+      });
+      if (res.success) {
+        // 1. Remove processed rows from current tab immediately
+        setApplications(prev => prev.filter(a => !ids.includes(a.id)));
+        // 2. Update summary counts
+        const count = res.processedCount || ids.length;
+        setStats(prev => ({
+          ...prev,
+          removed: prev.removed + count,
+          sentReview: activeTab === 'under_review' ? Math.max(0, prev.sentReview - count) : prev.sentReview,
+          selected: activeTab === 'selected' ? Math.max(0, prev.selected - count) : prev.selected,
+          waitingList: activeTab === 'waiting_list' ? Math.max(0, prev.waitingList - count) : prev.waitingList,
+          notSelected: activeTab === 'not_selected' ? Math.max(0, prev.notSelected - count) : prev.notSelected
+        }));
+        // 3. Clear checkbox selection
+        setSelectedIds([]);
+        setModalBulkResetAndRemoveOpen(false);
+        setResetAndRemoveReason('');
+        // 4. Show restrained success toast
+        showSuccess(
+          `${ids.length} ${ids.length === 1 ? 'registration' : 'registrations'} moved to Removed.`,
+          'Their current event progress was cleared.'
+        );
+        // 5. Refresh application data
+        await fetchApplications(currentPage, true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Operation Failed', parsed.message || "We couldn't reset and remove these registrations. Nothing was changed.");
+    } finally {
+      setBulkActionLoading(false);
+      setBulkLoadingAction(null);
     }
   };
 
@@ -387,10 +443,21 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
     const ids = eligibleRemoveApps.map(a => a.id);
     if (ids.length === 0) return;
     setBulkActionLoading(true);
+    setBulkLoadingAction('remove');
     try {
       const res = await api.admin.bulkRemoveChildren(ids, removeReason.trim() || 'Bulk administrative removal');
       if (res.success) {
-        showSuccess('Applications Removed', `${res.removedCount || ids.length} ${ids.length === 1 ? 'application was' : 'applications were'} moved to Removed.`);
+        setApplications(prev => prev.filter(a => !ids.includes(a.id)));
+        const count = res.removedCount || ids.length;
+        setStats(prev => ({
+          ...prev,
+          removed: prev.removed + count,
+          sentReview: activeTab === 'under_review' ? Math.max(0, prev.sentReview - count) : prev.sentReview,
+          selected: activeTab === 'selected' ? Math.max(0, prev.selected - count) : prev.selected,
+          waitingList: activeTab === 'waiting_list' ? Math.max(0, prev.waitingList - count) : prev.waitingList,
+          notSelected: activeTab === 'not_selected' ? Math.max(0, prev.notSelected - count) : prev.notSelected
+        }));
+        showSuccess('Applications Removed', `${count} ${count === 1 ? 'application was' : 'applications were'} moved to Removed.`);
         setModalBulkRemoveOpen(false);
         setRemoveReason('');
         setSelectedIds([]);
@@ -401,6 +468,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       showError('Removal Failed', parsed.message || 'Could not remove applications.');
     } finally {
       setBulkActionLoading(false);
+      setBulkLoadingAction(null);
     }
   };
 
@@ -806,16 +874,32 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                             setModalBulkResetOpen(true);
                           }}
                           disabled={eligibleResetApps.length === 0}
-                          className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                          className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
                         >
                           <span className="font-medium">Reset event progress</span>
-                          <span className="text-[11px] text-amber-700 font-semibold">({eligibleResetApps.length})</span>
+                          <span className="text-[11px] text-zinc-500 font-semibold">({eligibleResetApps.length})</span>
+                        </button>
+                      )}
+
+                      {/* Super Admin: Reset & remove */}
+                      {effectiveSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMoreMenuOpen(false);
+                            setModalBulkResetAndRemoveOpen(true);
+                          }}
+                          disabled={eligibleResetAndRemoveApps.length === 0}
+                          className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                        >
+                          <span className="font-medium">Reset & remove</span>
+                          <span className="text-[11px] text-amber-700 font-semibold">({eligibleResetAndRemoveApps.length})</span>
                         </button>
                       )}
 
                       <div className="border-t border-[#EAE8E1] my-1" />
 
-                      {/* Remove applications */}
+                      {/* Remove applications (Muted danger) */}
                       <button
                         type="button"
                         onClick={() => {
@@ -823,7 +907,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                           setModalBulkRemoveOpen(true);
                         }}
                         disabled={eligibleRemoveApps.length === 0}
-                        className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50/60 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                        className="w-full text-left px-3 py-2 text-xs text-red-600/90 hover:bg-red-50/60 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
                       >
                         <span>Remove applications</span>
                         <span className="text-[11px] text-red-500 font-medium">({eligibleRemoveApps.length})</span>
@@ -846,14 +930,33 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 </Button>
 
                 {effectiveSuperAdmin && (
-                  <Button
-                    type="button"
-                    onClick={() => setModalBulkDeleteOpen(true)}
-                    disabled={eligiblePurgeApps.length === 0}
-                    className="text-xs font-medium px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl cursor-pointer"
-                  >
-                    Delete permanently ({eligiblePurgeApps.length})
-                  </Button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+                      className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 bg-white text-zinc-700 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl cursor-pointer"
+                    >
+                      <span>More</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                    </button>
+
+                    {isMoreMenuOpen && (
+                      <div className="absolute right-0 mt-1.5 w-56 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1.5 z-20 space-y-1 animate-scale-in">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMoreMenuOpen(false);
+                            setModalBulkDeleteOpen(true);
+                          }}
+                          disabled={eligiblePurgeApps.length === 0}
+                          className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50/60 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                        >
+                          <span>Delete permanently</span>
+                          <span className="text-[11px] text-red-500 font-medium">({eligiblePurgeApps.length})</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </>
             )}
@@ -1448,7 +1551,75 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-all shadow-none flex items-center gap-1.5 cursor-pointer"
               >
                 {bulkActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                <span>Reset progress</span>
+                <span>{bulkLoadingAction === 'reset' ? 'Resetting…' : 'Reset progress'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK RESET AND REMOVE MODAL (SUPER ADMIN ONLY) */}
+      {modalBulkResetAndRemoveOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-lg w-full shadow-xl space-y-5 animate-scale-in text-[#18181B]">
+            <div className="flex items-start gap-3 text-amber-800">
+              <RotateCcw className="w-6 h-6 shrink-0 text-amber-600 mt-0.5" />
+              <div className="space-y-1 text-left">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-zinc-900">
+                    Reset and remove {eligibleResetAndRemoveApps.length} {eligibleResetAndRemoveApps.length === 1 ? 'registration' : 'registrations'}?
+                  </h3>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 uppercase tracking-wide">
+                    Super Admin
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Some selected children have current event activity. Their event progress will be cleared first, then the registrations will be moved to Removed.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-amber-50/60 border border-amber-200/60 rounded-xl space-y-2 text-left">
+              <span className="text-xs font-semibold text-amber-900 block">This action will:</span>
+              <ul className="text-xs text-amber-800 list-disc pl-4 space-y-1">
+                <li>End active attendance and clear check-in / pickup states</li>
+                <li>Deactivate digital event passes</li>
+                <li>Move registrations to Removed (can be restored later)</li>
+                <li>Preserve child profiles, family details, and safety audit history</li>
+              </ul>
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-medium text-zinc-600 block">Reason (optional)</label>
+              <textarea
+                rows={2}
+                value={resetAndRemoveReason}
+                onChange={(e) => setResetAndRemoveReason(e.target.value)}
+                placeholder="Reset and removed test records..."
+                className="w-full p-2.5 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-all bg-zinc-50"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={bulkActionLoading}
+                onClick={() => {
+                  setModalBulkResetAndRemoveOpen(false);
+                  setResetAndRemoveReason('');
+                }}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkActionLoading || eligibleResetAndRemoveApps.length === 0}
+                onClick={handleConfirmBulkResetAndRemove}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-all shadow-none flex items-center gap-1.5 cursor-pointer"
+              >
+                {bulkActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{bulkLoadingAction === 'reset_and_remove' ? 'Resetting & removing…' : `Reset & remove ${eligibleResetAndRemoveApps.length}`}</span>
               </button>
             </div>
           </div>
@@ -1498,7 +1669,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition-all shadow-none flex items-center gap-1.5 cursor-pointer"
               >
                 {bulkActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                <span>Remove applications</span>
+                <span>{bulkLoadingAction === 'remove' ? 'Removing…' : 'Remove applications'}</span>
               </button>
             </div>
           </div>

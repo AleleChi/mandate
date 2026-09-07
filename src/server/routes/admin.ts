@@ -7469,18 +7469,17 @@ router.post('/applications/bulk-reset-progress', authMiddleware, async (req: Aut
 
     await transaction(async () => {
       for (const id of applicationIds) {
-        const entry = await queryOne(`SELECT id, child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+        const entry = await queryOne(`SELECT id, child_id, event_id, status FROM child_event_entries WHERE id = ? OR child_id = ?`, [id, id]);
         if (!entry) continue;
 
         if (mode === 'review') {
-          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
-          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
           await execute(`
             UPDATE child_event_entries 
             SET status = 'under_review', checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, reviewed_at = NULL, decision_at = NULL, updated_at = ?
             WHERE id = ?
-          `, [now, id]);
-          await execute(`UPDATE notifications SET is_read = 1 WHERE child_id = ? AND type IN ('check_in', 'pickup', 'inside')`, [entry.child_id]);
+          `, [now, entry.id]);
 
           try {
             await execute(`
@@ -7492,21 +7491,21 @@ router.post('/applications/bulk-reset-progress', authMiddleware, async (req: Aut
               req.user.role,
               'Event progress reset to review by Super Admin',
               'child_event_entry',
-              id,
-              JSON.stringify({ mode: 'review', childId: entry.child_id, previousStatus: entry.status }),
+              entry.id,
+              JSON.stringify({ mode: 'review', childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
               now
             ]);
           } catch (aErr) {}
         } else {
-          const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [id]);
+          const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
           const targetStatus = pass ? 'pass_ready' : (entry.status === 'under_review' ? 'under_review' : 'selected');
 
-          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
           await execute(`
             UPDATE child_event_entries 
             SET status = ?, checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
             WHERE id = ?
-          `, [targetStatus, now, id]);
+          `, [targetStatus, now, entry.id]);
 
           try {
             await execute(`
@@ -7518,8 +7517,8 @@ router.post('/applications/bulk-reset-progress', authMiddleware, async (req: Aut
               req.user.role,
               'Event attendance reset by Super Admin',
               'child_event_entry',
-              id,
-              JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, previousStatus: entry.status }),
+              entry.id,
+              JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
               now
             ]);
           } catch (aErr) {}
@@ -7537,7 +7536,83 @@ router.post('/applications/bulk-reset-progress', authMiddleware, async (req: Aut
     });
   } catch (err: any) {
     console.error('Error in bulk reset event progress:', err);
-    return res.status(500).json({ success: false, error: "We couldn't reset selected children's event progress. Nothing was changed." });
+    return res.status(400).json({ success: false, error: "We couldn't reset selected registrations. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/bulk-reset-and-remove - Super Admin combined workflow to reset event progress and soft-remove
+router.post('/applications/bulk-reset-and-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset and remove registrations." });
+    }
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one registration is required.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+    const removalReason = (reason && reason.trim()) ? reason.trim() : 'Reset and removed by Super Admin';
+    let processedCount = 0;
+
+    await transaction(async () => {
+      for (const id of applicationIds) {
+        const entry = await queryOne(`SELECT id, child_id, event_id, status FROM child_event_entries WHERE id = ? OR child_id = ?`, [id, id]);
+        if (!entry) continue;
+
+        // 1. Revoke any active pass for this entry
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+
+        // 2. Clear current event attendance records
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+
+        // 3. Soft remove child_event_entries: clear attendance, set status = 'removed', is_deleted = 1
+        await execute(`
+          UPDATE child_event_entries 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed',
+              checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+          WHERE id = ?
+        `, [now, adminId, removalReason, now, entry.id]);
+
+        // 4. Soft remove children record (remains restorable)
+        await execute(`
+          UPDATE children 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [now, adminId, removalReason, entry.child_id]);
+
+        // 5. Clean readable audit log
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user.role,
+            'Event progress reset and registration removed by Super Admin',
+            'child_event_entry',
+            entry.id,
+            JSON.stringify({ reason: removalReason, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        processedCount++;
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      processedCount,
+      summary,
+      message: `${processedCount} ${processedCount === 1 ? 'registration was' : 'registrations were'} moved to Removed.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk reset and remove:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset and remove these registrations. Nothing was changed." });
   }
 });
 
@@ -7614,11 +7689,11 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
     }
 
     const entry = await queryOne(`
-      SELECT e.id, e.child_id, e.status, e.is_deleted, c.full_name
+      SELECT e.id, e.child_id, e.event_id, e.status, e.is_deleted, c.full_name
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      WHERE e.id = ?
-    `, [id]);
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
 
     if (!entry) {
       return res.status(404).json({ success: false, error: 'Registration record not found.' });
@@ -7629,14 +7704,13 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
 
     await transaction(async () => {
       if (mode === 'review') {
-        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
-        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
         await execute(`
           UPDATE child_event_entries 
           SET status = 'under_review', checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, reviewed_at = NULL, decision_at = NULL, updated_at = ?
           WHERE id = ?
-        `, [now, id]);
-        await execute(`UPDATE notifications SET is_read = 1 WHERE child_id = ? AND type IN ('check_in', 'pickup', 'inside')`, [entry.child_id]);
+        `, [now, entry.id]);
 
         try {
           await execute(`
@@ -7648,21 +7722,21 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
             req.user.role,
             'Event progress reset to review by Super Admin',
             'child_event_entry',
-            id,
-            JSON.stringify({ mode: 'review', childId: entry.child_id, previousStatus: entry.status }),
+            entry.id,
+            JSON.stringify({ mode: 'review', childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
             now
           ]);
         } catch (aErr) {}
       } else {
-        const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [id]);
+        const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
         const targetStatus = pass ? 'pass_ready' : (entry.status === 'under_review' ? 'under_review' : 'selected');
 
-        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
         await execute(`
           UPDATE child_event_entries 
           SET status = ?, checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
           WHERE id = ?
-        `, [targetStatus, now, id]);
+        `, [targetStatus, now, entry.id]);
 
         try {
           await execute(`
@@ -7674,8 +7748,8 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
             req.user.role,
             'Event attendance reset by Super Admin',
             'child_event_entry',
-            id,
-            JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, previousStatus: entry.status }),
+            entry.id,
+            JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
             now
           ]);
         } catch (aErr) {}
@@ -7690,7 +7764,75 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
     });
   } catch (err: any) {
     console.error('Error resetting event progress:', err);
-    return res.status(500).json({ success: false, error: "We couldn't reset this child's event progress. Nothing was changed." });
+    return res.status(400).json({ success: false, error: "We couldn't reset this child's event progress. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/reset-and-remove - Super Admin single action to reset event progress and soft-remove
+router.post('/applications/:id/reset-and-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset and remove registrations." });
+    }
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.event_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+    const removalReason = (reason && reason.trim()) ? reason.trim() : 'Reset and removed by Super Admin';
+
+    await transaction(async () => {
+      await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+      await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+      await execute(`
+        UPDATE child_event_entries 
+        SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed',
+            checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+        WHERE id = ?
+      `, [now, adminId, removalReason, now, entry.id]);
+      await execute(`
+        UPDATE children 
+        SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+        WHERE id = ?
+      `, [now, adminId, removalReason, entry.child_id]);
+
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Event progress reset and registration removed by Super Admin',
+          'child_event_entry',
+          entry.id,
+          JSON.stringify({ reason: removalReason, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+          now
+        ]);
+      } catch (aErr) {}
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      summary,
+      message: `${entry.full_name || 'Registration'} was moved to Removed.`
+    });
+  } catch (err: any) {
+    console.error('Error resetting and removing registration:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset and remove this registration. Nothing was changed." });
   }
 });
 

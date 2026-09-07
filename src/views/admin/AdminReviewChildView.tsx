@@ -111,6 +111,11 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   const [resetMode, setResetMode] = useState<'review' | 'attendance'>('review');
   const [resettingProgress, setResettingProgress] = useState(false);
 
+  // Super Admin: Reset & Remove
+  const [isResetAndRemoveModalOpen, setIsResetAndRemoveModalOpen] = useState(false);
+  const [resetAndRemoveReason, setResetAndRemoveReason] = useState('');
+  const [resettingAndRemoving, setResettingAndRemoving] = useState(false);
+
   // Super Admin: Prepare Delete & Permanent Delete
   const [isPrepareDeleteModalOpen, setIsPrepareDeleteModalOpen] = useState(false);
   const [preparingDelete, setPreparingDelete] = useState(false);
@@ -372,6 +377,26 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
       showError('Reset Failed', parsed.message || "We couldn't reset this child's event progress. Nothing was changed.");
     } finally {
       setResettingProgress(false);
+    }
+  };
+
+  // Super Admin: Reset & Remove
+  const handleConfirmResetAndRemove = async () => {
+    setResettingAndRemoving(true);
+    try {
+      const res = await api.admin.resetAndRemoveChild(applicationId, resetAndRemoveReason.trim() || 'Reset and removed by Super Admin');
+      if (res.success) {
+        showSuccess('Registration Removed', `${app?.child?.fullName || 'Child'}'s event progress was cleared and registration was moved to Removed.`);
+        setIsResetAndRemoveModalOpen(false);
+        setResetAndRemoveReason('');
+        await fetchDetails();
+        onSave();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Operation Failed', parsed.message || "We couldn't reset and remove this registration. Nothing was changed.");
+    } finally {
+      setResettingAndRemoving(false);
     }
   };
 
@@ -1059,21 +1084,30 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 </div>
 
                 {effectiveSuperAdmin && (
-                  <div className="pt-2 border-t border-zinc-200 space-y-1.5">
+                  <div className="pt-2 border-t border-zinc-200 space-y-2">
                     <span className="text-[11px] text-zinc-500 font-medium block">
-                      Super Admin recovery: Use Reset event progress to restart workflow for test records.
+                      Super Admin recovery: Restart workflow or remove test records.
                     </span>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        setResetMode('review');
-                        setIsResetProgressModalOpen(true);
-                      }}
-                      className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Reset event progress</span>
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setResetMode('review');
+                          setIsResetProgressModalOpen(true);
+                        }}
+                        className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset progress</span>
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setIsResetAndRemoveModalOpen(true)}
+                        className="flex-1 py-2 bg-white border border-amber-300 text-amber-900 hover:bg-amber-50 font-medium rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Reset & remove
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1342,16 +1376,28 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
                       {/* Super Admin Reset */}
                       {effectiveSuperAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsDecisionMoreOpen(false);
-                            setIsResetProgressModalOpen(true);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer"
-                        >
-                          Reset event progress
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsDecisionMoreOpen(false);
+                              setIsResetProgressModalOpen(true);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer"
+                          >
+                            Reset event progress
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsDecisionMoreOpen(false);
+                              setIsResetAndRemoveModalOpen(true);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer"
+                          >
+                            Reset & remove
+                          </button>
+                        </>
                       )}
 
                       <div className="border-t border-[#EAE8E1] my-1" />
@@ -1865,7 +1911,75 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-all shadow-none flex items-center gap-1.5 cursor-pointer"
               >
                 {resettingProgress ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                <span>Reset progress</span>
+                <span>{resettingProgress ? 'Resetting…' : 'Reset progress'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUPER ADMIN: RESET AND REMOVE MODAL */}
+      {isResetAndRemoveModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-[#18181B]">
+            <div className="flex items-start gap-3 text-amber-800">
+              <RotateCcw className="w-6 h-6 shrink-0 text-amber-600 mt-0.5" />
+              <div className="space-y-1 text-left">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-zinc-900">
+                    Reset and remove {app?.child?.fullName || 'registration'}?
+                  </h3>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 uppercase tracking-wide">
+                    Super Admin
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Current event progress will be cleared first, then the registration will be moved to Removed.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-amber-50/60 border border-amber-200/60 rounded-xl space-y-2 text-left">
+              <span className="text-xs font-semibold text-amber-900 block">This action will:</span>
+              <ul className="text-xs text-amber-800 list-disc pl-4 space-y-1">
+                <li>End active attendance and clear check-in / pickup states</li>
+                <li>Deactivate digital event passes</li>
+                <li>Move registration to Removed (can be restored later)</li>
+                <li>Preserve child profile, family details, and safety audit history</li>
+              </ul>
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-medium text-zinc-600 block">Reason (optional)</label>
+              <textarea
+                rows={2}
+                value={resetAndRemoveReason}
+                onChange={(e) => setResetAndRemoveReason(e.target.value)}
+                placeholder="Reset and removed test records..."
+                className="w-full p-2.5 text-xs rounded-xl border border-zinc-200 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-all bg-zinc-50"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={resettingAndRemoving}
+                onClick={() => {
+                  setIsResetAndRemoveModalOpen(false);
+                  setResetAndRemoveReason('');
+                }}
+                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={resettingAndRemoving}
+                onClick={handleConfirmResetAndRemove}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-all shadow-none flex items-center gap-1.5 cursor-pointer"
+              >
+                {resettingAndRemoving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{resettingAndRemoving ? 'Resetting & removing…' : 'Reset & remove'}</span>
               </button>
             </div>
           </div>

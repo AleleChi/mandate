@@ -780,8 +780,20 @@ export const api = {
         body: JSON.stringify({ mode })
       });
     },
+    async resetAndRemoveChild(id: string, reason?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/reset-and-remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
     async bulkResetEventProgress(payload: { applicationIds: string[]; mode: 'review' | 'attendance' }) {
       return api.request<any>('/api/admin/applications/bulk-reset-progress', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkResetAndRemove(payload: { applicationIds: string[]; reason?: string }) {
+      return api.request<any>('/api/admin/applications/bulk-reset-and-remove', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
