@@ -28,12 +28,13 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
 import { AddChildModal } from '../../components/admin/modals/AddChildModal';
+import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 
 interface AdminChildrenViewProps {
   onBackToOverview: () => void;
@@ -91,6 +92,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
   const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
   const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
+  const [submittingBulkDecision, setSubmittingBulkDecision] = useState<string | null>(null);
 
   // Bulk Permanent Removal states
   const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
@@ -117,10 +119,15 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Reset page to 1 when filtering or searching
+  // Reset page and clear selection when filtering or searching
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedChildIds([]);
   }, [debouncedQuery, activeFilter]);
+
+  useEffect(() => {
+    setSelectedChildIds([]);
+  }, [currentPage]);
 
   const fetchChildren = async (pageToFetch = currentPage) => {
     setLoading(true);
@@ -232,8 +239,12 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     }
   };
 
+  const isAllVisibleSelected = children.length > 0 && children.every(c => selectedChildIds.includes(c.applicationId));
+  const isSomeVisibleSelected = children.some(c => selectedChildIds.includes(c.applicationId));
+  const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
+
   const toggleSelectAllVisible = () => {
-    if (selectedChildIds.length === children.length && children.length > 0) {
+    if (isAllVisibleSelected) {
       setSelectedChildIds([]);
     } else {
       setSelectedChildIds(children.map(c => c.applicationId));
@@ -245,6 +256,42 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
       setSelectedChildIds(selectedChildIds.filter(i => i !== id));
     } else {
       setSelectedChildIds([...selectedChildIds, id]);
+    }
+  };
+
+  const selectedChildren = children.filter(c => selectedChildIds.includes(c.applicationId));
+  const hasAttendance = selectedChildren.some(c => ['checked_in', 'inside', 'picked_up'].includes(c.entryStatus));
+  const canReview = selectedChildren.length > 0 && selectedChildren.every(c => !c.isDeleted && !['checked_in', 'inside', 'picked_up'].includes(c.entryStatus));
+  const canRemove = selectedChildren.length > 0 && selectedChildren.every(c => !c.isDeleted && !['checked_in', 'inside'].includes(c.entryStatus));
+  const canRestore = selectedChildren.length > 0 && selectedChildren.every(c => c.isDeleted);
+
+  const handleBulkReviewDecision = async (decision: 'selected' | 'waiting_list' | 'not_selected') => {
+    const eligibleIds = children
+      .filter(c => selectedChildIds.includes(c.applicationId) && !c.isDeleted && !['checked_in', 'inside', 'picked_up'].includes(c.entryStatus))
+      .map(c => c.applicationId);
+
+    if (eligibleIds.length === 0) {
+      showError('Cannot update', 'None of the selected children are eligible for registration review.');
+      return;
+    }
+
+    setSubmittingBulkDecision(decision);
+    try {
+      const res = await api.admin.bulkReviewApplications({
+        applicationIds: eligibleIds,
+        decision
+      });
+      if (res.success) {
+        const actionText = decision === 'selected' ? 'selected for event' : decision === 'waiting_list' ? 'moved to waiting list' : 'marked as not selected';
+        showSuccess('Review updated', `${res.updatedCount || eligibleIds.length} child record(s) ${actionText}.`);
+        setSelectedChildIds([]);
+        await fetchChildren();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Review failed', parsed.message);
+    } finally {
+      setSubmittingBulkDecision(null);
     }
   };
 
@@ -723,6 +770,78 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
         </div>
       ) : (
         <>
+          {/* Contextual Action Bar */}
+          {selectedChildIds.length > 0 && (
+            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
+              <div className="flex items-center gap-3">
+                <span className="font-semibold text-[#18181B] whitespace-nowrap">
+                  {selectedChildIds.length} selected
+                </span>
+                <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
+                <div className="flex flex-wrap items-center gap-2">
+                  {canReview && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkReviewDecision('selected')}
+                        disabled={submittingBulkDecision !== null}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#C59B27] text-white font-medium hover:bg-[#b08a23] transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                      >
+                        {submittingBulkDecision === 'selected' ? 'Updating…' : 'Select for event'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkReviewDecision('waiting_list')}
+                        disabled={submittingBulkDecision !== null}
+                        className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                      >
+                        {submittingBulkDecision === 'waiting_list' ? 'Updating…' : 'Move to waiting list'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkReviewDecision('not_selected')}
+                        disabled={submittingBulkDecision !== null}
+                        className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                      >
+                        {submittingBulkDecision === 'not_selected' ? 'Updating…' : 'Mark as not selected'}
+                      </button>
+                    </>
+                  )}
+                  {canRestore && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkRestoreModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer"
+                    >
+                      Restore
+                    </button>
+                  )}
+                  {canRemove && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkRemoveModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  {hasAttendance && (
+                    <span className="text-zinc-400 text-[11px] italic">
+                      Attendance records active for selected record(s)
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedChildIds([])}
+                className="text-zinc-500 hover:text-[#18181B] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {/* DESKTOP TABLE */}
           <div 
             className="hidden lg:block bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs"
@@ -734,12 +853,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 <thead>
                   <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-xs font-medium text-zinc-500">
                     <th className="py-3 px-3 w-10 text-center">
-                      <input
-                        type="checkbox"
-                        checked={children.length > 0 && selectedChildIds.length === children.length}
+                      <AdminSelectionCheckbox
+                        checked={isAllVisibleSelected}
+                        indeterminate={isIndeterminate}
                         onChange={toggleSelectAllVisible}
-                        className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4 cursor-pointer"
-                        title="Select all visible children"
+                        ariaLabel="Select all visible children"
                       />
                     </th>
                     <th className="py-3 px-4">Child</th>
@@ -757,14 +875,13 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   {children.map((c) => (
                     <tr 
                       key={c.id}
-                      className={`hover:bg-[#FAF9F6]/40 transition-colors ${selectedChildIds.includes(c.applicationId) ? 'bg-[#C59B27]/5' : ''} ${c.isDeleted ? 'opacity-70 bg-zinc-50/50' : ''}`}
+                      className={`hover:bg-[#FAF9F6]/40 transition-colors ${selectedChildIds.includes(c.applicationId) ? 'bg-[#FAF8F2]' : ''} ${c.isDeleted ? 'opacity-70 bg-zinc-50/50' : ''}`}
                     >
                       <td className="py-3 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
+                        <AdminSelectionCheckbox
                           checked={selectedChildIds.includes(c.applicationId)}
                           onChange={() => toggleSelectChild(c.applicationId)}
-                          className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4 cursor-pointer"
+                          ariaLabel={`Select ${c.fullName}`}
                         />
                       </td>
                       {/* Child info */}
@@ -1522,60 +1639,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 Restore child
               </Button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sticky Bulk Selection Bar */}
-      {selectedChildIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-zinc-900 text-white rounded-2xl px-5 py-3 shadow-2xl flex items-center space-x-4 border border-zinc-800 animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className="flex items-center space-x-2">
-            <span className="bg-[#C59B27] text-black font-extrabold text-xs px-2.5 py-1 rounded-lg">
-              {selectedChildIds.length} selected
-            </span>
-            <span className="text-xs text-zinc-300 font-medium hidden sm:inline">
-              {activeFilter === 'removed' ? 'Removed records selected' : 'Child registrations selected'}
-            </span>
-          </div>
-          <div className="h-4 w-px bg-zinc-800" />
-          <div className="flex items-center space-x-2">
-            {activeFilter === 'removed' ? (
-              <>
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl"
-                  onClick={() => setShowBulkRestoreModal(true)}
-                  id="bulk-restore-btn"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Restore selected ({selectedChildIds.length})
-                </Button>
-                <Button
-                  size="sm"
-                  className="bg-rose-700 hover:bg-rose-800 text-white font-semibold text-xs rounded-xl shadow-xs"
-                  onClick={() => setShowBulkPurgeModal(true)}
-                  id="bulk-purge-btn"
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Permanently remove ({selectedChildIds.length})
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="sm"
-                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl"
-                onClick={() => setShowBulkRemoveModal(true)}
-                id="bulk-remove-btn"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Bulk remove ({selectedChildIds.length})
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-zinc-400 hover:text-white hover:bg-zinc-800 text-xs rounded-xl"
-              onClick={() => setSelectedChildIds([])}
-            >
-              Clear
-            </Button>
           </div>
         </div>
       )}

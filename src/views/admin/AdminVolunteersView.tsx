@@ -27,6 +27,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AddVolunteerModal } from '../../components/admin/modals/AddVolunteerModal';
+import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 
 interface AdminVolunteersViewProps {
   onBackToOverview: () => void;
@@ -42,6 +43,22 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
+
+  // Bulk selection & actions
+  const [selectedVolIds, setSelectedVolIds] = useState<string[]>([]);
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [bulkAssignTeam, setBulkAssignTeam] = useState('');
+  const [submittingBulkAssign, setSubmittingBulkAssign] = useState(false);
+  const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
+  const [bulkApproveTeam, setBulkApproveTeam] = useState('');
+  const [submittingBulkApprove, setSubmittingBulkApprove] = useState(false);
+  const [showBulkDeclineModal, setShowBulkDeclineModal] = useState(false);
+  const [submittingBulkDecline, setSubmittingBulkDecline] = useState(false);
+  const [showBulkRemoveModal, setShowBulkRemoveModal] = useState(false);
+  const [bulkRemoveReason, setBulkRemoveReason] = useState('');
+  const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
+  const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
+  const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
 
   // Selected volunteer for profile/review modal
   const [selectedVolId, setSelectedVolId] = useState<string | null>(null);
@@ -509,6 +526,147 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
       showError('Deletion failed', parsed.message);
     } finally {
       setSubmittingDelete(false);
+    }
+  };
+
+  // ---- BULK SELECTION LOGIC & HANDLERS ----
+  useEffect(() => {
+    setSelectedVolIds([]);
+  }, [searchQuery, statusFilter, teamFilter, currentPage, activeTab]);
+
+  const isAllVisibleSelected = volunteers.length > 0 && volunteers.every(v => selectedVolIds.includes(String(v.id)));
+  const isSomeVisibleSelected = volunteers.some(v => selectedVolIds.includes(String(v.id)));
+  const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
+
+  const handleToggleSelectAll = () => {
+    if (isAllVisibleSelected) {
+      setSelectedVolIds([]);
+    } else {
+      setSelectedVolIds(volunteers.map(v => String(v.id)));
+    }
+  };
+
+  const handleToggleSelectVol = (id: string) => {
+    setSelectedVolIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const selectedVolunteers = volunteers.filter(v => selectedVolIds.includes(String(v.id)));
+  const canApprove = selectedVolunteers.length > 0 && selectedVolunteers.every(v => v.status === 'pending_review' || v.status === 'pending' || v.status === 'rejected' || v.status === 'declined');
+  const canDecline = selectedVolunteers.length > 0 && selectedVolunteers.every(v => v.status === 'pending_review' || v.status === 'pending');
+  const canAssignTeam = selectedVolunteers.length > 0 && selectedVolunteers.every(v => !v.isDeleted && activeTab !== 'removed');
+  const canRemove = selectedVolunteers.length > 0 && selectedVolunteers.every(v => !v.isDeleted && activeTab !== 'removed');
+  const canRestore = selectedVolunteers.length > 0 && selectedVolunteers.every(v => v.isDeleted || activeTab === 'removed');
+
+  const handleBulkAssignTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkAssignTeam) return;
+    setSubmittingBulkAssign(true);
+    try {
+      const res = await api.admin.bulkAssignVolunteerTeam({
+        volunteerIds: selectedVolIds,
+        assignedTeam: bulkAssignTeam
+      });
+      if (res.success) {
+        showSuccess('Team assigned', `${res.count} volunteer(s) assigned to ${bulkAssignTeam}.`);
+        setShowBulkAssignModal(false);
+        setBulkAssignTeam('');
+        setSelectedVolIds([]);
+        await fetchVolunteers();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Assignment failed', parsed.message);
+    } finally {
+      setSubmittingBulkAssign(false);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    setSubmittingBulkApprove(true);
+    try {
+      const res = await api.admin.bulkReviewVolunteers({
+        volunteerIds: selectedVolIds,
+        status: 'approved',
+        team: bulkApproveTeam || undefined
+      });
+      if (res.success) {
+        showSuccess('Volunteers approved', `${res.count} volunteer(s) approved.`);
+        setShowBulkApproveModal(false);
+        setBulkApproveTeam('');
+        setSelectedVolIds([]);
+        await fetchVolunteers();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Approval failed', parsed.message);
+    } finally {
+      setSubmittingBulkApprove(false);
+    }
+  };
+
+  const handleBulkDecline = async () => {
+    setSubmittingBulkDecline(true);
+    try {
+      const res = await api.admin.bulkReviewVolunteers({
+        volunteerIds: selectedVolIds,
+        status: 'rejected'
+      });
+      if (res.success) {
+        showSuccess('Applications declined', `${res.count} application(s) marked as not approved.`);
+        setShowBulkDeclineModal(false);
+        setSelectedVolIds([]);
+        await fetchVolunteers();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Update failed', parsed.message);
+    } finally {
+      setSubmittingBulkDecline(false);
+    }
+  };
+
+  const handleBulkRemove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingBulkRemove(true);
+    try {
+      const res = await api.admin.bulkRemoveVolunteers({
+        volunteerIds: selectedVolIds,
+        reason: bulkRemoveReason || undefined
+      });
+      if (res.success) {
+        showSuccess('Volunteers removed', `${res.count} volunteer(s) removed.`);
+        setShowBulkRemoveModal(false);
+        setBulkRemoveReason('');
+        setSelectedVolIds([]);
+        await fetchVolunteers();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Removal failed', parsed.message);
+    } finally {
+      setSubmittingBulkRemove(false);
+    }
+  };
+
+  const handleBulkRestore = async () => {
+    setSubmittingBulkRestore(true);
+    try {
+      const res = await api.admin.bulkRestoreVolunteers({
+        volunteerIds: selectedVolIds
+      });
+      if (res.success) {
+        showSuccess('Volunteers restored', `${res.count} volunteer(s) restored.`);
+        setShowBulkRestoreModal(false);
+        setSelectedVolIds([]);
+        await fetchVolunteers();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restore failed', parsed.message);
+    } finally {
+      setSubmittingBulkRestore(false);
     }
   };
 
@@ -1041,6 +1199,264 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
     document.body
   ) : null;
 
+  const bulkAssignModal = (showBulkAssignModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkAssign && setShowBulkAssignModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-[#C59B27] mb-4">
+          <Briefcase className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Assign {selectedVolIds.length} volunteers
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-5 leading-relaxed">
+          Select the ministry serving team for the selected volunteers.
+        </p>
+        <form onSubmit={handleBulkAssignTeam} className="space-y-4">
+          <div>
+            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Team
+            </label>
+            <select
+              required
+              value={bulkAssignTeam}
+              onChange={(e) => setBulkAssignTeam(e.target.value)}
+              className="w-full px-3 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+            >
+              <option value="">Select a team...</option>
+              {teamOptions.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkAssignModal(false)}
+              variant="secondary"
+              disabled={submittingBulkAssign}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={submittingBulkAssign}
+              disabled={submittingBulkAssign || !bulkAssignTeam}
+              className="px-5 py-2 text-xs"
+            >
+              Assign team
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkApproveModal = (showBulkApproveModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkApprove && setShowBulkApproveModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+          <UserCheck className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Approve {selectedVolIds.length} volunteers?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-5 leading-relaxed">
+          Approved volunteers will be moved to Active and will receive an official welcome email with portal access instructions.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Assign team (optional)
+            </label>
+            <select
+              value={bulkApproveTeam}
+              onChange={(e) => setBulkApproveTeam(e.target.value)}
+              className="w-full px-3 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+            >
+              <option value="">Keep current preference</option>
+              {teamOptions.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkApproveModal(false)}
+              variant="secondary"
+              disabled={submittingBulkApprove}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleBulkApprove}
+              loading={submittingBulkApprove}
+              disabled={submittingBulkApprove}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            >
+              Approve volunteers
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkDeclineModal = (showBulkDeclineModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkDecline && setShowBulkDeclineModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-zinc-700 mb-4">
+          <AlertCircle className="w-5 h-5 shrink-0 text-zinc-500" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Decline {selectedVolIds.length} volunteer applications?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+          These applicants will be notified via email and their profiles will be moved to Not approved.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkDeclineModal(false)}
+            variant="secondary"
+            disabled={submittingBulkDecline}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleBulkDecline}
+            loading={submittingBulkDecline}
+            disabled={submittingBulkDecline}
+            className="bg-zinc-800 hover:bg-zinc-900 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+          >
+            Decline volunteers
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkRemoveModal = (showBulkRemoveModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRemove && setShowBulkRemoveModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-red-600 mb-4">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Remove {selectedVolIds.length} volunteers?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+          These volunteers will no longer appear under Active Volunteers. Their event serving history and audit records will be kept. You can restore them at any time from the Removed tab.
+        </p>
+        <form onSubmit={handleBulkRemove} className="space-y-4">
+          <div>
+            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">
+              Reason (optional)
+            </label>
+            <input
+              type="text"
+              value={bulkRemoveReason}
+              onChange={(e) => setBulkRemoveReason(e.target.value)}
+              placeholder="e.g., Stepping down for this season"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkRemoveModal(false)}
+              variant="secondary"
+              disabled={submittingBulkRemove}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={submittingBulkRemove}
+              disabled={submittingBulkRemove}
+              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            >
+              Remove volunteers
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkRestoreModal = (showBulkRestoreModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRestore && setShowBulkRestoreModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+          <RotateCcw className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Restore {selectedVolIds.length} volunteers?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+          These volunteers will be restored and will appear under Active Volunteers again.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkRestoreModal(false)}
+            variant="secondary"
+            disabled={submittingBulkRestore}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleBulkRestore}
+            loading={submittingBulkRestore}
+            disabled={submittingBulkRestore}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+          >
+            Restore volunteers
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   // ---- RENDER ----
   return (
     <div
@@ -1053,6 +1469,11 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
       {removeModal}
       {restoreModal}
       {permanentDeleteModal}
+      {bulkAssignModal}
+      {bulkApproveModal}
+      {bulkDeclineModal}
+      {bulkRemoveModal}
+      {bulkRestoreModal}
 
       {/* 1. Header */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
@@ -1164,6 +1585,72 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
         </div>
       </div>
 
+      {/* Contextual Action Bar */}
+      {selectedVolIds.length > 0 && (
+        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold text-[#18181B] whitespace-nowrap">
+              {selectedVolIds.length} selected
+            </span>
+            <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
+            <div className="flex flex-wrap items-center gap-2">
+              {canApprove && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkApproveModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#C59B27] text-white font-medium hover:bg-[#b08a23] transition-colors focus:outline-none"
+                >
+                  {activeTab === 'declined' ? 'Reconsider / Approve' : 'Approve'}
+                </button>
+              )}
+              {canAssignTeam && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkAssignModal(true)}
+                  className={`px-3.5 py-1.5 rounded-xl font-medium transition-colors focus:outline-none ${!canApprove ? 'bg-[#C59B27] text-white hover:bg-[#b08a23]' : 'bg-white border border-[#EAE8E1] text-zinc-700 hover:bg-zinc-50'}`}
+                >
+                  Assign team
+                </button>
+              )}
+              {canDecline && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeclineModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none"
+                >
+                  Decline
+                </button>
+              )}
+              {canRestore && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkRestoreModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none"
+                >
+                  Restore
+                </button>
+              )}
+              {canRemove && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkRemoveModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedVolIds([])}
+            className="text-zinc-500 hover:text-[#18181B] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* 5. Volunteer table */}
       <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
@@ -1181,7 +1668,15 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
               <table className="w-full border-collapse text-left text-xs">
                 <thead>
                   <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-zinc-500">
-                    <th className="p-4 pl-6 text-[11px] font-semibold">Volunteer</th>
+                    <th className="p-4 pl-6 w-10 text-center">
+                      <AdminSelectionCheckbox
+                        checked={isAllVisibleSelected}
+                        indeterminate={isIndeterminate}
+                        onChange={handleToggleSelectAll}
+                        ariaLabel="Select all visible volunteers"
+                      />
+                    </th>
+                    <th className="p-4 text-[11px] font-semibold">Volunteer</th>
                     <th className="p-4 text-[11px] font-semibold">Contact</th>
                     <th className="p-4 text-[11px] font-semibold">Role</th>
                     <th className="p-4 text-[11px] font-semibold">Team</th>
@@ -1202,15 +1697,25 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
                     const isRemoved = vol.isDeleted || activeTab === 'removed';
                     const isPending = vol.status === 'pending_review' || vol.status === 'pending';
                     const actionLabel = isPending ? 'Review profile' : 'View profile';
+                    const isSelected = selectedVolIds.includes(String(vol.id));
 
                     return (
                       <tr
                         key={vol.id}
-                        className="hover:bg-zinc-50/50 transition-colors"
+                        className={`transition-colors ${isSelected ? 'bg-[#FAF8F2]' : 'hover:bg-zinc-50/50'}`}
                         data-volunteer-row-id={vol.id}
                       >
+                        {/* Checkbox */}
+                        <td className="p-4 pl-6 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                          <AdminSelectionCheckbox
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectVol(String(vol.id))}
+                            ariaLabel={`Select ${vol.fullName || vol.name || 'volunteer'}`}
+                          />
+                        </td>
+
                         {/* Volunteer */}
-                        <td className="p-4 pl-6">
+                        <td className="p-4">
                           <div className="flex items-center gap-3">
                             {vol.photoUrl ? (
                               <img

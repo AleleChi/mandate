@@ -14,6 +14,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AddParentModal } from '../../components/admin/modals/AddParentModal';
+import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 import { AppRoute } from '../../types';
 
 interface AdminParentsViewProps {
@@ -29,6 +30,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<ParentTab>('active');
+
+  // Bulk selection & actions
+  const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  const [showBulkRemoveModal, setShowBulkRemoveModal] = useState(false);
+  const [bulkRemoveReason, setBulkRemoveReason] = useState('');
+  const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
+  const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
+  const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
 
   // Stats across active parents
   const [stats, setStats] = useState({
@@ -90,6 +99,72 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
     fetchParents();
   }, [searchQuery, activeTab]);
 
+  // Clear bulk selection on tab switch or search change
+  useEffect(() => {
+    setSelectedParentIds([]);
+  }, [searchQuery, activeTab]);
+
+  const isAllVisibleSelected = parents.length > 0 && parents.every(p => selectedParentIds.includes(String(p.id)));
+  const isSomeVisibleSelected = parents.some(p => selectedParentIds.includes(String(p.id)));
+  const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
+
+  const handleToggleSelectAll = () => {
+    if (isAllVisibleSelected) {
+      setSelectedParentIds([]);
+    } else {
+      setSelectedParentIds(parents.map(p => String(p.id)));
+    }
+  };
+
+  const handleToggleSelectParent = (id: string) => {
+    setSelectedParentIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkRemoveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingBulkRemove(true);
+    try {
+      const res = await api.admin.bulkRemoveParents({
+        parentIds: selectedParentIds,
+        reason: bulkRemoveReason || undefined
+      });
+      if (res.success) {
+        showSuccess('Parents removed', `${res.count} parent(s) moved to Removed. Linked children and event history are preserved.`);
+        setShowBulkRemoveModal(false);
+        setBulkRemoveReason('');
+        setSelectedParentIds([]);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Removal failed', parsed.message);
+    } finally {
+      setSubmittingBulkRemove(false);
+    }
+  };
+
+  const handleBulkRestoreSubmit = async () => {
+    setSubmittingBulkRestore(true);
+    try {
+      const res = await api.admin.bulkRestoreParents({
+        parentIds: selectedParentIds
+      });
+      if (res.success) {
+        showSuccess('Parents restored', `${res.count} parent(s) restored to Active.`);
+        setShowBulkRestoreModal(false);
+        setSelectedParentIds([]);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restore failed', parsed.message);
+    } finally {
+      setSubmittingBulkRestore(false);
+    }
+  };
+
   // Close overflow action menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -104,6 +179,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
   const handleTabChange = (tab: ParentTab) => {
     setActiveTab(tab);
     setOpenActionMenuId(null);
+    setSelectedParentIds([]);
   };
 
   const handleRemoveParentSubmit = async (e: React.FormEvent) => {
@@ -368,6 +444,103 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
     document.body
   ) : null;
 
+  const bulkRemoveModal = (showBulkRemoveModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRemove && setShowBulkRemoveModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-red-600 mb-4">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Remove {selectedParentIds.length} parents?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+          These parents will be moved to the Removed tab. All linked children, event registrations, attendance records, and audit history will be safely preserved. You can restore these parents at any time.
+        </p>
+        <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
+          <div>
+            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">
+              Reason (optional)
+            </label>
+            <input
+              type="text"
+              value={bulkRemoveReason}
+              onChange={(e) => setBulkRemoveReason(e.target.value)}
+              placeholder="e.g., Requested account closure"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkRemoveModal(false)}
+              variant="secondary"
+              disabled={submittingBulkRemove}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={submittingBulkRemove}
+              disabled={submittingBulkRemove}
+              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            >
+              Remove parents
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkRestoreModal = (showBulkRestoreModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRestore && setShowBulkRestoreModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+          <RotateCcw className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B]">
+            Restore {selectedParentIds.length} parents?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+          These parent profiles will be restored and will appear under Active parents again.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkRestoreModal(false)}
+            variant="secondary"
+            disabled={submittingBulkRestore}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleBulkRestoreSubmit}
+            loading={submittingBulkRestore}
+            disabled={submittingBulkRestore}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+          >
+            Restore parents
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div
       className="space-y-6"
@@ -378,6 +551,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
       {removeModal}
       {restoreModal}
       {permanentDeleteModal}
+      {bulkRemoveModal}
+      {bulkRestoreModal}
 
       {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
@@ -472,6 +647,44 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
         )}
       </div>
 
+      {/* Contextual Action Bar */}
+      {selectedParentIds.length > 0 && (
+        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold text-[#18181B] whitespace-nowrap">
+              {selectedParentIds.length} selected
+            </span>
+            <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === 'active' ? (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkRemoveModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none cursor-pointer"
+                >
+                  Remove
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkRestoreModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer"
+                >
+                  Restore
+                </button>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedParentIds([])}
+            className="text-zinc-500 hover:text-[#18181B] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* 5. Parent Table */}
       <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
@@ -498,7 +711,15 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
             <table className="w-full border-collapse text-left text-xs">
               <thead>
                 <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-zinc-500">
-                  <th className="p-4 pl-6 text-[11px] font-semibold">Parent</th>
+                  <th className="p-4 pl-6 w-10 text-center">
+                    <AdminSelectionCheckbox
+                      checked={isAllVisibleSelected}
+                      indeterminate={isIndeterminate}
+                      onChange={handleToggleSelectAll}
+                      ariaLabel="Select all visible parents"
+                    />
+                  </th>
+                  <th className="p-4 text-[11px] font-semibold">Parent</th>
                   <th className="p-4 text-[11px] font-semibold">Children</th>
                   <th className="p-4 text-[11px] font-semibold">Role</th>
                   <th className="p-4 text-[11px] font-semibold">Location</th>
@@ -509,15 +730,25 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
                 {parents.map((p) => {
                   const displayName = getDisplayName(p);
                   const isRemoved = p.isDeleted || activeTab === 'removed';
+                  const isSelected = selectedParentIds.includes(String(p.id));
 
                   return (
                     <tr
                       key={p.id}
-                      className="hover:bg-zinc-50/50 transition-colors"
+                      className={`transition-colors ${isSelected ? 'bg-[#FAF8F2]' : 'hover:bg-zinc-50/50'}`}
                       data-parent-row-id={p.id}
                     >
+                      {/* Checkbox */}
+                      <td className="p-4 pl-6 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                        <AdminSelectionCheckbox
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectParent(String(p.id))}
+                          ariaLabel={`Select ${displayName}`}
+                        />
+                      </td>
+
                       {/* Parent name & email */}
-                      <td className="p-4 pl-6">
+                      <td className="p-4">
                         <div className="flex items-center gap-3">
                           {p.photoUrl ? (
                             <img

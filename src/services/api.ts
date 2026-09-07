@@ -1101,6 +1101,30 @@ export const api = {
         method: 'POST'
       });
     },
+    async bulkReviewVolunteers(payload: { volunteerIds: string[]; status: 'approved' | 'rejected'; team?: string; note?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-review', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkAssignVolunteerTeam(payload: { volunteerIds: string[]; assignedTeam: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-assign-team', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRemoveVolunteers(payload: { volunteerIds: string[]; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-remove', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRestoreVolunteers(payload: { volunteerIds: string[] }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async permanentlyDeleteVolunteer(id: string, payload: { reason: string; confirmation: string }) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/permanent-delete`, {
         method: 'POST',
@@ -1126,6 +1150,18 @@ export const api = {
     async restoreParent(id: string) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/restore`, {
         method: 'POST'
+      });
+    },
+    async bulkRemoveParents(payload: { parentIds: string[]; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-remove', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRestoreParents(payload: { parentIds: string[] }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify(payload)
       });
     },
     async saveParentNote(id: string, note: string) {

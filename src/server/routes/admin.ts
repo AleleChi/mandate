@@ -2271,8 +2271,11 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
 });
 
 // POST bulk review applications
-router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/applications/bulk-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
     const { applicationIds, decision, note } = req.body;
     if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
       return res.status(400).json({ success: false, error: 'Application IDs must be a non-empty array.' });
@@ -2282,6 +2285,8 @@ router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: 
       return res.status(400).json({ success: false, error: 'Invalid bulk decision.' });
     }
     const now = new Date().toISOString();
+    let updatedCount = 0;
+    const failures: { id: string; childName?: string; reason: string }[] = [];
 
     for (const id of applicationIds) {
       const app = await queryOne(`
@@ -2292,7 +2297,20 @@ router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: 
         WHERE e.id = ?
       `, [id]);
 
-      if (!app) continue;
+      if (!app) {
+        failures.push({ id, reason: 'Application record not found' });
+        continue;
+      }
+
+      // Safeguard: Never overwrite live attendance states via registration review
+      if (['checked_in', 'inside', 'picked_up'].includes(app.status)) {
+        failures.push({
+          id,
+          childName: app.child_name,
+          reason: `Child is currently in an event attendance state (${app.status}). Attendance records cannot be altered by registration review.`
+        });
+        continue;
+      }
 
       let finalDecision = decision;
 
@@ -2381,9 +2399,35 @@ router.post('/applications/bulk-review', async (req: AuthenticatedRequest, res: 
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]);
       }
+
+      // Record audit log for each reviewed application
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          req.user.id,
+          req.user.role,
+          'Bulk Review Child Application',
+          'child_event_entry',
+          id,
+          JSON.stringify({ decision: finalDecision, previousStatus: app.status }),
+          now
+        ]);
+      } catch (aErr) {}
+
+      updatedCount++;
     }
 
-    return res.json({ success: true, message: `Successfully updated ${applicationIds.length} applications.` });
+    return res.json({
+      success: true,
+      updatedCount,
+      failures,
+      message: failures.length > 0
+        ? `${updatedCount} application(s) updated. ${failures.length} skipped.`
+        : `Successfully updated ${updatedCount} applications.`
+    });
   } catch (err: any) {
     console.error('Error in bulk review:', err);
     return res.status(500).json({ success: false, error: 'Failed to process bulk review.' });
@@ -5835,6 +5879,294 @@ router.post('/volunteers/:id/review', async (req: AuthenticatedRequest, res: Res
   }
 });
 
+// POST /api/admin/volunteers/bulk-review - Bulk approve or reject volunteer applications
+router.post('/volunteers/bulk-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds, status, team, note } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+    if (!status || !['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Valid status is required (approved or rejected)' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let updatedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT v.*, u.email FROM volunteer_profiles v JOIN users u ON u.id = v.user_id WHERE v.id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        const finalTeam = team || v.preferred_team;
+
+        await execute(`
+          UPDATE volunteer_profiles 
+          SET status = ?, preferred_team = ?, note = COALESCE(?, note), approved_by_user_id = ?, approved_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [status, finalTeam, note, req.user.id, status === 'approved' ? nowStr : null, nowStr, id]);
+
+        if (status === 'approved') {
+          const user = await queryOne('SELECT * FROM users WHERE id = ?', [v.user_id]);
+          if (user && (user.role === 'parent' || user.role === 'user')) {
+            await execute("UPDATE users SET role = 'volunteer', updated_at = ? WHERE id = ?", [nowStr, v.user_id]);
+          }
+
+          const loginLink = buildPublicAppUrl('/volunteer/sign-in');
+          sendVolunteerApprovedEmail({
+            volunteerEmail: v.email,
+            volunteerFirstName: v.full_name,
+            preferredTeam: finalTeam,
+            loginLink
+          }).catch(e => console.error('Failed to send volunteer approval email:', e));
+        } else {
+          sendEmail({
+            to: v.email,
+            subject: 'Update on your volunteer application',
+            html: `
+              <div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+                <p>Hello ${v.full_name},</p>
+                <p>Thank you for choosing to serve Koinonia Children and Teens. At this time, we are unable to accept your volunteer application for the upcoming event.</p>
+                <p>We appreciate your heart and interest. We will keep your profile in our database and notify you for future opportunities.</p>
+                <p>Best regards,<br>Koinonia Children and Teens Team</p>
+              </div>
+            `
+          }).catch(e => console.error('Failed to send volunteer rejection email:', e));
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            `Bulk ${status === 'approved' ? 'Approve' : 'Decline'} Volunteer`,
+            'volunteer_profile',
+            id,
+            JSON.stringify({ status, team: finalTeam }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        updatedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Update failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: updatedCount,
+      failures,
+      message: `${updatedCount} volunteer(s) ${status === 'approved' ? 'approved' : 'declined'}.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process bulk volunteer review' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-assign-team - Bulk assign or change team
+router.post('/volunteers/bulk-assign-team', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds, assignedTeam } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+    if (!assignedTeam || typeof assignedTeam !== 'string') {
+      return res.status(400).json({ success: false, error: 'Assigned team is required' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let updatedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE volunteer_profiles 
+          SET preferred_team = ?, updated_at = ?
+          WHERE id = ?
+        `, [assignedTeam, nowStr, id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Assign Volunteer Team',
+            'volunteer_profile',
+            id,
+            JSON.stringify({ assignedTeam }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        updatedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Assignment failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: updatedCount,
+      failures,
+      message: `${updatedCount} volunteer(s) assigned to ${assignedTeam}.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer team assignment:', err);
+    return res.status(500).json({ success: false, error: 'Failed to assign volunteer team' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-remove - Bulk soft-delete / archive volunteers
+router.post('/volunteers/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds, reason } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let removedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE volunteer_profiles 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [nowStr, req.user.id, reason || 'Bulk removal', id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Remove Volunteer',
+            'volunteer_profile',
+            id,
+            JSON.stringify({ reason: reason || 'Bulk removal' }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        removedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Removal failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: removedCount,
+      failures,
+      message: `${removedCount} volunteer(s) removed.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer removal:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove volunteers' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-restore - Bulk restore archived volunteers
+router.post('/volunteers/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let restoredCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE volunteer_profiles 
+          SET is_deleted = 0, restored_at = ?, restored_by = ?
+          WHERE id = ?
+        `, [nowStr, req.user.id, id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Restore Volunteer',
+            'volunteer_profile',
+            id,
+            JSON.stringify({ restored_at: nowStr }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        restoredCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Restoration failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: restoredCount,
+      failures,
+      message: `${restoredCount} volunteer(s) restored.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer restore:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore volunteers' });
+  }
+});
+
 // GET /api/admin/parents - Get all parents and metrics
 router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -5967,6 +6299,133 @@ router.post('/parents/:id/restore', async (req: AuthenticatedRequest, res: Respo
   } catch (err: any) {
     console.error('Error restoring parent:', err);
     return res.status(500).json({ success: false, error: 'Failed to restore parent' });
+  }
+});
+
+// POST /api/admin/parents/bulk-remove - Bulk soft-delete / archive parents
+router.post('/parents/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { parentIds, reason } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let removedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of parentIds) {
+      try {
+        const p = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+        if (!p) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        // Soft delete parent profile only. Linked children, attendance, registrations, audit history are fully preserved.
+        await execute(`
+          UPDATE parent_profiles 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [nowStr, req.user.id, reason || 'Bulk removal', id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Remove Parent',
+            'parent_profile',
+            id,
+            JSON.stringify({ reason: reason || 'Bulk removal' }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        removedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Removal failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: removedCount,
+      failures,
+      message: `${removedCount} parent(s) removed.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk parent removal:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove parents' });
+  }
+});
+
+// POST /api/admin/parents/bulk-restore - Bulk restore archived parents
+router.post('/parents/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { parentIds } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let restoredCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of parentIds) {
+      try {
+        const p = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+        if (!p) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE parent_profiles 
+          SET is_deleted = 0, restored_at = ?, restored_by = ?
+          WHERE id = ?
+        `, [nowStr, req.user.id, id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Restore Parent',
+            'parent_profile',
+            id,
+            JSON.stringify({ restored_at: nowStr }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        restoredCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Restoration failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: restoredCount,
+      failures,
+      message: `${restoredCount} parent(s) restored.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk parent restore:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore parents' });
   }
 });
 
