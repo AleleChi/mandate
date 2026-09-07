@@ -1,6 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { RefreshCw, ChevronDown } from 'lucide-react';
 import { safeStorage } from '../../utils/storage';
+import { buildApiUrl } from '../../utils/urlHelper';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 
 export type DutyTabType = 'devices_readiness' | 'event_team' | 'alert_routing' | 'response_coverage' | 'event_locations';
@@ -40,7 +41,7 @@ export function AdminDutyDevicesView() {
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        const res = await fetch('/api/admin/events', { headers });
+        const res = await fetch(buildApiUrl('/api/admin/events'), { headers });
         if (res.ok) {
           const data = await res.json();
           const list: EventOption[] = data.events || (Array.isArray(data) ? data : []);

@@ -11,6 +11,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
+import { buildApiUrl } from '../../../utils/urlHelper';
 import { CoverageCategory, Responder, formatRoleName } from './ResponseCoverageRow';
 
 type DutyTabType = 'devices_readiness' | 'event_team' | 'alert_routing' | 'response_coverage' | 'event_locations';
@@ -75,9 +76,9 @@ export default function ResponseCoverageTab({
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      let res = await fetch(`/api/admin/duty/events/${eventId}/response-coverage`, { headers });
+      let res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/response-coverage`), { headers });
       if (!res.ok && res.status === 404) {
-        res = await fetch(`/api/admin/events/${eventId}/response-coverage`, { headers });
+        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/response-coverage`), { headers });
       }
 
       if (res.ok) {
@@ -278,6 +279,22 @@ export default function ResponseCoverageTab({
         <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
           <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading team coverage…</span>
+        </div>
+      ) : error && categories.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-rose-200 rounded-2xl space-y-3 shadow-2xs">
+          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+          <div>
+            <h3 className="font-semibold text-zinc-800 text-sm">{error}</h3>
+            <p className="text-zinc-500 text-xs mt-0.5">Please check your connection or try loading team coverage again.</p>
+          </div>
+          <div className="pt-1">
+            <button
+              onClick={() => fetchCoverageReport(false)}
+              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 text-xs font-medium rounded-xl hover:bg-zinc-50 cursor-pointer shadow-2xs"
+            >
+              Try again
+            </button>
+          </div>
         </div>
       ) : categories.length === 0 ? (
         /* Empty State (Section 30) */

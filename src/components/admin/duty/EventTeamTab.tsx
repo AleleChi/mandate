@@ -16,6 +16,7 @@ import {
   Check
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
+import { buildApiUrl } from '../../../utils/urlHelper';
 import { 
   EventDutyAssignmentItem, 
   formatRoleLabel, 
@@ -149,11 +150,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         query: teamSearch
       });
 
-      const res = await fetch(`/api/admin/duty/events/${eventId}/duty-assignments?${queryParams.toString()}`, { headers });
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/duty-assignments?${queryParams.toString()}`), { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          setAssignments(data.assignments || []);
+          setAssignments(data.assignments || data.items || []);
           setAssignmentPagination(data.pagination || {
             page: 1,
             limit: 25,
@@ -195,7 +196,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         limit: '50'
       });
 
-      const res = await fetch(`/api/admin/duty/events/${eventId}/eligible-team-members?${queryParams.toString()}`, { headers });
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/eligible-team-members?${queryParams.toString()}`), { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -217,7 +218,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`/api/admin/duty/events/${eventId}/locations`, { headers });
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/locations`), { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -357,7 +358,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
 
       const method = editingAssignment ? 'PATCH' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await fetch(buildApiUrl(url), {
         method,
         headers,
         body: JSON.stringify(payload)
@@ -391,7 +392,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`/api/admin/duty/events/${eventId}/duty-assignments/${deletingAssignment.id}`, {
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/duty-assignments/${deletingAssignment.id}`), {
         method: 'DELETE',
         headers
       });
@@ -525,6 +526,22 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
           <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading assignments…</span>
+        </div>
+      ) : error && assignments.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-rose-200 rounded-2xl space-y-3 shadow-2xs">
+          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+          <div>
+            <h3 className="font-semibold text-zinc-800 text-sm">{error}</h3>
+            <p className="text-zinc-500 text-xs mt-0.5">Please check your connection or try loading assignments again.</p>
+          </div>
+          <div className="pt-1">
+            <button
+              onClick={() => fetchAssignments(assignmentPagination.page)}
+              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 text-xs font-medium rounded-xl hover:bg-zinc-50 cursor-pointer shadow-2xs"
+            >
+              Try again
+            </button>
+          </div>
         </div>
       ) : assignments.length === 0 ? (
         hasActiveFilters ? (

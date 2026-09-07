@@ -193,6 +193,8 @@ async function startServer() {
   app.use('/api/public/gallery', publicGalleryRouter);
   app.use('/api/admin/gallery', adminGalleryRouter);
   app.use('/api/admin/reports', reportsRoutes);
+  app.use('/api/admin/duty', adminDutyRouter);
+  app.use('/api/admin/escalation', escalationRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/jobs', jobsRoutes);
   app.use('/api/notifications', notificationsRoutes);
@@ -201,9 +203,7 @@ async function startServer() {
   app.use('/api/staff', volunteerRoutes);
   app.use('/api/duty', dutyRouter);
   app.use('/api/event-duty', dutyRouter);
-  app.use('/api/admin/duty', adminDutyRouter);
   app.use('/api/incidents', incidentRoutes);
-  app.use('/api/admin/escalation', escalationRoutes);
   app.use('/api/training', trainingRoutes);
 
   // Safety Alerts response coordination

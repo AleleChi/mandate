@@ -16,6 +16,7 @@ import {
   Power
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
+import { buildApiUrl } from '../../../utils/urlHelper';
 
 interface Recipient {
   id?: string;
@@ -138,7 +139,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`/api/admin/duty/events/${eventId}/alert-routing`, { headers });
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/alert-routing`), { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -328,7 +329,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
         : `/api/admin/duty/events/${eventId}/alert-routing`;
       const method = isUpdate ? 'PATCH' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await fetch(buildApiUrl(url), {
         method,
         headers,
         body: JSON.stringify(payload)
@@ -344,7 +345,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
       } else {
         // If updating a local default rule that wasn't in DB yet, create it as new
         if (editingRule?.id.startsWith('default-')) {
-          const createRes = await fetch(`/api/admin/duty/events/${eventId}/alert-routing`, {
+          const createRes = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/alert-routing`), {
             method: 'POST',
             headers,
             body: JSON.stringify(payload)
@@ -393,7 +394,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      await fetch(`/api/admin/duty/events/${eventId}/alert-routing/${rule.id}`, {
+      await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/alert-routing/${rule.id}`), {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ is_active: nextStatus })
@@ -427,7 +428,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`/api/admin/duty/events/${eventId}/alert-routing/${deletingRule.id}`, {
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/alert-routing/${deletingRule.id}`), {
         method: 'DELETE',
         headers
       });
@@ -514,6 +515,22 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
         <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
           <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading alert rules…</span>
+        </div>
+      ) : error && rules.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-rose-200 rounded-2xl space-y-3 shadow-2xs">
+          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+          <div>
+            <h3 className="font-semibold text-zinc-800 text-sm">{error}</h3>
+            <p className="text-zinc-500 text-xs mt-0.5">Please check your connection or try loading alert rules again.</p>
+          </div>
+          <div className="pt-1">
+            <button
+              onClick={fetchAlertRules}
+              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 text-xs font-medium rounded-xl hover:bg-zinc-50 cursor-pointer shadow-2xs"
+            >
+              Try again
+            </button>
+          </div>
         </div>
       ) : rules.length === 0 ? (
         <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">

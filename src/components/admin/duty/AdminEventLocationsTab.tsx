@@ -24,6 +24,7 @@ import {
   FileText
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
+import { buildApiUrl } from '../../../utils/urlHelper';
 
 interface AdminEventLocationsTabProps {
   eventId?: string;
@@ -138,10 +139,10 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       if (searchTerm) queryParams.append('search', searchTerm);
 
       // Call primary endpoint
-      let res = await fetch(`/api/admin/events/${eventId}/locations?${queryParams.toString()}`, { headers });
+      let res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations?${queryParams.toString()}`), { headers });
       if (!res.ok) {
         // Fallback endpoint
-        res = await fetch(`/api/admin/locations?${queryParams.toString()}`, { headers });
+        res = await fetch(buildApiUrl(`/api/admin/locations?${queryParams.toString()}`), { headers });
       }
 
       if (res.ok) {
@@ -213,9 +214,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/events/${eventId}/locations/${locId}/coverage`, { headers });
+      let res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${locId}/coverage`), { headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/locations/${locId}/coverage`, { headers });
+        res = await fetch(buildApiUrl(`/api/admin/locations/${locId}/coverage`), { headers });
       }
 
       if (res.ok) {
@@ -271,9 +272,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
           const headers: Record<string, string> = {};
           if (token) headers['Authorization'] = `Bearer ${token}`;
 
-          let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { headers });
+          let res = await fetch(buildApiUrl(`/api/admin/locations/${selectedLocation.id}/qr`), { headers });
           if (!res.ok) {
-            res = await fetch(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`, { headers });
+            res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`), { headers });
           }
           if (res.ok) {
             const data = await res.json();
@@ -393,9 +394,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       
       const method = isEditing ? 'PATCH' : 'POST';
 
-      let res = await fetch(primaryUrl, { method, headers, body: JSON.stringify(payload) });
+      let res = await fetch(buildApiUrl(primaryUrl), { method, headers, body: JSON.stringify(payload) });
       if (!res.ok && res.status === 404) {
-        res = await fetch(fallbackUrl, { method: isEditing ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) });
+        res = await fetch(buildApiUrl(fallbackUrl), { method: isEditing ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) });
       }
 
       if (res.ok) {
@@ -426,9 +427,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/events/${eventId}/locations/${loc.id}/${action}`, { method: 'POST', headers });
+      let res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${loc.id}/${action}`), { method: 'POST', headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/locations/${loc.id}/${action}`, { method: 'POST', headers });
+        res = await fetch(buildApiUrl(`/api/admin/locations/${loc.id}/${action}`), { method: 'POST', headers });
       }
 
       if (res.ok) {
@@ -456,9 +457,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/locations/${loc.id}/qr`, { headers });
+      let res = await fetch(buildApiUrl(`/api/admin/locations/${loc.id}/qr`), { headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/events/${eventId}/locations/${loc.id}/code`, { headers });
+        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${loc.id}/code`), { headers });
       }
 
       if (res.ok) {
@@ -482,9 +483,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'POST', headers });
+      let res = await fetch(buildApiUrl(`/api/admin/locations/${selectedLocation.id}/qr`), { method: 'POST', headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`, { method: 'POST', headers });
+        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`), { method: 'POST', headers });
       }
 
       if (res.ok) {
@@ -509,9 +510,9 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'DELETE', headers });
+      let res = await fetch(buildApiUrl(`/api/admin/locations/${selectedLocation.id}/qr`), { method: 'DELETE', headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code/disable`, { method: 'POST', headers });
+        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code/disable`), { method: 'POST', headers });
       }
 
       if (res.ok) {
@@ -731,6 +732,20 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
               <div className="p-8 text-center text-xs text-zinc-400 space-y-2">
                 <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C59B27]" />
                 <p className="font-semibold text-zinc-600">Loading directory...</p>
+              </div>
+            ) : error && locations.length === 0 ? (
+              <div className="p-8 text-center text-xs text-zinc-500 space-y-3">
+                <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+                <p className="font-bold text-zinc-800 text-sm">{error}</p>
+                <p className="text-[11px] max-w-xs mx-auto text-zinc-500">
+                  Please check your connection or try loading locations again.
+                </p>
+                <button 
+                  onClick={fetchLocations}
+                  className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 rounded-xl text-xs font-medium hover:bg-zinc-50 mt-1 cursor-pointer shadow-2xs"
+                >
+                  Try again
+                </button>
               </div>
             ) : filteredLocations.length === 0 ? (
               <div className="p-8 text-center text-xs text-zinc-400 space-y-2">

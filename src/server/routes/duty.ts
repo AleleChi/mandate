@@ -958,6 +958,7 @@ adminDutyRouter.get('/events/:eventId/duty-assignments', async (req: Authenticat
     return res.json({
       success: true,
       items: items || [],
+      assignments: items || [],
       pagination: {
         page,
         limit,
