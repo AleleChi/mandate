@@ -774,6 +774,29 @@ export const api = {
         body: JSON.stringify({ applicationIds, reason, confirmText })
       });
     },
+    async resetEventProgress(id: string, mode: 'review' | 'attendance') {
+      return api.request<any>(`/api/admin/applications/${id}/reset-progress`, {
+        method: 'POST',
+        body: JSON.stringify({ mode })
+      });
+    },
+    async bulkResetEventProgress(payload: { applicationIds: string[]; mode: 'review' | 'attendance' }) {
+      return api.request<any>('/api/admin/applications/bulk-reset-progress', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRevokePasses(applicationIds: string[], reason: string) {
+      return api.request<any>('/api/admin/applications/bulk-revoke-pass', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason })
+      });
+    },
+    async prepareForPermanentDelete(id: string) {
+      return api.request<any>(`/api/admin/applications/${id}/prepare-delete`, {
+        method: 'POST'
+      });
+    },
     async permanentlyDeleteChild(id: string, reason?: string, confirmation?: string) {
       return api.request<any>(`/api/admin/applications/${id}/permanent-delete`, {
         method: 'POST',

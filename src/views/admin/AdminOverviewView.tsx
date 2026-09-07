@@ -3192,7 +3192,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* APPLICATIONS REGISTRY VIEW PANEL */}
           {activeTab === 'applications' && (
-            <AdminApplicationsView onBackToOverview={() => handleTabChange('overview')} />
+            <AdminApplicationsView 
+              onBackToOverview={() => handleTabChange('overview')}
+              adminUser={adminUser}
+              isSuperAdmin={isSuperAdmin}
+            />
           )}
 
           {/* REVIEW BOARD VIEW PANEL */}

@@ -38,13 +38,13 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
       <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-[#C59B27]" />
-          <span className="text-xs font-serif-koinonia tracking-widest uppercase text-[#D4AF37]">
-            Official Event Pass
+          <span className="text-xs font-medium tracking-wide text-zinc-300">
+            Event Pass
           </span>
         </div>
-        <div className="flex items-center text-xs text-white/70">
-          <ShieldCheck className="w-3.5 h-3.5 mr-1 text-[#C59B27]" />
-          <span>Verified Access</span>
+        <div className="flex items-center text-xs text-emerald-400 font-medium space-x-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <span>Pass ready</span>
         </div>
       </div>
 

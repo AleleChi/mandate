@@ -1246,22 +1246,26 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
     }
 
     if (status && status !== 'all' && status !== 'event_review') {
-      if (status === 'review' || status === 'under_review') {
-        whereClauses.push(`e.status = 'under_review'`);
+      if (status === 'removed') {
+        whereClauses.push(`(e.is_deleted = 1 OR e.status = 'removed')`);
+      } else if (status === 'review' || status === 'under_review') {
+        whereClauses.push(`e.status = 'under_review' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'needs_attention') {
-        whereClauses.push(`(e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id))`);
+        whereClauses.push(`(e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)) AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
       } else if (status === 'selected') {
-        whereClauses.push(`e.status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')`);
+        whereClauses.push(`e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'waiting_list') {
-        whereClauses.push(`e.status = 'waiting_list'`);
+        whereClauses.push(`e.status = 'waiting_list' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'not_selected') {
-        whereClauses.push(`e.status = 'not_selected'`);
+        whereClauses.push(`e.status = 'not_selected' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else {
-        whereClauses.push(`e.status = ?`);
+        whereClauses.push(`e.status = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
         params.push(status);
       }
     } else if (status === 'event_review') {
-      whereClauses.push(`e.status IN ('under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected')`);
+      whereClauses.push(`e.status IN ('under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+    } else {
+      whereClauses.push(`(e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
     }
 
     const whereSql = whereClauses.join(' AND ');
@@ -1292,6 +1296,9 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         e.needs_extra_support,
         e.support_notes,
         e.submitted_at,
+        e.checked_in_at,
+        e.picked_up_at,
+        e.is_deleted,
         c.full_name as child_name,
         c.gender,
         c.date_of_birth,
@@ -1330,6 +1337,12 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         WHERE p.child_event_entry_id IN (${placeholders})
       `, entryIds);
 
+      const eventPasses = await query(`
+        SELECT child_event_entry_id, status, pass_reference
+        FROM event_passes
+        WHERE child_event_entry_id IN (${placeholders})
+      `, entryIds);
+
       formatted = applications.map((app: any) => {
         const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
           .map((p: any) => ({
@@ -1342,10 +1355,18 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
             approved: p.approved_by_parent === 1
           }));
 
+        const pass = eventPasses.find((p: any) => p.child_event_entry_id === app.entry_id);
+
         return {
           id: app.entry_id,
           childId: app.child_id,
           status: app.status,
+          checkedInAt: app.checked_in_at,
+          pickedUpAt: app.picked_up_at,
+          isDeleted: app.is_deleted === 1,
+          hasPass: !!pass,
+          passStatus: pass ? pass.status : null,
+          passReference: pass ? pass.pass_reference : null,
           schoolClass: app.school_class,
           schoolName: app.school_name,
           previousProgramme: app.previous_children_programme,
@@ -1380,10 +1401,11 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       });
     }
 
-    const statSentReview = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'`, [eventId]))?.count || 0;
-    const statSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')`, [eventId]))?.count || 0;
-    const statWaitingList = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list'`, [eventId]))?.count || 0;
-    const statNotSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'not_selected'`, [eventId]))?.count || 0;
+    const statSentReview = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up') AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statWaitingList = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statNotSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'not_selected' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statRemoved = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted = 1 OR status = 'removed')`, [eventId]))?.count || 0;
 
     return res.json({ 
       success: true, 
@@ -1392,7 +1414,8 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         sentReview: statSentReview,
         selected: statSelected,
         waitingList: statWaitingList,
-        notSelected: statNotSelected
+        notSelected: statNotSelected,
+        removed: statRemoved
       },
       pagination: {
         total: totalCount,
@@ -1900,6 +1923,8 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         e.support_notes,
         e.submitted_at,
         e.reviewed_at,
+        e.checked_in_at,
+        e.picked_up_at,
         e.updated_at,
         c.full_name as child_name,
         c.gender,
@@ -1949,35 +1974,59 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       approved: p.approved_by_parent === 1
     }));
 
-    const history = [];
-    if (app.submitted_at) {
-      history.push({
-        id: 'submitted',
-        action: 'Application submitted',
-        by: app.parent_name || 'Parent',
-        timestamp: app.submitted_at,
-        note: app.note_to_team || null,
-        status: 'under_review'
-      });
+    const auditEvents = await query(`
+      SELECT action, user_role, details, timestamp
+      FROM audit_logs
+      WHERE target_id IN (?, ?)
+      ORDER BY timestamp DESC
+    `, [id, app.child_id]);
+
+    const history: any[] = [];
+    if (auditEvents && auditEvents.length > 0) {
+      for (const a of auditEvents) {
+        let parsedDetails: any = null;
+        try { parsedDetails = JSON.parse(a.details); } catch (e) {}
+        history.push({
+          id: `audit-${history.length}`,
+          action: a.action,
+          by: a.user_role === 'super_admin' ? 'Super Admin' : a.user_role === 'admin' ? 'Administrator' : 'Event Team',
+          timestamp: a.timestamp,
+          note: parsedDetails?.reason || parsedDetails?.note || null
+        });
+      }
     }
-    if (app.reviewed_at) {
-      history.push({
-        id: 'reviewed',
-        action: `Decision: ${app.status}`,
-        by: 'Administrator',
-        timestamp: app.reviewed_at,
-        note: app.note_to_team || null,
-        status: app.status
-      });
+    if (history.length === 0) {
+      if (app.reviewed_at) {
+        history.push({
+          id: 'reviewed',
+          action: app.status === 'selected' || app.status === 'pass_ready' ? 'Selected for event' : app.status === 'waiting_list' ? 'Moved to waiting list' : app.status === 'not_selected' ? 'Marked not selected' : 'Review updated',
+          by: 'Administrator',
+          timestamp: app.reviewed_at,
+          note: app.note_to_team || null
+        });
+      }
+      if (app.submitted_at) {
+        history.push({
+          id: 'submitted',
+          action: 'Application submitted',
+          by: app.parent_name || 'Parent',
+          timestamp: app.submitted_at,
+          note: null
+        });
+      }
     }
 
-    const pass = await queryOne('SELECT pass_reference FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [id, 'active']);
+    const pass = await queryOne('SELECT pass_reference, status, issued_at, revoked_at FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
     const passReference = pass ? pass.pass_reference : undefined;
 
     const applicationDetails = {
       id: app.entry_id,
       childId: app.child_id,
       status: app.status,
+      checkedInAt: app.checked_in_at,
+      pickedUpAt: app.picked_up_at,
+      hasPass: !!pass,
+      passStatus: pass ? pass.status : null,
       passReference,
       isDeleted: app.is_deleted === 1,
       deletedAt: app.deleted_at,
@@ -7145,32 +7194,42 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
           continue;
         }
 
-        // Determine eligibility & protected history constraints
-        let hasProtectedHistory = false;
-        let protectionReason = '';
-
-        // 1. Attendance / Active status check
-        if (
-          ['checked_in', 'inside', 'picked_up'].includes(entry.status) ||
-          entry.checked_in_at != null ||
-          entry.picked_up_at != null
-        ) {
-          hasProtectedHistory = true;
-          protectionReason = 'This child is currently attending or has active attendance and cannot be permanently deleted.';
+        // 1. Unresolved safety alert check
+        const unresolvedAlert = await queryOne(`
+          SELECT id FROM event_safety_alerts 
+          WHERE (child_id = ? OR child_event_entry_id = ?) AND status != 'resolved'
+        `, [entry.child_id, id]);
+        if (unresolvedAlert) {
+          retained++;
+          failures.push({ id, reason: `${entry.full_name || 'This child'} cannot be permanently deleted while an unresolved safeguarding or safety alert exists. Resolve or close the alert first.` });
+          continue;
         }
 
-        if (hasProtectedHistory) {
+        // 2. Attendance / Active status check
+        if (
+          ['checked_in', 'inside'].includes(entry.status) ||
+          (entry.checked_in_at != null && entry.picked_up_at == null)
+        ) {
           retained++;
-          failures.push({ id, reason: protectionReason });
+          failures.push({ id, reason: `${entry.full_name || 'This child'} cannot be permanently deleted while an active attendance record exists. Reset event progress first.` });
           continue;
         }
 
         // Record is eligible for permanent deletion inside a safe transaction
         await transaction(async () => {
+          // Anonymize safeguarding/incident references
+          await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+          await execute(`UPDATE alert_child_context_snapshots SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE child_summary_access_logs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE alert_child_link_history SET previous_child_id = NULL WHERE previous_child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE alert_child_link_history SET new_child_id = NULL WHERE new_child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE child_contact_attempts SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
           await execute(`UPDATE notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
           await execute(`UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
           await execute(`UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
-          await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+
+          // Clear operational records
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
           await execute(`DELETE FROM child_attention_items WHERE child_id = ?`, [entry.child_id]);
           await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
           await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
@@ -7390,6 +7449,325 @@ router.post('/applications/:id/restore', authMiddleware, async (req: Authenticat
   }
 });
 
+// POST /api/admin/applications/bulk-reset-progress - Super Admin bulk action to reset event progress
+router.post('/applications/bulk-reset-progress', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset event progress." });
+    }
+    const { applicationIds, mode } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one registration is required.' });
+    }
+    if (mode !== 'review' && mode !== 'attendance') {
+      return res.status(400).json({ success: false, error: 'Valid reset mode is required (review or attendance).' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+    let resetCount = 0;
+
+    await transaction(async () => {
+      for (const id of applicationIds) {
+        const entry = await queryOne(`SELECT id, child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+        if (!entry) continue;
+
+        if (mode === 'review') {
+          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+          await execute(`
+            UPDATE child_event_entries 
+            SET status = 'under_review', checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, reviewed_at = NULL, decision_at = NULL, updated_at = ?
+            WHERE id = ?
+          `, [now, id]);
+          await execute(`UPDATE notifications SET is_read = 1 WHERE child_id = ? AND type IN ('check_in', 'pickup', 'inside')`, [entry.child_id]);
+
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              adminId,
+              req.user.role,
+              'Event progress reset to review by Super Admin',
+              'child_event_entry',
+              id,
+              JSON.stringify({ mode: 'review', childId: entry.child_id, previousStatus: entry.status }),
+              now
+            ]);
+          } catch (aErr) {}
+        } else {
+          const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [id]);
+          const targetStatus = pass ? 'pass_ready' : (entry.status === 'under_review' ? 'under_review' : 'selected');
+
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+          await execute(`
+            UPDATE child_event_entries 
+            SET status = ?, checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+            WHERE id = ?
+          `, [targetStatus, now, id]);
+
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              adminId,
+              req.user.role,
+              'Event attendance reset by Super Admin',
+              'child_event_entry',
+              id,
+              JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, previousStatus: entry.status }),
+              now
+            ]);
+          } catch (aErr) {}
+        }
+        resetCount++;
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      resetCount,
+      summary,
+      message: `${resetCount} children's event progress was reset.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk reset event progress:', err);
+    return res.status(500).json({ success: false, error: "We couldn't reset selected children's event progress. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/bulk-revoke-pass - Bulk revoke event passes
+router.post('/applications/bulk-revoke-pass', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one registration is required.' });
+    }
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    let revokedCount = 0;
+
+    await transaction(async () => {
+      for (const id of applicationIds) {
+        const entry = await queryOne(`SELECT id, child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+        if (!entry) continue;
+
+        await execute(`
+          UPDATE event_passes 
+          SET status = 'revoked', revoked_at = ? 
+          WHERE child_event_entry_id = ? AND status = 'active'
+        `, [now, id]);
+
+        if (entry.status === 'pass_ready') {
+          await execute(`UPDATE child_event_entries SET status = 'selected', updated_at = ? WHERE id = ?`, [now, id]);
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user?.role || 'admin',
+            'Pass revoked',
+            'child_event_entry',
+            id,
+            JSON.stringify({ reason: reason || 'Bulk pass revocation', childId: entry.child_id }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        revokedCount++;
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      revokedCount,
+      summary,
+      message: `${revokedCount} passes revoked.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk revoke passes:', err);
+    return res.status(500).json({ success: false, error: "We couldn't revoke passes for selected children. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/reset-progress - Super Admin action to reset event progress for a child
+router.post('/applications/:id/reset-progress', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset event progress." });
+    }
+    const { id } = req.params;
+    const { mode } = req.body; // 'review' | 'attendance'
+
+    if (mode !== 'review' && mode !== 'attendance') {
+      return res.status(400).json({ success: false, error: 'Valid reset mode is required (review or attendance).' });
+    }
+
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      if (mode === 'review') {
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'under_review', checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, reviewed_at = NULL, decision_at = NULL, updated_at = ?
+          WHERE id = ?
+        `, [now, id]);
+        await execute(`UPDATE notifications SET is_read = 1 WHERE child_id = ? AND type IN ('check_in', 'pickup', 'inside')`, [entry.child_id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user.role,
+            'Event progress reset to review by Super Admin',
+            'child_event_entry',
+            id,
+            JSON.stringify({ mode: 'review', childId: entry.child_id, previousStatus: entry.status }),
+            now
+          ]);
+        } catch (aErr) {}
+      } else {
+        const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [id]);
+        const targetStatus = pass ? 'pass_ready' : (entry.status === 'under_review' ? 'under_review' : 'selected');
+
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = ?, checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+          WHERE id = ?
+        `, [targetStatus, now, id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user.role,
+            'Event attendance reset by Super Admin',
+            'child_event_entry',
+            id,
+            JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, previousStatus: entry.status }),
+            now
+          ]);
+        } catch (aErr) {}
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      summary,
+      message: `${entry.full_name || 'Child'}'s event progress was reset.`
+    });
+  } catch (err: any) {
+    console.error('Error resetting event progress:', err);
+    return res.status(500).json({ success: false, error: "We couldn't reset this child's event progress. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/prepare-delete - Super Admin action to prepare a removed test record for permanent deletion
+router.post('/applications/:id/prepare-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to prepare records for permanent deletion." });
+    }
+    const { id } = req.params;
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    if (entry.is_deleted !== 1 && entry.status !== 'removed') {
+      return res.status(400).json({ success: false, error: 'Only removed applications can be prepared for permanent deletion. Remove this application first.' });
+    }
+
+    const unresolvedAlert = await queryOne(`
+      SELECT id FROM event_safety_alerts 
+      WHERE (child_id = ? OR child_event_entry_id = ?) AND status != 'resolved'
+    `, [entry.child_id, id]);
+    if (unresolvedAlert) {
+      return res.status(400).json({
+        success: false,
+        error: `${entry.full_name || 'This child'} cannot be prepared for deletion while an unresolved safeguarding or safety alert exists. Resolve or close the alert first.`
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
+      await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+      await execute(`
+        UPDATE child_event_entries 
+        SET checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+        WHERE id = ?
+      `, [now, id]);
+
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Prepared for permanent deletion by Super Admin',
+          'child_event_entry',
+          id,
+          JSON.stringify({ childId: entry.child_id }),
+          now
+        ]);
+      } catch (aErr) {}
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      summary,
+      message: `${entry.full_name || 'Record'} is prepared and ready for permanent deletion.`
+    });
+  } catch (err: any) {
+    console.error('Error preparing record for permanent deletion:', err);
+    return res.status(500).json({ success: false, error: "We couldn't prepare this record for deletion. Nothing was changed." });
+  }
+});
+
 // POST /api/admin/applications/:id/permanent-delete - Permanently delete removed child (Super Admin only)
 router.post('/applications/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -7400,7 +7778,7 @@ router.post('/applications/:id/permanent-delete', authMiddleware, async (req: Au
     const { reason, confirmation } = req.body;
 
     if (confirmation !== 'DELETE') {
-      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required.' });
     }
 
     const entry = await queryOne(`
@@ -7411,25 +7789,40 @@ router.post('/applications/:id/permanent-delete', authMiddleware, async (req: Au
     `, [id]);
 
     if (!entry) {
-      return res.status(404).json({ success: false, error: 'Child record not found' });
+      return res.status(404).json({ success: false, error: 'Child record not found.' });
     }
 
     if (entry.is_deleted !== 1 && entry.status !== 'removed') {
-      return res.status(400).json({ success: false, error: 'Only removed children can be permanently deleted. Remove this child first.' });
+      return res.status(400).json({ success: false, error: 'Only removed children can be permanently deleted. Remove this application first.' });
+    }
+
+    // Safety checks
+    const unresolvedAlert = await queryOne(`
+      SELECT id FROM event_safety_alerts 
+      WHERE (child_id = ? OR child_event_entry_id = ?) AND status != 'resolved'
+    `, [entry.child_id, id]);
+    if (unresolvedAlert) {
+      return res.status(400).json({
+        success: false,
+        error: `${entry.full_name || 'This child'} cannot be permanently deleted while an unresolved safeguarding or safety alert exists. Resolve or close the alert first.`
+      });
     }
 
     if (
-      ['checked_in', 'inside', 'picked_up'].includes(entry.status) ||
-      entry.checked_in_at != null ||
-      entry.picked_up_at != null
+      ['checked_in', 'inside'].includes(entry.status) ||
+      (entry.checked_in_at != null && entry.picked_up_at == null)
     ) {
-      return res.status(400).json({ success: false, error: 'This child is currently attending or has active attendance and cannot be permanently deleted.' });
+      return res.status(400).json({
+        success: false,
+        error: `${entry.full_name || 'This child'} cannot be permanently deleted while an active attendance record exists. Reset event progress first.`
+      });
     }
 
     const now = new Date().toISOString();
     const adminId = req.user.id;
 
     await transaction(async () => {
+      // 1. Audit log before deletion
       try {
         await execute(`
           INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
@@ -7441,15 +7834,24 @@ router.post('/applications/:id/permanent-delete', authMiddleware, async (req: Au
           'Child permanently deleted by Super Admin',
           'child',
           entry.child_id,
-          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
+          JSON.stringify({ reason: reason || 'Permanent deletion' }),
           now
         ]);
       } catch (aErr) {}
 
+      // 2. Anonymize safeguarding/incident relationships without deleting safety alerts or incident reports
+      await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+      await execute(`UPDATE alert_child_context_snapshots SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE child_summary_access_logs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE alert_child_link_history SET previous_child_id = NULL WHERE previous_child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE alert_child_link_history SET new_child_id = NULL WHERE new_child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE child_contact_attempts SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
       await execute(`UPDATE notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
       await execute(`UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
       await execute(`UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
-      await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+
+      // 3. Clear operational dependencies
+      await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
       await execute(`DELETE FROM child_attention_items WHERE child_id = ?`, [entry.child_id]);
       await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
       await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
