@@ -113,6 +113,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     totalVolunteers: 0,
     pendingReview: 0,
     approvedVolunteers: 0,
+    declinedVolunteers: 0,
     assignedTeams: 0,
     removedVolunteers: 0
   });
@@ -416,7 +417,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
             : 'The application has been marked as not approved.'
         );
         handleCloseReview();
-        fetchVolunteers();
+        await fetchVolunteers();
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -1614,25 +1615,42 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
       {/* 3. Tabs */}
       <div className="flex border-b border-[#EAE8E1]" id="volunteers-list-tabs">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => handleTabChange(tab.id)}
-            className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
-              activeTab === tab.id
-                ? 'border-[#C59B27] text-[#18181B]'
-                : 'border-transparent text-zinc-400 hover:text-zinc-600'
-            }`}
-            id={`tab-${tab.id}-volunteers`}
-          >
-            {tab.label}
-            {tab.id === 'pending' && stats.pendingReview > 0 && (
-              <span className="ml-2 bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                {stats.pendingReview}
+        {tabs.map(tab => {
+          const count =
+            tab.id === 'active'
+              ? (stats.approvedVolunteers ?? 0)
+              : tab.id === 'pending'
+              ? (stats.pendingReview ?? 0)
+              : tab.id === 'declined'
+              ? (stats.declinedVolunteers ?? 0)
+              : (stats.removedVolunteers ?? 0);
+
+          return (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none flex items-center gap-1.5 ${
+                activeTab === tab.id
+                  ? 'border-[#C59B27] text-[#18181B]'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
+              }`}
+              id={`tab-${tab.id}-volunteers`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                  tab.id === 'pending' && count > 0
+                    ? 'bg-amber-100 text-amber-700'
+                    : activeTab === tab.id
+                    ? 'bg-zinc-100 text-zinc-900'
+                    : 'bg-zinc-100/70 text-zinc-500'
+                }`}
+              >
+                {count}
               </span>
-            )}
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
       {/* 4. Filters & Search */}
@@ -1948,7 +1966,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                                   const res = await api.admin.updateVolunteerAssignment(vol.id, newTeam);
                                   if (res.success) {
                                     showSuccess('Team updated', `${vol.fullName || vol.name || 'Volunteer'} assigned to ${teamLabel(newTeam)}.`);
-                                    fetchVolunteers();
+                                    await fetchVolunteers();
                                   }
                                 } catch (err: any) {
                                   const parsed = extractApiError(err);

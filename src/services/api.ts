@@ -1102,7 +1102,15 @@ export const api = {
       return api.request<{ 
         success: boolean; 
         volunteers: any[]; 
-        stats?: any;
+        stats?: {
+          totalVolunteers: number;
+          pendingReview: number;
+          approvedVolunteers: number;
+          declinedVolunteers?: number;
+          assignedTeams: number;
+          removedVolunteers: number;
+          [key: string]: any;
+        };
         pagination?: {
           total: number;
           page: number;

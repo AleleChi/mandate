@@ -2593,8 +2593,24 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     const underReviewRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND COALESCE(is_deleted, 0) = 0", [eventId]);
     const approvedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0", [eventId]);
     const totalParentsRes = await queryOne('SELECT COUNT(*) as count FROM parent_profiles');
-    const totalVolunteersRes = await queryOne('SELECT COUNT(*) as count FROM volunteer_profiles');
-    const pendingVolunteersRes = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'pending_review'");
+    const totalVolunteersRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v 
+      JOIN users u ON u.id = v.user_id 
+      WHERE COALESCE(v.is_deleted, 0) = 0 
+        AND v.deleted_at IS NULL 
+        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
+        AND COALESCE(v.status, v.approval_status) IN ('approved', 'active', 'pending_review', 'pending', 'rejected', 'declined')
+    `);
+    const pendingVolunteersRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v 
+      JOIN users u ON u.id = v.user_id 
+      WHERE COALESCE(v.is_deleted, 0) = 0 
+        AND v.deleted_at IS NULL 
+        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
+        AND (COALESCE(v.status, v.approval_status) IN ('pending_review', 'pending') OR COALESCE(v.status, v.approval_status) IS NULL OR COALESCE(v.status, v.approval_status) = '')
+    `);
     const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]);
     const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up' AND COALESCE(is_deleted, 0) = 0", [eventId]);
 
@@ -5572,17 +5588,17 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     if (status === 'removed') {
-      filterClauses += ` AND v.is_deleted = 1`;
+      filterClauses += ` AND (COALESCE(v.is_deleted, 0) = 1 OR COALESCE(v.status, v.approval_status) = 'removed' OR v.deleted_at IS NOT NULL)`;
     } else if (status === 'active') {
-      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('approved', 'active')`;
+      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL) AND COALESCE(v.status, v.approval_status) IN ('approved', 'active')`;
     } else if (status === 'pending_review' || status === 'pending') {
-      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('pending_review', 'pending')`;
+      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL) AND (COALESCE(v.status, v.approval_status) IN ('pending_review', 'pending') OR COALESCE(v.status, v.approval_status) IS NULL OR COALESCE(v.status, v.approval_status) = '')`;
     } else if (status === 'declined' || status === 'rejected') {
-      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL) AND v.status IN ('rejected', 'declined')`;
+      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL) AND COALESCE(v.status, v.approval_status) IN ('rejected', 'declined')`;
     } else {
-      filterClauses += ` AND (v.is_deleted = 0 OR v.is_deleted IS NULL)`;
+      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)`;
       if (status) {
-        filterClauses += ` AND v.status = ?`;
+        filterClauses += ` AND COALESCE(v.status, v.approval_status) = ?`;
         queryParams.push(status);
       }
     }
@@ -5632,7 +5648,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       assignedTeam: v.preferred_team, // map to assignedTeam too
       servingExperience: v.serving_experience,
       note: v.note,
-      status: v.status,
+      status: v.status || v.approval_status || 'pending',
       photoFileId: v.photo_file_id,
       photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
       createdAt: v.created_at,
@@ -5653,12 +5669,63 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       removedAt: v.deleted_at // map to removedAt too
     }));
 
-    // Calculate metrics
-    const totalVolunteers = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL)`))?.count || 0;
-    const pendingReview = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL) AND status IN ('pending_review', 'pending')`))?.count || 0;
-    const approvedVolunteers = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL) AND status IN ('approved', 'active')`))?.count || 0;
-    const assignedTeamsCount = (await queryOne(`SELECT COUNT(DISTINCT preferred_team) as count FROM volunteer_profiles WHERE (is_deleted = 0 OR is_deleted IS NULL) AND status IN ('approved', 'active') AND preferred_team IS NOT NULL AND preferred_team != ''`))?.count || 0;
-    const removedVolunteers = (await queryOne(`SELECT COUNT(*) as count FROM volunteer_profiles WHERE is_deleted = 1`))?.count || 0;
+    // Calculate metrics strictly adhering to directory count semantics:
+    // ACTIVE: Current approved/active volunteers only
+    const approvedVolunteers = (await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE COALESCE(v.is_deleted, 0) = 0
+        AND v.deleted_at IS NULL
+        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
+        AND COALESCE(v.status, v.approval_status) IN ('approved', 'active')
+    `))?.count || 0;
+
+    // AWAITING REVIEW: Current pending volunteer profiles only
+    const pendingReview = (await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE COALESCE(v.is_deleted, 0) = 0
+        AND v.deleted_at IS NULL
+        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
+        AND (COALESCE(v.status, v.approval_status) IN ('pending_review', 'pending') OR COALESCE(v.status, v.approval_status) IS NULL OR COALESCE(v.status, v.approval_status) = '')
+    `))?.count || 0;
+
+    // NOT APPROVED: Current declined/not-approved volunteer profiles only
+    const declinedVolunteers = (await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE COALESCE(v.is_deleted, 0) = 0
+        AND v.deleted_at IS NULL
+        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
+        AND COALESCE(v.status, v.approval_status) IN ('rejected', 'declined')
+    `))?.count || 0;
+
+    // REMOVED: Soft-removed volunteers only
+    const removedVolunteers = (await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE (COALESCE(v.is_deleted, 0) = 1 OR COALESCE(v.status, v.approval_status) = 'removed' OR v.deleted_at IS NOT NULL)
+    `))?.count || 0;
+
+    // TEAMS: Distinct teams represented by current active non-removed volunteers
+    const assignedTeamsCount = (await queryOne(`
+      SELECT COUNT(DISTINCT v.preferred_team) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE COALESCE(v.is_deleted, 0) = 0
+        AND v.deleted_at IS NULL
+        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
+        AND COALESCE(v.status, v.approval_status) IN ('approved', 'active')
+        AND v.preferred_team IS NOT NULL
+        AND v.preferred_team != ''
+    `))?.count || 0;
+
+    // VOLUNTEERS: All current NON-REMOVED volunteer profiles = Active + Awaiting review + Not approved
+    const totalVolunteers = approvedVolunteers + pendingReview + declinedVolunteers;
 
     return res.json({ 
       success: true, 
@@ -5666,6 +5733,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
         totalVolunteers,
         pendingReview,
         approvedVolunteers,
+        declinedVolunteers,
         assignedTeams: assignedTeamsCount,
         removedVolunteers
       },
@@ -5727,7 +5795,7 @@ router.post('/volunteers/:id/restore', async (req: AuthenticatedRequest, res: Re
 
     await execute(`
       UPDATE volunteer_profiles 
-      SET is_deleted = 0, restored_at = ?, restored_by = ?
+      SET is_deleted = 0, deleted_at = NULL, delete_reason = NULL, restored_at = ?, restored_by = ?
       WHERE id = ?
     `, [now, req.user.id, volunteerId]);
 
@@ -6178,7 +6246,7 @@ router.post('/volunteers/bulk-restore', authMiddleware, async (req: Authenticate
 
         await execute(`
           UPDATE volunteer_profiles 
-          SET is_deleted = 0, restored_at = ?, restored_by = ?
+          SET is_deleted = 0, deleted_at = NULL, delete_reason = NULL, restored_at = ?, restored_by = ?
           WHERE id = ?
         `, [nowStr, req.user.id, id]);
 
