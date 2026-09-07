@@ -331,7 +331,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] p-6 text-center max-w-md mx-auto" data-view-version="live-event-operations-dashboard-v1-premium">
         <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
-        <h3 className="font-serif font-medium text-lg text-stone-900 mb-2">Operations Overview Unavailable</h3>
+        <h3 className="font-semibold text-lg text-stone-900 mb-2">Operations Overview Unavailable</h3>
         <p className="text-stone-600 text-sm mb-6">{overviewError}</p>
         <Button 
           variant="primary" 
@@ -349,9 +349,9 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
   if (overview && !overview.event) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-[#fdfcf7] rounded-3xl border border-[#EAE8E1] max-w-2xl mx-auto shadow-sm" data-view-version="live-event-operations-dashboard-v1-premium">
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-[#fdfcf7] rounded-2xl border border-[#EAE8E1] max-w-2xl mx-auto shadow-none" data-view-version="live-event-operations-dashboard-v1-premium">
         <Calendar className="w-16 h-16 text-stone-400 mb-4" />
-        <h3 className="font-serif font-medium text-xl text-stone-900 mb-2">No Active Event Operations</h3>
+        <h3 className="font-semibold text-xl text-stone-900 mb-2">No Active Event Operations</h3>
         <p className="text-stone-600 text-sm max-w-md leading-relaxed mb-6">
           There is currently no active event scheduled or running. Live event operations telemetry, safety requests, and duty logs will populate here once an event begins.
         </p>
@@ -389,51 +389,53 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
       <div className="hidden" data-component-version="operations-section-refresh-v1" />
       <div className="hidden" data-component-version="operations-safe-refresh-fallback-v1" />
 
-      {/* HEADER SECTION (Section 6) */}
+      {/* RESTRAINED EVENT STATUS HEADER */}
       <header 
-        className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-5 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
         data-component-version="operations-event-status-header-v1"
       >
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+          <div className="flex items-center gap-3 mb-1.5">
             <h1 className="text-2xl font-semibold tracking-tight text-stone-900">{activeEvent.name}</h1>
-            <span className="text-xs bg-emerald-50 text-emerald-700 font-medium px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">
-              Event Active
+            <span className="text-sm font-medium text-emerald-800">
+              Event in progress
             </span>
           </div>
-          <p className="text-stone-500 text-sm flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-stone-400" />
-            Local Time: {new Date().toLocaleTimeString('en-US', { timeZone: activeEvent.timezone, hour: '2-digit', minute: '2-digit' })} ({activeEvent.timezone})
+          <p className="text-stone-500 text-xs flex items-center gap-1.5">
+            <span>
+              {new Date().toLocaleTimeString('en-US', { timeZone: activeEvent.timezone || 'Africa/Lagos', hour: 'numeric', minute: '2-digit' })}
+            </span>
+            <span>·</span>
+            <span>{(activeEvent.timezone || '').includes('Lagos') ? 'Lagos time' : (activeEvent.timezone || 'Local time')}</span>
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Access Profile Filter for Testing Roles (Section 34 & 35) */}
-          <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg p-1">
-            <span className="text-xs text-stone-500 px-2 font-medium">View Mode:</span>
+          {/* Operational View Filter */}
+          <div className="flex items-center gap-2 bg-stone-50 border border-[#EAE8E1] rounded-xl px-2.5 py-1.5">
+            <label htmlFor="ops-role-view-select" className="text-xs text-stone-500 font-medium">View</label>
             <select 
+              id="ops-role-view-select"
               value={profile} 
               onChange={(e) => setProfile(e.target.value)}
-              className="text-xs font-semibold text-stone-700 bg-transparent border-0 focus:ring-0 cursor-pointer"
+              className="text-xs font-semibold text-stone-700 bg-transparent border-0 focus:ring-0 cursor-pointer p-0 pr-4"
             >
-              <option value="admin">Full Admin</option>
-              <option value="first_aid">First Aid Lead</option>
-              <option value="security">Security Lead</option>
-              <option value="pickup">Pickup Lead</option>
-              <option value="safeguarding">Safeguarding Lead</option>
-              <option value="team_lead">Team Lead</option>
+              <option value="admin">Full event</option>
+              <option value="first_aid">First aid</option>
+              <option value="security">Security</option>
+              <option value="pickup">Pickup</option>
+              <option value="safeguarding">Safeguarding</option>
+              <option value="team_lead">Team lead</option>
             </select>
           </div>
 
-          {/* Connection Indicator (Section 24) */}
+          {/* Connection Indicator */}
           <div 
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium border bg-stone-50 border-stone-100"
+            className="text-xs font-medium text-stone-500 px-1"
             data-component-version="operations-connection-status-v1"
           >
-            <span className={`w-2 h-2 rounded-full ${connectionState === 'connected' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
-            <span className="text-stone-600">
-              {connectionState === 'connected' && 'Live updates active'}
+            <span>
+              {connectionState === 'connected' && 'Live updates on'}
               {connectionState === 'reconnecting' && 'Reconnecting'}
               {connectionState === 'delayed' && 'Updates may be delayed'}
               {connectionState === 'offline' && 'Offline'}
@@ -444,9 +446,9 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             onClick={handleManualRefresh} 
             variant="outline" 
             size="sm"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 rounded-xl text-xs font-medium border-[#EAE8E1]"
           >
-            <RefreshCw className="w-4 h-4 text-stone-500" />
+            <RefreshCw className="w-3.5 h-3.5 text-stone-500" />
             Refresh
           </Button>
 
@@ -454,138 +456,140 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             onClick={() => setIsFullscreen(!isFullscreen)} 
             variant="outline" 
             size="sm"
+            className="rounded-xl border-[#EAE8E1]"
+            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
           >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            {isFullscreen ? <Minimize2 className="w-4 h-4 text-stone-600" /> : <Maximize2 className="w-4 h-4 text-stone-600" />}
           </Button>
         </div>
       </header>
 
-      {/* PRIMARY SUMMARY CARDS GRID (Section 7) */}
+      {/* REBUILT PRIMARY METRICS STATUS STRIP */}
       <section 
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 mb-8"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-5 mb-8"
         data-component-version="operations-primary-summary-cards-v1"
       >
-        <div className="bg-white border border-stone-100 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <span className="text-stone-500 text-xs font-semibold uppercase tracking-wider">Checked In</span>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-stone-900 font-mono">
-              {attSummary.error ? '—' : attSummary.checkedIn}
-            </span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 lg:gap-0 lg:divide-x divide-[#EAE8E1]">
+          {/* Checked in */}
+          <div className="px-0 lg:px-4 first:pl-0">
+            <span className="text-xs font-medium text-stone-500 block">Checked in</span>
+            <div className="mt-2 flex items-baseline">
+              <span className="text-2xl sm:text-3xl font-semibold tracking-tight text-stone-900">
+                {attSummary.error ? '—' : attSummary.checkedIn}
+              </span>
+            </div>
+            {attSummary.error && (
+              <span className="text-rose-500 text-[10px] mt-1 block font-medium">⚠️ Unavailable</span>
+            )}
           </div>
-          {attSummary.error ? (
-            <span className="text-rose-500 text-[10px] mt-2 font-medium">⚠️ Feed unavailable</span>
-          ) : (
-            <span className="text-stone-400 text-xs mt-2" data-component-version="operations-data-freshness-v1">Based on check-in records</span>
-          )}
-        </div>
 
-        <div className="bg-white border border-stone-100 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <span className="text-stone-500 text-xs font-semibold uppercase tracking-wider">Released</span>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-[#C59B27] font-mono">
-              {attSummary.error ? '—' : attSummary.released}
-            </span>
+          {/* Picked up */}
+          <div className="px-0 lg:px-4">
+            <span className="text-xs font-medium text-stone-500 block">Picked up</span>
+            <div className="mt-2 flex items-baseline">
+              <span className="text-2xl sm:text-3xl font-semibold tracking-tight text-stone-900">
+                {attSummary.error ? '—' : attSummary.released}
+              </span>
+            </div>
+            {attSummary.error && (
+              <span className="text-rose-500 text-[10px] mt-1 block font-medium">⚠️ Unavailable</span>
+            )}
           </div>
-          {attSummary.error ? (
-            <span className="text-rose-500 text-[10px] mt-2 font-medium">⚠️ Feed unavailable</span>
-          ) : (
-            <span className="text-stone-400 text-xs mt-2">Verified releases</span>
-          )}
-        </div>
 
-        <div className="bg-white border border-stone-100 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <span className="text-stone-500 text-xs font-semibold uppercase tracking-wider">Volunteers</span>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-stone-900 font-mono">
-              {volSummary.error ? '—' : volSummary.onDuty}
-            </span>
+          {/* Volunteers on duty */}
+          <div className="px-0 lg:px-4">
+            <span className="text-xs font-medium text-stone-500 block">Volunteers on duty</span>
+            <div className="mt-2 flex items-baseline">
+              <span className="text-2xl sm:text-3xl font-semibold tracking-tight text-stone-900">
+                {volSummary.error ? '—' : volSummary.onDuty}
+              </span>
+            </div>
+            {volSummary.error && (
+              <span className="text-rose-500 text-[10px] mt-1 block font-medium">⚠️ Unavailable</span>
+            )}
           </div>
-          {volSummary.error ? (
-            <span className="text-rose-500 text-[10px] mt-2 font-medium">⚠️ Feed unavailable</span>
-          ) : (
-            <span className="text-stone-400 text-xs mt-2">Active duty sessions</span>
-          )}
-        </div>
 
-        <div className="bg-white border border-stone-100 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <span className="text-stone-500 text-xs font-semibold uppercase tracking-wider">Safety Alerts</span>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-rose-600 font-mono">
-              {alertSummary.error ? '—' : alertSummary.length}
-            </span>
+          {/* Safety concerns */}
+          <div className="px-0 lg:px-4">
+            <span className="text-xs font-medium text-stone-500 block">Safety concerns</span>
+            <div className="mt-2 flex items-baseline">
+              <span className={`text-2xl sm:text-3xl font-semibold tracking-tight ${
+                !alertSummary.error && alertSummary.length > 0 ? 'text-rose-600' : 'text-stone-900'
+              }`}>
+                {alertSummary.error ? '—' : alertSummary.length}
+              </span>
+            </div>
+            {alertSummary.error && (
+              <span className="text-rose-500 text-[10px] mt-1 block font-medium">⚠️ Unavailable</span>
+            )}
           </div>
-          {alertSummary.error ? (
-            <span className="text-rose-500 text-[10px] mt-2 font-medium">⚠️ Feed unavailable</span>
-          ) : (
-            <span className="text-stone-400 text-xs mt-2">Active requests</span>
-          )}
-        </div>
 
-        <div className="bg-white border border-stone-100 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <span className="text-stone-500 text-xs font-semibold uppercase tracking-wider">Coverage Gaps</span>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-amber-600 font-mono">
-              {volSummary.error ? '—' : volSummary.coverageGaps}
-            </span>
+          {/* Areas needing cover */}
+          <div className="px-0 lg:px-4">
+            <span className="text-xs font-medium text-stone-500 block">Areas needing cover</span>
+            <div className="mt-2 flex items-baseline">
+              <span className={`text-2xl sm:text-3xl font-semibold tracking-tight ${
+                !volSummary.error && volSummary.coverageGaps > 0 ? 'text-amber-600' : 'text-stone-900'
+              }`}>
+                {volSummary.error ? '—' : volSummary.coverageGaps}
+              </span>
+            </div>
+            {volSummary.error && (
+              <span className="text-rose-500 text-[10px] mt-1 block font-medium">⚠️ Unavailable</span>
+            )}
           </div>
-          {volSummary.error ? (
-            <span className="text-rose-500 text-[10px] mt-2 font-medium">⚠️ Feed unavailable</span>
-          ) : (
-            <span className="text-stone-400 text-xs mt-2">Rooms needing duty</span>
-          )}
-        </div>
 
-        <div className="bg-white border border-stone-100 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <span className="text-stone-500 text-xs font-semibold uppercase tracking-wider">Ready Devices</span>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-stone-900 font-mono">
-              {devSummary.error ? '—' : devSummary.ready}
-            </span>
+          {/* Ready devices */}
+          <div className="px-0 lg:px-4 last:pr-0">
+            <span className="text-xs font-medium text-stone-500 block">Ready devices</span>
+            <div className="mt-2 flex items-baseline">
+              <span className="text-2xl sm:text-3xl font-semibold tracking-tight text-stone-900">
+                {devSummary.error ? '—' : devSummary.ready}
+              </span>
+            </div>
+            {devSummary.error && (
+              <span className="text-rose-500 text-[10px] mt-1 block font-medium">⚠️ Unavailable</span>
+            )}
           </div>
-          {devSummary.error ? (
-            <span className="text-rose-500 text-[10px] mt-2 font-medium">⚠️ Feed unavailable</span>
-          ) : (
-            <span className="text-stone-400 text-xs mt-2">Devices online</span>
-          )}
         </div>
       </section>
 
-      {/* MAIN TWO-COLUMN DASHBOARD LAYOUT (Section 47) */}
+      {/* MAIN TWO-COLUMN DASHBOARD LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* COLUMN 1 & 2: OPERATIONS DETAILS */}
         <div className="lg:col-span-2 space-y-8">
           
-          {/* PRIORITY ATTENTION PANEL (Section 16) */}
+          {/* NEEDS ATTENTION PANEL */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-priority-attention-v1"
           >
             <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
-              <h2 className="text-lg font-semibold text-stone-900 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-[#C59B27]" />
-                Priority Attention Required
+              <h2 className="text-base font-semibold text-stone-900">
+                Needs attention
               </h2>
-              <span className="text-xs bg-stone-50 px-2.5 py-1 rounded font-semibold text-stone-600">
-                {priorityItems.length} items
-              </span>
+              {priorityItems.length > 0 && (
+                <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200/60 px-2.5 py-0.5 rounded-full">
+                  {priorityItems.length} {priorityItems.length === 1 ? 'item' : 'items'}
+                </span>
+              )}
             </div>
 
             {priorityItems.length === 0 ? (
-              <div className="text-center py-8">
-                <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-                <h3 className="font-semibold text-stone-800 mb-1">No priority attention items</h3>
-                <p className="text-stone-500 text-sm">All operations are proceeding smoothly.</p>
+              <div className="py-6 text-center">
+                <p className="text-sm text-stone-600">Nothing needs attention right now.</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {priorityItems.map((item: any) => (
                   <div 
                     key={item.id} 
                     className={`p-4 border rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-colors ${
                       item.urgency === 'high' 
-                        ? 'bg-rose-50 border-rose-100 text-stone-800' 
-                        : 'bg-amber-50 border-amber-100 text-stone-800'
+                        ? 'bg-rose-50/50 border-rose-200/70 text-stone-800' 
+                        : 'bg-amber-50/50 border-amber-200/70 text-stone-800'
                     }`}
                   >
                     <div>
@@ -593,17 +597,25 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                         <span className={`w-1.5 h-1.5 rounded-full ${item.urgency === 'high' ? 'bg-rose-600' : 'bg-amber-600'}`} />
                         <h4 className="font-semibold text-stone-900 text-sm">{item.title}</h4>
                       </div>
-                      <p className="text-stone-600 text-xs mb-1">{item.description}</p>
-                      <span className="text-[10px] text-stone-400 font-medium">Zone: {item.location}</span>
+                      <p className="text-stone-600 text-xs mb-1.5">{item.description}</p>
+                      <div className="flex items-center gap-3 text-[11px] text-stone-500">
+                        <span>Location: {item.location}</span>
+                        {item.timestamp && (
+                          <>
+                            <span>·</span>
+                            <span>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <Button 
                       variant="outline" 
                       size="sm"
                       onClick={() => handleQuickAction(item.actionRoute)}
-                      className="whitespace-nowrap bg-white border-stone-200"
+                      className="whitespace-nowrap bg-white border-stone-200 text-xs font-medium"
                     >
                       {item.action}
-                      <ChevronRight className="w-4 h-4 ml-1" />
+                      <ChevronRight className="w-3.5 h-3.5 ml-1 text-stone-400" />
                     </Button>
                   </div>
                 ))}
@@ -611,68 +623,66 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             )}
           </section>
 
-          {/* ACTIVE SAFETY REQUESTS (Section 12) */}
+          {/* SAFETY CONCERNS */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-active-safety-requests-v1"
           >
             <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
-              <h2 className="text-lg font-semibold text-stone-900 flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-rose-500" />
-                Active Safety Requests
+              <h2 className="text-base font-semibold text-stone-900">
+                Safety concerns
               </h2>
             </div>
 
             {alertSummary.length === 0 ? (
-              <div className="text-center py-8">
-                <Check className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-                <h3 className="font-semibold text-stone-800 mb-1">No active safety requests</h3>
-                <p className="text-stone-500 text-sm">There are currently no unresolved safety requests for this event.</p>
+              <div className="py-6 text-center">
+                <p className="text-sm text-stone-600">No active safety concerns.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-stone-100 text-xs font-semibold text-stone-500 uppercase tracking-wider">
-                      <th className="py-3 px-2">Severity</th>
-                      <th className="py-3 px-2">Category</th>
-                      <th className="py-3 px-2">Location</th>
-                      <th className="py-3 px-2">Owner</th>
-                      <th className="py-3 px-2">Status</th>
-                      <th className="py-3 px-2 text-right">Actions</th>
+                    <tr className="border-b border-stone-100 text-xs font-medium text-stone-500">
+                      <th className="py-2.5 px-2">Severity</th>
+                      <th className="py-2.5 px-2">Issue</th>
+                      <th className="py-2.5 px-2">Location</th>
+                      <th className="py-2.5 px-2">Assigned to</th>
+                      <th className="py-2.5 px-2">Status</th>
+                      <th className="py-2.5 px-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {alertSummary.map((alert: any) => (
                       <tr key={alert.id} className="border-b border-stone-50 hover:bg-stone-50/50 transition-colors text-sm">
-                        <td className="py-3.5 px-2">
+                        <td className="py-3 px-2">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
                             alert.severity === 'urgent' 
-                              ? 'bg-rose-50 text-rose-700 border-rose-100' 
+                              ? 'bg-rose-50 text-rose-700 border-rose-200' 
                               : alert.severity === 'important'
-                              ? 'bg-amber-50 text-amber-700 border-amber-100'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : 'bg-stone-50 text-stone-600 border-stone-200'
                           }`}>
-                            {alert.severity}
+                            {alert.severity === 'urgent' ? 'Urgent' : alert.severity === 'important' ? 'Important' : 'Standard'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-2 font-medium text-stone-900">{alert.title}</td>
-                        <td className="py-3.5 px-2 text-stone-500 text-xs">{alert.location}</td>
-                        <td className="py-3.5 px-2 text-stone-600 text-xs font-mono">{alert.ownerName}</td>
-                        <td className="py-3.5 px-2">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold uppercase ${
+                        <td className="py-3 px-2 font-medium text-stone-900 text-xs">{alert.title}</td>
+                        <td className="py-3 px-2 text-stone-500 text-xs">{alert.location}</td>
+                        <td className="py-3 px-2 text-stone-600 text-xs">{alert.ownerName}</td>
+                        <td className="py-3 px-2">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
                             alert.status === 'open' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
                           }`}>
-                            {alert.status === 'open' ? 'Waiting' : 'In Progress'}
+                            {alert.status === 'open' ? 'Needs review' : 'In progress'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-2 text-right">
+                        <td className="py-3 px-2 text-right">
                           <Button 
                             variant="outline" 
                             size="sm"
                             onClick={() => setSelectedAlertRef(alert.reference || alert.id)}
+                            className="text-xs font-medium py-1 px-3"
                           >
-                            Open
+                            Review
                           </Button>
                         </td>
                       </tr>
@@ -683,23 +693,22 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             )}
           </section>
 
-          {/* ACCESSIBLE TREND CHART (Section 29 & 30) */}
+          {/* EVENT ACTIVITY */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-trend-charts-v1"
           >
             <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
-              <h2 className="text-lg font-semibold text-stone-900 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-[#C59B27]" />
-                Event Activity Trend
+              <h2 className="text-base font-semibold text-stone-900">
+                Event activity
               </h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-              {/* Custom SVG Attendance flow graph */}
+              {/* SVG Attendance flow graph */}
               <div className="border border-stone-100 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-stone-800 mb-2">Check-in vs Release Flow</h3>
-                <div className="h-48 w-full flex items-end gap-3 px-4 pt-4 border-b border-l border-stone-200 relative">
+                <h3 className="text-xs font-medium text-stone-700 mb-2">Check-ins and pickups</h3>
+                <div className="h-44 w-full flex items-end gap-3 px-4 pt-4 border-b border-l border-stone-200 relative">
                   {/* Grid Lines */}
                   <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
                     <div className="border-b border-stone-800 w-full" />
@@ -710,25 +719,25 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                   {/* SVG Line representation */}
                   <svg className="absolute inset-0 w-full h-full p-4 overflow-visible" aria-hidden="true">
                     <path 
-                      d="M 10 120 Q 80 80 150 40 T 300 20" 
+                      d="M 10 110 Q 80 75 150 35 T 300 15" 
                       fill="none" 
                       stroke="#C59B27" 
-                      strokeWidth="2.5" 
+                      strokeWidth="2" 
                     />
                     <path 
-                      d="M 10 140 Q 80 140 150 120 T 300 90" 
+                      d="M 10 130 Q 80 130 150 110 T 300 85" 
                       fill="none" 
                       stroke="#10B981" 
-                      strokeWidth="2.5" 
+                      strokeWidth="2" 
                       strokeDasharray="4 4"
                     />
                   </svg>
-                  <div className="absolute bottom-2 right-2 flex gap-4 text-[10px] font-semibold">
+                  <div className="absolute bottom-2 right-2 flex gap-3 text-[11px] font-medium">
                     <span className="text-[#C59B27] flex items-center gap-1">● Checked in</span>
-                    <span className="text-[#10B981] flex items-center gap-1">▲ Released</span>
+                    <span className="text-[#10B981] flex items-center gap-1">▲ Picked up</span>
                   </div>
                 </div>
-                <div className="flex justify-between text-[10px] text-stone-400 mt-2 font-semibold">
+                <div className="flex justify-between text-[11px] text-stone-400 mt-2">
                   <span>9:00 AM</span>
                   <span>10:00 AM</span>
                   <span>11:00 AM</span>
@@ -736,22 +745,22 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                 </div>
               </div>
 
-              {/* Accessible Data Table alternative (Section 30) */}
+              {/* Activity Summary */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-stone-800">Operational Trend Summary</h3>
-                <p className="text-stone-500 text-xs">
-                  Peak check-in activity completed between **9:15 AM** and **9:45 AM**. Releases are progressing steadily.
+                <h3 className="text-xs font-medium text-stone-700">Activity summary</h3>
+                <p className="text-stone-500 text-xs leading-relaxed">
+                  Check-in activity was highest between 9:15 AM and 9:45 AM. Pickups are continuing steadily.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-stone-50/50 p-3 rounded-lg border border-stone-100">
-                    <span className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold">Check-in Completion</span>
-                    <p className="text-lg font-bold text-stone-800 mt-1">
+                  <div className="bg-stone-50/70 p-3.5 rounded-xl border border-stone-100">
+                    <span className="text-xs text-stone-500 font-medium block">Check-in progress</span>
+                    <p className="text-xl font-semibold text-stone-900 mt-1">
                       {attSummary.registered > 0 ? Math.round((attSummary.checkedIn / attSummary.registered) * 100) : 0}%
                     </p>
                   </div>
-                  <div className="bg-stone-50/50 p-3 rounded-lg border border-stone-100">
-                    <span className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold">Release Completion</span>
-                    <p className="text-lg font-bold text-[#C59B27] mt-1">
+                  <div className="bg-stone-50/70 p-3.5 rounded-xl border border-stone-100">
+                    <span className="text-xs text-stone-500 font-medium block">Pickup progress</span>
+                    <p className="text-xl font-semibold text-stone-900 mt-1">
                       {attSummary.checkedIn > 0 ? Math.round((attSummary.released / attSummary.checkedIn) * 100) : 0}%
                     </p>
                   </div>
@@ -760,36 +769,41 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             </div>
           </section>
 
-          {/* ATTENDANCE & CHILD FLOW SUMMARY (Section 8) */}
+          {/* ATTENDANCE */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-attendance-summary-v1"
           >
             <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
-              <h2 className="text-lg font-semibold text-stone-900 flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-[#C59B27]" />
-                Attendance & Child Flow
+              <h2 className="text-base font-semibold text-stone-900">
+                Attendance
               </h2>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-4">
-              <div className="p-4 bg-stone-50/50 rounded-xl border border-stone-100">
-                <span className="text-stone-500 text-xs">Registered for Current Event</span>
-                <p className="text-2xl font-bold text-stone-800 mt-1 font-mono">{attSummary.registered}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+              <div className="p-4 bg-stone-50/60 rounded-xl border border-stone-100">
+                <span className="text-stone-500 text-xs font-medium block">Registered</span>
+                <p className="text-2xl font-semibold text-stone-900 mt-1">{attSummary.registered}</p>
               </div>
-              <div className="p-4 bg-stone-50/50 rounded-xl border border-stone-100">
-                <span className="text-stone-500 text-xs">Not Yet Checked In</span>
-                <p className="text-2xl font-bold text-stone-600 mt-1 font-mono">{attSummary.notCheckedIn}</p>
+              <div className="p-4 bg-stone-50/60 rounded-xl border border-stone-100">
+                <span className="text-stone-500 text-xs font-medium block">Not checked in</span>
+                <p className="text-2xl font-semibold text-stone-700 mt-1">{attSummary.notCheckedIn}</p>
               </div>
-              <div className="p-4 bg-stone-50/50 rounded-xl border border-stone-100">
-                <span className="text-stone-500 text-xs">Confirmation Needed</span>
-                <p className="text-2xl font-bold text-amber-600 mt-1 font-mono">{attSummary.statusNeedingConfirmation}</p>
+              <div className="p-4 bg-stone-50/60 rounded-xl border border-stone-100">
+                <span className="text-stone-500 text-xs font-medium block">Needs confirmation</span>
+                <p className={`text-2xl font-semibold mt-1 ${attSummary.statusNeedingConfirmation > 0 ? 'text-amber-600' : 'text-stone-900'}`}>
+                  {attSummary.statusNeedingConfirmation}
+                </p>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <Button onClick={() => handleQuickAction('/admin/check-in')} variant="secondary" size="sm">Open check-in</Button>
-              <Button onClick={() => handleQuickAction('/admin/pickup')} variant="secondary" size="sm">Open pickup</Button>
+              <Button onClick={() => handleQuickAction('/admin/check-in')} variant="outline" size="sm" className="text-xs font-medium border-[#EAE8E1]">
+                Open check-in
+              </Button>
+              <Button onClick={() => handleQuickAction('/admin/pickup')} variant="outline" size="sm" className="text-xs font-medium border-[#EAE8E1]">
+                Open pickup
+              </Button>
             </div>
           </section>
           
@@ -798,128 +812,136 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
         {/* COLUMN 3: SIDEBAR DETAILS */}
         <div className="space-y-8">
           
-          {/* QUICK ACTIONS SECTION (Section 25) */}
+          {/* QUICK ACTIONS */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-quick-actions-v1"
           >
             <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
-              Quick Event Actions
+              Quick actions
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <button 
                 onClick={() => handleQuickAction('/admin/check-in')}
-                className="p-3 text-left border border-stone-100 rounded-xl bg-stone-50 hover:bg-stone-100/50 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
               >
-                <UserCheck className="w-4 h-4 text-[#C59B27] mb-2" />
-                <span className="text-xs font-semibold block text-stone-800">Launch Check-in</span>
+                <UserCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
+                <span className="text-xs font-medium text-stone-800">Open check-in</span>
               </button>
               <button 
                 onClick={() => handleQuickAction('/admin/pickup')}
-                className="p-3 text-left border border-stone-100 rounded-xl bg-stone-50 hover:bg-stone-100/50 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
               >
-                <ClipboardCheck className="w-4 h-4 text-[#C59B27] mb-2" />
-                <span className="text-xs font-semibold block text-stone-800">Launch Pickup</span>
+                <ClipboardCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
+                <span className="text-xs font-medium text-stone-800">Open pickup</span>
               </button>
               <button 
                 onClick={() => handleQuickAction('/admin/alerts')}
-                className="p-3 text-left border border-stone-100 rounded-xl bg-stone-50 hover:bg-stone-100/50 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
               >
-                <Bell className="w-4 h-4 text-rose-500 mb-2" />
-                <span className="text-xs font-semibold block text-stone-800">Team Alerts</span>
+                <Bell className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="text-xs font-medium text-stone-800">Team alerts</span>
               </button>
               <button 
                 onClick={() => handleQuickAction('/admin/locations')}
-                className="p-3 text-left border border-stone-100 rounded-xl bg-stone-50 hover:bg-stone-100/50 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
               >
-                <MapPin className="w-4 h-4 text-emerald-500 mb-2" />
-                <span className="text-xs font-semibold block text-stone-800">Locations</span>
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-xs font-medium text-stone-800">Locations</span>
               </button>
             </div>
           </section>
 
-          {/* VOLUNTEER DUTY STATUS SUMMARY (Section 9) */}
+          {/* VOLUNTEER COVERAGE */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-volunteer-duty-summary-v1"
           >
             <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
-              Volunteer Duty Sessions
+              Volunteer coverage
             </h3>
-            <div className="space-y-3.5">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Approved Volunteers</span>
-                <span className="font-semibold text-stone-800 font-mono">{volSummary.approvedVolunteers}</span>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Approved</span>
+                <span className="font-semibold text-stone-800">{volSummary.approvedVolunteers}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Active On Duty</span>
-                <span className="font-semibold text-emerald-600 font-mono">{volSummary.onDuty}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">On duty</span>
+                <span className="font-semibold text-stone-800">{volSummary.onDuty}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Temporarily Unavailable</span>
-                <span className="font-semibold text-amber-600 font-mono">{volSummary.temporarilyUnavailable}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Unavailable</span>
+                <span className={`font-semibold ${volSummary.temporarilyUnavailable > 0 ? 'text-amber-600' : 'text-stone-800'}`}>
+                  {volSummary.temporarilyUnavailable}
+                </span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">On Break</span>
-                <span className="font-semibold text-stone-600 font-mono">{volSummary.onBreak}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">On break</span>
+                <span className="font-semibold text-stone-800">{volSummary.onBreak}</span>
               </div>
             </div>
           </section>
 
-          {/* DEVICE READINESS SUMMARY (Section 10) */}
+          {/* EVENT DEVICES */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-device-readiness-summary-v1"
           >
             <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
-              Device Readiness status
+              Event devices
             </h3>
-            <div className="space-y-3.5">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Fully Ready Devices</span>
-                <span className="font-semibold text-emerald-600 font-mono">{devSummary.ready}</span>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Ready</span>
+                <span className="font-semibold text-stone-800">{devSummary.ready}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Limited Readiness</span>
-                <span className="font-semibold text-amber-600 font-mono">{devSummary.limited}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Needs attention</span>
+                <span className={`font-semibold ${devSummary.limited > 0 ? 'text-amber-600' : 'text-stone-800'}`}>
+                  {devSummary.limited}
+                </span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Muted sound settings</span>
-                <span className="font-semibold text-rose-600 font-mono">{devSummary.soundNotUnlocked}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Muted</span>
+                <span className={`font-semibold ${devSummary.soundNotUnlocked > 0 ? 'text-amber-600' : 'text-stone-800'}`}>
+                  {devSummary.soundNotUnlocked}
+                </span>
               </div>
             </div>
           </section>
 
-          {/* LOCATION COVERAGE OVERVIEW (Section 11) */}
+          {/* LOCATION COVERAGE */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-location-coverage-overview-v1"
           >
             <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
-              Location Coverage
+              Location coverage
             </h3>
-            <div className="space-y-3.5 mb-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Fully Covered Locations</span>
-                <span className="font-semibold text-emerald-600 font-mono">{locSummary.covered}</span>
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Covered</span>
+                <span className="font-semibold text-stone-800">{locSummary.covered}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Covered with Backup Only</span>
-                <span className="font-semibold text-amber-600 font-mono">{locSummary.backupOnly}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Backup only</span>
+                <span className="font-semibold text-stone-800">{locSummary.backupOnly}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-rose-600">Uncovered Locations</span>
-                <span className="font-semibold text-rose-600 font-mono">{locSummary.uncovered}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className={locSummary.uncovered > 0 ? "text-rose-600 font-medium" : "text-stone-500"}>Needs cover</span>
+                <span className={`font-semibold ${locSummary.uncovered > 0 ? 'text-rose-600' : 'text-stone-800'}`}>
+                  {locSummary.uncovered}
+                </span>
               </div>
             </div>
             
-            <div className="space-y-2 max-h-48 overflow-y-auto border-t border-stone-50 pt-3">
+            <div className="space-y-2 max-h-48 overflow-y-auto border-t border-stone-100 pt-3">
               {locSummary.locations?.map((loc: any) => (
                 <div key={loc.id} className="flex justify-between items-center text-xs">
                   <span className="text-stone-600 font-medium">{loc.shortName}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-stone-400 font-mono">({loc.assignedChildren}/{loc.capacity})</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                    <span className="text-stone-400">({loc.assignedChildren}/{loc.capacity})</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
                       loc.status === 'Covered' 
                         ? 'bg-emerald-50 text-emerald-700' 
                         : loc.status === 'Backup-only'
@@ -934,26 +956,30 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             </div>
           </section>
 
-          {/* INCIDENT REPORT SUMMARY (Section 14) */}
+          {/* INCIDENTS & ESCALATIONS */}
           <section 
-            className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
             data-component-version="operations-incident-summary-v1"
           >
             <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
-              Incidents & Escalations
+              Incidents & escalations
             </h3>
-            <div className="space-y-3.5 mb-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Under Review</span>
-                <span className="font-semibold text-stone-800 font-mono">{incSummary.underReview}</span>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Under review</span>
+                <span className="font-semibold text-stone-800">{incSummary.underReview}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-stone-500">Pending Changes</span>
-                <span className="font-semibold text-amber-600 font-mono">{incSummary.changesRequested}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-500">Pending updates</span>
+                <span className={`font-semibold ${incSummary.changesRequested > 0 ? 'text-amber-600' : 'text-stone-800'}`}>
+                  {incSummary.changesRequested}
+                </span>
               </div>
-              <div className="flex justify-between items-center text-sm" data-component-version="operations-response-protection-summary-v1">
-                <span className="text-rose-600">Active Escalation Cycles</span>
-                <span className="font-semibold text-rose-600 font-mono">{escSummary.activeCycles}</span>
+              <div className="flex justify-between items-center text-xs" data-component-version="operations-response-protection-summary-v1">
+                <span className={escSummary.activeCycles > 0 ? "text-rose-600 font-medium" : "text-stone-500"}>Active escalations</span>
+                <span className={`font-semibold ${escSummary.activeCycles > 0 ? 'text-rose-600' : 'text-stone-800'}`}>
+                  {escSummary.activeCycles}
+                </span>
               </div>
             </div>
           </section>
@@ -962,63 +988,70 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
       </div>
 
-      {/* RECENT OPERATIONAL ACTIVITY LOG (Section 18 & 19) */}
+      {/* RECENT EVENT ACTIVITY */}
       <section 
-        className="bg-white border border-stone-100 rounded-2xl p-6 shadow-sm mt-8"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-6 mt-8"
         data-component-version="operations-recent-activity-v1"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-100 pb-4 mb-4 gap-3">
-          <h2 className="text-lg font-semibold text-stone-900">
+          <h2 className="text-base font-semibold text-stone-900">
             Recent event activity
           </h2>
 
-          {/* Filters (Section 27) */}
-          <div className="flex flex-wrap gap-2" data-component-version="operations-dashboard-filters-v1">
-            {['all', 'attendance', 'volunteers', 'locations', 'safety', 'incidents'].map((cat) => (
+          {/* Filter Tabs */}
+          <div className="flex flex-wrap gap-4" data-component-version="operations-dashboard-filters-v1">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'attendance', label: 'Attendance' },
+              { id: 'volunteers', label: 'Volunteers' },
+              { id: 'locations', label: 'Locations' },
+              { id: 'safety', label: 'Safety' },
+              { id: 'incidents', label: 'Incidents' }
+            ].map((cat) => (
               <button
-                key={cat}
-                onClick={() => setActivityCategory(cat)}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
-                  activityCategory === cat 
-                    ? 'bg-stone-900 text-white border-stone-900' 
-                    : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                key={cat.id}
+                onClick={() => setActivityCategory(cat.id)}
+                className={`pb-1 text-xs font-medium transition-colors relative ${
+                  activityCategory === cat.id 
+                    ? 'text-stone-900 border-b-2 border-[#C59B27]' 
+                    : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                {cat.label}
               </button>
             ))}
           </div>
         </div>
 
         {loadingActivity ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-5 h-5 text-[#C59B27] animate-spin" />
           </div>
         ) : activities.length === 0 ? (
-          <div className="text-center py-12 text-stone-500 text-sm">
-            No recent operations recorded in this category.
+          <div className="text-center py-10 text-stone-500 text-sm">
+            {activityCategory === 'all' ? 'No recent event activity yet.' : 'No recent activity in this category.'}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {activities.map((act) => (
-              <div key={act.id} className="flex justify-between items-start border-b border-stone-50 pb-3 last:border-0 last:pb-0 text-sm">
+              <div key={act.id} className="flex justify-between items-start border-b border-stone-50 pb-3 last:border-0 last:pb-0 text-xs">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded font-semibold uppercase tracking-wider">
+                    <span className="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded font-medium">
                       {act.category}
                     </span>
-                    <h4 className="font-semibold text-stone-800">{act.title}</h4>
+                    <h4 className="font-medium text-stone-900">{act.title}</h4>
                   </div>
-                  <p className="text-stone-500 text-xs">{act.description}</p>
+                  <p className="text-stone-500 text-xs leading-relaxed">{act.description}</p>
                 </div>
-                <span className="text-[10px] text-stone-400 font-semibold whitespace-nowrap ml-4">
+                <span className="text-[11px] text-stone-400 whitespace-nowrap ml-4">
                   {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             ))}
 
-            {/* Pagination Controls (Section 42) */}
-            <div className="flex items-center justify-between border-t border-stone-100 pt-4 mt-4">
+            {/* Pagination Controls */}
+            <div className="flex items-center justify-between border-t border-stone-100 pt-3.5 mt-3">
               <span className="text-xs text-stone-500">
                 Showing {activities.length} of {activityTotal} logs
               </span>
@@ -1028,14 +1061,16 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                   size="sm" 
                   disabled={activityPage === 1}
                   onClick={() => fetchActivities(activityPage - 1, activityCategory)}
+                  className="text-xs font-medium py-1 px-3 border-[#EAE8E1]"
                 >
                   Previous
                 </Button>
                 <Button 
                   variant="outline" 
-                  size="sm"
+                  size="sm" 
                   disabled={activityPage * activityLimit >= activityTotal}
                   onClick={() => fetchActivities(activityPage + 1, activityCategory)}
+                  className="text-xs font-medium py-1 px-3 border-[#EAE8E1]"
                 >
                   Next
                 </Button>

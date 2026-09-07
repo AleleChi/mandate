@@ -38,19 +38,22 @@ import { SafeImage } from '../../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
 import { playSound, resumeAudioContext } from '../../utils/sound';
 import { subscribeUserToPush } from '../../utils/pushSubscription';
+import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
 
 interface AdminSettingsViewProps {
   onBackToOverview?: () => void;
   isSuperAdmin: boolean;
   adminUser?: any;
   onTriggerTestAlert?: (testAlert: any) => void;
+  initialSubTab?: 'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings';
 }
 
 export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ 
   onBackToOverview,
   isSuperAdmin,
   adminUser,
-  onTriggerTestAlert
+  onTriggerTestAlert,
+  initialSubTab
 }) => {
   // General State
   const [loading, setLoading] = useState(true);
@@ -87,7 +90,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [isTestingDevice, setIsTestingDevice] = useState(false);
   
   // Tab/Active Panel State inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings'>('parent-access');
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings'>(initialSubTab || 'parent-access');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  // Audio preferences hook for device sound profile and volume controls
+  const {
+    urgentSoundProfile: alertProfile,
+    urgentVolumeBoost: alertVolume,
+    updatePreference: updateAudioPreference
+  } = useAlertAudioPreferences();
 
   // Feedback State
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -2442,7 +2458,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               title="Test alert sound trigger"
                             >
                               <Volume2 className="w-3 h-3" />
-                              <span>Test Alert Sound</span>
+                              <span>Test alert sound</span>
                             </button>
                           </div>
                           <button
@@ -2457,6 +2473,74 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <ToggleLeft className="w-9 h-9 text-zinc-300" />
                             )}
                           </button>
+                        </div>
+
+                        {/* Sound Profile Selection */}
+                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-zinc-800 block">
+                              Chime sound profile
+                            </label>
+                            <span className="text-[10px] text-zinc-400">Tone urgency</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 p-1.5 rounded-xl border border-zinc-100">
+                            {[
+                              { id: 'normal', label: 'Gentle' },
+                              { id: 'important', label: 'Clear' },
+                              { id: 'emergency', label: 'Urgent' }
+                            ].map((prof) => (
+                              <button
+                                key={prof.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  updateAudioPreference('urgentSoundProfile', prof.id);
+                                  showFeedback(`Sound profile changed to ${prof.label}.`);
+                                }}
+                                className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
+                                  alertProfile === prof.id
+                                    ? 'bg-[#18181B] text-white shadow-xs'
+                                    : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
+                                }`}
+                              >
+                                {prof.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Volume Multiplier Controls */}
+                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-zinc-800 block">
+                              Alert volume level
+                            </label>
+                            <span className="text-[10px] text-zinc-400">Audio boost</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 p-1.5 rounded-xl border border-zinc-100">
+                            {[
+                              { id: 'standard', label: 'Standard' },
+                              { id: 'loud', label: 'Loud' },
+                              { id: 'very_loud', label: 'Extra loud' }
+                            ].map((vol) => (
+                              <button
+                                key={vol.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  updateAudioPreference('urgentVolumeBoost', vol.id);
+                                  showFeedback(`Volume level set to ${vol.label}.`);
+                                }}
+                                className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
+                                  alertVolume === vol.id
+                                    ? 'bg-[#C59B27] text-white shadow-xs'
+                                    : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
+                                }`}
+                              >
+                                {vol.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
                         {/* Urgent Alerts Only Toggle */}

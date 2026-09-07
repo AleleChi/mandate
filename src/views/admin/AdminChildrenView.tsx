@@ -430,31 +430,31 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
       case 'selected':
       case 'pass_ready':
         return (
-          <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200/60">
             Selected
           </span>
         );
       case 'under_review':
         return (
-          <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200/60">
             Under review
           </span>
         );
       case 'waiting_list':
         return (
-          <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-zinc-100 text-zinc-700 border border-zinc-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 text-zinc-700 border border-zinc-200">
             Waiting list
           </span>
         );
       case 'not_selected':
         return (
-          <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-red-50 text-red-700 border border-red-100">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-100">
             Needs attention
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-zinc-50 text-zinc-500 border border-zinc-100">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-50 text-zinc-500 border border-zinc-100">
             {status}
           </span>
         );
@@ -464,14 +464,14 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   const getEntryStatusBadge = (status: string) => {
     if (status === 'checked_in') {
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
           <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
           Checked in
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-400">
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-400">
         <Clock className="w-3.5 h-3.5" />
         Not arrived
       </span>
@@ -482,19 +482,19 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     switch (status) {
       case 'inside':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
             Inside
           </span>
         );
       case 'picked_up':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-600">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600">
             Picked up
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-50 text-zinc-400">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-50 text-zinc-400">
             Not arrived
           </span>
         );
@@ -524,13 +524,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <div className="flex items-center space-x-2">
             <button 
               onClick={onBackToOverview}
-              className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg transition-colors"
+              className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg transition-colors cursor-pointer"
+              title="Back to overview"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
-            <span className="text-[10px] font-bold text-[#C59B27] uppercase tracking-widest">
-              Children Records
-            </span>
           </div>
           <h1 className="font-serif text-2xl font-semibold text-[#18181B]">
             Children
@@ -544,17 +542,17 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <Button
             onClick={() => setShowAddChildModal(true)}
             variant="primary"
-            className="text-xs px-4 py-2 flex items-center space-x-1.5"
+            className="text-xs px-4 py-2 flex items-center space-x-1.5 font-semibold"
           >
             <Users className="w-4 h-4" />
-            <span>Add Child</span>
+            <span>Add child</span>
           </Button>
           <Button
             onClick={onBackToOverview}
             variant="secondary"
-            className="text-xs px-4 py-2"
+            className="text-xs px-4 py-2 font-medium"
           >
-            Back to Overview
+            Back to overview
           </Button>
         </div>
       </div>
@@ -565,7 +563,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
         data-component-version="admin-children-stats-v1"
       >
         {[
-          { label: 'Total children', value: stats.totalChildren, color: 'border-[#EAE8E1] text-[#18181B]' },
+          { label: 'Children', value: stats.totalChildren, color: 'border-[#EAE8E1] text-[#18181B]' },
           { label: 'Selected', value: stats.selected, color: 'border-emerald-100 text-[#18181B]' },
           { label: 'Checked in', value: stats.checkedIn, color: 'border-teal-100 text-[#18181B]' },
           { label: 'Inside', value: stats.inside, color: 'border-[#C59B27]/20 text-[#18181B]' },
@@ -575,10 +573,10 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
             key={idx}
             className={`bg-white border rounded-2xl p-4 space-y-1.5 shadow-2xs ${card.color}`}
           >
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
+            <span className="text-xs font-medium text-zinc-500 block">
               {card.label}
             </span>
-            <div className="font-serif text-2xl font-bold tracking-tight">
+            <div className="text-2xl font-semibold text-[#18181B] tracking-tight">
               {card.value}
             </div>
           </div>
@@ -613,8 +611,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
           {/* Filters */}
           <div className="flex flex-col gap-2">
-            <div className="flex items-center text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-              Quick filters:
+            <div className="flex items-center text-xs font-medium text-zinc-500">
+              Filters:
             </div>
             <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
               {[
@@ -734,7 +732,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                  <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-xs font-medium text-zinc-500">
                     <th className="py-3 px-3 w-10 text-center">
                       <input
                         type="checkbox"
@@ -748,7 +746,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                     <th className="py-3 px-4">Age</th>
                     <th className="py-3 px-4">Group</th>
                     <th className="py-3 px-4">Parent</th>
-                    <th className="py-3 px-4">Pickup Person</th>
+                    <th className="py-3 px-4">Pickup person</th>
                     <th className="py-3 px-4 text-center">Review</th>
                     <th className="py-3 px-4">Entry</th>
                     <th className="py-3 px-4">Pickup</th>
@@ -791,22 +789,22 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                             {/* Warnings / Badges */}
                             <div className="flex flex-wrap gap-1 mt-1">
                               {c.isDeleted && (
-                                <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-tight">
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
                                   Removed
                                 </span>
                               )}
                               {c.flags?.includes('medical_notes') && (
-                                <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-bold bg-rose-50 text-rose-600 border border-rose-100 uppercase tracking-tight">
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-600 border border-rose-100">
                                   Medical
                                 </span>
                               )}
                               {c.flags?.includes('special_support') && (
-                                <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-tight">
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
                                   Support
                                 </span>
                               )}
                               {c.flags?.includes('needs_age_review') && (
-                                <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-bold bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20 uppercase tracking-tight">
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20">
                                   Age review
                                 </span>
                               )}
@@ -831,7 +829,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                       <td className="py-3 px-4">
                         <div className="space-y-0.5">
                           <p className="font-semibold text-zinc-800">{c.parentName}</p>
-                          <p className="text-[10px] font-mono text-zinc-400">{c.parentPhone}</p>
+                          <p className="text-xs text-zinc-400">{c.parentPhone}</p>
                         </div>
                       </td>
 
@@ -854,7 +852,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                             <span className="font-medium text-zinc-700">{c.pickupPersonName}</span>
                           </div>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-500">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500">
                             <CameraOff className="w-3 h-3" />
                             Missing
                           </span>
@@ -909,7 +907,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <div className="px-3 py-1 border-b border-zinc-100 mb-1">
-                                  <span className="text-[9px] font-mono font-bold tracking-wider text-zinc-400 uppercase block">Child Management</span>
+                                  <span className="text-[11px] font-medium text-zinc-400 block">Child management</span>
                                   <span className="text-xs font-semibold text-zinc-800 truncate block max-w-[200px]">{c.fullName}</span>
                                 </div>
 
@@ -934,7 +932,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                                         disabled={submittingActionId !== null}
                                         className="w-full text-left px-3.5 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                                       >
-                                        <Check className="w-3.5 h-3.5 shrink-0" /> Select (Approve)
+                                        <Check className="w-3.5 h-3.5 shrink-0" /> Select child
                                       </button>
                                     )}
 
@@ -947,7 +945,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                                         disabled={submittingActionId !== null}
                                         className="w-full text-left px-3.5 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                                       >
-                                        <UserX className="w-3.5 h-3.5 shrink-0" /> Not Selected (Decline)
+                                        <UserX className="w-3.5 h-3.5 shrink-0" /> Mark as not selected
                                       </button>
                                     )}
 
@@ -960,7 +958,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                                         disabled={submittingActionId !== null}
                                         className="w-full text-left px-3.5 py-2 text-xs font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                                       >
-                                        <Clock className="w-3.5 h-3.5 shrink-0" /> Waitlist (Wait)
+                                        <Clock className="w-3.5 h-3.5 shrink-0" /> Add to waiting list
                                       </button>
                                     )}
 
@@ -1052,10 +1050,10 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                       )}
                     </div>
                     <div className="min-w-0">
-                      <h4 className="font-serif text-sm font-bold text-[#18181B] truncate">
+                      <h4 className="font-semibold text-sm text-[#18181B] truncate">
                         {c.fullName}
                       </h4>
-                      <p className="text-[10px] text-zinc-500 font-medium">
+                      <p className="text-xs text-zinc-500 font-medium">
                         Age {c.ageLabel} • {c.gender}
                       </p>
                     </div>
@@ -1068,23 +1066,23 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 {/* Tags / Badges if any */}
                 <div className="flex flex-wrap gap-1">
                   {c.isDeleted && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
                       Removed
                     </span>
                   )}
                   {c.flags?.includes('medical_notes') && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-rose-50 text-rose-600 border border-rose-100 uppercase tracking-wider">
-                      Medical Note
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-600 border border-rose-100">
+                      Medical note
                     </span>
                   )}
                   {c.flags?.includes('special_support') && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider">
-                      Special Support
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                      Special support
                     </span>
                   )}
                   {c.flags?.includes('needs_age_review') && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] text-[8px] font-bold bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20 uppercase tracking-wider">
-                      Below Event Age
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20">
+                      Below event age
                     </span>
                   )}
                 </div>
@@ -1092,19 +1090,19 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 {/* Main Details (Subtle, Human Layout) */}
                 <div className="space-y-2.5 text-xs text-zinc-600">
                   <div className="flex items-baseline justify-between">
-                    <span className="text-[11px] text-zinc-400 font-medium">Age group</span>
+                    <span className="text-xs text-zinc-500 font-medium">Age group</span>
                     <span className="font-semibold text-zinc-700">{c.ageGroup}</span>
                   </div>
                   <div className="flex items-baseline justify-between border-t border-zinc-100 pt-2.5">
-                    <span className="text-[11px] text-zinc-400 font-medium">Parent</span>
+                    <span className="text-xs text-zinc-500 font-medium">Parent</span>
                     <span className="font-semibold text-zinc-700">{c.parentName}</span>
                   </div>
                   <div className="flex items-baseline justify-between border-t border-zinc-100 pt-2.5">
-                    <span className="text-[11px] text-zinc-400 font-medium">Today</span>
+                    <span className="text-xs text-zinc-500 font-medium">Today</span>
                     <span className="font-semibold text-[#C59B27]">{getTodayStatusText(c.entryStatus, c.pickupStatus)}</span>
                   </div>
                   <div className="flex items-baseline justify-between border-t border-zinc-100 pt-2.5">
-                    <span className="text-[11px] text-zinc-400 font-medium">Pickup</span>
+                    <span className="text-xs text-zinc-500 font-medium">Pickup</span>
                     <span className="font-semibold text-zinc-700">
                       {c.pickupPersonName || (
                         <span className="text-rose-500 font-medium">No pickup person assigned</span>
@@ -1209,7 +1207,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <div className="relative bg-[#FAF9F6] w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border-t sm:border border-[#EAE8E1] shadow-2xl p-5 space-y-5 animate-slide-up sm:animate-zoom-in max-h-[85vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <h3 className="font-serif text-base font-bold text-[#18181B]">
+              <h3 className="text-base font-semibold text-[#18181B]">
                 Filter child records
               </h3>
               <button 
@@ -1224,7 +1222,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
             <div className="space-y-4 text-xs">
               {/* Group 1: Review and Entry */}
               <div className="space-y-2">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
+                <span className="text-xs font-medium text-zinc-500 block">
                   Review and entry
                 </span>
                 <div className="grid grid-cols-2 gap-2">
@@ -1255,7 +1253,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
               {/* Group 2: Care and Attention */}
               <div className="space-y-2">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
+                <span className="text-xs font-medium text-zinc-500 block">
                   Care and attention
                 </span>
                 <div className="grid grid-cols-2 gap-2">
@@ -1321,7 +1319,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-2 text-[#C59B27]">
               <FileClock className="w-5 h-5 shrink-0" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">Reopen review</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Reopen review</h3>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
@@ -1333,7 +1331,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
             <form onSubmit={handleReopenReviewSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason (Optional)</label>
+                <label className="text-xs font-medium text-zinc-600 block">Reason (optional)</label>
                 <textarea
                   value={reopenReason}
                   onChange={(e) => setReopenReason(e.target.value)}
@@ -1355,7 +1353,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   type="submit"
                   loading={submittingReopen}
                   disabled={submittingReopen}
-                  className="px-5 py-2 text-xs bg-[#C59B27] hover:bg-[#B89047] hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                  className="px-5 py-2 text-xs bg-[#C59B27] hover:bg-[#B89047] hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
                   id="confirm-reopen-child-review-btn"
                 >
                   Reopen review
@@ -1384,7 +1382,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
             <div className="flex items-center space-x-2 text-red-600">
               <Trash2 className="w-5 h-5 shrink-0" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">Remove child record</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Remove child record</h3>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
@@ -1400,7 +1398,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
             <form onSubmit={handleRemoveChildSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason for Removal (Required)</label>
+                <label className="text-xs font-medium text-zinc-600 block">Reason for removal (required)</label>
                 <textarea
                   required
                   value={removeReason}
@@ -1423,7 +1421,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   type="submit"
                   loading={submittingRemove}
                   disabled={submittingRemove || !removeReason.trim()}
-                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer disabled:opacity-50"
                   id="confirm-remove-child-btn"
                 >
                   Remove child
@@ -1441,7 +1439,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <div className="relative bg-[#FFFDF9] border border-zinc-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-2 text-rose-700">
               <Lock className="w-5 h-5 shrink-0" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">Revoke event pass</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Revoke event pass</h3>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
@@ -1453,7 +1451,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
             <form onSubmit={handleRevokePassSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason for Revocation (Required)</label>
+                <label className="text-xs font-medium text-zinc-600 block">Reason for revocation (required)</label>
                 <textarea
                   required
                   value={revokeReason}
@@ -1476,7 +1474,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   type="submit"
                   loading={submittingRevoke}
                   disabled={submittingRevoke || !revokeReason.trim()}
-                  className="px-5 py-2 text-xs bg-rose-700 hover:bg-rose-800 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 text-xs bg-rose-700 hover:bg-rose-800 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer disabled:opacity-50"
                   id="confirm-revoke-child-pass-btn"
                 >
                   Revoke pass
@@ -1494,7 +1492,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
           <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-2 text-emerald-600">
               <RotateCcw className="w-5 h-5 shrink-0 animate-spin-reverse" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">Restore child record</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Restore child record</h3>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
@@ -1518,7 +1516,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 onClick={handleRestoreChildSubmit}
                 loading={submittingRestore}
                 disabled={submittingRestore}
-                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
                 id="confirm-restore-child-btn"
               >
                 Restore child
@@ -1567,7 +1565,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 onClick={() => setShowBulkRemoveModal(true)}
                 id="bulk-remove-btn"
               >
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Bulk Remove ({selectedChildIds.length})
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Bulk remove ({selectedChildIds.length})
               </Button>
             )}
             <Button
@@ -1584,19 +1582,19 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
       {/* Bulk Removal Confirmation Modal */}
       {showBulkRemoveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-bulk-remove-modal">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-remove-modal">
           <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkRemoveModal(false)} />
           <div className="relative bg-[#FFFDF9] border border-zinc-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-2 text-rose-600">
               <Trash2 className="w-5 h-5 shrink-0" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">Bulk Remove ({selectedChildIds.length}) Children</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Bulk remove ({selectedChildIds.length}) children</h3>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
               Are you sure you want to remove <strong>{selectedChildIds.length}</strong> selected child registrations?
             </p>
             <div className="text-xs bg-rose-50 text-rose-800 p-3 rounded-xl border border-rose-100 space-y-1">
-              <span className="font-semibold block">⚠️ Data Integrity & Safeguarding Note:</span>
+              <span className="font-semibold block">⚠️ Data integrity & safeguarding note:</span>
               <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-rose-700">
                 <li>Selected children will be removed and excluded from active attendance counts.</li>
                 <li>Checked-in children will be safely skipped to prevent attendance discrepancy.</li>
@@ -1606,7 +1604,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
             <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Reason for Bulk Removal (Required)</label>
+                <label className="text-xs font-medium text-zinc-600 block">Reason for bulk removal (required)</label>
                 <textarea
                   required
                   value={bulkRemoveReason}
@@ -1629,10 +1627,10 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                   type="submit"
                   loading={submittingBulkRemove}
                   disabled={submittingBulkRemove || !bulkRemoveReason.trim()}
-                  className="px-5 py-2 text-xs bg-rose-600 hover:bg-rose-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 text-xs bg-rose-600 hover:bg-rose-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer disabled:opacity-50"
                   id="confirm-bulk-remove-btn"
                 >
-                  Remove {selectedChildIds.length} Children
+                  Remove {selectedChildIds.length} children
                 </Button>
               </div>
             </form>
@@ -1657,12 +1655,12 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
         const canSubmit = selectedChildIds.length > 0 && reasonIsSelected && confirmationIsValid && !submittingPurge && (selectedRecords.length === 0 || eligibleCount > 0);
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-bulk-purge-modal">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-purge-modal">
             <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkPurgeModal(false)} />
             <div className="relative bg-[#FFFDF9] border border-rose-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
               <div className="flex items-center space-x-2 text-rose-700">
                 <Trash2 className="w-5 h-5 shrink-0 text-rose-700" />
-                <h3 className="font-serif font-bold text-lg text-zinc-900">
+                <h3 className="text-base font-semibold text-zinc-900">
                   Permanently remove {selectedChildIds.length} {selectedChildIds.length === 1 ? 'child' : 'children'}?
                 </h3>
               </div>
@@ -1678,7 +1676,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 </div>
                 {ineligibleRecords.length > 0 && (
                   <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 leading-snug">
-                    <span className="font-bold block">Protected Retention Notice:</span>
+                    <span className="font-bold block">Protected retention notice:</span>
                     {ineligibleRecords.length} of {selectedRecords.length} selected {selectedRecords.length === 1 ? 'record contains' : 'records contain'} protected attendance history or safeguarding records and will be retained. {eligibleCount > 0 ? `${eligibleCount} eligible ${eligibleCount === 1 ? 'record' : 'records'} will be permanently removed.` : 'No selected records can be permanently removed.'}
                   </div>
                 )}
@@ -1686,7 +1684,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
               <form onSubmit={handleBulkPurgeSubmit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider block">Reason for removal (Required)</label>
+                  <label className="text-xs font-medium text-zinc-600 block">Reason for removal (required)</label>
                   <select
                     required
                     value={purgeReason}
@@ -1707,14 +1705,14 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider block">To confirm permanent removal, type REMOVE</label>
+                  <label className="text-xs font-medium text-zinc-600 block">To confirm permanent removal, type REMOVE</label>
                   <input
                     type="text"
                     required
                     value={purgeConfirmText}
                     onChange={(e) => setPurgeConfirmText(e.target.value)}
                     placeholder="REMOVE"
-                    className="w-full px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 transition-all font-mono uppercase text-zinc-800 tracking-wider"
+                    className="w-full px-3 py-2 text-xs border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 transition-all text-zinc-800"
                     id="bulk-purge-confirm-input"
                   />
                   {!confirmationIsValid && (
@@ -1735,7 +1733,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                     type="submit"
                     disabled={!canSubmit}
                     id="confirm-bulk-purge-btn"
-                    className={`px-5 py-2 text-xs font-serif font-bold rounded-xl transition-all ${
+                    className={`px-5 py-2 text-xs font-semibold rounded-xl transition-all ${
                       canSubmit
                         ? 'bg-rose-700 hover:bg-rose-800 text-white shadow-md shadow-rose-900/20 active:scale-[0.98] cursor-pointer'
                         : 'bg-zinc-200 text-zinc-400 cursor-not-allowed opacity-60'
@@ -1752,12 +1750,12 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
 
       {/* Bulk Restore Confirmation Modal */}
       {showBulkRestoreModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-bulk-restore-modal">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-restore-modal">
           <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkRestoreModal(false)} />
           <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-2 text-emerald-600">
               <RotateCcw className="w-5 h-5 shrink-0 animate-spin-reverse" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">Bulk Restore ({selectedChildIds.length}) Children</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Bulk restore ({selectedChildIds.length}) children</h3>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
@@ -1781,10 +1779,10 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
                 onClick={handleBulkRestoreSubmit}
                 loading={submittingBulkRestore}
                 disabled={submittingBulkRestore}
-                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-serif font-bold cursor-pointer"
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
                 id="confirm-bulk-restore-btn"
               >
-                Restore {selectedChildIds.length} Children
+                Restore {selectedChildIds.length} children
               </Button>
             </div>
           </div>

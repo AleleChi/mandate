@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, AlertTriangle, CheckCircle2, Mail, Phone, Home, Shield, Plus, Trash2 } from 'lucide-react';
+import { X, UserPlus, AlertTriangle, Mail, Phone } from 'lucide-react';
 import { api, extractApiError } from '../../../services/api';
 import { useNotification } from '../../../context/NotificationContext';
 import { Button } from '../../common/Button';
@@ -103,7 +103,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
       } else {
         setDuplicateMatch(null);
       }
-    } catch (e) {
+    } catch {
       // Ignore background duplicate check errors
     } finally {
       setCheckingDuplicate(false);
@@ -118,7 +118,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
     }
 
     if (duplicateMatch && !overrideDuplicate) {
-      showError('Duplicate Record Warning', 'Please review the existing record match or check the override box to proceed.');
+      showError('Duplicate record warning', 'Please review the existing record match or confirm to proceed.');
       return;
     }
 
@@ -161,7 +161,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
 
       const res = await api.admin.addParent(payload);
       if (res.success) {
-        showSuccess('Parent Created', res.message || 'Parent record successfully created.');
+        showSuccess('Parent added', res.message || 'Parent record successfully created.');
         resetForm();
         onSuccess(res.parentId);
         onClose();
@@ -174,7 +174,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
           message: parsed.message
         });
       }
-      showError('Creation Failed', parsed.message || 'Could not save parent record.');
+      showError('Creation failed', parsed.message || 'Could not save parent record.');
     } finally {
       setSubmitting(false);
     }
@@ -182,17 +182,17 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-3xl rounded-3xl border border-[#EAE8E1] shadow-xl overflow-hidden my-8">
+      <div className="bg-white w-full max-w-2xl rounded-3xl border border-[#EAE8E1] shadow-xl overflow-hidden my-8">
         
         {/* Modal Header */}
-        <div className="p-6 border-b border-[#EAE8E1] flex items-center justify-between bg-[#FAF8F4]">
+        <div className="p-6 border-b border-[#EAE8E1] flex items-center justify-between bg-[#FAF9F6]">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-[#C59B27]">
               <UserPlus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-serif text-lg font-bold text-[#18181B]">Add Parent / Guardian</h3>
-              <p className="text-xs text-zinc-500">Create a canonical parent record with secure invitation options.</p>
+              <h3 className="text-base font-semibold text-[#18181B]">Add parent</h3>
+              <p className="text-xs text-zinc-500">Create a parent profile and send an optional invitation to set up their account.</p>
             </div>
           </div>
           <button
@@ -204,18 +204,18 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto text-xs">
           
           {/* SECTION 1: Personal Details */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold text-[#C59B27] uppercase tracking-wider flex items-center space-x-2 border-b border-amber-100 pb-2">
-              <span>1. Personal Information</span>
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-[#C59B27] pb-1 border-b border-amber-100">
+              1. Personal details
             </h4>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">
-                  First Name <span className="text-red-500">*</span>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">
+                  First name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -223,13 +223,13 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="e.g. Samuel"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">
-                  Last Name <span className="text-red-500">*</span>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">
+                  Last name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -237,33 +237,33 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="e.g. Adebayo"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Preferred Name</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">Preferred name</label>
                 <input
                   type="text"
                   value={preferredName}
                   onChange={(e) => setPreferredName(e.target.value)}
                   placeholder="e.g. Sam"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
             </div>
           </div>
 
           {/* SECTION 2: Contact Details */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold text-[#C59B27] uppercase tracking-wider flex items-center space-x-2 border-b border-amber-100 pb-2">
-              <span>2. Contact Information & Address</span>
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-[#C59B27] pb-1 border-b border-amber-100">
+              2. Contact details & address
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">
-                  Email Address <span className="text-red-500">*</span>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">
+                  Email address <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -273,14 +273,14 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                     onChange={(e) => setEmail(e.target.value)}
                     onBlur={handleCheckDuplicate}
                     placeholder="parent@example.com"
-                    className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                    className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                   />
-                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                  <Mail className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Primary Phone Number</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">Phone</label>
                 <div className="relative">
                   <input
                     type="tel"
@@ -288,29 +288,29 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                     onChange={(e) => setPhone(e.target.value)}
                     onBlur={handleCheckDuplicate}
                     placeholder="+44 7123 456789"
-                    className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                    className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                   />
-                  <Phone className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                  <Phone className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">WhatsApp Number</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">WhatsApp</label>
                 <input
                   type="tel"
                   value={whatsappPhone}
                   onChange={(e) => setWhatsappPhone(e.target.value)}
                   placeholder="Leave blank if same as phone"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Preferred Contact Method</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">Preferred contact method</label>
                 <select
                   value={preferredContactMethod}
                   onChange={(e: any) => setPreferredContactMethod(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all cursor-pointer"
                 >
                   <option value="email">Email</option>
                   <option value="phone">Phone call</option>
@@ -319,128 +319,127 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Home Address</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-zinc-700 block mb-1">Home address</label>
                 <input
                   type="text"
                   value={homeAddress}
                   onChange={(e) => setHomeAddress(e.target.value)}
                   placeholder="Street address"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">City / Town</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">City</label>
                 <input
                   type="text"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="City"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
             </div>
           </div>
 
-          {/* SECTION 3: Church & Emergency */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold text-[#C59B27] uppercase tracking-wider flex items-center space-x-2 border-b border-amber-100 pb-2">
-              <span>3. Church Connection & Emergency Contact</span>
+          {/* SECTION 3: Team Connection & Emergency */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-[#C59B27] pb-1 border-b border-amber-100">
+              3. Team & emergency contact
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-center space-x-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex items-center space-x-2 pt-1">
                 <input
                   type="checkbox"
                   id="koinoniaWorker"
                   checked={isKoinoniaWorker}
                   onChange={(e) => setIsKoinoniaWorker(e.target.checked)}
-                  className="w-4 h-4 text-[#C59B27] rounded focus:ring-amber-500 border-zinc-300"
+                  className="w-4 h-4 text-[#C59B27] rounded focus:ring-amber-500 border-zinc-300 cursor-pointer"
                 />
-                <label htmlFor="koinoniaWorker" className="text-xs font-semibold text-zinc-800 cursor-pointer">
-                  Koinonia Church Worker / Staff Member
+                <label htmlFor="koinoniaWorker" className="text-xs font-medium text-zinc-700 cursor-pointer">
+                  Koinonia team member / worker
                 </label>
               </div>
 
               {isKoinoniaWorker && (
                 <div>
-                  <label className="text-xs font-semibold text-zinc-700 block mb-1">Department / Ministry</label>
+                  <label className="text-xs font-medium text-zinc-700 block mb-1">Department / Ministry</label>
                   <input
                     type="text"
                     value={workerDepartment}
                     onChange={(e) => setWorkerDepartment(e.target.value)}
-                    placeholder="e.g. Children's Department, Ushering"
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                    placeholder="e.g. Children's ministry, Ushering"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                   />
                 </div>
               )}
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Emergency Contact Name</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">Emergency contact name</label>
                 <input
                   type="text"
                   value={emergencyContactName}
                   onChange={(e) => setEmergencyContactName(e.target.value)}
                   placeholder="Full name of backup contact"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-[#FAF8F4] focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Emergency Contact Phone</label>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">Emergency contact phone</label>
                 <input
                   type="tel"
                   value={emergencyContactPhone}
                   onChange={(e) => setEmergencyContactPhone(e.target.value)}
                   placeholder="+44 7123 000000"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-[#FAF8F4] focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27] transition-all"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:border-[#C59B27] transition-all"
                 />
               </div>
             </div>
           </div>
 
           {/* SECTION 4: Account & Invitation Settings */}
-          <div className="space-y-3 bg-amber-50/50 p-4 rounded-2xl border border-amber-100">
-            <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center space-x-2">
-              <Shield className="w-4 h-4 text-[#C59B27]" />
-              <span>4. Account & Invitation Lifecycle</span>
+          <div className="space-y-3 bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE8E1]">
+            <h4 className="text-xs font-semibold text-zinc-800">
+              4. Account invitation
             </h4>
 
             <div className="space-y-2">
-              <label className="flex items-start space-x-3 cursor-pointer">
+              <label className="flex items-start space-x-2.5 cursor-pointer">
                 <input
                   type="radio"
                   name="invitationChoice"
                   checked={sendInvitation}
                   onChange={() => setSendInvitation(true)}
-                  className="mt-1 text-[#C59B27] focus:ring-[#C59B27]"
+                  className="mt-0.5 text-[#C59B27] focus:ring-[#C59B27]"
                 />
                 <div className="text-xs">
-                  <span className="font-semibold text-zinc-900 block">
-                    Send invitation email with personalized password setup link (Recommended)
+                  <span className="font-medium text-zinc-900 block">
+                    Send invitation email to set up account (Recommended)
                   </span>
-                  <span className="text-zinc-500 block">
-                    Issues a secure 72-hour invitation token to <strong className="text-zinc-700">{email || 'parent email'}</strong>. The administrator will not know or set the parent's permanent password.
+                  <span className="text-zinc-500 block text-[11px] mt-0.5">
+                    Issues an invitation link to <strong className="text-zinc-700">{email || 'the parent email'}</strong> so they can securely create their password.
                   </span>
                 </div>
               </label>
 
-              <label className="flex items-start space-x-3 cursor-pointer">
+              <label className="flex items-start space-x-2.5 cursor-pointer">
                 <input
                   type="radio"
                   name="invitationChoice"
                   checked={!sendInvitation}
                   onChange={() => setSendInvitation(false)}
-                  className="mt-1 text-[#C59B27] focus:ring-[#C59B27]"
+                  className="mt-0.5 text-[#C59B27] focus:ring-[#C59B27]"
                 />
                 <div className="text-xs">
-                  <span className="font-semibold text-zinc-900 block">
-                    Save parent record only (No active user login)
+                  <span className="font-medium text-zinc-900 block">
+                    Save parent details only (no invitation email)
                   </span>
-                  <span className="text-zinc-500 block">
-                    Creates the canonical parent profile in database so children can be linked immediately, without triggering an automated email.
+                  <span className="text-zinc-500 block text-[11px] mt-0.5">
+                    Creates the parent profile so children can be linked immediately without sending an email.
                   </span>
                 </div>
               </label>
@@ -448,26 +447,24 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
           </div>
 
           {/* SECTION 5: Optional Inline Child Creation */}
-          <div className="space-y-3 p-4 bg-zinc-50 rounded-2xl border border-[#EAE8E1]">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeChild}
-                  onChange={(e) => setIncludeChild(e.target.checked)}
-                  className="w-4 h-4 text-[#C59B27] rounded border-zinc-300"
-                />
-                <span className="text-xs font-bold text-zinc-900">
-                  Register a child under this parent right now
-                </span>
-              </label>
-            </div>
+          <div className="space-y-3 p-4 bg-zinc-50/70 rounded-2xl border border-[#EAE8E1]">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeChild}
+                onChange={(e) => setIncludeChild(e.target.checked)}
+                className="w-4 h-4 text-[#C59B27] rounded border-zinc-300"
+              />
+              <span className="text-xs font-semibold text-zinc-800">
+                Add child details now (optional)
+              </span>
+            </label>
 
             {includeChild && (
-              <div className="pt-3 border-t border-[#EAE8E1] space-y-4 animate-fade-in">
+              <div className="pt-3 border-t border-[#EAE8E1] space-y-3 animate-fade-in">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-zinc-700 block mb-1">Child First Name *</label>
+                    <label className="text-[11px] font-medium text-zinc-700 block mb-1">First name *</label>
                     <input
                       type="text"
                       required={includeChild}
@@ -479,7 +476,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-zinc-700 block mb-1">Child Last Name</label>
+                    <label className="text-[11px] font-medium text-zinc-700 block mb-1">Last name</label>
                     <input
                       type="text"
                       value={childLastName}
@@ -490,7 +487,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-zinc-700 block mb-1">Date of Birth</label>
+                    <label className="text-[11px] font-medium text-zinc-700 block mb-1">Date of birth</label>
                     <input
                       type="date"
                       value={childDob}
@@ -502,7 +499,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-zinc-700 block mb-1">Medical Notes / Allergies</label>
+                    <label className="text-[11px] font-medium text-zinc-700 block mb-1">Medical notes / Allergies</label>
                     <input
                       type="text"
                       value={childAllergies}
@@ -512,15 +509,15 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                     />
                   </div>
 
-                  <div className="flex items-center space-x-3 pt-4">
-                    <label className="flex items-center space-x-2 text-xs text-zinc-800 cursor-pointer">
+                  <div className="flex items-center space-x-2 pt-4">
+                    <label className="flex items-center space-x-2 text-xs text-zinc-700 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={registerChildForEvent}
                         onChange={(e) => setRegisterChildForEvent(e.target.checked)}
                         className="text-[#C59B27] rounded"
                       />
-                      <span>Register for active event automatically</span>
+                      <span>Register for current event automatically</span>
                     </label>
                   </div>
                 </div>
@@ -530,17 +527,17 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
 
           {/* DUPLICATE WARNING BLOCK */}
           {duplicateMatch && (
-            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 space-y-3">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1 text-xs">
-                  <span className="font-bold text-amber-950 block">Possible Duplicate Record Detected</span>
-                  <p>{duplicateMatch.message}</p>
+            <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-200 text-amber-900 space-y-2">
+              <div className="flex items-start space-x-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 text-xs">
+                  <span className="font-semibold text-amber-950 block">Possible duplicate record detected</span>
+                  <p className="text-zinc-600 text-[11px]">{duplicateMatch.message}</p>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-amber-200 flex items-center justify-between">
-                <label className="flex items-center space-x-2 text-xs font-semibold text-amber-950 cursor-pointer">
+              <div className="pt-2 border-t border-amber-200/70">
+                <label className="flex items-center space-x-2 text-xs font-medium text-amber-950 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={overrideDuplicate}
@@ -554,12 +551,13 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
           )}
 
           {/* Form Action Buttons */}
-          <div className="pt-4 border-t border-[#EAE8E1] flex items-center justify-end space-x-3">
+          <div className="pt-4 border-t border-[#EAE8E1] flex items-center justify-end space-x-2">
             <Button
               type="button"
               variant="secondary"
               onClick={() => { resetForm(); onClose(); }}
               disabled={submitting}
+              className="px-4 py-2 text-xs"
             >
               Cancel
             </Button>
@@ -568,8 +566,9 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
               variant="primary"
               loading={submitting}
               disabled={submitting}
+              className="px-5 py-2 text-xs font-medium"
             >
-              Save Parent Record
+              Add parent
             </Button>
           </div>
 

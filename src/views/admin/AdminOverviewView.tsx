@@ -164,6 +164,33 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [showResolutionInTakeover, setShowResolutionInTakeover] = useState(false);
   const [isSoundSettingsOpen, setIsSoundSettingsOpen] = useState(false);
+  const [settingsSubTab, setSettingsSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings'>('parent-access');
+  const [isPlayingSoundTest, setIsPlayingSoundTest] = useState(false);
+
+  const handleTriggerSoundTest = () => {
+    try {
+      resumeAudioContext();
+      playSound('emergency', { volume: alertVolume, profile: alertProfile });
+      setIsPlayingSoundTest(true);
+      setTimeout(() => {
+        setIsPlayingSoundTest(false);
+      }, 2500);
+    } catch (_) {
+      setIsPlayingSoundTest(false);
+    }
+  };
+
+  const handleStopSoundTest = () => {
+    try {
+      stopAllUrgentAlertEffects();
+      setIsPlayingSoundTest(false);
+    } catch (_) {}
+  };
+
+  const handleOpenSoundSettings = () => {
+    setSettingsSubTab('alert-delivery');
+    handleTabChange('settings');
+  };
 
   // Premium interactive states
   const [viewingChildProfile, setViewingChildProfile] = useState<any | null>(null);
@@ -403,19 +430,88 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   };
 
-  // Timeago helper
+  // Centralized presentation mappings & helpers for Care & Safety
+  const CARE_CATEGORY_LABELS: Record<string, string> = {
+    child_care: 'Care note',
+    medical: 'Medical request',
+    medical_support: 'Medical request',
+    missing_child: 'Missing child',
+    failed_scan: 'Scan issue',
+    pass_issue: 'Pass issue',
+    wrong_pickup: 'Pickup concern',
+    pickup_issue: 'Pickup concern',
+    security_concern: 'Security alert',
+    security_alert: 'Security alert',
+    location_support: 'Location assistance',
+    general_help: 'General assistance',
+    other_safety: 'Safety concern',
+    other: 'Safety concern'
+  };
+
+  const formatCareCategory = (category: string | undefined | null): string => {
+    if (!category) return 'Care note';
+    if (CARE_CATEGORY_LABELS[category]) return CARE_CATEGORY_LABELS[category];
+    return category
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const formatCareStatus = (status: string | undefined | null): { label: string; style: string } => {
+    const s = (status || '').toLowerCase();
+    if (s === 'acknowledged') {
+      return { label: 'Reviewed', style: 'text-zinc-600 bg-zinc-100/90 border-zinc-200/70' };
+    }
+    if (s === 'resolved') {
+      return { label: 'Resolved', style: 'text-emerald-700 bg-emerald-50 border-emerald-200/60' };
+    }
+    if (s === 'open' || s === 'pending') {
+      return { label: 'Needs attention', style: 'text-amber-700 bg-amber-50 border-amber-200/60' };
+    }
+    return {
+      label: s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Reviewed',
+      style: 'text-zinc-600 bg-zinc-100/90 border-zinc-200/70'
+    };
+  };
+
+  // Helper to format Recent Activity items
+  const formatRecentActivity = (act: { id: string; name?: string; text: string; time: string }) => {
+    let personName = act.name || '';
+    let actionText = '';
+
+    if (personName && act.text.startsWith(personName)) {
+      actionText = act.text.slice(personName.length).trim();
+      if (actionText) {
+        actionText = actionText.charAt(0).toUpperCase() + actionText.slice(1);
+      }
+    } else {
+      personName = act.text;
+    }
+
+    return {
+      person: personName,
+      action: actionText,
+      time: act.time
+    };
+  };
+
+  // Humanized relative time helper
   const formatTimeAgo = (isoString: string) => {
     try {
-      const diffMs = Date.now() - new Date(isoString).getTime();
+      const date = new Date(isoString);
+      const diffMs = Date.now() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
       if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffMins === 1) return '1 minute ago';
+      if (diffMins < 60) return `${diffMins} minutes ago`;
       const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffHours === 1) return '1 hour ago';
+      if (diffHours < 24) return `${diffHours} hours ago`;
       const diffDays = Math.floor(diffHours / 24);
-      return `${diffDays}d ago`;
+      if (diffDays === 1) return '1 day ago';
+      if (diffDays < 30) return `${diffDays} days ago`;
+      return `${diffDays} days ago`;
     } catch (_) {
-      return 'Recent';
+      return 'Recently';
     }
   };
 
@@ -2685,239 +2781,159 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                           {/* Recent Activity Panel */}
                           <div 
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4"
-                            data-component-version="admin-recent-activity-approved-v1"
+                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
+                            data-component-version="admin-recent-activity-refined-v2"
                           >
                             <div className="flex items-center justify-between pb-1">
-                              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
-                                Recent Activity
-                              </span>
+                              <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
+                                Recent activity
+                              </h3>
                               <button 
                                 onClick={() => setActiveTab('attendance')}
-                                className="text-[10px] font-bold text-[#C59B27] hover:underline"
+                                className="text-xs font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
                               >
-                                View All
+                                View all
                               </button>
                             </div>
 
-                            <div className="space-y-3.5">
-                              {recentActivityList.length === 0 ? (
-                                <p className="text-xs text-zinc-400 text-center py-4">No recent activity yet.</p>
-                              ) : (
-                                recentActivityList.map((act: any) => (
-                                  <div key={act.id} className="flex items-start space-x-2.5 text-xs">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27] mt-1.5 shrink-0" />
-                                    <div className="space-y-0.5">
-                                      <p className="text-zinc-700 leading-tight font-medium">{act.text}</p>
-                                      <p className="text-[10px] text-zinc-400">{act.time}</p>
+                            {recentActivityList.length === 0 ? (
+                              <p className="text-xs text-zinc-400 text-center py-4 font-normal">
+                                No recent activity yet.
+                              </p>
+                            ) : (
+                              <div className="divide-y divide-[#EAE8E1]/60">
+                                {recentActivityList.slice(0, 5).map((act: any) => {
+                                  const item = formatRecentActivity(act);
+                                  return (
+                                    <div key={act.id} className="py-2.5 first:pt-0 last:pb-0 space-y-0.5">
+                                      <p className="text-xs font-semibold text-zinc-900 leading-snug">
+                                        {item.person}
+                                      </p>
+                                      <p className="text-[11px] text-zinc-500 font-normal">
+                                        {item.action ? `${item.action} · ${item.time}` : item.time}
+                                      </p>
                                     </div>
-                                  </div>
-                                ))
-                              )}
-                            </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
 
-                          {/* Care Support & Safety Logs Panel */}
+                          {/* Care & Safety Panel */}
                           <div 
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
-                            data-component-version="admin-safety-history-logs-v1"
+                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
+                            data-component-version="admin-care-safety-refined-v2"
                           >
                             <div className="flex items-center justify-between pb-1">
-                              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
-                                Care & Safety Audit Records
-                              </span>
-                              <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
-                                {safetyAlerts.length} total
-                              </span>
+                              <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
+                                Care & safety
+                              </h3>
+                              <div className="flex items-center gap-2 text-xs text-zinc-400 font-normal">
+                                <span>{safetyAlerts.length}</span>
+                                <span className="text-zinc-300">·</span>
+                                <button 
+                                  onClick={() => setActiveTab('review')}
+                                  className="font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
+                                >
+                                  View all
+                                </button>
+                              </div>
                             </div>
 
-                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                              {safetyAlerts.length === 0 ? (
-                                <p className="text-xs text-zinc-400 text-center py-4 font-sans">No safety records registered.</p>
-                              ) : (
-                                safetyAlerts.map((log: any) => {
-                                  const isResolved = log.status === 'resolved';
-                                  const isAck = log.status === 'acknowledged';
-                                  
-                                  let typeLabel = log.category;
-                                  if (log.category === 'medical') typeLabel = '🩺 Medical request';
-                                  else if (log.category === 'missing_child') typeLabel = '🚨 Missing Child';
-                                  else if (log.category === 'failed_scan') typeLabel = '⚠️ Scan issue';
-                                  else if (log.category === 'wrong_pickup') typeLabel = '🛑 Pickup concern';
-                                  else if (log.category === 'other_safety') typeLabel = '🛡️ Safety Concern';
+                            {safetyAlerts.length === 0 ? (
+                              <p className="text-xs text-zinc-400 text-center py-4 font-normal">
+                                No care or safety updates.
+                              </p>
+                            ) : (
+                              <div className="divide-y divide-[#EAE8E1]/60">
+                                {safetyAlerts.slice(0, 4).map((log: any) => {
+                                  const categoryLabel = formatCareCategory(log.category);
+                                  const statusInfo = formatCareStatus(log.status);
+                                  const location = log.location || log.location_label || 'Foyer';
+                                  const timeAgo = formatTimeAgo(log.created_at);
 
                                   return (
-                                    <div 
-                                      key={log.id} 
-                                      className="p-3 bg-[#FAF9F6]/80 hover:bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1.5 transition-all text-xs"
-                                    >
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="font-semibold text-zinc-800 font-serif">
-                                          {typeLabel}
-                                        </div>
-                                        <span className={`text-[9px] font-sans font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${
-                                          isResolved 
-                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                            : isAck
-                                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                              : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
-                                        }`}>
-                                          {log.status.toUpperCase()}
+                                    <div key={log.id} className="py-3 first:pt-0 last:pb-0 space-y-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs font-semibold text-zinc-900 leading-snug">
+                                          {categoryLabel}
+                                        </span>
+                                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusInfo.style}`}>
+                                          {statusInfo.label}
                                         </span>
                                       </div>
 
-                                      <p className="text-[11px] text-zinc-600 leading-relaxed break-words font-sans">
-                                        {log.message || "No notes provided."}
+                                      {log.message && (
+                                        <p className="text-xs text-zinc-600 leading-relaxed break-words font-normal">
+                                          {log.message}
+                                        </p>
+                                      )}
+
+                                      <p className="text-[11px] text-zinc-400 font-normal">
+                                        {location} · {timeAgo}
                                       </p>
 
-                                      <div className="text-[10px] text-zinc-400 flex flex-wrap justify-between gap-1.5 border-t border-zinc-100/60 pt-1.5 mt-1">
-                                        <span>Loc: <strong className="text-zinc-600">{log.location || 'Foyer'}</strong></span>
-                                        <span>{formatTimeAgo(log.created_at)}</span>
-                                      </div>
-
-                                      {isResolved && log.resolution_note && (
-                                        <div className="bg-emerald-50/40 border border-emerald-100/50 rounded-lg p-2 mt-1.5 text-[10px] text-zinc-700">
-                                          <p className="font-semibold text-emerald-800">Resolution:</p>
-                                          <p className="italic font-sans mt-0.5">"{log.resolution_note}"</p>
-                                          <p className="text-[9px] text-zinc-400 mt-1">Resolved by {log.resolved_by_name}</p>
+                                      {log.status === 'resolved' && log.resolution_note && (
+                                        <div className="text-[11px] text-zinc-500 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-lg p-2 mt-1">
+                                          <span className="font-medium text-zinc-700">Resolution:</span> {log.resolution_note}
                                         </div>
                                       )}
                                     </div>
                                   );
-                                })
-                              )}
-                            </div>
+                                })}
+                              </div>
+                            )}
                           </div>
 
-                          {/* Persistent Security & Device Audio Readiness Panel */}
+                          {/* Alert Sound Readiness Panel */}
                           <div 
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
-                            data-component-version="shared-audio-preferences-mobile-desktop-v1"
+                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
+                            data-component-version="admin-alert-sound-readiness-v2"
                           >
-                            <div className="flex items-center justify-between pb-1" data-component-version="mobile-audio-setting-saved-state-v1">
-                              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
-                                SECURITY AUDIO READINESS
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                {isAudioPreferenceSaving ? (
-                                  <span className="text-[10px] text-zinc-400 animate-pulse">Saving...</span>
-                                ) : (
-                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                                    <Check className="w-3 h-3" /> Saved
-                                  </span>
-                                )}
-                                <span className="text-[9px] bg-[#C59B27]/10 text-[#C59B27] font-bold px-2 py-0.5 rounded-full uppercase">
-                                  Device check
+                            <div className="flex items-center justify-between pb-1">
+                              <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
+                                Alert sound
+                              </h3>
+                              {soundEnabled !== false ? (
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                  Ready on this device
                                 </span>
-                              </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-full">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                  Needs attention
+                                </span>
+                              )}
                             </div>
 
-                            <p className="text-xs text-zinc-500 font-sans leading-relaxed">
-                              <strong>Device sound settings</strong>: Configure and test the alarm synthesizer of this operator terminal to ensure immediate alerts can be heard during busy events.
+                            <p className="text-xs text-zinc-600 leading-relaxed font-normal">
+                              {soundEnabled !== false 
+                                ? 'Important alerts can be heard on this device.'
+                                : "Turn up this device's volume so important alerts can be heard."}
                             </p>
 
-                            <div className="space-y-3 pt-1" data-component-version="mobile-volume-boost-persist-v1">
-                              {/* Sound Mode Selection */}
-                              <div className="space-y-1.5" data-component-version="mobile-audio-preference-field-map-v1">
-                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wide block">
-                                  Chime Alarm Profile
-                                </label>
-                                <div className="grid grid-cols-3 gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-100">
-                                  {[
-                                    { id: 'normal', label: 'Gentle' },
-                                    { id: 'important', label: 'Clear' },
-                                    { id: 'emergency', label: 'Siren' }
-                                  ].map((prof) => (
-                                    <button
-                                      key={prof.id}
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        updatePreference('urgentSoundProfile', prof.id);
-                                        showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
-                                      }}
-                                      className={`py-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
-                                        alertProfile === prof.id
-                                          ? 'bg-[#18181B] text-white shadow-xs'
-                                          : 'text-zinc-500 hover:text-zinc-800 bg-transparent'
-                                      }`}
-                                    >
-                                      {prof.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
+                            <div className="flex items-center gap-2 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={isPlayingSoundTest ? handleStopSoundTest : handleTriggerSoundTest}
+                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
+                              >
+                                <Volume2 className={`w-3.5 h-3.5 ${isPlayingSoundTest ? 'text-[#C59B27] animate-pulse' : 'text-zinc-500'}`} />
+                                <span>{isPlayingSoundTest ? 'Stop sound' : 'Test sound'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleOpenSoundSettings}
+                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
+                              >
+                                <Settings className="w-3.5 h-3.5 text-zinc-500" />
+                                <span>Sound settings</span>
+                              </button>
+                            </div>
 
-                              {/* Volume Controls */}
-                              <div className="space-y-1.5" data-component-version="mobile-emergency-volume-boost-applied-v1">
-                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wide block">
-                                  Alert volume boost
-                                </label>
-                                <div className="grid grid-cols-3 gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-100">
-                                  {[
-                                    { id: 'standard', label: '1x Std' },
-                                    { id: 'loud', label: '2x Loud' },
-                                    { id: 'very_loud', label: '4x Max' }
-                                  ].map((vol) => (
-                                    <button
-                                      key={vol.id}
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        updatePreference('urgentVolumeBoost', vol.id);
-                                        showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
-                                      }}
-                                      className={`py-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
-                                        alertVolume === vol.id
-                                          ? 'bg-[#C59B27] text-white shadow-xs'
-                                          : 'text-zinc-500 hover:text-zinc-800 bg-transparent'
-                                      }`}
-                                    >
-                                      {vol.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* Test Buttons */}
-                              <div className="flex gap-2 pt-1" data-component-version="mobile-audio-buttons-no-submit-v1">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    resumeAudioContext();
-                                    playSound('emergency', { volume: alertVolume, profile: alertProfile });
-                                    showSuccess('Testing Tone', 'Playing localized check sound.');
-                                  }}
-                                  className="flex-1 font-bold text-[10px] bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
-                                >
-                                  <Volume2 className="w-3.5 h-3.5 text-zinc-600" />
-                                  Test Local Audio
-                                </button>
-                                
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    try {
-                                      stopAllUrgentAlertEffects();
-                                      showSuccess('Audio Silenced', 'Test stopped.');
-                                    } catch (_) {}
-                                  }}
-                                  className="font-bold text-[10px] text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
-                                  title="Stop sound"
-                                >
-                                  Stop
-                                </button>
-                              </div>
-
-                              {/* Physical Device Notice */}
-                              <div className="text-[10px] leading-relaxed text-zinc-500 bg-[#FFFDF5] border border-[#F5E6BE] p-3 rounded-xl">
-                                <span className="font-bold text-amber-800 block mb-0.5">⚠️ Alert sound</span>
-                                This web terminal operates within browser safety limits. To prevent missed emergency alerts during busy events, verify that the physical device volume is unmuted and set high.
-                              </div>
+                            <div className="text-[11px] leading-relaxed text-zinc-500 bg-[#FAF9F6] border border-[#EAE8E1]/80 p-3 rounded-xl font-normal">
+                              Make sure this device is not muted and the volume is high enough to hear important alerts during the event.
                             </div>
                           </div>
 
@@ -2937,6 +2953,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               onBackToOverview={() => handleTabChange('overview')}
               isSuperAdmin={isSuperAdmin}
               adminUser={adminUser}
+              initialSubTab={settingsSubTab}
               onTriggerTestAlert={(testAlert) => {
                 setActiveUrgentAlert(testAlert);
               }}

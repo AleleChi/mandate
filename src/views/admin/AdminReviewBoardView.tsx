@@ -2,25 +2,14 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Users, 
   Search, 
-  Check, 
   X, 
-  ShieldAlert, 
-  Loader2, 
+  AlertCircle, 
+  Filter, 
+  SlidersHorizontal, 
   ChevronRight, 
-  AlertCircle,
-  Phone,
-  Clock,
-  Filter,
-  CheckCircle,
-  Info,
-  SlidersHorizontal,
-  ChevronDown,
-  ArrowUpDown,
-  BookOpen,
-  UserCheck,
-  Smartphone,
-  CheckSquare,
-  Square
+  CheckSquare, 
+  Square,
+  Loader2
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -36,7 +25,7 @@ interface AdminReviewBoardViewProps {
 }
 
 export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
-  onBackToOverview,
+  onBackToOverview: _onBackToOverview,
   initialApplicationId,
   initialChildId,
   onClearInitialParams
@@ -51,7 +40,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   
   // Search and Sort
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('oldest'); // Oldest first is priority review order
+  const [sortBy, setSortBy] = useState<'oldest' | 'newest'>('oldest');
   
   // Filter States
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -84,7 +73,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     } catch (err: any) {
       console.error('[AdminReviewBoardView - fetchApplications Error]:', err);
       const parsed = extractApiError(err);
-      showError('Fetch Failed', parsed.message || 'Could not load review records.');
+      showError('Fetch Failed', parsed.message || 'Could not load registration records.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -122,29 +111,31 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     }
   }, [initialApplicationId, initialChildId, applications, loading]);
 
-  // Compute duplicate parent phones to identify sibling groups / duplicate contacts
-  const parentPhoneCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // Map phone numbers to sibling groups
+  const siblingMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
     applications.forEach(app => {
       const phone = app.parent?.phone;
       if (phone) {
-        counts[phone] = (counts[phone] || 0) + 1;
+        if (!map[phone]) map[phone] = [];
+        if (app.child?.fullName) map[phone].push(app.child.fullName);
       }
     });
-    return counts;
+    return map;
   }, [applications]);
 
-  // Enrich applications with custom diagnostic flags derived from the active dataset
+  // Enrich applications with contextual attention conditions and sibling relationships
   const enrichedApplications = useMemo(() => {
     return applications.map(app => {
-      const isBelowAge = app.child?.age < 1;
+      const isBelowAge = (app.child?.age !== undefined && app.child?.age !== null) ? app.child.age < 1 : false;
       const isMissingPickupPhoto = app.pickupPeople && app.pickupPeople.length > 0 && app.pickupPeople.some((p: any) => !p.photoUrl);
       const isMissingChildPhoto = !app.child?.photoUrl;
       const hasMedicalNotes = !!app.hasMedicalNotes || !!app.medicalNotes;
       const needsExtraSupport = !!app.needsExtraSupport || !!app.supportNotes;
       
       const phone = app.parent?.phone;
-      const isDuplicateContact = phone ? (parentPhoneCounts[phone] || 0) > 1 : false;
+      const siblings = (phone && siblingMap[phone]) ? siblingMap[phone].filter(name => name !== app.child?.fullName) : [];
+      const isDuplicateContact = siblings.length > 0;
 
       return {
         ...app,
@@ -155,22 +146,22 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
           medicalNotes: hasMedicalNotes,
           extraSupport: needsExtraSupport,
           duplicateContact: isDuplicateContact
-        }
+        },
+        siblings
       };
     });
-  }, [applications, parentPhoneCounts]);
+  }, [applications, siblingMap]);
 
-  // Metrics (reflecting real data only)
+  // Summary Metrics (5 core indicators: Awaiting review, Selected, Waiting list, Not selected, Needs attention)
   const metrics = useMemo(() => {
     let underReviewCount = 0;
     let selectedCount = 0;
     let waitingListCount = 0;
     let notSelectedCount = 0;
-    let belowAgeCount = 0;
     let needsAttentionCount = 0;
 
     enrichedApplications.forEach(app => {
-      if (app.status === 'under_review') {
+      if (app.status === 'under_review' || app.status === 'review_reopened') {
         underReviewCount++;
       } else if (app.status === 'selected' || app.status === 'pass_ready' || app.status === 'checked_in' || app.status === 'picked_up') {
         selectedCount++;
@@ -180,11 +171,8 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
         notSelectedCount++;
       }
 
-      if (app.flags.belowAge) {
-        belowAgeCount++;
-      }
-
-      if (app.flags.medicalNotes || app.flags.extraSupport || app.flags.missingChildPhoto || app.flags.missingPickupPhoto) {
+      // Attention condition: age review, medical/support notes, or missing required photos
+      if (app.flags.belowAge || app.flags.medicalNotes || app.flags.extraSupport || app.flags.missingChildPhoto || app.flags.missingPickupPhoto) {
         needsAttentionCount++;
       }
     });
@@ -194,7 +182,6 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       selected: selectedCount,
       waitingList: waitingListCount,
       notSelected: notSelectedCount,
-      belowAge: belowAgeCount,
       needsAttention: needsAttentionCount
     };
   }, [enrichedApplications]);
@@ -217,7 +204,6 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       preteen: 0
     };
 
-    // Calculate count of SELECTED children in each bracket
     enrichedApplications.forEach(app => {
       const isSelected = app.status === 'selected' || app.status === 'pass_ready' || app.status === 'checked_in' || app.status === 'picked_up';
       if (!isSelected) return;
@@ -237,49 +223,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     });
 
     return [
-      { id: 'under1', label: 'Under 1 Year', current: counts.under1, limit: limits.under1 },
-      { id: 'toddler', label: 'Toddlers (Ages 1–3)', current: counts.toddler, limit: limits.toddler },
-      { id: 'preschool', label: 'Pre-school (Ages 4–6)', current: counts.preschool, limit: limits.preschool },
-      { id: 'primary', label: 'Primary (Ages 7–9)', current: counts.primary, limit: limits.primary },
-      { id: 'preteen', label: 'Pre-teens (Ages 10–12)', current: counts.preteen, limit: limits.preteen }
+      { id: 'under1', label: 'Under 1 year', current: counts.under1, limit: limits.under1 },
+      { id: 'toddler', label: 'Toddlers (ages 1–3)', current: counts.toddler, limit: limits.toddler },
+      { id: 'preschool', label: 'Pre-school (ages 4–6)', current: counts.preschool, limit: limits.preschool },
+      { id: 'primary', label: 'Primary (ages 7–9)', current: counts.primary, limit: limits.primary },
+      { id: 'preteen', label: 'Pre-teens (ages 10–12)', current: counts.preteen, limit: limits.preteen }
     ];
   }, [enrichedApplications]);
-
-  // Suggested Actions Checklist (derived from real statistics)
-  const suggestedActions = useMemo(() => {
-    const list: { id: string; text: string; actionLabel: string; type: 'warn' | 'info'; filterFn: () => void }[] = [];
-
-    if (metrics.belowAge > 0) {
-      list.push({
-        id: 'below_age',
-        text: `${metrics.belowAge} application${metrics.belowAge > 1 ? 's are' : ' is'} below the 1-year age limit rule.`,
-        actionLabel: 'Review Age Violations',
-        type: 'warn',
-        filterFn: () => {
-          setFlagFilter('below_age');
-          setStatusFilter('all');
-          setWorkerFilter('all');
-        }
-      });
-    }
-
-    const missingPhotos = enrichedApplications.filter(app => app.flags.missingChildPhoto).length;
-    if (missingPhotos > 0) {
-      list.push({
-        id: 'missing_child_photo',
-        text: `${missingPhotos} child profile${missingPhotos > 1 ? 's lack' : ' lacks'} a mandatory face photograph.`,
-        actionLabel: 'Filter Missing Photos',
-        type: 'info',
-        filterFn: () => {
-          setFlagFilter('missing_child_photo');
-          setStatusFilter('all');
-          setWorkerFilter('all');
-        }
-      });
-    }
-
-    return list;
-  }, [metrics, enrichedApplications]);
 
   // Filter application list based on search and selected filter values
   const filteredApplications = useMemo(() => {
@@ -287,7 +237,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
     // Status filter
     if (statusFilter !== 'all') {
-      if (statusFilter === 'selected') {
+      if (statusFilter === 'under_review') {
+        list = list.filter(app => app.status === 'under_review' || app.status === 'review_reopened');
+      } else if (statusFilter === 'selected') {
         list = list.filter(app => ['selected', 'pass_ready', 'checked_in', 'picked_up'].includes(app.status));
       } else {
         list = list.filter(app => app.status === statusFilter);
@@ -298,10 +250,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     if (flagFilter !== 'all') {
       if (flagFilter === 'below_age') {
         list = list.filter(app => app.flags.belowAge);
-      } else if (flagFilter === 'missing_pickup_photo') {
-        list = list.filter(app => app.flags.missingPickupPhoto);
       } else if (flagFilter === 'missing_child_photo') {
         list = list.filter(app => app.flags.missingChildPhoto);
+      } else if (flagFilter === 'missing_pickup_photo') {
+        list = list.filter(app => app.flags.missingPickupPhoto);
       } else if (flagFilter === 'medical_or_support') {
         list = list.filter(app => app.flags.medicalNotes || app.flags.extraSupport);
       } else if (flagFilter === 'duplicate_contact') {
@@ -309,10 +261,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       }
     }
 
-    // Worker Filter
+    // Parent Role Filter
     if (workerFilter !== 'all') {
       const isWorker = workerFilter === 'worker';
-      list = list.filter(app => app.parent?.isWorker === isWorker);
+      list = list.filter(app => Boolean(app.parent?.isWorker) === isWorker);
     }
 
     // Search query
@@ -326,7 +278,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       );
     }
 
-    // Sort order (oldest first processed as high priority, or newest first)
+    // Sort order (oldest first or newest first)
     list.sort((a, b) => {
       const dateA = new Date(a.submittedAt || 0).getTime();
       const dateB = new Date(b.submittedAt || 0).getTime();
@@ -343,20 +295,6 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     const targetId = activeSelectId || (filteredApplications[0]?.id || null);
     return enrichedApplications.find(app => app.id === targetId) || null;
   }, [activeSelectId, filteredApplications, enrichedApplications]);
-
-  // Handlers for individual quick status updates
-  const handleQuickStatusUpdate = async (id: string, status: string, name: string) => {
-    try {
-      const res = await api.admin.updateApplicationStatus(id, status);
-      if (res.success) {
-        showSuccess('Decision Recorded', `Successfully updated ${name}'s status to ${status.replace('_', ' ')}.`);
-        await fetchApplications(true);
-      }
-    } catch (err: any) {
-      const parsed = extractApiError(err);
-      showError('Action Failed', parsed.message || 'Could not record your action.');
-    }
-  };
 
   // Bulk selection actions
   const handleToggleSelectAll = () => {
@@ -388,7 +326,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       });
 
       if (res.success) {
-        showSuccess('Bulk Action Recorded', `Successfully processed decision for ${selectedIds.length} children.`);
+        showSuccess('Bulk Decision Recorded', `Successfully updated decision for ${selectedIds.length} registrations.`);
         setSelectedIds([]);
         setBulkActionOpen(false);
         setBulkNote('');
@@ -409,12 +347,58 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     setSearchQuery('');
   };
 
-  // If detailed side review screen is open, route it
+  const isFiltersActive = statusFilter !== 'all' || flagFilter !== 'all' || workerFilter !== 'all' || searchQuery.trim() !== '';
+
+  const formatSubmittedDate = (dateVal?: string) => {
+    if (!dateVal) return 'Date not recorded';
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return 'Date not recorded';
+    const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return `Submitted ${monthDay} · ${time}`;
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'under_review':
+      case 'review_reopened':
+        return {
+          label: 'Awaiting review',
+          className: 'bg-stone-100 text-stone-700 border border-stone-200'
+        };
+      case 'selected':
+      case 'pass_ready':
+      case 'checked_in':
+      case 'picked_up':
+        return {
+          label: 'Selected',
+          className: 'bg-emerald-50 text-emerald-800 border border-emerald-200/70'
+        };
+      case 'waiting_list':
+        return {
+          label: 'Waiting list',
+          className: 'bg-amber-50 text-amber-800 border border-amber-200/70'
+        };
+      case 'not_selected':
+        return {
+          label: 'Not selected',
+          className: 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+        };
+      default:
+        return {
+          label: status.replace('_', ' '),
+          className: 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+        };
+    }
+  };
+
+  // If detailed child review screen is open, render it
   if (selectedApplicationId) {
     return (
       <AdminReviewChildView 
         applicationId={selectedApplicationId}
         onBack={() => setSelectedApplicationId(null)}
+        backLabel="Back to review"
         onSave={async () => {
           setSelectedApplicationId(null);
           await fetchApplications(true);
@@ -426,44 +410,38 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   return (
     <div 
       className="space-y-6 animate-fade-in" 
-      data-view-version="admin-review-board-v2-card-refined"
+      data-view-version="admin-review-board-v3-refined"
     >
-      {/* HEADER BAR */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
+      {/* 1. PAGE HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
         <div>
-          <h2 className="font-serif text-2xl font-semibold text-[#18181B] tracking-tight">
-            Review Board
-          </h2>
+          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-[#18181B] tracking-tight">
+            Registration review
+          </h1>
           <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-            Review child applications and make event decisions with care.
+            Review child registrations and make event decisions with care.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button 
             onClick={() => fetchApplications(true)}
-            className="px-3.5 py-2 text-xs font-semibold bg-white border border-[#EAE8E1] text-[#18181B] rounded-xl hover:bg-zinc-50 cursor-pointer flex items-center gap-2"
+            disabled={refreshing}
+            className="px-3.5 py-2 text-xs font-semibold bg-white border border-[#EAE8E1] text-[#18181B] rounded-xl hover:bg-zinc-50 transition-colors cursor-pointer flex items-center gap-2"
           >
-            {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-            Refresh Applications
-          </button>
-          
-          <button 
-            onClick={onBackToOverview}
-            className="px-3.5 py-2 text-xs font-semibold bg-[#C59B27] text-white rounded-xl hover:bg-[#B08921] shadow-xs cursor-pointer"
-          >
-            Back to Dashboard
+            {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : null}
+            Refresh
           </button>
         </div>
       </div>
 
-      {/* 1. METRICS ROW */}
+      {/* 2. COMPACT SUMMARY STRIP */}
       {loading ? (
         <div className="w-full">
           <KoinoniaInlineLoader
             variant="logo"
             size="md"
-            label="Loading applications for review..."
+            label="Loading registrations for review..."
             fullCard
             centered
           />
@@ -471,112 +449,135 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       ) : (
         <>
           <div 
-            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4"
-            data-component-version="admin-review-board-metrics-v1"
+            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-xs"
+            data-component-version="admin-review-summary-strip"
           >
-            {[
-              { label: 'Under Review', val: metrics.underReview, color: 'text-amber-600', bg: 'bg-amber-500/5', border: 'border-amber-200/50' },
-              { label: 'Selected', val: metrics.selected, color: 'text-emerald-700', bg: 'bg-emerald-500/5', border: 'border-emerald-200/50' },
-              { label: 'Waitlisted', val: metrics.waitingList, color: 'text-[#C59B27]', bg: 'bg-[#C59B27]/5', border: 'border-[#C59B27]/25' },
-              { label: 'Not Selected', val: metrics.notSelected, color: 'text-zinc-500', bg: 'bg-zinc-100', border: 'border-zinc-200' },
-              { label: 'Below Age Limit', val: metrics.belowAge, color: 'text-red-700', bg: 'bg-red-500/5', border: 'border-red-200/50' },
-              { label: 'Needs Attention', val: metrics.needsAttention, color: 'text-rose-700', bg: 'bg-rose-500/5', border: 'border-rose-200/50' },
-            ].map((m, idx) => (
-              <div 
-                key={idx} 
-                className={`${m.bg} border ${m.border} rounded-2xl p-4 flex flex-col justify-between shadow-2xs`}
-              >
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-                  {m.label}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-y-4 sm:gap-y-0 sm:divide-x divide-[#EAE8E1]">
+              <div className="sm:px-4 first:sm:pl-0">
+                <span className="text-xs font-medium text-zinc-500 block">
+                  Awaiting review
                 </span>
-                <span className={`font-serif text-2xl font-bold ${m.color} block mt-2`}>
-                  {m.val}
+                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                  {metrics.underReview}
                 </span>
               </div>
-            ))}
+
+              <div className="sm:px-4">
+                <span className="text-xs font-medium text-zinc-500 block">
+                  Selected
+                </span>
+                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                  {metrics.selected}
+                </span>
+              </div>
+
+              <div className="sm:px-4">
+                <span className="text-xs font-medium text-zinc-500 block">
+                  Waiting list
+                </span>
+                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                  {metrics.waitingList}
+                </span>
+              </div>
+
+              <div className="sm:px-4">
+                <span className="text-xs font-medium text-zinc-500 block">
+                  Not selected
+                </span>
+                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                  {metrics.notSelected}
+                </span>
+              </div>
+
+              <div className="sm:px-4 last:sm:pr-0">
+                <span className="text-xs font-medium text-zinc-500 block">
+                  Needs attention
+                </span>
+                <span className={`text-2xl font-semibold block mt-1 ${metrics.needsAttention > 0 ? 'text-amber-800' : 'text-zinc-500'}`}>
+                  {metrics.needsAttention}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* MAIN COLUMN WORKSPACE */}
+          {/* MAIN 3-COLUMN WORKSPACE */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
-            {/* 2. FILTER LEFT PANEL (Desktop: 3 columns, Mobile: Collapsible Sheet) */}
+            {/* 3. FILTER LEFT PANEL (Desktop: 3 cols, Hidden on Mobile) */}
             <aside 
-              className="lg:col-span-3 bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-5 hidden lg:block"
-              data-component-version="admin-review-board-filters-v1"
+              className="lg:col-span-3 bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-5 hidden lg:block shadow-xs"
+              data-component-version="admin-review-filters-panel"
             >
               <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3">
-                <span className="text-xs font-bold text-[#18181B] flex items-center gap-1.5 uppercase tracking-wider">
+                <span className="text-xs font-semibold text-[#18181B] flex items-center gap-1.5">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-[#C59B27]" />
-                  Refine Queue
+                  Filters
                 </span>
-                <button 
-                  onClick={handleResetFilters}
-                  className="text-[10px] text-zinc-400 hover:text-[#C59B27] font-semibold uppercase hover:underline"
-                >
-                  Clear All
-                </button>
+                {isFiltersActive && (
+                  <button 
+                    onClick={handleResetFilters}
+                    className="text-xs text-zinc-400 hover:text-[#C59B27] font-medium hover:underline cursor-pointer"
+                  >
+                    Clear filters
+                  </button>
+                )}
               </div>
 
               {/* Status Filter */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Review Status
+                <label className="text-xs font-medium text-zinc-500 block">
+                  Status
                 </label>
                 <select 
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27]"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="under_review">Under Review</option>
-                  <option value="selected">Selected / Pass Ready</option>
-                  <option value="waiting_list">Waiting List</option>
-                  <option value="not_selected">Not Selected</option>
+                  <option value="all">All statuses</option>
+                  <option value="under_review">Awaiting review</option>
+                  <option value="selected">Selected</option>
+                  <option value="waiting_list">Waiting list</option>
+                  <option value="not_selected">Not selected</option>
                 </select>
               </div>
 
-              {/* Diagnostic Flag Filter */}
+              {/* Attention Conditions Filter */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Attention Alerts
+                <label className="text-xs font-medium text-zinc-500 block">
+                  Needs attention
                 </label>
                 <select 
                   value={flagFilter}
                   onChange={(e) => setFlagFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27]"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
-                  <option value="all">All Registrations</option>
-                  <option value="below_age">Below Event Age (&lt; 1 yr)</option>
-                  <option value="missing_child_photo">Missing Child Profile Photo</option>
-                  <option value="missing_pickup_photo">Missing Pickup Face Photo</option>
-                  <option value="medical_or_support">Medical or Support Needs</option>
-                  <option value="duplicate_contact">Duplicate Contact / Sibling Group</option>
+                  <option value="all">All registrations</option>
+                  <option value="below_age">Age needs review</option>
+                  <option value="missing_child_photo">Photo needed</option>
+                  <option value="missing_pickup_photo">Pickup photo needed</option>
+                  <option value="medical_or_support">Care & medical notes</option>
+                  <option value="duplicate_contact">Sibling registrations</option>
                 </select>
               </div>
 
-              {/* Parent Worker Type Filter */}
+              {/* Parent Role Filter */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Parent Affiliation
+                <label className="text-xs font-medium text-zinc-500 block">
+                  Parent role
                 </label>
                 <select 
                   value={workerFilter}
                   onChange={(e) => setWorkerFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27]"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
-                  <option value="all">All Parents</option>
-                  <option value="worker">Koinonia Workers First</option>
-                  <option value="non_worker">Non-Worker Families</option>
+                  <option value="all">All parents</option>
+                  <option value="worker">Ministry team & workers</option>
+                  <option value="non_worker">Other families</option>
                 </select>
-              </div>
-
-              <div className="border-t border-[#EAE8E1] pt-4 text-[10px] text-zinc-400 leading-relaxed">
-                <Info className="w-3.5 h-3.5 text-amber-600 inline mr-1 -mt-0.5" />
-                Sort order is pre-configured to <strong>Oldest Submissions First</strong> to preserve processing fairness for early registrants.
               </div>
             </aside>
 
-            {/* MOBILE FILTER TRIGGER (Shown on lg:hidden) */}
+            {/* MOBILE SEARCH & FILTER TRIGGER */}
             <div className="lg:hidden flex items-center gap-2 w-full">
               <div className="relative flex-1">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
@@ -586,26 +587,26 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search children, parents..."
-                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                  placeholder="Search by child, parent or email"
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <button
                 onClick={() => setMobileFiltersOpen(true)}
-                className="px-3 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs font-semibold text-zinc-700 flex items-center gap-2 cursor-pointer"
+                className="px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs font-semibold text-zinc-700 flex items-center gap-1.5 cursor-pointer hover:bg-zinc-50"
               >
-                <Filter className="w-3.5 h-3.5" />
+                <Filter className="w-3.5 h-3.5 text-zinc-500" />
                 Filters
               </button>
             </div>
 
-            {/* 3. CENTER QUEUE: CHILDREN TO REVIEW (5 columns) */}
+            {/* 4. CENTER COLUMN: REGISTRATION RESULTS LIST (6 cols) */}
             <div 
               className="lg:col-span-6 space-y-4"
-              data-component-version="admin-review-board-queue-v1"
+              data-component-version="admin-review-results-list"
             >
-              {/* SEARCH & SORT HEADER */}
+              {/* SEARCH & SORT TOOLBAR */}
               <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                 {/* Search Bar - Desktop */}
                 <div className="relative flex-1 max-w-sm hidden lg:block">
@@ -616,55 +617,53 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search children, parents, email..."
-                    className="w-full pl-9 pr-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    placeholder="Search by child, parent or email"
+                    className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                   />
                 </div>
 
-                {/* Sort Order Toggles */}
+                {/* Match count and Sort Options */}
                 <div className="flex items-center justify-between sm:justify-end gap-3 w-full lg:w-auto">
-                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                    {filteredApplications.length} Matches
+                  <span className="text-xs text-zinc-500 font-medium">
+                    {filteredApplications.length} {filteredApplications.length === 1 ? 'result' : 'results'}
                   </span>
 
-                  <div className="flex items-center gap-1.5 bg-zinc-50 p-1 border border-[#EAE8E1] rounded-xl text-xs">
+                  <div className="flex items-center gap-1 bg-[#FAF9F6] p-1 border border-[#EAE8E1] rounded-xl text-xs">
                     <button 
                       onClick={() => setSortBy('oldest')}
-                      className={`px-2 py-1 font-semibold rounded-lg transition-all cursor-pointer ${sortBy === 'oldest' ? 'bg-white text-[#18181B] shadow-xs' : 'text-zinc-400 hover:text-zinc-600'}`}
-                      title="Prioritize oldest entries"
+                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'oldest' ? 'bg-white text-[#18181B] shadow-2xs font-semibold' : 'text-zinc-500 hover:text-zinc-700'}`}
                     >
-                      Oldest First
+                      Oldest first
                     </button>
                     <button 
                       onClick={() => setSortBy('newest')}
-                      className={`px-2 py-1 font-semibold rounded-lg transition-all cursor-pointer ${sortBy === 'newest' ? 'bg-white text-[#18181B] shadow-xs' : 'text-zinc-400 hover:text-zinc-600'}`}
-                      title="View newest entries first"
+                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'newest' ? 'bg-white text-[#18181B] shadow-2xs font-semibold' : 'text-zinc-500 hover:text-zinc-700'}`}
                     >
-                      Newest
+                      Newest first
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* Bulk Actions Header (if some items selected) */}
+              {/* Bulk Action Controls Banner */}
               {selectedIds.length > 0 && (
-                <div className="bg-[#FFFDF5] border border-[#F5E6BE] rounded-2xl p-4 flex items-center justify-between gap-4 animate-fade-in shadow-sm">
+                <div className="bg-[#FAF8F3] border border-[#E5D5AE]/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
                   <div className="flex items-center space-x-2.5">
-                    <CheckSquare className="w-5 h-5 text-[#C59B27]" />
+                    <CheckSquare className="w-4 h-4 text-[#C59B27]" />
                     <span className="text-xs font-semibold text-zinc-800">
-                      {selectedIds.length} Application{selectedIds.length > 1 ? 's' : ''} Selected
+                      {selectedIds.length} registration{selectedIds.length > 1 ? 's' : ''} selected
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => {
                         setBulkDecision('selected');
                         setBulkActionOpen(true);
                       }}
-                      className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100 text-xs font-semibold rounded-xl cursor-pointer"
+                      className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200/60 hover:bg-emerald-100 text-xs font-medium rounded-xl cursor-pointer transition-colors"
                     >
-                      Approve Select
+                      Select for event
                     </button>
                     
                     <button
@@ -672,14 +671,24 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                         setBulkDecision('waiting_list');
                         setBulkActionOpen(true);
                       }}
-                      className="px-3 py-1.5 bg-[#C59B27]/10 text-[#C59B27] hover:bg-[#C59B27]/20 text-xs font-semibold rounded-xl cursor-pointer"
+                      className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200/60 hover:bg-amber-100 text-xs font-medium rounded-xl cursor-pointer transition-colors"
                     >
-                      Waitlist
+                      Add to waiting list
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setBulkDecision('not_selected');
+                        setBulkActionOpen(true);
+                      }}
+                      className="px-3 py-1.5 bg-zinc-100 text-zinc-700 border border-zinc-200 hover:bg-zinc-200 text-xs font-medium rounded-xl cursor-pointer transition-colors"
+                    >
+                      Mark not selected
                     </button>
 
                     <button
                       onClick={() => setSelectedIds([])}
-                      className="text-xs text-zinc-400 hover:text-zinc-600 font-semibold cursor-pointer px-2 py-1.5"
+                      className="text-xs text-zinc-400 hover:text-zinc-600 font-medium cursor-pointer px-2 py-1.5"
                     >
                       Cancel
                     </button>
@@ -687,179 +696,169 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                 </div>
               )}
 
-              {/* APPLICATIONS QUEUE LIST */}
+              {/* REGISTRATIONS RESULTS LIST */}
               {filteredApplications.length === 0 ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center space-y-4">
-                  <AlertCircle className="w-10 h-10 text-zinc-400 mx-auto" />
-                  <h3 className="font-serif text-base font-bold text-zinc-800">No Applications to Show</h3>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    No active registrations match your filters. Try clearing search filters to display all child profiles.
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center space-y-3 shadow-xs">
+                  <AlertCircle className="w-8 h-8 text-zinc-400 mx-auto" />
+                  <h3 className="text-base font-semibold text-[#18181B]">
+                    {isFiltersActive ? 'No registrations match these filters.' : 'No registrations found.'}
+                  </h3>
+                  <p className="text-xs text-zinc-500 max-w-sm mx-auto leading-relaxed">
+                    {isFiltersActive 
+                      ? 'Try clearing your search terms or filter selections to view registrations.'
+                      : 'No child registrations are currently waiting for review.'}
                   </p>
-                  <button 
-                    onClick={handleResetFilters}
-                    className="text-xs font-bold text-[#C59B27] hover:underline"
-                  >
-                    Clear All Filters
-                  </button>
+                  {isFiltersActive && (
+                    <button 
+                      onClick={handleResetFilters}
+                      className="text-xs font-semibold text-[#C59B27] hover:underline cursor-pointer pt-1"
+                    >
+                      Clear filters
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+                <div className="space-y-3">
                   {filteredApplications.map((app) => {
                     const isSelected = selectedIds.includes(app.id);
                     const isActive = activeSelectedChild?.id === app.id;
-                    const dateStr = app.submittedAt ? new Date(app.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
+                    const statusInfo = getStatusBadge(app.status);
                     
+                    const ageDisplay = (app.child?.age !== undefined && app.child?.age !== null)
+                      ? (app.child.age === 0 ? 'Under 1 year' : `${app.child.age} years`)
+                      : 'Age not stated';
+                    
+                    const ageGroupClean = app.child?.ageGroup 
+                      ? (app.child.ageGroup.toLowerCase().startsWith('ages') ? app.child.ageGroup : `Ages ${app.child.ageGroup}`) 
+                      : '';
+
                     return (
                       <div 
                         key={app.id}
                         onClick={() => setActiveSelectId(app.id)}
-                        className={`bg-white border transition-all rounded-2xl p-4 relative flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:border-[#C59B27]/30 ${isActive ? 'ring-1 ring-[#C59B27] border-[#C59B27]/60 shadow-xs' : 'border-[#EAE8E1]'}`}
+                        className={`bg-white border rounded-2xl p-4 sm:p-5 transition-all cursor-pointer ${
+                          isActive 
+                            ? 'border-[#C59B27] ring-1 ring-[#C59B27]/30 shadow-xs' 
+                            : 'border-[#EAE8E1] hover:border-[#C59B27]/40'
+                        }`}
                       >
-                        {/* Top-right corner marker for selected item */}
-                        {isActive && (
-                          <div className="absolute top-0 right-0 w-3 h-3 bg-[#C59B27] rounded-bl-lg rounded-tr-xl" />
-                        )}
+                        <div className="flex items-start justify-between gap-3">
+                          
+                          {/* Child and Parent Core Details */}
+                          <div className="flex items-start space-x-3.5 min-w-0">
+                            
+                            {/* Checkbox */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleSelectOne(app.id);
+                              }}
+                              className="text-zinc-400 hover:text-[#C59B27] shrink-0 mt-1 focus:outline-none cursor-pointer"
+                              title={isSelected ? 'Deselect' : 'Select'}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-[#C59B27]" />
+                              ) : (
+                                <Square className="w-4 h-4 text-zinc-300 hover:text-zinc-400" />
+                              )}
+                            </button>
 
-                        <div className="flex items-start space-x-3.5 min-w-0">
-                          {/* Custom Checkbox (Multi-select) */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleSelectOne(app.id);
-                            }}
-                            className="text-zinc-400 hover:text-[#C59B27] shrink-0 mt-0.5 focus:outline-none"
-                          >
-                            {isSelected ? (
-                              <CheckSquare className="w-4 h-4 text-[#C59B27]" />
-                            ) : (
-                              <Square className="w-4 h-4 text-zinc-300 hover:text-zinc-400" />
-                            )}
-                          </button>
+                            {/* Avatar */}
+                            <div className="w-12 h-14 bg-zinc-50 border border-[#EAE8E1] rounded-xl shrink-0 overflow-hidden flex items-center justify-center relative">
+                              {app.child?.photoUrl ? (
+                                <img 
+                                  src={app.child.photoUrl} 
+                                  alt={app.child.fullName} 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <span className="text-zinc-400 font-semibold text-sm">
+                                  {app.child?.fullName?.charAt(0) || 'C'}
+                                </span>
+                              )}
+                            </div>
 
-                          {/* Avatar - Rectangular Stitch styling as approved */}
-                          <div className="w-12 h-14 bg-zinc-50 border border-[#EAE8E1] rounded-xl shrink-0 overflow-hidden flex items-center justify-center relative">
-                            {app.child?.photoUrl ? (
-                              <img 
-                                src={app.child.photoUrl} 
-                                alt={app.child.fullName} 
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <Users className="w-5 h-5 text-zinc-300" />
-                            )}
-                            {/* Worker indicator */}
-                            {app.parent?.isWorker && (
-                              <span className="absolute bottom-0 inset-x-0 bg-[#C59B27] text-white text-[7px] font-bold text-center uppercase tracking-widest py-0.5">
-                                Worker
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Details */}
-                          <div className="space-y-1 min-w-0">
-                            <div className="flex items-center space-x-2">
-                              <h4 className="font-serif text-sm font-bold text-[#18181B] truncate">
-                                {app.child?.fullName}
+                            {/* Text Metadata */}
+                            <div className="space-y-1 min-w-0">
+                              <h4 className="text-sm font-semibold text-[#18181B] truncate">
+                                {app.child?.fullName || 'Unnamed child'}
                               </h4>
-                              <span className="text-[10px] text-zinc-400 font-semibold shrink-0">
-                                Age {app.child?.age}
-                              </span>
-                            </div>
+                              
+                              <p className="text-xs text-zinc-500 font-medium">
+                                {ageDisplay}{ageGroupClean ? ` · ${ageGroupClean}` : ''}
+                              </p>
 
-                            <p className="text-[10px] text-zinc-500 font-medium truncate flex items-center gap-1">
-                              Parent: <span className="text-zinc-700 font-semibold">{app.parent?.fullName}</span>
-                              {app.parent?.isWorker && <span className="text-[#C59B27] font-bold">({app.parent.department || 'Worker'})</span>}
-                            </p>
+                              <p className="text-xs text-zinc-600 pt-0.5 truncate">
+                                Parent: <span className="font-medium text-zinc-800">{app.parent?.fullName || 'Not recorded'}</span>
+                                {app.parent?.isWorker ? (
+                                  <span className="text-[#C59B27] font-medium ml-1">
+                                    (Team member)
+                                  </span>
+                                ) : null}
+                              </p>
 
-                            <p className="text-[9px] text-zinc-400 flex items-center gap-1 font-mono">
-                              <Clock className="w-3 h-3 text-zinc-300 shrink-0" />
-                              {dateStr}
-                            </p>
+                              <p className="text-xs text-zinc-400 pt-0.5">
+                                {formatSubmittedDate(app.submittedAt)}
+                              </p>
 
-                            {/* Warning Diagnostic Badges */}
-                            <div className="flex flex-wrap gap-1 pt-1.5">
-                              {app.flags.belowAge && (
-                                <span className="bg-red-50 text-red-700 text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-red-100 flex items-center gap-0.5 uppercase shrink-0">
-                                  <ShieldAlert className="w-2.5 h-2.5" />
-                                  Below Age Limit
-                                </span>
-                              )}
-                              {app.flags.missingChildPhoto && (
-                                <span className="bg-amber-50 text-amber-800 text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-amber-100 flex items-center gap-0.5 uppercase shrink-0">
-                                  <AlertCircle className="w-2.5 h-2.5" />
-                                  Profile Photo Missing
-                                </span>
-                              )}
-                              {app.flags.medicalNotes && (
-                                <span className="bg-[#C59B27]/5 text-[#C59B27] text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-[#C59B27]/15 flex items-center gap-0.5 uppercase shrink-0">
-                                  Medical Check
-                                </span>
-                              )}
-                              {app.flags.extraSupport && (
-                                <span className="bg-rose-50 text-rose-700 text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-rose-100 flex items-center gap-0.5 uppercase shrink-0">
-                                  Needs Extra Support
-                                </span>
-                              )}
-                              {app.flags.duplicateContact && (
-                                <span className="bg-zinc-50 text-zinc-500 text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-zinc-200 flex items-center gap-0.5 uppercase shrink-0">
-                                  Sibling Group
-                                </span>
-                              )}
+                              {/* Attention Notices */}
+                              <div className="flex flex-wrap gap-1.5 pt-2">
+                                {app.flags.belowAge && (
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-200/60 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Age needs review
+                                  </span>
+                                )}
+                                {app.flags.missingChildPhoto && (
+                                  <span className="bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Photo needed
+                                  </span>
+                                )}
+                                {app.flags.missingPickupPhoto && (
+                                  <span className="bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Pickup photo needed
+                                  </span>
+                                )}
+                                {app.flags.medicalNotes && (
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-200/60 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Care note
+                                  </span>
+                                )}
+                                {app.flags.extraSupport && (
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-200/60 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Extra support
+                                  </span>
+                                )}
+                                {app.siblings.length > 0 && (
+                                  <span className="bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Sibling registration
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Status Badge & Actions */}
-                        <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-2 shrink-0 md:border-l md:border-[#EAE8E1]/60 md:pl-4 self-stretch md:self-auto pt-2 md:pt-0">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                            app.status === 'under_review' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                            ['selected', 'pass_ready', 'checked_in', 'picked_up'].includes(app.status) ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                            app.status === 'waiting_list' ? 'bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/15' :
-                            'bg-zinc-50 text-zinc-500 border border-zinc-200'
-                          }`}>
-                            {app.status === 'under_review' ? 'Under Review' : app.status === 'waiting_list' ? 'Waitlist' : app.status === 'selected' || app.status === 'pass_ready' ? 'Selected' : 'Not Selected'}
-                          </span>
-
-                          <div className="flex items-center gap-1 mt-auto">
-                            {app.status === 'under_review' ? (
-                              <>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleQuickStatusUpdate(app.id, 'selected', app.child?.fullName);
-                                  }}
-                                  className="p-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-600 rounded-lg focus:outline-none shrink-0"
-                                  title="Approve / Select"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleQuickStatusUpdate(app.id, 'waiting_list', app.child?.fullName);
-                                  }}
-                                  className="p-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-100 text-amber-700 rounded-lg focus:outline-none shrink-0"
-                                  title="Move to waitlist"
-                                >
-                                  <Clock className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            ) : null}
+                          {/* Status Badge & Review Action */}
+                          <div className="flex flex-col items-end justify-between gap-3 shrink-0 self-stretch">
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.className}`}>
+                              {statusInfo.label}
+                            </span>
 
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedApplicationId(app.id);
                               }}
-                              className="px-2 py-1 bg-zinc-50 hover:bg-zinc-100 border border-[#EAE8E1] text-[#18181B] text-[10px] font-semibold rounded-lg flex items-center gap-0.5 shrink-0"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-semibold text-[#18181B] transition-colors cursor-pointer mt-auto"
                             >
-                              Review
-                              <ChevronRight className="w-3 h-3" />
+                              <span>{app.status === 'under_review' ? 'Review' : 'View review'}</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
                             </button>
                           </div>
-                        </div>
 
+                        </div>
                       </div>
                     );
                   })}
@@ -867,23 +866,23 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               )}
             </div>
 
-            {/* 4. RIGHT SIDEBAR DETAILS PANEL (3 columns) */}
+            {/* 5. RIGHT SIDEBAR DETAILS PANEL (3 cols) */}
             <div className="lg:col-span-3 space-y-5">
               
-              {/* CURRENT SELECTION CARD */}
+              {/* REGISTRATION DETAILS CARD */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-2xs"
-                data-component-version="admin-review-active-selection-v2-refined"
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
+                data-component-version="admin-review-details-preview"
               >
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block border-b border-zinc-100 pb-2">
-                  Active Selection
+                <span className="text-xs font-semibold text-[#18181B] block border-b border-[#EAE8E1] pb-2.5">
+                  Registration details
                 </span>
 
                 {activeSelectedChild ? (
                   <div className="space-y-4 animate-fade-in">
                     <div className="flex items-start space-x-3.5">
-                      {/* Image frame */}
-                      <div className="w-16 h-20 bg-zinc-50 border border-[#EAE8E1] rounded-xl overflow-hidden shrink-0 flex items-center justify-center relative shadow-2xs">
+                      {/* Photo or Initials */}
+                      <div className="w-16 h-20 bg-zinc-50 border border-[#EAE8E1] rounded-xl overflow-hidden shrink-0 flex items-center justify-center relative">
                         {activeSelectedChild.child?.photoUrl ? (
                           <img 
                             src={activeSelectedChild.child.photoUrl} 
@@ -892,61 +891,65 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <Users className="w-6 h-6 text-zinc-300" />
-                        )}
-                        {/* Worker indicator badge overlay */}
-                        {activeSelectedChild.parent?.isWorker && (
-                          <span className="absolute bottom-0 inset-x-0 bg-[#C59B27] text-white text-[7px] font-bold text-center uppercase tracking-widest py-0.5 leading-none">
-                            Worker
+                          <span className="text-zinc-400 font-semibold text-lg">
+                            {activeSelectedChild.child?.fullName?.charAt(0) || 'C'}
                           </span>
                         )}
                       </div>
 
                       <div className="min-w-0 space-y-1">
-                        <h4 className="font-serif text-sm font-bold text-[#18181B] truncate leading-tight">
+                        <h3 className="text-sm font-semibold text-[#18181B] truncate leading-snug">
                           {activeSelectedChild.child?.fullName}
-                        </h4>
-                        <p className="text-[10px] text-zinc-500 font-medium">
-                          Age {activeSelectedChild.child?.age} • {activeSelectedChild.child?.gender}
+                        </h3>
+                        <p className="text-xs text-zinc-500 font-medium">
+                          {activeSelectedChild.child?.age === 0 ? 'Under 1 year' : `${activeSelectedChild.child?.age} years`} · {activeSelectedChild.child?.gender || 'Gender not stated'}
                         </p>
-                        <span className="inline-block text-[9px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-1.5 py-0.5 rounded uppercase tracking-wider mt-0.5">
-                          {activeSelectedChild.child?.ageGroup || 'No age group'}
-                        </span>
+                        <p className="text-xs text-zinc-500">
+                          {activeSelectedChild.child?.ageGroup ? (activeSelectedChild.child.ageGroup.toLowerCase().startsWith('ages') ? activeSelectedChild.child.ageGroup : `Ages ${activeSelectedChild.child.ageGroup}`) : 'Section not stated'}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="divide-y divide-zinc-50 text-xs text-zinc-600 space-y-2.5 pt-1">
+                    {/* Definition List with subtle dividers */}
+                    <div className="divide-y divide-[#EAE8E1]/60 text-xs space-y-2 pt-1">
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-400 font-medium">Class</span>
-                        <span className="font-semibold text-zinc-800 truncate max-w-[150px]">
-                          {activeSelectedChild.schoolClass || 'None'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-400 font-medium">School</span>
-                        <span className="font-semibold text-zinc-800 truncate max-w-[150px]">
-                          {activeSelectedChild.schoolName || 'None'}
+                        <span className="text-zinc-500">Class</span>
+                        <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                          {activeSelectedChild.schoolClass || 'Not stated'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-400 font-medium">Parent</span>
-                        <span className="font-semibold text-zinc-800 truncate max-w-[150px]">
-                          {activeSelectedChild.parent?.fullName}
+                        <span className="text-zinc-500">School</span>
+                        <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                          {activeSelectedChild.schoolName || 'Not stated'}
                         </span>
                       </div>
-                      <div className="flex justify-between items-center py-1.5 pb-0.5">
-                        <span className="text-zinc-400 font-medium">Phone</span>
-                        <span className="font-mono text-[10px] font-semibold text-zinc-800 flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-zinc-400" />
-                          {activeSelectedChild.parent?.phone}
+                      <div className="flex justify-between items-center py-1.5">
+                        <span className="text-zinc-500">Parent / guardian</span>
+                        <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                          {activeSelectedChild.parent?.fullName || 'Not stated'}
                         </span>
                       </div>
+                      <div className="flex justify-between items-center py-1.5">
+                        <span className="text-zinc-500">Phone</span>
+                        <span className="font-medium text-[#18181B] flex items-center gap-1">
+                          {activeSelectedChild.parent?.phone || 'Not stated'}
+                        </span>
+                      </div>
+                      {activeSelectedChild.siblings.length > 0 && (
+                        <div className="flex justify-between items-center py-1.5">
+                          <span className="text-zinc-500">Siblings</span>
+                          <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                            {activeSelectedChild.siblings.join(', ')}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {activeSelectedChild.noteToTeam && (
-                      <div className="bg-zinc-50 border border-[#EAE8E1]/60 rounded-xl p-3 text-[10px] text-zinc-500 leading-normal">
-                        <span className="font-bold block text-zinc-700 mb-0.5">Parent Note</span>
-                        "{activeSelectedChild.noteToTeam}"
+                      <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-600 leading-relaxed space-y-1">
+                        <span className="font-semibold text-zinc-800 block">Parent note</span>
+                        <p className="italic">"{activeSelectedChild.noteToTeam}"</p>
                       </div>
                     )}
 
@@ -956,72 +959,63 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                       size="sm"
                       fullWidth
                       onClick={() => setSelectedApplicationId(activeSelectedChild.id)}
-                      className="py-2.5 text-xs"
+                      className="py-2.5 text-xs font-semibold"
                     >
-                      Open full review
+                      Review registration
                     </Button>
                   </div>
                 ) : (
                   <div className="text-center py-8 px-4 space-y-2">
-                    <Users className="w-8 h-8 text-zinc-300 mx-auto opacity-80" />
-                    <p className="text-xs text-zinc-400 leading-relaxed max-w-[200px] mx-auto font-medium">
-                      Select a child from the review queue to see details here.
+                    <Users className="w-8 h-8 text-zinc-300 mx-auto" />
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      Select a registration from the list to see preview details here.
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* CAPACITY CARD */}
+              {/* ROOM CAPACITIES CARD */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-2xs"
-                data-component-version="admin-review-capacity-card-v2-refined"
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
+                data-component-version="admin-review-room-capacities"
               >
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block border-b border-zinc-100 pb-2">
-                  Room Seating Capacities
+                <span className="text-xs font-semibold text-[#18181B] block border-b border-[#EAE8E1] pb-2.5">
+                  Room capacities
                 </span>
 
                 {!capacityStats || capacityStats.length === 0 ? (
-                  <div className="text-center py-6 px-4">
-                    <p className="text-xs text-zinc-400 font-medium">
-                      Capacity rules have not been set yet.
+                  <div className="text-center py-4 px-2">
+                    <p className="text-xs text-zinc-400">
+                      Capacity rules have not been configured yet.
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3.5 pt-1">
+                  <div className="space-y-3.5 pt-0.5">
                     {capacityStats.map((c) => {
                       const pct = Math.min(100, Math.round((c.current / c.limit) * 100));
                       const isFull = c.current >= c.limit;
                       const isWarning = pct >= 80;
 
-                      // Visual refinement for capacity bars
                       const barFillColor = isFull 
                         ? 'bg-rose-500' 
                         : isWarning 
                           ? 'bg-amber-500' 
-                          : 'bg-[#C59B27]'; // Elegant warm gold fill
+                          : 'bg-[#C59B27]';
                       
-                      const barTrackColor = 'bg-[#FAF9F6] border border-zinc-100/50';
-
-                      const textLabelColor = isFull 
-                        ? 'text-rose-700 font-semibold' 
-                        : 'text-zinc-600 font-medium';
-
                       return (
                         <div key={c.id} className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className={`${textLabelColor} truncate max-w-[140px]`}>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-zinc-600 truncate max-w-[140px]">
                               {c.label}
                             </span>
-                            <span className="font-mono font-medium text-zinc-500">
-                              <span className="text-zinc-800 font-bold">{c.current}</span>
+                            <span className="text-zinc-500 font-medium">
+                              <span className="text-[#18181B] font-semibold">{c.current}</span>
                               <span className="text-zinc-300 mx-0.5">/</span>
                               <span>{c.limit}</span>
-                              <span className="text-[10px] text-zinc-400 ml-1">({pct}%)</span>
                             </span>
                           </div>
                           
-                          {/* Softer, more premium progress bar */}
-                          <div className={`w-full ${barTrackColor} h-2 rounded-full overflow-hidden`}>
+                          <div className="w-full bg-[#FAF9F6] border border-zinc-100 h-2 rounded-full overflow-hidden">
                             <div 
                               className={`${barFillColor} h-full rounded-full transition-all duration-500`} 
                               style={{ width: `${pct}%` }} 
@@ -1034,65 +1028,27 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                 )}
               </div>
 
-              {/* SUGGESTED ACTIONS CARD (IF SUPPORTED) */}
-              {suggestedActions.length > 0 && (
-                <div 
-                  className="bg-amber-50/50 border border-amber-200/40 rounded-2xl p-5 space-y-3 shadow-2xs"
-                  data-component-version="admin-review-board-suggested-actions-v1"
-                >
-                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest block">
-                    Suggested Actions
-                  </span>
-
-                  <div className="space-y-3">
-                    {suggestedActions.map((act) => (
-                      <div key={act.id} className="space-y-2">
-                        <p className="text-xs text-zinc-600 leading-relaxed">
-                          {act.text}
-                        </p>
-                        <button
-                          onClick={act.filterFn}
-                          className="text-xs font-bold text-[#C59B27] hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          {act.actionLabel}
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* REVIEW RULES CARD */}
+              {/* REVIEW CRITERIA CARD */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-3 shadow-2xs"
-                data-component-version="admin-review-board-rules-v1"
+                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-3 shadow-xs"
+                data-component-version="admin-review-guidelines"
               >
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Approved Review Criteria
+                <span className="text-xs font-semibold text-[#18181B] block border-b border-[#EAE8E1] pb-2.5">
+                  Review criteria
                 </span>
 
-                <div className="space-y-3.5 pt-1 text-xs text-zinc-600 leading-relaxed">
-                  <div className="flex items-start space-x-2.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27] mt-1.5 shrink-0" />
-                    <div>
-                      <strong className="text-[#18181B] font-semibold block">Minimum Age rule:</strong>
-                      Children must be at least 1 year old by event date.
-                    </div>
+                <div className="space-y-3 pt-0.5 text-xs text-zinc-600 leading-relaxed">
+                  <div>
+                    <strong className="text-[#18181B] font-medium block">Age guideline:</strong>
+                    Children should meet the designated age bracket for their event section.
                   </div>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27] mt-1.5 shrink-0" />
-                    <div>
-                      <strong className="text-[#18181B] font-semibold block">Affiliation Priority:</strong>
-                      Koinonia workers' and volunteers' children are processed with immediate registration preference.
-                    </div>
+                  <div>
+                    <strong className="text-[#18181B] font-medium block">Team priority:</strong>
+                    Children of serving team members are prioritized to facilitate volunteer coverage.
                   </div>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27] mt-1.5 shrink-0" />
-                    <div>
-                      <strong className="text-[#18181B] font-semibold block">Security Standard:</strong>
-                      Valid authorized pickup contacts and facial photographs are required for physical pass clearance.
-                    </div>
+                  <div>
+                    <strong className="text-[#18181B] font-medium block">Safety standard:</strong>
+                    A complete authorized pickup contact is required prior to gate check-in.
                   </div>
                 </div>
               </div>
@@ -1112,12 +1068,12 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
           />
           <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <h4 className="font-serif font-bold text-[#18181B] text-base">
-                Confirm Bulk Action
-              </h4>
+              <h3 className="text-base font-semibold text-[#18181B]">
+                Bulk decision
+              </h3>
               <button 
                 onClick={() => setBulkActionOpen(false)}
-                className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg"
+                className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1125,47 +1081,46 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
             <form onSubmit={handleBulkSubmit} className="space-y-4">
               <p className="text-xs text-zinc-500 leading-relaxed">
-                You are performing a bulk event decision for <strong>{selectedIds.length}</strong> child registration applications.
+                You are recording a decision for <strong>{selectedIds.length}</strong> child registrations.
               </p>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Action Decision
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 block">
+                  Action decision
                 </label>
                 <select 
                   value={bulkDecision}
                   onChange={(e) => setBulkDecision(e.target.value as any)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                 >
-                  <option value="selected">Approve & Select (Issues Passes)</option>
-                  <option value="waiting_list">Move to Waiting List</option>
-                  <option value="not_selected">Record as Not Selected</option>
-                  <option value="under_review">Reset to Under Review</option>
+                  <option value="selected">Select for event</option>
+                  <option value="waiting_list">Add to waiting list</option>
+                  <option value="not_selected">Mark as not selected</option>
+                  <option value="under_review">Reset to awaiting review</option>
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Internal Administrative Note
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 block">
+                  Team note (optional)
                 </label>
                 <textarea 
                   value={bulkNote}
                   onChange={(e) => setBulkNote(e.target.value)}
-                  placeholder="Record an internal processing note regarding this bulk decision..."
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 h-20 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                  placeholder="Add an internal note explaining this bulk decision..."
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 h-20 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
                 />
               </div>
 
-              <div className="bg-[#FFFDF5] border border-[#F5E6BE] p-3.5 rounded-xl text-[10px] text-zinc-500 leading-normal">
-                <span className="font-bold block text-zinc-700 mb-1">Transactional Alert:</span>
-                Approved and rejected bulk actions automatically dispatch emails and WhatsApp alerts to affected parents.
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3 rounded-xl text-xs text-zinc-500 leading-normal">
+                Parents will be updated according to your event notification settings.
               </div>
 
               <div className="pt-3 border-t border-[#EAE8E1] flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setBulkActionOpen(false)}
-                  className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl text-xs cursor-pointer"
+                  className="px-4 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-medium rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1174,7 +1129,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   variant="primary"
                   loading={submittingBulk}
                 >
-                  Confirm Bulk Update
+                  Confirm decision
                 </Button>
               </div>
             </form>
@@ -1186,7 +1141,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       {mobileFiltersOpen && (
         <div 
           className="fixed inset-0 z-50 flex justify-end lg:hidden"
-          data-component-version="admin-review-mobile-filters-v1"
+          data-component-version="admin-review-mobile-filters"
         >
           <div 
             onClick={() => setMobileFiltersOpen(false)}
@@ -1194,13 +1149,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
           />
           <div className="relative w-full max-w-xs bg-white h-full shadow-2xl p-6 flex flex-col space-y-6 animate-slide-in-right">
             <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3 shrink-0">
-              <span className="font-serif text-base font-bold text-zinc-800 flex items-center gap-1.5">
-                <Filter className="w-4 h-4 text-[#C59B27]" />
-                Queue Filters
+              <span className="text-sm font-semibold text-zinc-800 flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4 text-[#C59B27]" />
+                Filters
               </span>
               <button 
                 onClick={() => setMobileFiltersOpen(false)}
-                className="text-zinc-400 hover:text-zinc-600 p-1"
+                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1209,54 +1164,54 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             <div className="flex-1 overflow-y-auto space-y-5 pr-1 py-1">
               {/* Status Filter */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Review Status
+                <label className="text-xs font-medium text-zinc-500 block">
+                  Status
                 </label>
                 <select 
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none"
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="under_review">Under Review</option>
+                  <option value="all">All statuses</option>
+                  <option value="under_review">Awaiting review</option>
                   <option value="selected">Selected</option>
-                  <option value="waiting_list">Waiting List</option>
-                  <option value="not_selected">Not Selected</option>
+                  <option value="waiting_list">Waiting list</option>
+                  <option value="not_selected">Not selected</option>
                 </select>
               </div>
 
-              {/* Diagnostic Flag Filter */}
+              {/* Attention Conditions Filter */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Attention Alerts
+                <label className="text-xs font-medium text-zinc-500 block">
+                  Needs attention
                 </label>
                 <select 
                   value={flagFilter}
                   onChange={(e) => setFlagFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none"
                 >
-                  <option value="all">All Registrations</option>
-                  <option value="below_age">Below Event Age (&lt; 1 yr)</option>
-                  <option value="missing_child_photo">Missing Child Profile Photo</option>
-                  <option value="missing_pickup_photo">Missing Pickup Face Photo</option>
-                  <option value="medical_or_support">Medical or Support Needs</option>
-                  <option value="duplicate_contact">Duplicate Contact / Sibling Group</option>
+                  <option value="all">All registrations</option>
+                  <option value="below_age">Age needs review</option>
+                  <option value="missing_child_photo">Photo needed</option>
+                  <option value="missing_pickup_photo">Pickup photo needed</option>
+                  <option value="medical_or_support">Care & medical notes</option>
+                  <option value="duplicate_contact">Sibling registrations</option>
                 </select>
               </div>
 
-              {/* Parent Worker Type Filter */}
+              {/* Parent Role Filter */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Parent Affiliation
+                <label className="text-xs font-medium text-zinc-500 block">
+                  Parent role
                 </label>
                 <select 
                   value={workerFilter}
                   onChange={(e) => setWorkerFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 p-2.5 text-zinc-800 focus:outline-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none"
                 >
-                  <option value="all">All Parents</option>
-                  <option value="worker">Koinonia Workers First</option>
-                  <option value="non_worker">Non-Worker Families</option>
+                  <option value="all">All parents</option>
+                  <option value="worker">Ministry team & workers</option>
+                  <option value="non_worker">Other families</option>
                 </select>
               </div>
             </div>
@@ -1264,15 +1219,15 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             <div className="pt-4 border-t border-[#EAE8E1] flex gap-2 shrink-0">
               <button
                 onClick={handleResetFilters}
-                className="flex-1 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl text-xs cursor-pointer"
+                className="flex-1 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-medium rounded-xl text-xs cursor-pointer"
               >
-                Reset All
+                Reset
               </button>
               <button
                 onClick={() => setMobileFiltersOpen(false)}
-                className="flex-1 py-2 bg-[#C59B27] hover:bg-[#B08921] text-white font-semibold rounded-xl text-xs cursor-pointer"
+                className="flex-1 py-2 bg-[#C59B27] hover:bg-[#B08921] text-white font-semibold rounded-xl text-xs cursor-pointer transition-colors"
               >
-                Apply Filters
+                Apply
               </button>
             </div>
           </div>

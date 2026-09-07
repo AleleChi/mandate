@@ -500,7 +500,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/10 text-[#C59B27] rounded-2xl flex items-center justify-center mx-auto">
                 <Calendar className="w-6 h-6" />
               </div>
-              <h3 className="font-serif text-base font-bold text-[#18181B]">No events yet</h3>
+              <h3 className="font-semibold text-base text-[#18181B]">No events yet</h3>
               <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
                 Create your first event to begin setup.
               </p>
@@ -522,13 +522,13 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 >
                   <div className="space-y-3.5 min-w-0 flex-1">
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      <h4 className="font-serif text-base font-bold text-[#18181B] truncate">{event.title}</h4>
-                      <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-zinc-50 text-zinc-600 border border-zinc-100">
+                      <h4 className="font-semibold text-base text-[#18181B] truncate">{event.title}</h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-50 text-zinc-600 border border-zinc-100">
                         {event.sectionName}
                       </span>
                       {(event.status === 'current' || event.status === 'open' || event.status === 'active') && (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center gap-1">
-                          <CheckCircle2 className="w-2.5 h-2.5" /> Active Current
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Active current
                         </span>
                       )}
                     </div>
@@ -549,12 +549,12 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     </div>
 
                     {/* Meta capacity & access windows info */}
-                    <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 text-[10px] text-zinc-400 font-medium">
-                      <span>Total Capacity: <strong className="text-zinc-600">{event.totalCapacity || 0}</strong></span>
-                      <span>Applications Submitted: <strong className="text-zinc-600">{event.applicationsCount || 0}</strong></span>
-                      <span>Confirmed Seats: <strong className="text-zinc-600">{event.selectedCount || 0}</strong></span>
+                    <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 text-xs text-zinc-500 font-normal">
+                      <span>Total capacity: <strong className="text-zinc-700 font-semibold">{event.totalCapacity || 0}</strong></span>
+                      <span>Applications: <strong className="text-zinc-700 font-semibold">{event.applicationsCount || 0}</strong></span>
+                      <span>Confirmed seats: <strong className="text-zinc-700 font-semibold">{event.selectedCount || 0}</strong></span>
                       {event.parentAccessOpensAt && (
-                        <span>Access Window: <span className="text-zinc-500">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0]}</span></span>
+                        <span>Registration window: <span className="text-zinc-600">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0]}</span></span>
                       )}
                     </div>
                   </div>
@@ -656,13 +656,13 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-details-v1" : "admin-create-event-details-v1"}
               >
                 <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
-                  <h3 className="font-serif text-lg font-bold text-[#18181B]">Event Details</h3>
-                  <p className="text-[11px] text-zinc-400">Define the core information for this event.</p>
+                  <h3 className="text-lg font-semibold text-[#18181B]">Event details</h3>
+                  <p className="text-xs text-zinc-500">Define the core information for this event.</p>
                 </div>
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event Name</label>
+                    <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event name</label>
                     <input
                       type="text"
                       value={formTitle}
@@ -701,7 +701,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event Date</label>
+                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event date</label>
                       <input
                         type="date"
                         value={formStartsAt}
@@ -711,7 +711,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Start Time</label>
+                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Start time</label>
                       <input
                         type="time"
                         value={formDailyStartTime}
@@ -721,7 +721,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">End Time</label>
+                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">End time</label>
                       <input
                         type="time"
                         value={formDailyEndTime}
@@ -732,7 +732,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event Description</label>
+                    <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event description</label>
                     <textarea
                       value={formDescription}
                       onChange={e => setFormDescription(e.target.value)}
@@ -744,20 +744,20 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 </div>
               </div>
 
-              {/* Card 2: Parent Access Configuration */}
+              {/* Card 2: Parent Access */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
                 data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-parent-access-v1" : "admin-create-event-parent-access-v1"}
               >
                 <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
-                  <h3 className="font-serif text-lg font-bold text-[#18181B]">Parent Access Configuration</h3>
-                  <p className="text-[11px] text-zinc-400">Control when and how parents interact with this event.</p>
+                  <h3 className="text-lg font-semibold text-[#18181B]">Parent access</h3>
+                  <p className="text-xs text-zinc-500">Choose when parents can register and what they can update.</p>
                 </div>
 
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Parent Access Opens</label>
+                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Registration opens</label>
                       <input
                         type="datetime-local"
                         value={formParentAccessOpensAt}
@@ -767,7 +767,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Parent Access Closes</label>
+                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Registration closes</label>
                       <input
                         type="datetime-local"
                         value={formParentAccessClosesAt}
@@ -781,29 +781,29 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     <ToggleSwitch
                       checked={formParentsCanCreateAccount}
                       onChange={setFormParentsCanCreateAccount}
-                      label="Parents can create account"
-                      description="Allow new registrations during the access window."
+                      label="Allow new parent accounts"
+                      description="Allow parents to create an account during registration."
                     />
                     
                     <ToggleSwitch
                       checked={formAllowMultipleChildren}
                       onChange={setFormAllowMultipleChildren}
-                      label="Add more than one child"
-                      description="Enable batch registration for siblings."
+                      label="Allow multiple children"
+                      description="Parents can register more than one child."
                     />
 
                     <ToggleSwitch
                       checked={formAllowSaveAndContinue}
                       onChange={setFormAllowSaveAndContinue}
-                      label="Save and finish later"
-                      description="Allow partial application saves."
+                      label="Allow save and continue later"
+                      description="Allow parents to save progress and complete registration later."
                     />
 
                     <ToggleSwitch
                       checked={formAllowEditAfterSubmission}
                       onChange={setFormAllowEditAfterSubmission}
-                      label="Edit details after sending for review"
-                      description="Permit changes while status is pending."
+                      label="Allow changes after submission"
+                      description="Parents can update details while their registration is being reviewed."
                     />
                   </div>
                 </div>
@@ -816,29 +816,29 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               >
                 <div className="flex justify-between items-center border-b border-[#EAE8E1]/60 pb-4">
                   <div className="space-y-1">
-                    <h3 className="font-serif text-lg font-bold text-[#18181B]">Age Groups & Capacity</h3>
-                    <p className="text-[11px] text-zinc-400">Define sections, age limits, and headcount.</p>
+                    <h3 className="text-lg font-semibold text-[#18181B]">Age groups & capacity</h3>
+                    <p className="text-xs text-zinc-500">Define sections, age limits, and headcount.</p>
                   </div>
                   <button
                     type="button"
                     onClick={handleAddAgeGroupRow}
-                    className="text-xs font-bold text-[#C59B27] hover:underline flex items-center space-x-1 cursor-pointer"
+                    className="text-xs font-semibold text-[#C59B27] hover:underline flex items-center space-x-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Group</span>
+                    <span>Add group</span>
                   </button>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-[#EAE8E1] text-zinc-400 font-medium pb-2">
-                        <th className="py-2 pr-4 font-semibold">Age Group</th>
-                        <th className="py-2 pr-4 font-semibold">Min Age</th>
-                        <th className="py-2 pr-4 font-semibold">Max Age</th>
-                        <th className="py-2 pr-4 font-semibold">Capacity</th>
-                        <th className="py-2 pr-4 font-semibold">Manual Review</th>
-                        <th className="py-2 font-semibold text-center">Actions</th>
+                      <tr className="border-b border-[#EAE8E1] text-zinc-500 font-medium pb-2">
+                        <th className="py-2 pr-4 font-medium">Age group</th>
+                        <th className="py-2 pr-4 font-medium">Min age</th>
+                        <th className="py-2 pr-4 font-medium">Max age</th>
+                        <th className="py-2 pr-4 font-medium">Capacity</th>
+                        <th className="py-2 pr-4 font-medium">Manual review</th>
+                        <th className="py-2 font-medium text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
@@ -924,7 +924,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4 shadow-2xs"
                 data-component-version="admin-create-event-setup-progress-v1"
               >
-                <h4 className="font-serif text-sm font-bold text-[#18181B]">Setup Progress</h4>
+                <h4 className="text-sm font-semibold text-[#18181B]">Setup progress</h4>
                 
                 <div className="space-y-3.5">
                   {[
@@ -959,20 +959,20 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 data-component-version="admin-create-event-parent-preview-v1"
               >
                 <div className="flex items-center justify-between pb-1.5 border-b border-[#F5E6BE]/20">
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-                    Parent View Preview
+                  <span className="text-xs font-semibold text-zinc-500 block">
+                    Parent view preview
                   </span>
                   <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
                 </div>
 
                 <div className="bg-white border border-[#EAE8E1] rounded-xl p-4 space-y-3 shadow-3xs">
-                  <span className="px-2 py-0.5 rounded bg-zinc-100 text-[8px] font-bold text-zinc-500 uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded bg-zinc-100 text-[9px] font-semibold text-zinc-600">
                     {formSectionName || 'Children and Teens'}
                   </span>
-                  <h5 className="font-serif text-sm font-bold text-[#18181B] leading-snug">
+                  <h5 className="text-sm font-semibold text-[#18181B] leading-snug">
                     {formTitle || 'Event Title Placeholder'}
                   </h5>
-                  <div className="space-y-1.5 text-[10px] text-zinc-500">
+                  <div className="space-y-1.5 text-xs text-zinc-500">
                     <div className="flex items-center space-x-1.5">
                       <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
                       <span>{formLocation || 'Main Auditorium'}</span>
@@ -989,19 +989,19 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 </div>
               </div>
 
-              {/* Panel C: Before Opening Access warning */}
-              <div className="bg-[#FFF8F8] border border-[#FCDEDE] rounded-2xl p-5 flex items-start space-x-3 text-xs shadow-2xs">
-                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+              {/* Panel C: Before opening registration warning */}
+              <div className="bg-amber-50/60 border border-amber-200/60 rounded-2xl p-4 flex items-start space-x-3 text-xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                 <div className="space-y-1">
-                  <span className="font-bold text-red-800">Before Opening Access</span>
-                  <p className="text-[10px] text-red-700 leading-relaxed font-medium">
-                    Ensure capacity limits, parent access dates, and volunteer availability are ready before parents can register.
+                  <span className="font-semibold text-amber-900">Before opening registration</span>
+                  <p className="text-xs text-amber-700 leading-relaxed font-normal">
+                    Ensure capacity limits, registration dates, and volunteer availability are ready before parents can register.
                   </p>
                 </div>
               </div>
 
               {/* Form Action Controls */}
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2.5 pt-2">
                 <Button
                   type="button"
                   disabled={submitting}
@@ -1011,7 +1011,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                   {submitting ? (
                     <span>Saving...</span>
                   ) : (
-                    <span>{currentScreen === 'create' ? 'Create Event' : 'Save Event'}</span>
+                    <span>{currentScreen === 'create' ? 'Create event' : 'Save event'}</span>
                   )}
                 </Button>
 
@@ -1019,16 +1019,16 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                   type="button"
                   disabled={submitting}
                   onClick={() => handleSaveEvent('draft')}
-                  className="w-full bg-white text-zinc-700 hover:bg-zinc-50 py-2.5 rounded-xl text-xs font-semibold border border-zinc-200 shadow-2xs transition-all cursor-pointer flex items-center justify-center"
+                  className="w-full bg-white text-zinc-700 hover:bg-zinc-50 py-2.5 rounded-xl text-xs font-medium border border-[#EAE8E1] transition-all cursor-pointer flex items-center justify-center"
                 >
-                  <span>Save as Draft</span>
+                  <span>Save as draft</span>
                 </Button>
 
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={() => setCurrentScreen('home')}
-                  className="w-full text-center text-xs font-semibold text-zinc-400 hover:text-zinc-600 py-1 transition-all block cursor-pointer"
+                  className="w-full text-center text-xs font-medium text-zinc-500 hover:text-zinc-700 py-1.5 transition-all block cursor-pointer"
                 >
                   Cancel
                 </button>
