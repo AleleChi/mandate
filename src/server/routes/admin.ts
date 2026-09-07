@@ -5729,35 +5729,58 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// POST /api/admin/volunteers/:id/remove - Soft-delete/archive a volunteer profile
+// POST /api/admin/volunteers/:id/remove - Archive a volunteer profile by setting status = 'removed'
 router.post('/volunteers/:id/remove', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     const volunteerId = req.params.id;
-    const { reason } = req.body;
     const now = new Date().toISOString();
 
-    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    const volunteer = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [volunteerId]);
     if (!volunteer) {
       return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
     }
+    if (volunteer.status === 'removed') {
+      return res.status(400).json({ success: false, error: 'Volunteer is already removed.' });
+    }
 
-    await execute(`
-      UPDATE volunteer_profiles 
-      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
-      WHERE id = ?
-    `, [now, req.user.id, reason || 'No reason specified', volunteerId]);
+    const result = await execute(`
+      UPDATE volunteer_profiles
+      SET status = 'removed', updated_at = ?
+      WHERE id = ? AND status != 'removed'
+    `, [now, volunteerId]);
 
-    return res.json({ success: true, message: 'Volunteer archived successfully' });
+    // Verify the row was actually changed — protect against false success
+    const updated = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
+    if (Number(updated) === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "We couldn't remove this volunteer. Please refresh and try again."
+      });
+    }
+
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role,
+        'Remove Volunteer', 'volunteer_profile', volunteerId,
+        JSON.stringify({ previousStatus: volunteer.status }), now
+      ]);
+    } catch (_) {}
+
+    return res.json({ success: true, message: 'Volunteer removed successfully' });
   } catch (err: any) {
     console.error('Error removing volunteer:', err);
-    return res.status(500).json({ success: false, error: 'Failed to remove volunteer' });
+    return res.status(500).json({ success: false, error: 'We could not remove this volunteer. Please try again.' });
   }
 });
 
-// POST /api/admin/volunteers/:id/restore - Restore an archived volunteer profile
+// POST /api/admin/volunteers/:id/restore - Restore a removed volunteer to pending_review
+// NOTE: Previous status is not stored in the schema; pending_review is the safe recoverable default.
 router.post('/volunteers/:id/restore', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
@@ -5766,21 +5789,43 @@ router.post('/volunteers/:id/restore', async (req: AuthenticatedRequest, res: Re
     const volunteerId = req.params.id;
     const now = new Date().toISOString();
 
-    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    const volunteer = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [volunteerId]);
     if (!volunteer) {
       return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
     }
+    if (volunteer.status !== 'removed') {
+      return res.status(400).json({ success: false, error: 'Only removed volunteers can be restored.' });
+    }
 
-    await execute(`
-      UPDATE volunteer_profiles 
-      SET is_deleted = 0, deleted_at = NULL, delete_reason = NULL, restored_at = ?, restored_by = ?
-      WHERE id = ?
-    `, [now, req.user.id, volunteerId]);
+    const result = await execute(`
+      UPDATE volunteer_profiles
+      SET status = 'pending_review', updated_at = ?
+      WHERE id = ? AND status = 'removed'
+    `, [now, volunteerId]);
+
+    const updated = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
+    if (Number(updated) === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "We couldn't restore this volunteer. Please refresh and try again."
+      });
+    }
+
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role,
+        'Restore Volunteer', 'volunteer_profile', volunteerId,
+        JSON.stringify({ restoredToStatus: 'pending_review' }), now
+      ]);
+    } catch (_) {}
 
     return res.json({ success: true, message: 'Volunteer restored successfully' });
   } catch (err: any) {
     console.error('Error restoring volunteer:', err);
-    return res.status(500).json({ success: false, error: 'Failed to restore volunteer' });
+    return res.status(500).json({ success: false, error: 'We could not restore this volunteer. Please try again.' });
   }
 });
 
@@ -6136,7 +6181,7 @@ router.post('/volunteers/bulk-assign-team', authMiddleware, async (req: Authenti
   }
 });
 
-// POST /api/admin/volunteers/bulk-remove - Bulk soft-delete / archive volunteers
+// POST /api/admin/volunteers/bulk-remove - Bulk archive volunteers by setting status = 'removed'
 router.post('/volunteers/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
@@ -6148,58 +6193,79 @@ router.post('/volunteers/bulk-remove', authMiddleware, async (req: Authenticated
     }
 
     const nowStr = new Date().toISOString();
+    const requested = volunteerIds.length;
     let removedCount = 0;
     const failures: { id: string; reason: string }[] = [];
 
     for (const id of volunteerIds) {
       try {
-        const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        const v = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [id]);
         if (!v) {
           failures.push({ id, reason: 'Profile not found' });
           continue;
         }
+        if (v.status === 'removed') {
+          failures.push({ id, reason: 'Already removed' });
+          continue;
+        }
 
-        await execute(`
-          UPDATE volunteer_profiles 
-          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
-          WHERE id = ?
-        `, [nowStr, req.user.id, reason || 'Bulk removal', id]);
+        const result = await execute(`
+          UPDATE volunteer_profiles
+          SET status = 'removed', updated_at = ?
+          WHERE id = ? AND status != 'removed'
+        `, [nowStr, id]);
+
+        const updated = Number((result as any)?.rowCount ?? (result as any)?.changes ?? 1);
+        if (updated === 0) {
+          failures.push({ id, reason: 'No rows updated' });
+          continue;
+        }
 
         try {
           await execute(`
             INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `, [
-            crypto.randomUUID(),
-            req.user.id,
-            req.user.role,
-            'Bulk Remove Volunteer',
-            'volunteer_profile',
-            id,
-            JSON.stringify({ reason: reason || 'Bulk removal' }),
+            crypto.randomUUID(), req.user.id, req.user.role,
+            'Bulk Remove Volunteer', 'volunteer_profile', id,
+            JSON.stringify({ reason: reason || 'Bulk removal', previousStatus: v.status }),
             nowStr
           ]);
-        } catch (aErr) {}
+        } catch (_) {}
 
         removedCount++;
       } catch (err: any) {
-        failures.push({ id, reason: err.message || 'Removal failed' });
+        failures.push({ id, reason: 'Removal failed' });
       }
+    }
+
+    // False-success protection: if nothing was actually updated, return an error
+    if (removedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        requested,
+        updated: 0,
+        failures,
+        error: "We couldn't remove the selected volunteers. Please refresh and try again."
+      });
     }
 
     return res.json({
       success: true,
+      requested,
+      updated: removedCount,
       count: removedCount,
       failures,
       message: `${removedCount} volunteer(s) removed.`
     });
   } catch (err: any) {
     console.error('Error in bulk volunteer removal:', err);
-    return res.status(500).json({ success: false, error: 'Failed to remove volunteers' });
+    return res.status(500).json({ success: false, error: 'We could not remove the selected volunteers. Please try again.' });
   }
 });
 
-// POST /api/admin/volunteers/bulk-restore - Bulk restore archived volunteers
+// POST /api/admin/volunteers/bulk-restore - Bulk restore removed volunteers to pending_review
+// NOTE: Previous status is not stored in the schema; pending_review is the safe recoverable default.
 router.post('/volunteers/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
@@ -6211,54 +6277,74 @@ router.post('/volunteers/bulk-restore', authMiddleware, async (req: Authenticate
     }
 
     const nowStr = new Date().toISOString();
+    const requested = volunteerIds.length;
     let restoredCount = 0;
     const failures: { id: string; reason: string }[] = [];
 
     for (const id of volunteerIds) {
       try {
-        const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        const v = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [id]);
         if (!v) {
           failures.push({ id, reason: 'Profile not found' });
           continue;
         }
+        if (v.status !== 'removed') {
+          failures.push({ id, reason: 'Not in removed state' });
+          continue;
+        }
 
-        await execute(`
-          UPDATE volunteer_profiles 
-          SET is_deleted = 0, deleted_at = NULL, delete_reason = NULL, restored_at = ?, restored_by = ?
-          WHERE id = ?
-        `, [nowStr, req.user.id, id]);
+        const result = await execute(`
+          UPDATE volunteer_profiles
+          SET status = 'pending_review', updated_at = ?
+          WHERE id = ? AND status = 'removed'
+        `, [nowStr, id]);
+
+        const updated = Number((result as any)?.rowCount ?? (result as any)?.changes ?? 1);
+        if (updated === 0) {
+          failures.push({ id, reason: 'No rows updated' });
+          continue;
+        }
 
         try {
           await execute(`
             INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `, [
-            crypto.randomUUID(),
-            req.user.id,
-            req.user.role,
-            'Bulk Restore Volunteer',
-            'volunteer_profile',
-            id,
-            JSON.stringify({ restored_at: nowStr }),
+            crypto.randomUUID(), req.user.id, req.user.role,
+            'Bulk Restore Volunteer', 'volunteer_profile', id,
+            JSON.stringify({ restoredToStatus: 'pending_review', restoredAt: nowStr }),
             nowStr
           ]);
-        } catch (aErr) {}
+        } catch (_) {}
 
         restoredCount++;
       } catch (err: any) {
-        failures.push({ id, reason: err.message || 'Restoration failed' });
+        failures.push({ id, reason: 'Restoration failed' });
       }
+    }
+
+    // False-success protection: if nothing was actually updated, return an error
+    if (restoredCount === 0) {
+      return res.status(400).json({
+        success: false,
+        requested,
+        updated: 0,
+        failures,
+        error: "We couldn't restore the selected volunteers. Please refresh and try again."
+      });
     }
 
     return res.json({
       success: true,
+      requested,
+      updated: restoredCount,
       count: restoredCount,
       failures,
       message: `${restoredCount} volunteer(s) restored.`
     });
   } catch (err: any) {
     console.error('Error in bulk volunteer restore:', err);
-    return res.status(500).json({ success: false, error: 'Failed to restore volunteers' });
+    return res.status(500).json({ success: false, error: 'We could not restore the selected volunteers. Please try again.' });
   }
 });
 
