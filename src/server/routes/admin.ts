@@ -5588,17 +5588,17 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     if (status === 'removed') {
-      filterClauses += ` AND (COALESCE(v.is_deleted, 0) = 1 OR COALESCE(v.status, v.approval_status) = 'removed' OR v.deleted_at IS NOT NULL)`;
+      filterClauses += ` AND v.status = 'removed'`;
     } else if (status === 'active') {
-      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL) AND COALESCE(v.status, v.approval_status) IN ('approved', 'active')`;
+      filterClauses += ` AND v.status IN ('approved', 'active')`;
     } else if (status === 'pending_review' || status === 'pending') {
-      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL) AND (COALESCE(v.status, v.approval_status) IN ('pending_review', 'pending') OR COALESCE(v.status, v.approval_status) IS NULL OR COALESCE(v.status, v.approval_status) = '')`;
+      filterClauses += ` AND (v.status = 'pending_review' OR v.status IS NULL OR v.status = '')`;
     } else if (status === 'declined' || status === 'rejected') {
-      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL) AND COALESCE(v.status, v.approval_status) IN ('rejected', 'declined')`;
+      filterClauses += ` AND v.status IN ('rejected', 'declined', 'suspended')`;
     } else {
-      filterClauses += ` AND COALESCE(v.is_deleted, 0) = 0 AND v.deleted_at IS NULL AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)`;
+      filterClauses += ` AND (v.status IS NULL OR v.status != 'removed')`;
       if (status) {
-        filterClauses += ` AND COALESCE(v.status, v.approval_status) = ?`;
+        filterClauses += ` AND v.status = ?`;
         queryParams.push(status);
       }
     }
@@ -5623,9 +5623,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
         u.email,
         u.role,
         u.email_verified,
-        m.secure_url as photo_url,
-        (SELECT email FROM users WHERE id = v.deleted_by) as deleted_by_email,
-        (SELECT email FROM users WHERE id = v.restored_by) as restored_by_email
+        m.secure_url as photo_url
       FROM volunteer_profiles v
       JOIN users u ON u.id = v.user_id
       LEFT JOIN media_files m ON m.id = v.photo_file_id
@@ -5645,10 +5643,10 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       isKoinoniaWorker: v.is_koinonia_worker === 1,
       department: v.department,
       preferredTeam: v.preferred_team,
-      assignedTeam: v.preferred_team, // map to assignedTeam too
+      assignedTeam: v.preferred_team,
       servingExperience: v.serving_experience,
       note: v.note,
-      status: v.status || v.approval_status || 'pending',
+      status: v.status || 'pending_review',
       photoFileId: v.photo_file_id,
       photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
       createdAt: v.created_at,
@@ -5656,70 +5654,53 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       email: v.email,
       role: v.role,
       emailVerified: v.email_verified === 1 || v.email_verified === true || v.email_verified === '1',
-      isDeleted: v.is_deleted === 1,
-      deletedAt: v.deleted_at,
-      deletedBy: v.deleted_by,
-      deletedByEmail: v.deleted_by_email,
-      deleteReason: v.delete_reason,
-      restoredAt: v.restored_at,
-      restoredBy: v.restored_by,
-      restoredByEmail: v.restored_by_email,
-      approvedAt: v.approved_at,
-      reviewedAt: v.approved_at, // map to reviewedAt too
-      removedAt: v.deleted_at // map to removedAt too
+      isDeleted: false,
+      deletedAt: null,
+      deletedBy: null,
+      deletedByEmail: null,
+      deleteReason: null,
+      restoredAt: null,
+      restoredBy: null,
+      restoredByEmail: null,
+      approvedAt: null,
+      reviewedAt: null,
+      removedAt: null
     }));
 
-    // Calculate metrics strictly adhering to directory count semantics:
+    // Calculate metrics using only columns confirmed to exist in production schema.
     // ACTIVE: Current approved/active volunteers only
     const approvedVolunteers = (await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
-      JOIN users u ON u.id = v.user_id
-      WHERE COALESCE(v.is_deleted, 0) = 0
-        AND v.deleted_at IS NULL
-        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
-        AND COALESCE(v.status, v.approval_status) IN ('approved', 'active')
+      WHERE v.status IN ('approved', 'active')
     `))?.count || 0;
 
-    // AWAITING REVIEW: Current pending volunteer profiles only
+    // AWAITING REVIEW: Pending volunteer profiles
     const pendingReview = (await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
-      JOIN users u ON u.id = v.user_id
-      WHERE COALESCE(v.is_deleted, 0) = 0
-        AND v.deleted_at IS NULL
-        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
-        AND (COALESCE(v.status, v.approval_status) IN ('pending_review', 'pending') OR COALESCE(v.status, v.approval_status) IS NULL OR COALESCE(v.status, v.approval_status) = '')
+      WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
     `))?.count || 0;
 
-    // NOT APPROVED: Current declined/not-approved volunteer profiles only
+    // NOT APPROVED: Declined/rejected/suspended volunteer profiles
     const declinedVolunteers = (await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
-      JOIN users u ON u.id = v.user_id
-      WHERE COALESCE(v.is_deleted, 0) = 0
-        AND v.deleted_at IS NULL
-        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
-        AND COALESCE(v.status, v.approval_status) IN ('rejected', 'declined')
+      WHERE v.status IN ('rejected', 'declined', 'suspended')
     `))?.count || 0;
 
-    // REMOVED: Soft-removed volunteers only
+    // REMOVED: Volunteers explicitly marked as removed via status
     const removedVolunteers = (await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
-      JOIN users u ON u.id = v.user_id
-      WHERE (COALESCE(v.is_deleted, 0) = 1 OR COALESCE(v.status, v.approval_status) = 'removed' OR v.deleted_at IS NOT NULL)
+      WHERE v.status = 'removed'
     `))?.count || 0;
 
-    // TEAMS: Distinct teams represented by current active non-removed volunteers
+    // TEAMS: Distinct teams represented by active volunteers
     const assignedTeamsCount = (await queryOne(`
       SELECT COUNT(DISTINCT v.preferred_team) as count 
       FROM volunteer_profiles v
-      JOIN users u ON u.id = v.user_id
-      WHERE COALESCE(v.is_deleted, 0) = 0
-        AND v.deleted_at IS NULL
-        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
-        AND COALESCE(v.status, v.approval_status) IN ('approved', 'active')
+      WHERE v.status IN ('approved', 'active')
         AND v.preferred_team IS NOT NULL
         AND v.preferred_team != ''
     `))?.count || 0;
