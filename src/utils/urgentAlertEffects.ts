@@ -29,7 +29,28 @@ function saveSilencedAlertIds(ids: Set<string>) {
 }
 
 // Keep track of which alert IDs have already triggered an initial sound feedback on this page session
-const soundedAlertIds = new Set<string>();
+function getSoundedAlertIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const stored = sessionStorage.getItem('koinonia_sounded_alerts');
+    if (stored) {
+      const arr = JSON.parse(stored);
+      if (Array.isArray(arr)) {
+        return new Set(arr);
+      }
+    }
+  } catch (e) {}
+  return new Set();
+}
+
+function saveSoundedAlertIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem('koinonia_sounded_alerts', JSON.stringify(Array.from(ids)));
+  } catch (e) {}
+}
+
+const soundedAlertIds = getSoundedAlertIds();
 
 const SPOKEN_ALERTS_KEY = 'koinonia_spoken_once_alerts';
 
@@ -220,6 +241,7 @@ export const urgentAlertEffectsManager = {
         soundedAlertIds.delete(a.id);
       }
     });
+    saveSoundedAlertIds(soundedAlertIds);
     this.evaluateEffects();
   },
 
@@ -236,7 +258,9 @@ export const urgentAlertEffectsManager = {
 
     // Subsequent/current syncs: detect newly arrived or un-sounded open alerts
     const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
-    const sndPref = localStorage.getItem('koinonia_device_sound') !== 'false';
+    const isSoundGloballyEnabled = localStorage.getItem('koinonia_sound_enabled') !== 'false';
+    const isDeviceSoundEnabled = localStorage.getItem('koinonia_device_sound') !== 'false';
+    const sndPref = isSoundGloballyEnabled && isDeviceSoundEnabled;
     const vibePref = localStorage.getItem('koinonia_device_vibration') !== 'false';
     const silenced = getSilencedAlertIds();
 
@@ -288,6 +312,7 @@ export const urgentAlertEffectsManager = {
 
           // Register these alerts as sounded so they don't trigger immediate sound again
           newAlerts.forEach(a => soundedAlertIds.add(a.id));
+          saveSoundedAlertIds(soundedAlertIds);
         } else if (hasImportant) {
           // Important: One clear chime, optional limited repeat, stop on ack
           if (sndPref) {
@@ -297,12 +322,14 @@ export const urgentAlertEffectsManager = {
             try { navigator.vibrate([150]); } catch (_) {}
           }
           newAlerts.forEach(a => soundedAlertIds.add(a.id));
+          saveSoundedAlertIds(soundedAlertIds);
         } else if (hasNormal) {
           // Normal: Single soft chime if enabled, never repeat
           if (sndPref) {
             try { playSound('emergency', { profile: 'normal' }); } catch (_) {}
           }
           newAlerts.forEach(a => soundedAlertIds.add(a.id));
+          saveSoundedAlertIds(soundedAlertIds);
         }
       }
 

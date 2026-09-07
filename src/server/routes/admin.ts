@@ -4299,7 +4299,7 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
 router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const eventId = 'event-ga-2026';
+    const eventId = (req.query.eventId as string) || 'event-ga-2026';
 
     // 1. Fetch message metrics from our manual admin message logs
     const logs = await query('SELECT status, channel, recipients_count FROM admin_message_logs');
@@ -5256,7 +5256,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    const eventId = 'event-ga-2026';
+    const eventId = req.body.eventId || 'event-ga-2026';
 
     // 1. Resolve recipients query
     let queryStr = `

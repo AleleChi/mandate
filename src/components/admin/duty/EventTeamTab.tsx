@@ -8,24 +8,25 @@ import {
   CheckCircle2, 
   XCircle,
   AlertTriangle,
-  MapPin,
   Clock,
-  ShieldCheck,
   Smartphone,
-  Calendar,
-  Filter,
-  ArrowRight
+  Eye,
+  Edit3,
+  Trash2,
+  Check
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
-import EventTeamAssignmentCard, { 
+import { 
   EventDutyAssignmentItem, 
   formatRoleLabel, 
   formatServingGroup, 
-  formatShiftWindow,
-  formatStatusInfo 
+  formatShiftWindow
 } from './EventTeamAssignmentCard';
 
-const REAL_EVENT_ID = 'event-ga-2026';
+const formatResponsibilityDisplay = (r: string) => {
+  if (r === 'Room Operator') return 'Room support';
+  return r;
+};
 
 interface Pagination {
   page: number;
@@ -36,11 +37,43 @@ interface Pagination {
   hasPreviousPage: boolean;
 }
 
-export default function EventTeamTab() {
+interface EventTeamTabProps {
+  eventId?: string;
+}
+
+function getInitials(name?: string): string {
+  if (!name) return 'TM';
+  const clean = name.replace(/[^a-zA-Z\s]/g, '').trim();
+  const parts = clean.split(/\s+/);
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase() || 'TM';
+}
+
+function formatDutyStatus(status?: string): { label: string; textClass: string; dotClass: string } {
+  switch (status) {
+    case 'on_duty':
+    case 'active':
+      return { label: 'On duty', textClass: 'text-emerald-700', dotClass: 'bg-emerald-500' };
+    case 'temporarily_unavailable':
+    case 'on_break':
+      return { label: 'On break', textClass: 'text-amber-700', dotClass: 'bg-amber-500' };
+    case 'scheduled':
+    case 'upcoming':
+      return { label: 'Scheduled', textClass: 'text-zinc-600', dotClass: 'bg-zinc-400' };
+    case 'ended':
+    case 'unavailable':
+      return { label: 'Unavailable', textClass: 'text-zinc-500', dotClass: 'bg-zinc-400' };
+    default:
+      return { label: 'Scheduled', textClass: 'text-zinc-600', dotClass: 'bg-zinc-400' };
+  }
+}
+
+export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTabProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [eventUnavailable, setEventUnavailable] = useState<boolean>(false);
 
   const [assignments, setAssignments] = useState<EventDutyAssignmentItem[]>([]);
   const [assignmentPagination, setAssignmentPagination] = useState<Pagination>({
@@ -52,11 +85,10 @@ export default function EventTeamTab() {
     hasPreviousPage: false
   });
 
-  // Filters & search
+  // Search & Filters
   const [teamSearch, setTeamSearch] = useState<string>('');
-  const [filterResponsibility, setFilterResponsibility] = useState<string>('');
-  const [filterAssignStatus, setFilterAssignStatus] = useState<string>('');
-  const [filterLevel, setFilterLevel] = useState<string>('');
+  const [filterRole, setFilterRole] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
 
   // Modals state
   const [showAddAssignModal, setShowAddAssignModal] = useState<boolean>(false);
@@ -76,8 +108,6 @@ export default function EventTeamTab() {
 
   // Form fields
   const [formResponsibility, setFormResponsibility] = useState<string>('Room Operator');
-  const [formTeamKey, setFormTeamKey] = useState<string>('general_response');
-  const [formLevel, setFormLevel] = useState<string>('primary');
   const [formStatus, setFormStatus] = useState<string>('scheduled');
   const [formLocationId, setFormLocationId] = useState<string>('');
   const [formStartsAt, setFormStartsAt] = useState<string>('');
@@ -97,10 +127,11 @@ export default function EventTeamTab() {
     'Super Admin'
   ];
 
+  const hasActiveFilters = Boolean(teamSearch || filterRole || filterStatus);
+
   const fetchAssignments = async (page = 1) => {
     setLoading(true);
     setError(null);
-    setEventUnavailable(false);
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = {
@@ -110,75 +141,61 @@ export default function EventTeamTab() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      // Check events first
-      const eventsRes = await fetch('/api/admin/events', { headers });
-      if (!eventsRes.ok) {
-        if (eventsRes.status === 401 || eventsRes.status === 403) {
-          setError('Permission Denied: Admin access required');
-        } else {
-          setError('Failed to fetch assignments from server');
-        }
-        return;
-      }
-      const eventsData = await eventsRes.json();
-      const activeEvent = eventsData.events?.find((e: any) => e.status === 'current' || e.status === 'open');
-      if (!activeEvent) {
-        setEventUnavailable(true);
-        return;
-      }
-
       const queryParams = new URLSearchParams({
         page: String(page),
         limit: String(assignmentPagination.limit),
-        responsibility: filterResponsibility,
-        status: filterAssignStatus,
-        level: filterLevel,
+        responsibility: filterRole,
+        status: filterStatus,
         query: teamSearch
       });
-      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/duty-assignments?${queryParams.toString()}`, { headers });
+
+      const res = await fetch(`/api/admin/duty/events/${eventId}/duty-assignments?${queryParams.toString()}`, { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          setAssignments(data.items || []);
+          setAssignments(data.assignments || []);
           setAssignmentPagination(data.pagination || {
             page: 1,
             limit: 25,
-            total: (data.items || []).length,
+            total: 0,
             totalPages: 1,
             hasNextPage: false,
             hasPreviousPage: false
           });
         } else {
-          setError(data.error || 'Failed to fetch duty assignments');
+          setError(data.error || 'We couldn’t load the assignments. Try again');
         }
       } else {
         if (res.status === 401 || res.status === 403) {
-          setError('Permission Denied: Admin access required');
+          setError('Permission Denied: Administrator access required.');
         } else {
-          setError('Failed to fetch assignments from server');
+          setError('We couldn’t load the assignments. Try again');
         }
       }
     } catch (err) {
-      console.error('Error fetching assignments:', err);
-      setError('An error occurred while loading assignments');
+      console.error('Failed fetching assignments:', err);
+      setError('We couldn’t load the assignments. Try again');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchEligibleMembers = async (page = 1) => {
+  const fetchEligibleMembers = async () => {
     try {
       const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
+
       const queryParams = new URLSearchParams({
-        page: String(page),
-        limit: '20',
-        query: memberSearch
+        query: memberSearch,
+        limit: '50'
       });
-      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/eligible-team-members?${queryParams.toString()}`, { headers });
+
+      const res = await fetch(`/api/admin/duty/events/${eventId}/eligible-team-members?${queryParams.toString()}`, { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -186,18 +203,21 @@ export default function EventTeamTab() {
         }
       }
     } catch (err) {
-      console.error('Error fetching members:', err);
+      console.error('Error fetching eligible members:', err);
     }
   };
 
   const fetchLocations = async () => {
     try {
       const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/locations`, { headers });
+
+      const res = await fetch(`/api/admin/duty/events/${eventId}/locations`, { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -212,30 +232,26 @@ export default function EventTeamTab() {
   useEffect(() => {
     fetchAssignments(1);
     fetchLocations();
-  }, [filterResponsibility, filterAssignStatus, filterLevel, teamSearch]);
+  }, [eventId, filterRole, filterStatus, teamSearch]);
 
   useEffect(() => {
     if (showAddAssignModal) {
-      fetchEligibleMembers(1);
+      fetchEligibleMembers();
     }
-  }, [showAddAssignModal, memberSearch]);
+  }, [showAddAssignModal, memberSearch, eventId]);
 
   const openAddModal = () => {
     setEditingAssignment(null);
     setSelectedUserId('');
     setFormResponsibility('Room Operator');
-    setFormTeamKey('general_response');
-    setFormLevel('primary');
     setFormStatus('scheduled');
     setFormLocationId('');
-    
-    // Default shift window: now to +2 hours
+
     const now = new Date();
     const future = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-    
-    // Format to local ISO string YYYY-MM-DDTHH:mm
+
     const toLocalISO = (d: Date) => {
-      const pad = (n: number) => n < 10 ? '0' + n : n;
+      const pad = (n: number) => (n < 10 ? '0' + n : n);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
 
@@ -250,8 +266,6 @@ export default function EventTeamTab() {
     setEditingAssignment(assignment);
     setSelectedUserId(assignment.user_id);
     setFormResponsibility(assignment.responsibility_key || 'Room Operator');
-    setFormTeamKey(assignment.team_key || 'general_response');
-    setFormLevel(assignment.assignment_level || 'primary');
     setFormStatus(assignment.status || 'scheduled');
     setFormLocationId(assignment.assigned_location_id || '');
 
@@ -259,7 +273,7 @@ export default function EventTeamTab() {
       if (!dString) return '';
       const d = new Date(dString);
       if (isNaN(d.getTime())) return '';
-      const pad = (n: number) => n < 10 ? '0' + n : n;
+      const pad = (n: number) => (n < 10 ? '0' + n : n);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
 
@@ -270,15 +284,35 @@ export default function EventTeamTab() {
     setShowAddAssignModal(true);
   };
 
+  // Prevent background page scrolling when modal is open and handle Escape key
+  useEffect(() => {
+    if (showAddAssignModal || detailAssignment || deletingAssignment) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          if (showAddAssignModal) setShowAddAssignModal(false);
+          if (detailAssignment) setDetailAssignment(null);
+          if (deletingAssignment) setDeletingAssignment(null);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [showAddAssignModal, detailAssignment, deletingAssignment]);
+
   const handleSaveAssignment = async () => {
     setFormError(null);
 
     if (!editingAssignment && !selectedUserId) {
-      setFormError('Please select a team member.');
+      setFormError('Choose a team member.');
       return;
     }
     if (!formStartsAt || !formEndsAt) {
-      setFormError('Please specify both shift start and shift end times.');
+      setFormError('Choose start and end times.');
       return;
     }
 
@@ -286,12 +320,12 @@ export default function EventTeamTab() {
     const endDate = new Date(formEndsAt);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      setFormError('Invalid shift dates provided.');
+      setFormError('Enter valid shift times.');
       return;
     }
 
     if (endDate.getTime() <= startDate.getTime()) {
-      setFormError('Shift end time must be strictly later than start time.');
+      setFormError('End time must be after start time.');
       return;
     }
 
@@ -308,8 +342,8 @@ export default function EventTeamTab() {
       const payload = {
         userId: selectedUserId,
         responsibilityKey: formResponsibility,
-        teamKey: formTeamKey,
-        assignmentLevel: formLevel,
+        teamKey: 'general_response',
+        assignmentLevel: 'primary',
         status: formStatus,
         assignedLocationId: formLocationId || null,
         startsAt: new Date(formStartsAt).toISOString(),
@@ -318,8 +352,8 @@ export default function EventTeamTab() {
       };
 
       const url = editingAssignment
-        ? `/api/admin/duty/events/${REAL_EVENT_ID}/duty-assignments/${editingAssignment.id}`
-        : `/api/admin/duty/events/${REAL_EVENT_ID}/duty-assignments`;
+        ? `/api/admin/duty/events/${eventId}/duty-assignments/${editingAssignment.id}`
+        : `/api/admin/duty/events/${eventId}/duty-assignments`;
 
       const method = editingAssignment ? 'PATCH' : 'POST';
 
@@ -331,43 +365,19 @@ export default function EventTeamTab() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setSuccess(editingAssignment ? 'Assignment updated.' : 'Assignment created successfully.');
+        setSuccess(editingAssignment ? 'Assignment updated.' : 'Team member assigned.');
         setTimeout(() => setSuccess(null), 3000);
         setShowAddAssignModal(false);
         setEditingAssignment(null);
         fetchAssignments(assignmentPagination.page);
       } else {
-        setFormError(data.error || 'Failed to save assignment. Please check input parameters.');
+        setFormError(data.error || 'We couldn’t save this assignment. Try again');
       }
     } catch (err) {
       console.error('Failed saving assignment:', err);
-      setFormError('A network error occurred while saving the assignment.');
+      setFormError('We couldn’t save this assignment. Try again');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleUpdateAssignmentStatus = async (assignId: string, newStatus: string) => {
-    try {
-      const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/duty-assignments/${assignId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (res.ok) {
-        setSuccess('Assignment status updated.');
-        setTimeout(() => setSuccess(null), 3000);
-        fetchAssignments(assignmentPagination.page);
-      }
-    } catch (err) {
-      console.error('Failed to update assignment status:', err);
     }
   };
 
@@ -380,22 +390,24 @@ export default function EventTeamTab() {
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/duty-assignments/${deletingAssignment.id}`, {
+
+      const res = await fetch(`/api/admin/duty/events/${eventId}/duty-assignments/${deletingAssignment.id}`, {
         method: 'DELETE',
         headers
       });
-      if (res.ok) {
+
+      const data = await res.json();
+      if (res.ok && data.success) {
         setSuccess('Assignment removed.');
         setTimeout(() => setSuccess(null), 3000);
         setDeletingAssignment(null);
         fetchAssignments(assignmentPagination.page);
       } else {
-        const data = await res.json();
-        setError(data.error || 'Failed to remove assignment');
+        setError(data.error || 'We couldn’t remove this assignment. Try again');
       }
     } catch (err) {
-      console.error('Failed removing assignment:', err);
-      setError('Network error while removing assignment');
+      console.error('Failed deleting assignment:', err);
+      setError('We couldn’t remove this assignment. Try again');
     } finally {
       setIsSubmitting(false);
     }
@@ -403,562 +415,641 @@ export default function EventTeamTab() {
 
   const clearFilters = () => {
     setTeamSearch('');
-    setFilterResponsibility('');
-    setFilterAssignStatus('');
-    setFilterLevel('');
+    setFilterRole('');
+    setFilterStatus('');
   };
 
-  const hasActiveFilters = Boolean(teamSearch || filterResponsibility || filterAssignStatus || filterLevel);
-
   return (
-    <div className="space-y-6 animate-fade-in" data-view-version="admin-event-team-v2-premium">
-      {/* Notifications */}
+    <div className="space-y-5 animate-fade-in" data-view-version="admin-duty-team-v5">
+      {/* Toast Notifications */}
       {success && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-2xl flex items-center justify-between text-xs font-semibold animate-fade-in shadow-xs">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{success}</span>
           </div>
-          <button onClick={() => setSuccess(null)} className="text-emerald-700 hover:text-emerald-950">
-            <X className="w-4 h-4" />
+          <button onClick={() => setSuccess(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-1">
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
+
       {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-950 rounded-2xl flex items-center justify-between text-xs font-semibold animate-fade-in shadow-xs">
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
             <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} className="text-rose-700 hover:text-rose-950">
-            <X className="w-4 h-4" />
+          <button onClick={() => setError(null)} className="text-rose-700 hover:text-rose-900 cursor-pointer p-1">
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-4">
+      {/* 1. Header Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
         <div>
-          <h2 className="text-lg font-bold text-stone-900 font-sans tracking-tight">On-Duty Event Team & Assignments</h2>
-          <p className="text-xs text-stone-500 mt-0.5">
-            Configure role responsibilities, active shifts, levels, and track readiness across the team.
+          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+            Team Assignments
+          </h2>
+          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+            Assign approved team members to the areas and roles they will cover during the event.
           </p>
         </div>
-        <div className="flex items-center space-x-2.5 shrink-0">
+        <div className="flex items-center space-x-3">
+          <span className="text-xs text-zinc-500 font-medium">
+            {assignments.length} {assignments.length === 1 ? 'assignment' : 'assignments'}
+          </span>
           <button
-            onClick={() => fetchAssignments(assignmentPagination.page)}
+            onClick={() => fetchAssignments(1)}
             disabled={loading}
-            className="flex items-center space-x-2 px-3.5 py-2 bg-white hover:bg-stone-50 border border-[#EAE8E1] text-xs font-semibold text-stone-800 rounded-xl transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            aria-label="Refresh assignments"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-xs font-medium text-[#18181B] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Assignments</span>
+            <span>Refresh</span>
           </button>
           <button
             onClick={openAddModal}
-            className="flex items-center space-x-1.5 px-4 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white text-xs font-semibold rounded-xl transition-all shadow-2xs cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A8821B] text-white text-xs font-medium rounded-lg transition-all shadow-2xs cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Assignment</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Assign team member</span>
           </button>
         </div>
       </div>
 
-      {/* Filter / Search Bar */}
-      <div className="p-4 bg-white border border-[#EAE8E1] rounded-2xl shadow-2xs space-y-3">
-        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-          <div className="flex-1 relative">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
-              placeholder="Search team members, roles, or locations..."
-              value={teamSearch}
-              onChange={(e) => setTeamSearch(e.target.value)}
-              className="w-full text-xs pl-10 pr-4 py-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-medium text-stone-900 placeholder:text-stone-400"
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div>
-              <select
-                value={filterResponsibility}
-                onChange={(e) => setFilterResponsibility(e.target.value)}
-                className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-medium text-stone-800 cursor-pointer"
-              >
-                <option value="">All Roles</option>
-                {responsibilities.map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <select
-                value={filterAssignStatus}
-                onChange={(e) => setFilterAssignStatus(e.target.value)}
-                className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-medium text-stone-800 cursor-pointer"
-              >
-                <option value="">All Statuses</option>
-                <option value="on_duty">Active / On Duty</option>
-                <option value="scheduled">Upcoming / Scheduled</option>
-                <option value="temporarily_unavailable">Paused / On Break</option>
-                <option value="ended">Completed / Ended</option>
-              </select>
-            </div>
-
-            <div>
-              <select
-                value={filterLevel}
-                onChange={(e) => setFilterLevel(e.target.value)}
-                className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-medium text-stone-800 cursor-pointer"
-              >
-                <option value="">All Serving Groups</option>
-                <option value="primary">Primary</option>
-                <option value="backup">Backup</option>
-                <option value="pre_primary">Pre-primary</option>
-                <option value="teens">Teens</option>
-                <option value="under_4">Under 4</option>
-              </select>
-            </div>
-          </div>
+      {/* 2. Filter / Search Bar */}
+      <div className="p-3 bg-white border border-[#EAE8E1] rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shadow-2xs">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search team members, roles or areas…"
+            value={teamSearch}
+            onChange={(e) => setTeamSearch(e.target.value)}
+            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-900 placeholder:text-zinc-400 font-normal"
+          />
         </div>
 
-        {/* Result summary row */}
-        <div className="flex items-center justify-between text-xs text-stone-500 pt-2 border-t border-stone-100">
-          <span className="font-medium text-stone-700">
-            {assignments.length} {assignments.length === 1 ? 'assignment' : 'assignments'} found
-          </span>
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="text-xs text-[#C59B27] hover:underline font-medium cursor-pointer"
-            >
-              Clear filters
-            </button>
-          )}
+        <div className="flex items-center gap-2">
+          <select
+            value={filterRole}
+            onChange={(e) => setFilterRole(e.target.value)}
+            aria-label="Filter by role"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+          >
+            <option value="">All roles</option>
+            {responsibilities.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            aria-label="Filter by duty status"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+          >
+            <option value="">All statuses</option>
+            <option value="on_duty">On duty</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="temporarily_unavailable">On break</option>
+            <option value="ended">Unavailable</option>
+          </select>
         </div>
       </div>
 
-      {/* Main Grid Content */}
-      {eventUnavailable ? (
-        <div className="p-12 text-center text-xs text-stone-500 bg-white border border-[#EAE8E1] rounded-2xl shadow-2xs">
-          <Users className="w-8 h-8 mx-auto mb-3 text-[#C59B27] opacity-60" />
-          <span className="font-semibold text-stone-800 text-sm block mb-1">No active event is available</span>
-          <span>Please create or open an event in the event dashboard to review team assignments.</span>
-        </div>
-      ) : loading && assignments.length === 0 ? (
-        /* Loading Skeletons */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4 animate-pulse">
-              <div className="flex items-center space-x-3">
-                <div className="w-11 h-11 bg-stone-100 rounded-2xl" />
-                <div className="space-y-2 flex-1">
-                  <div className="h-4 bg-stone-100 rounded w-2/3" />
-                  <div className="h-3 bg-stone-100 rounded w-1/3" />
-                </div>
-              </div>
-              <div className="h-4 bg-stone-100 rounded w-1/2" />
-              <div className="h-16 bg-stone-50 rounded-xl" />
-              <div className="h-8 bg-stone-100 rounded-xl w-full" />
-            </div>
-          ))}
-        </div>
-      ) : error ? (
-        <div className="p-12 text-center text-xs text-stone-500 bg-white border border-[#EAE8E1] rounded-2xl shadow-2xs">
-          <XCircle className="w-8 h-8 mx-auto mb-3 text-rose-600" />
-          <span className="font-semibold text-stone-800 text-sm block mb-1">We could not load the Event Duty assignments</span>
-          <span className="block mb-4">{error}</span>
-          <button
-            onClick={() => fetchAssignments(1)}
-            className="px-4 py-2 bg-[#C59B27] text-white text-xs font-semibold rounded-xl hover:bg-[#A8821B]"
-          >
-            Try again
-          </button>
+      {/* 3. Main Content: Table / List */}
+      {loading && assignments.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
+          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
+          <span>Loading assignments…</span>
         </div>
       ) : assignments.length === 0 ? (
-        <div className="p-12 text-center text-xs text-stone-500 bg-white border border-[#EAE8E1] rounded-2xl shadow-2xs space-y-3">
-          <Users className="w-8 h-8 mx-auto text-stone-300" />
-          <div>
-            <h4 className="font-semibold text-stone-800 text-sm">No team assignments found</h4>
-            <p className="mt-1 text-stone-500">Try changing the filters or add a new assignment for this event.</p>
-          </div>
-          <div className="flex items-center justify-center space-x-3 pt-2">
-            {hasActiveFilters && (
+        hasActiveFilters ? (
+          <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-2">
+            <Users className="w-6 h-6 mx-auto text-zinc-400" />
+            <h3 className="font-semibold text-zinc-800 text-sm">No matching assignments</h3>
+            <p className="text-zinc-500 text-xs">Try changing your filters or search.</p>
+            <div className="pt-2">
               <button
                 onClick={clearFilters}
-                className="px-4 py-2 border border-[#EAE8E1] text-stone-700 rounded-xl font-semibold hover:bg-stone-50 cursor-pointer"
+                className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-zinc-700 text-xs font-medium hover:bg-zinc-50 cursor-pointer"
               >
                 Clear filters
               </button>
-            )}
-            <button
-              onClick={openAddModal}
-              className="px-4 py-2 bg-[#C59B27] text-white rounded-xl font-semibold hover:bg-[#A8821B] cursor-pointer"
-            >
-              Add assignment
-            </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
+            <Users className="w-6 h-6 mx-auto text-zinc-400" />
+            <div>
+              <h3 className="font-semibold text-zinc-800 text-sm">No team assignments yet</h3>
+              <p className="text-zinc-500 text-xs mt-0.5">
+                Assign approved team members to roles and areas for this event.
+              </p>
+            </div>
+            <div className="pt-1">
+              <button
+                onClick={openAddModal}
+                className="px-3.5 py-1.5 bg-[#C59B27] text-white text-xs font-medium rounded-xl hover:bg-[#A8821B] cursor-pointer"
+              >
+                Assign team member
+              </button>
+            </div>
+          </div>
+        )
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {assignments.map((as) => (
-            <EventTeamAssignmentCard
-              key={as.id}
-              assignment={as}
-              onEdit={openEditModal}
-              onDeleteRequest={setDeletingAssignment}
-              onUpdateStatus={handleUpdateAssignmentStatus}
-              onViewDetails={setDetailAssignment}
-            />
-          ))}
-        </div>
-      )}
+        <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
+          {/* Desktop & Tablet Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#FAF9F5] border-b border-[#EAE8E1] text-zinc-500 font-medium text-[11px]">
+                  <th className="p-3.5 pl-4 font-medium w-[220px]">Team member</th>
+                  <th className="p-3.5 font-medium w-[150px]">Role</th>
+                  <th className="p-3.5 font-medium min-w-[180px]">Assigned area</th>
+                  <th className="p-3.5 font-medium w-[120px]">Duty status</th>
+                  <th className="p-3.5 font-medium w-[140px]">Shift</th>
+                  <th className="p-3.5 pr-4 font-medium text-right w-[150px]">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                {assignments.map((as) => {
+                  const statusInfo = formatDutyStatus(as.status);
+                  const personName = as.user_name || 'Administrator';
+                  const areaName = as.assigned_location_name || 'Central Command';
 
-      {/* BRANDED REMOVE ASSIGNMENT CONFIRMATION MODAL */}
-      {deletingAssignment && (
-        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5 relative">
-            <button
-              onClick={() => setDeletingAssignment(null)}
-              className="absolute top-4 right-4 p-1.5 hover:bg-stone-100 rounded-full text-stone-400 hover:text-stone-700 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-rose-50 border border-rose-200 text-rose-600 rounded-2xl flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-md font-serif font-medium text-stone-950">Remove assignment?</h3>
-                <p className="text-xs text-stone-500">Confirm Event Duty team adjustment</p>
-              </div>
-            </div>
-
-            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-4 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-stone-500">Person</span>
-                <span className="font-semibold text-stone-900">{deletingAssignment.user_name || 'Administrator'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500">Responsibility</span>
-                <span className="font-semibold text-stone-900">{deletingAssignment.responsibility_key}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500">Location</span>
-                <span className="font-semibold text-stone-900">{deletingAssignment.assigned_location_name || 'Location not assigned'}</span>
-              </div>
-            </div>
-
-            <p className="text-xs text-stone-600 leading-relaxed">
-              This person will no longer appear as part of the active Event Duty team for this assignment. Historical log records will be preserved for reporting.
-            </p>
-
-            <div className="flex items-center justify-end space-x-3 pt-2">
-              <button
-                onClick={() => setDeletingAssignment(null)}
-                disabled={isSubmitting}
-                className="px-4 py-2 border border-[#EAE8E1] rounded-xl text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmRemoveAssignment}
-                disabled={isSubmitting}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-xs disabled:opacity-50"
-              >
-                {isSubmitting ? 'Removing...' : 'Remove assignment'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* VIEW DETAILS MODAL */}
-      {detailAssignment && (
-        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative max-h-[85vh] overflow-y-auto">
-            <button
-              onClick={() => setDetailAssignment(null)}
-              className="absolute top-4 right-4 p-1.5 hover:bg-stone-100 rounded-full text-stone-400 hover:text-stone-700 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="border-b border-stone-100 pb-3">
-              <span className="text-[11px] font-mono text-[#C59B27] font-semibold uppercase tracking-wider">Assignment Details</span>
-              <h3 className="text-lg font-serif font-medium text-stone-950 mt-1">
-                {detailAssignment.user_name || 'Administrator'}
-              </h3>
-              <p className="text-xs text-stone-500">
-                {formatRoleLabel(detailAssignment.user_role)} • {detailAssignment.user_email}
-              </p>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-[#FAF9F5] p-3.5 rounded-xl border border-[#EAE8E1]">
-                <div>
-                  <span className="text-stone-500 block">Responsibility</span>
-                  <span className="font-semibold text-stone-900 block mt-0.5">{detailAssignment.responsibility_key}</span>
-                </div>
-                <div>
-                  <span className="text-stone-500 block">Assigned Location</span>
-                  <span className="font-semibold text-stone-900 block mt-0.5">{detailAssignment.assigned_location_name || 'Location not assigned'}</span>
-                </div>
-                <div>
-                  <span className="text-stone-500 block">Serving group</span>
-                  <span className="font-semibold text-stone-900 block mt-0.5">{formatServingGroup(detailAssignment.assignment_level, detailAssignment.team_key)}</span>
-                </div>
-                <div>
-                  <span className="text-stone-500 block">Status</span>
-                  <span className="font-semibold text-stone-900 block mt-0.5">{formatStatusInfo(detailAssignment.status).label}</span>
-                </div>
-              </div>
-
-              <div className="space-y-2 border-t border-stone-100 pt-3">
-                <div className="flex items-center space-x-2 text-stone-700 font-semibold">
-                  <Clock className="w-4 h-4 text-[#C59B27]" />
-                  <span>Shift Window</span>
-                </div>
-                <p className="text-stone-600 pl-6">
-                  {formatShiftWindow(detailAssignment.starts_at, detailAssignment.ends_at)}
-                </p>
-              </div>
-
-              <div className="space-y-2 border-t border-stone-100 pt-3">
-                <div className="flex items-center space-x-2 text-stone-700 font-semibold">
-                  <Smartphone className="w-4 h-4 text-[#C59B27]" />
-                  <span>Device Readiness</span>
-                </div>
-                <p className="text-stone-600 pl-6">
-                  {detailAssignment.ready_devices && detailAssignment.ready_devices > 0 
-                    ? `${detailAssignment.ready_devices} registered device(s) ready` 
-                    : 'No device registered or readiness check pending'}
-                </p>
-              </div>
-
-              {detailAssignment.note && (
-                <div className="space-y-1 border-t border-stone-100 pt-3">
-                  <span className="font-semibold text-stone-700">Private Shift Note</span>
-                  <p className="text-stone-600 italic bg-stone-50 p-3 rounded-xl border border-stone-100">
-                    "{detailAssignment.note}"
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-stone-100">
-              <button
-                onClick={() => {
-                  const toEdit = detailAssignment;
-                  setDetailAssignment(null);
-                  openEditModal(toEdit);
-                }}
-                className="px-4 py-2 bg-[#FAF9F5] border border-[#EAE8E1] hover:bg-stone-100 text-stone-800 rounded-xl text-xs font-semibold cursor-pointer"
-              >
-                Edit assignment
-              </button>
-              <button
-                onClick={() => setDetailAssignment(null)}
-                className="px-4 py-2 bg-[#C59B27] text-white rounded-xl text-xs font-semibold hover:bg-[#A8821B] cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ADD / EDIT ASSIGNMENT MODAL */}
-      {showAddAssignModal && (
-        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 relative">
-            <button
-              onClick={() => setShowAddAssignModal(false)}
-              className="absolute top-4 right-4 p-1.5 hover:bg-stone-100 rounded-full text-stone-400 hover:text-stone-700 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            
-            <div className="border-b border-stone-100 pb-3">
-              <h3 className="text-md font-serif font-medium text-stone-950">
-                {editingAssignment ? 'Edit Duty Assignment' : 'New Event Duty Assignment'}
-              </h3>
-              <p className="text-xs text-stone-500">
-                {editingAssignment ? `Updating assignment for ${editingAssignment.user_name || 'team member'}` : 'Schedule a volunteer or leader for event duty'}
-              </p>
-            </div>
-
-            {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl text-xs flex items-center space-x-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-            
-            <div className="space-y-4">
-              {/* Member Selection (only for new assignment) */}
-              {!editingAssignment ? (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-stone-700">Select Team Member *</label>
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-3" />
-                    <input
-                      type="text"
-                      placeholder="Filter members by name or email..."
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      className="w-full text-xs pl-8 pr-4 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium focus:ring-1 focus:ring-[#C59B27]"
-                    />
-                  </div>
-                  
-                  <div className="border border-[#EAE8E1] rounded-xl max-h-[140px] overflow-y-auto divide-y divide-stone-100 bg-[#FAF9F5]/40 mt-1">
-                    {eligibleMembers.map((member) => (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onClick={() => setSelectedUserId(member.id)}
-                        className={`w-full text-left p-2.5 text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
-                          selectedUserId === member.id ? 'bg-[#C59B27]/10 text-[#C59B27]' : 'hover:bg-stone-50 text-stone-800'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-semibold text-stone-900">{member.full_name}</div>
-                          <div className="text-[11px] text-stone-500 font-mono">{formatRoleLabel(member.role)} • {member.email}</div>
+                  return (
+                    <tr key={as.id} className="hover:bg-zinc-50/60 transition-colors">
+                      {/* Team Member */}
+                      <td className="p-3.5 pl-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 rounded-full bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center justify-center font-medium text-xs shrink-0">
+                            {getInitials(personName)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-zinc-900 text-xs truncate">
+                              {personName}
+                            </div>
+                            {as.user_email && (
+                              <div className="text-[11px] text-zinc-400 truncate">
+                                {as.user_email}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        {selectedUserId === member.id && <CheckCircle2 className="w-4 h-4 text-[#C59B27]" />}
-                      </button>
-                    ))}
-                    {eligibleMembers.length === 0 && (
-                      <div className="p-4 text-center text-stone-400 text-xs">No eligible members found.</div>
-                    )}
+                      </td>
+
+                      {/* Role */}
+                      <td className="p-3.5 font-medium text-zinc-800">
+                        {as.responsibility_key || formatRoleLabel(as.user_role)}
+                      </td>
+
+                      {/* Assigned Area */}
+                      <td className="p-3.5 text-zinc-700">
+                        <span className="font-medium text-zinc-800">{areaName}</span>
+                      </td>
+
+                      {/* Duty Status */}
+                      <td className="p-3.5">
+                        <div className="flex items-center space-x-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
+                          <span className={`text-xs font-medium ${statusInfo.textClass}`}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Shift Time */}
+                      <td className="p-3.5 text-[11px] text-zinc-500 font-normal">
+                        {formatShiftWindow(as.starts_at, as.ends_at)}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="p-3.5 pr-4 text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => setDetailAssignment(as)}
+                            className="text-xs text-zinc-600 hover:text-zinc-900 font-medium cursor-pointer"
+                          >
+                            View
+                          </button>
+                          <span className="text-zinc-300">•</span>
+                          <button
+                            onClick={() => openEditModal(as)}
+                            className="text-xs text-[#C59B27] hover:text-[#A8821B] font-medium cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <span className="text-zinc-300">•</span>
+                          <button
+                            onClick={() => setDeletingAssignment(as)}
+                            className="text-xs text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Cards View */}
+          <div className="block md:hidden divide-y divide-zinc-100">
+            {assignments.map((as) => {
+              const statusInfo = formatDutyStatus(as.status);
+              const personName = as.user_name || 'Administrator';
+              const areaName = as.assigned_location_name || 'Central Command';
+
+              return (
+                <div key={as.id} className="p-4 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-full bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center justify-center font-medium text-xs shrink-0">
+                        {getInitials(personName)}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-zinc-900 text-xs">{personName}</div>
+                        <div className="text-[11px] text-zinc-500">{as.responsibility_key}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
+                      <span className={`text-xs font-medium ${statusInfo.textClass}`}>
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Area</span>
+                      <span className="font-medium text-zinc-900">{areaName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Shift</span>
+                      <span className="text-zinc-600">{formatShiftWindow(as.starts_at, as.ends_at)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-3 pt-1 text-xs">
+                    <button
+                      onClick={() => setDetailAssignment(as)}
+                      className="text-zinc-600 font-medium hover:underline cursor-pointer"
+                    >
+                      View
+                    </button>
+                    <button
+                      onClick={() => openEditModal(as)}
+                      className="text-[#C59B27] font-medium hover:underline cursor-pointer"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeletingAssignment(as)}
+                      className="text-rose-600 font-medium hover:underline cursor-pointer"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </div>
-              ) : (
-                <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs space-y-1">
-                  <span className="text-stone-500 font-medium">Assigned Person</span>
-                  <div className="font-semibold text-stone-900 text-sm">{editingAssignment.user_name || 'Administrator'}</div>
-                  <div className="text-stone-500 font-mono text-[11px]">{editingAssignment.user_email}</div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Assign Team Member Modal (Create & Edit) */}
+      {showAddAssignModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="assign-modal-title"
+        >
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] px-6 py-4 shrink-0">
+              <div>
+                <h3 id="assign-modal-title" className="text-base font-bold text-[#18181B]">
+                  {editingAssignment ? 'Edit assignment' : 'Assign team member'}
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Choose who is serving, what they are responsible for, and where they will serve.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddAssignModal(false)}
+                className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              {formError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl text-xs font-medium flex items-center space-x-2">
+                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{formError}</span>
                 </div>
               )}
 
-              {/* Responsibility & Serving Group */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Member Selection */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-zinc-800">Team member</label>
+                {editingAssignment ? (
+                  <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-xs text-zinc-900">
+                    {editingAssignment.user_name || 'Administrator'} ({editingAssignment.user_email})
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search team members"
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                        className="w-full text-xs min-h-[44px] pl-9 pr-3 py-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white text-zinc-900 transition-colors"
+                      />
+                    </div>
+                    <div className="max-h-36 overflow-y-auto border border-[#EAE8E1] rounded-xl divide-y divide-[#EAE8E1] bg-white">
+                      {eligibleMembers.length === 0 ? (
+                        <div className="p-3 text-center text-zinc-400 text-xs">
+                          No team members found.
+                        </div>
+                      ) : (
+                        eligibleMembers.map((m) => {
+                          const isSelected = selectedUserId === m.user_id;
+                          return (
+                            <button
+                              key={m.user_id}
+                              type="button"
+                              onClick={() => setSelectedUserId(m.user_id)}
+                              className={`w-full text-left p-2.5 flex items-center justify-between hover:bg-zinc-50 cursor-pointer transition-colors ${
+                                isSelected ? 'bg-[#FAF9F5] border-l-3 border-l-[#C59B27]' : ''
+                              }`}
+                            >
+                              <div>
+                                <div className="font-semibold text-zinc-900 text-xs flex items-center space-x-1.5">
+                                  <span>{m.full_name || m.email}</span>
+                                  {isSelected && <Check className="w-3.5 h-3.5 text-[#C59B27]" />}
+                                </div>
+                                <div className="text-[11px] text-zinc-500">
+                                  {m.email}{m.user_role === 'volunteer' ? ' • Volunteer' : ''}
+                                </div>
+                              </div>
+                              <span className="text-[11px] text-zinc-400 font-normal">
+                                {m.active_assignments_count > 0 ? `${m.active_assignments_count} active duty` : 'Available'}
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Assignment: Responsibility & Area */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-stone-700">Responsibility *</label>
+                  <label className="block text-xs font-medium text-zinc-800">Responsibility</label>
                   <select
                     value={formResponsibility}
                     onChange={(e) => setFormResponsibility(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
                   >
-                    {responsibilities.map(r => (
-                      <option key={r} value={r}>{r}</option>
+                    {responsibilities.map((r) => (
+                      <option key={r} value={r}>{formatResponsibilityDisplay(r)}</option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-stone-700">Serving group</label>
-                  <select
-                    value={formLevel}
-                    onChange={(e) => setFormLevel(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 focus:ring-1 focus:ring-[#C59B27]"
-                  >
-                    <option value="primary">Primary Responder</option>
-                    <option value="backup">Backup / Secondary</option>
-                    <option value="pre_primary">Pre-primary</option>
-                    <option value="teens">Teens</option>
-                    <option value="under_4">Under 4</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Assigned Location & Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-stone-700">Assigned Location</label>
+                  <label className="block text-xs font-medium text-zinc-800">Area</label>
                   <select
                     value={formLocationId}
                     onChange={(e) => setFormLocationId(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
                   >
-                    <option value="">Location not assigned</option>
+                    <option value="">Central Command / General</option>
                     {eventLocations.map((loc) => (
                       <option key={loc.id} value={loc.id}>
-                        {loc.name} {loc.location_type ? `(${loc.location_type})` : ''}
+                        {loc.name} {loc.type ? `(${loc.type})` : ''}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-stone-700">Assignment Status</label>
-                  <select
-                    value={formStatus}
-                    onChange={(e) => setFormStatus(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 focus:ring-1 focus:ring-[#C59B27]"
-                  >
-                    <option value="scheduled">Scheduled / Upcoming</option>
-                    <option value="on_duty">Active / On Duty</option>
-                    <option value="temporarily_unavailable">Paused / On Break</option>
-                    <option value="ended">Completed / Ended</option>
-                  </select>
-                </div>
               </div>
 
-              {/* Shift Start & End */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Duty Status */}
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-zinc-800">Status</label>
+                <select
+                  value={formStatus}
+                  onChange={(e) => setFormStatus(e.target.value)}
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                >
+                  <option value="scheduled">Scheduled</option>
+                  <option value="on_duty">On duty</option>
+                  <option value="temporarily_unavailable">On break</option>
+                  <option value="ended">Unavailable</option>
+                </select>
+              </div>
+
+              {/* Shift times */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-stone-700">Shift Starts *</label>
+                  <label className="block text-xs font-medium text-zinc-800">Starts</label>
                   <input
                     type="datetime-local"
                     value={formStartsAt}
                     onChange={(e) => setFormStartsAt(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
                   />
                 </div>
-
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-stone-700">Shift Ends *</label>
+                  <label className="block text-xs font-medium text-zinc-800">Ends</label>
                   <input
                     type="datetime-local"
                     value={formEndsAt}
                     onChange={(e) => setFormEndsAt(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
                   />
                 </div>
               </div>
 
-              {/* Private Shift Note */}
+              {/* Notes */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-stone-700">Private Shift Note</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-medium text-zinc-800">Notes</label>
+                  <span className="text-[11px] text-zinc-400">Optional</span>
+                </div>
                 <textarea
-                  placeholder="e.g. Assigned to Grace Hall entrance and radio channel 2"
+                  rows={2}
                   value={formNote}
                   onChange={(e) => setFormNote(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-stone-800 h-16 focus:ring-1 focus:ring-[#C59B27]"
+                  placeholder="Add any shift instructions or notes…"
+                  className="w-full p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
                 />
               </div>
+            </div>
 
-              {/* Modal Buttons */}
-              <div className="flex justify-end space-x-2.5 pt-3 border-t border-stone-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddAssignModal(false)}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 border border-[#EAE8E1] rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAssignment}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Saving...' : editingAssignment ? 'Save Changes' : 'Assign Team Member'}
-                </button>
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] bg-white shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowAddAssignModal(false)}
+                disabled={isSubmitting}
+                className="min-h-[44px] px-4 py-2 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAssignment}
+                disabled={isSubmitting}
+                className="min-h-[44px] px-5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (editingAssignment ? 'Saving…' : 'Assigning…') : editingAssignment ? 'Save changes' : 'Assign member'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. View Details Modal */}
+      {detailAssignment && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 relative">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] pb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#18181B]">Assignment Details</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  {detailAssignment.user_name || 'Administrator'}
+                </p>
               </div>
+              <button
+                onClick={() => setDetailAssignment(null)}
+                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500">Responsibility</span>
+                <span className="font-semibold text-zinc-900">{formatResponsibilityDisplay(detailAssignment.responsibility_key || '')}</span>
+              </div>
+
+              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500">Area</span>
+                <span className="font-semibold text-zinc-900">{detailAssignment.assigned_location_name || 'Central Command'}</span>
+              </div>
+
+              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500">Status</span>
+                <span className={`font-semibold ${formatDutyStatus(detailAssignment.status).textClass}`}>
+                  {formatDutyStatus(detailAssignment.status).label}
+                </span>
+              </div>
+
+              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500">Shift</span>
+                <span className="font-medium text-zinc-800">{formatShiftWindow(detailAssignment.starts_at, detailAssignment.ends_at)}</span>
+              </div>
+
+              {detailAssignment.note && (
+                <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl space-y-1">
+                  <span className="text-zinc-500 block">Note</span>
+                  <p className="text-zinc-700 italic">"{detailAssignment.note}"</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#EAE8E1]">
+              <button
+                onClick={() => setDetailAssignment(null)}
+                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const target = detailAssignment;
+                  setDetailAssignment(null);
+                  openEditModal(target);
+                }}
+                className="px-3.5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl cursor-pointer"
+              >
+                Change assignment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Remove Assignment Confirmation Modal */}
+      {deletingAssignment && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-9 h-9 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5 pr-4">
+                <h3 className="text-base font-bold text-[#18181B]">Remove this assignment?</h3>
+                <p className="text-xs text-zinc-500">
+                  This team member will no longer be assigned to this area.
+                </p>
+              </div>
+              <button
+                onClick={() => setDeletingAssignment(null)}
+                disabled={isSubmitting}
+                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-3.5 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Team member</span>
+                <span className="font-semibold text-zinc-900">{deletingAssignment.user_name || 'Administrator'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Role</span>
+                <span className="font-semibold text-zinc-900">{deletingAssignment.responsibility_key}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Area</span>
+                <span className="font-semibold text-zinc-900">{deletingAssignment.assigned_location_name || 'Central Command'}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1]">
+              <button
+                type="button"
+                onClick={() => setDeletingAssignment(null)}
+                disabled={isSubmitting}
+                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemoveAssignment}
+                disabled={isSubmitting}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs rounded-xl shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? 'Removing…' : 'Remove assignment'}
+              </button>
             </div>
           </div>
         </div>

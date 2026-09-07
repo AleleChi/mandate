@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { ArrowLeft, CheckCircle2, RotateCcw } from 'lucide-react';
 import { trainingApi } from '../../services/trainingApi';
+import {
+  formatScenarioTitle,
+  formatScenarioTopic
+} from './trainingFormatters';
 
 interface TrainingDebriefProps {
   sessionId: string;
   onNavigate: (route: string) => void;
-  userId: string;
+  userId?: string;
 }
 
 export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
@@ -13,6 +18,7 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
   userId
 }) => {
   const [sessionData, setSessionData] = useState<any>(null);
+  const [debriefData, setDebriefData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [personalOutcome, setPersonalOutcome] = useState('');
   const [outcomes, setOutcomes] = useState<string[]>([]);
@@ -20,142 +26,260 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
 
   useEffect(() => {
     if (!sessionId) return;
-    loadSession();
+    loadData();
   }, [sessionId]);
 
-  const loadSession = async () => {
+  const loadData = async () => {
     if (!sessionId) return;
     try {
-      const res = await trainingApi.getSessionDetail(sessionId);
-      if (res && res.success && res.session) {
-        setSessionData(res.session);
+      const [sessRes, debRes] = await Promise.allSettled([
+        trainingApi.getSessionDetail(sessionId),
+        trainingApi.getSessionDebrief(sessionId)
+      ]);
+
+      if (sessRes.status === 'fulfilled' && sessRes.value?.success) {
+        setSessionData(sessRes.value.session);
+      }
+      if (debRes.status === 'fulfilled' && debRes.value?.success && debRes.value.debrief) {
+        setDebriefData(debRes.value.debrief);
       }
     } catch (err) {
-      console.error('Failed to load session details:', err);
+      console.error('Failed to load debrief details:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddPersonalOutcome = () => {
-    if (!personalOutcome) return;
-    setOutcomes([...outcomes, personalOutcome]);
+  const handleAddTakeaway = () => {
+    if (!personalOutcome.trim()) return;
+    setOutcomes([...outcomes, personalOutcome.trim()]);
     setPersonalOutcome('');
-    setSuccessMsg('Personal feedback outcome saved.');
+    setSuccessMsg('Personal takeaway recorded.');
     setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleTryAgain = async () => {
+    try {
+      await trainingApi.resetSession(sessionId);
+      await trainingApi.startSession(sessionId);
+      onNavigate('/admin/training/active');
+    } catch {
+      onNavigate('/admin/training/scenarios');
+    }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 bg-[#FAF9F6] min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27]"></div>
+      <div className="flex flex-col items-center justify-center py-24 min-h-[50vh] font-sans">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#C59B27] border-t-transparent"></div>
+        <p className="text-xs text-zinc-500 mt-3 font-sans">Loading practice debrief...</p>
       </div>
     );
   }
 
-  const session = sessionData;
-  const completedCount = session?.objectiveResults?.filter((r: any) => r.status === 'Completed').length || 0;
-  const totalObjectives = session?.objectives?.length || 1;
-  const percentCompleted = Math.round((completedCount / totalObjectives) * 100);
+  const scenarioTitle = formatScenarioTitle(sessionData?.scenario_title);
+  const scenarioTopic = formatScenarioTopic(undefined, sessionData?.scenario_title);
+
+  const completedCount = sessionData?.objectiveResults?.filter((r: any) => r.status === 'Completed').length || 0;
+  const totalCount = sessionData?.objectives?.length || (completedCount > 0 ? completedCount : 3);
+
+  // Approximate elapsed duration
+  const elapsedMinutes = sessionData?.created_at
+    ? Math.max(1, Math.min(60, Math.round((Date.now() - new Date(sessionData.created_at).getTime()) / 60000)))
+    : 18;
+
+  const strengthsText = debriefData?.strengths ||
+    'Careful verification of child arrival records, respectful guardian interactions, and steady teamwork.';
+  const improvementsText = debriefData?.improvement_areas ||
+    'Continue practising quick team alerts when internet access is unavailable to keep lines moving smoothly.';
 
   return (
-    <div 
+    <div
       id="training-debrief-container"
-      data-view-version="training-debrief-v1-premium"
-      className="max-w-4xl mx-auto px-4 sm:px-6 py-8 font-sans bg-[#FAF9F6]"
+      data-view-version="training-debrief-v2-human"
+      className="max-w-3xl mx-auto px-4 sm:px-6 py-8 font-sans"
     >
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-xl font-semibold text-[#18181B] tracking-tight font-sans">Practice Debrief Dashboard</h1>
-          <p className="text-xs text-[#52525B] mt-1 font-sans">Finalized performance metrics, completed objective feedback, and collective strengths.</p>
-        </div>
+      {/* Return navigation */}
+      <div className="mb-6">
         <button
           onClick={() => onNavigate('/admin/training/scenarios')}
-          className="bg-[#C59B27] hover:bg-[#A37F1D] text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer font-sans"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
         >
-          Exit to Scenario Library
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Return to practice scenarios</span>
         </button>
       </div>
 
       {successMsg && (
-        <div className="mb-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-lg font-sans">
+        <div className="mb-6 p-3.5 bg-emerald-50/80 border border-emerald-200/90 rounded-xl text-xs text-emerald-900 font-medium">
           {successMsg}
         </div>
       )}
 
-      {/* Visual Rehearsal metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 font-sans">
-        <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm text-center">
-          <span className="text-xs text-[#71717A] uppercase font-bold tracking-wider">Objectives Met</span>
-          <div className="text-3xl font-bold text-[#18181B] mt-1">{completedCount} / {totalObjectives}</div>
-          <div className="w-full bg-[#FAF9F6] h-1.5 rounded-full mt-3 overflow-hidden">
-            <div className="bg-[#C59B27] h-full" style={{ width: `${percentCompleted}%` }} />
+      {/* Main Container */}
+      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 sm:p-8 shadow-2xs">
+        {/* Title Header */}
+        <div className="border-b border-[#F4F3ED] pb-6 mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[11px] font-semibold text-[#8C6D1F] uppercase tracking-wider">
+              {scenarioTopic}
+            </span>
+            <span className="text-zinc-300">•</span>
+            <span className="text-[11px] text-zinc-500">
+              Practice completed
+            </span>
+          </div>
+
+          <h1 className="text-2xl sm:text-3xl font-serif text-zinc-900 tracking-tight">
+            Practice complete
+          </h1>
+
+          <p className="text-sm font-medium text-zinc-700 mt-1">
+            {scenarioTitle}
+          </p>
+        </div>
+
+        {/* Overview Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          <div className="p-4 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl">
+            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider block">
+              Completed in
+            </span>
+            <div className="text-xl font-semibold text-zinc-900 mt-1 font-sans">
+              {elapsedMinutes} minutes
+            </div>
+          </div>
+
+          <div className="p-4 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl">
+            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider block">
+              Actions completed
+            </span>
+            <div className="text-xl font-semibold text-zinc-900 mt-1 font-sans">
+              {completedCount} of {totalCount}
+            </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm text-center">
-          <span className="text-xs text-[#71717A] uppercase font-bold tracking-wider">Communication Quality</span>
-          <div className="text-3xl font-bold text-emerald-600 mt-1">98%</div>
-          <p className="text-[10px] text-[#A1A1AA] mt-1">No lost transmissions or blank alerts</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm text-center">
-          <span className="text-xs text-[#71717A] uppercase font-bold tracking-wider">Reconciled Confirms</span>
-          <div className="text-3xl font-bold text-[#18181B] mt-1">100%</div>
-          <p className="text-[10px] text-[#A1A1AA] mt-1">All practice scans verified factual</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-sans">
-        {/* Collective feedback */}
-        <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-[#18181B] uppercase tracking-wider">Collective Performance Review</h3>
-          
-          <div className="space-y-3 text-xs leading-relaxed">
-            <div className="p-3 bg-[#FAF9F6] rounded-lg border border-[#E4E4E7]">
-              <strong className="text-[#18181B] block font-sans">Demonstrated Strengths:</strong>
-              <p className="text-[#52525B] mt-1 font-sans">Very fast dual-verification of codes. Prompt radio communications. Solid transition protocols when changing shift roles.</p>
-            </div>
-            
-            <div className="p-3 bg-[#FAF9F6] rounded-lg border border-[#E4E4E7]">
-              <strong className="text-[#18181B] block font-sans">Areas of Improvement:</strong>
-              <p className="text-[#52525B] mt-1 font-sans">Accelerate response latency to unacknowledged hold alerts when working offline.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Participant reviews & personal learnings */}
-        <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm space-y-4 font-sans">
-          <h3 className="text-sm font-semibold text-[#18181B] uppercase tracking-wider">Personal Learning Outcomes</h3>
-          
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-[#52525B] mb-1.5 font-sans">Record your personal takeaway from this rehearsal:</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={personalOutcome}
-                  onChange={(e) => setPersonalOutcome(e.target.value)}
-                  placeholder="e.g. Learned how to manage scan queues offline."
-                  className="flex-1 bg-[#FAF9F6] border border-[#E4E4E7] rounded-lg px-3 py-1.5 text-xs text-[#18181B] placeholder-[#A1A1AA] focus:outline-none focus:ring-1 focus:ring-[#C59B27] font-sans"
-                />
-                <button
-                  onClick={handleAddPersonalOutcome}
-                  className="bg-[#C59B27] hover:bg-[#A37F1D] text-white text-xs font-semibold px-4 py-1.5 rounded-lg cursor-pointer font-sans"
-                >
-                  Save Takeaway
-                </button>
+        {/* Steps Completed Checklist */}
+        <div className="mb-8">
+          <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+            Steps practised
+          </h2>
+          <div className="space-y-2">
+            {sessionData?.objectives && sessionData.objectives.length > 0 ? (
+              sessionData.objectives.map((obj: any) => {
+                const isDone = sessionData?.objectiveResults?.find((r: any) => r.objective_id === obj.id)?.status === 'Completed';
+                return (
+                  <div
+                    key={obj.id}
+                    className="p-3 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] flex items-start gap-2.5 text-xs"
+                  >
+                    <span className={`text-sm mt-0.5 font-bold ${isDone ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                      {isDone ? '✓' : '○'}
+                    </span>
+                    <div>
+                      <p className="font-medium text-zinc-900">
+                        {obj.title}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">
+                        {obj.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="p-3 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] flex items-start gap-2.5 text-xs text-zinc-700">
+                <span className="text-emerald-600 font-bold">✓</span>
+                <span>Team completed the practice scenario steps.</span>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
 
-            <div className="space-y-1.5 max-h-36 overflow-y-auto">
-              {outcomes.map((ot, i) => (
-                <div key={i} className="text-xs p-2.5 bg-[#FAF9F6] border border-[#E4E4E7] rounded-lg text-[#52525B] font-sans">
-                  ✓ {ot}
+        {/* Team Reflection: What went well & Needs another look */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <div className="p-4 rounded-xl border border-[#EAE8E1] bg-white">
+            <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+              What went well
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              {strengthsText}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl border border-[#EAE8E1] bg-white">
+            <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+              Needs another look
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              {improvementsText}
+            </p>
+          </div>
+        </div>
+
+        {/* Personal Takeaway */}
+        <div className="border-t border-[#F4F3ED] pt-6 mb-8">
+          <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+            Personal takeaway
+          </h3>
+          <p className="text-xs text-zinc-500 mb-3">
+            Record what you learned or what you want to remember on event day.
+          </p>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={personalOutcome}
+              onChange={(e) => setPersonalOutcome(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddTakeaway();
+                }
+              }}
+              placeholder="e.g. Learned how to manage check-in smoothly without internet."
+              className="flex-1 bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+            />
+            <button
+              type="button"
+              onClick={handleAddTakeaway}
+              className="min-h-[38px] px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-900 text-white text-xs font-medium transition-colors cursor-pointer shrink-0"
+            >
+              Add note
+            </button>
+          </div>
+
+          {outcomes.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {outcomes.map((note, idx) => (
+                <div key={idx} className="p-2.5 rounded-lg bg-zinc-50 border border-[#EAE8E1] text-xs text-zinc-700 flex items-center gap-2">
+                  <span className="text-[#C59B27]">•</span>
+                  <span>{note}</span>
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="border-t border-[#F4F3ED] pt-6 flex flex-col-reverse sm:flex-row items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={handleTryAgain}
+            className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Try again</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('/admin/training/scenarios')}
+            className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 rounded-xl bg-[#C59B27] hover:bg-[#A37F1D] text-white text-xs font-semibold transition-colors cursor-pointer shadow-2xs text-center"
+          >
+            Return to practice scenarios
+          </button>
         </div>
       </div>
     </div>

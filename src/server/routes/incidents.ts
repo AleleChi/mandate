@@ -59,10 +59,11 @@ function handleError(res: Response, err: any) {
 router.post('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const actor = getActor(req);
-    const { alertId, category, title, description, structuredData, parentContact, firstAid, security, status, idempotencyKey } = req.body;
+    const { alertId, eventId, category, title, description, structuredData, parentContact, firstAid, security, status, idempotencyKey } = req.body;
     const result = await createIncident({
       actor,
       alertId,
+      eventId,
       category,
       title,
       description,
@@ -98,8 +99,8 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// 3. Retrieve reports / stats summary (Admin only)
-router.get('/stats', authMiddleware, async (req: AuthenticatedRequest, res) => {
+// 3. Retrieve reports / stats summary (Admin only) - supports both /stats and /stats/summary
+router.get(['/stats', '/stats/summary'], authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const actor = getActor(req);
     const result = await getIncidentStats(actor);
@@ -109,8 +110,8 @@ router.get('/stats', authMiddleware, async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// 4. Retrieve incident by associated alertId
-router.get('/by-alert/:alertId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+// 4. Retrieve incident by associated alertId - supports both /by-alert/:alertId and /alert/:alertId
+router.get(['/by-alert/:alertId', '/alert/:alertId'], authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const actor = getActor(req);
     const result = await getIncidentByAlertId(req.params.alertId, actor);
@@ -142,8 +143,8 @@ router.get('/:id/history', authMiddleware, async (req: AuthenticatedRequest, res
   }
 });
 
-// 7. Update draft incident details
-router.patch('/:id/draft', authMiddleware, async (req: AuthenticatedRequest, res) => {
+// 7. Update draft incident details (PATCH or PUT)
+const handleUpdateDraft = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = getActor(req);
     const { expectedVersion, category, title, description, structuredData, parentContact, firstAid, security } = req.body;
@@ -163,7 +164,9 @@ router.patch('/:id/draft', authMiddleware, async (req: AuthenticatedRequest, res
   } catch (err) {
     return handleError(res, err);
   }
-});
+};
+router.patch('/:id/draft', authMiddleware, handleUpdateDraft);
+router.put('/:id/draft', authMiddleware, handleUpdateDraft);
 
 // 8. Formally submit incident for review
 router.post('/:id/submit', authMiddleware, async (req: AuthenticatedRequest, res) => {
@@ -258,8 +261,8 @@ router.post('/:id/follow-up/:actionId/complete', authMiddleware, async (req: Aut
   }
 });
 
-// 13. Admin: Update closure checklist
-router.post('/:id/checklist', authMiddleware, async (req: AuthenticatedRequest, res) => {
+// 13. Admin: Update closure checklist (supports POST/PUT on /:id/checklist and /:id/closure-checklist)
+const handleUpdateChecklist = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = getActor(req);
     const { expectedVersion, checklist } = req.body;
@@ -273,7 +276,9 @@ router.post('/:id/checklist', authMiddleware, async (req: AuthenticatedRequest, 
   } catch (err) {
     return handleError(res, err);
   }
-});
+};
+router.post(['/:id/checklist', '/:id/closure-checklist'], authMiddleware, handleUpdateChecklist);
+router.put(['/:id/checklist', '/:id/closure-checklist'], authMiddleware, handleUpdateChecklist);
 
 // 14. Admin: Close incident
 router.post('/:id/close', authMiddleware, async (req: AuthenticatedRequest, res) => {

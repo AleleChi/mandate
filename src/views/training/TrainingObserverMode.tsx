@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { trainingApi } from '../../services/trainingApi';
 
 interface TrainingObserverModeProps {
   sessionId: string;
   onNavigate: (route: string) => void;
-  userId: string;
+  userId?: string;
 }
 
 export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
@@ -14,7 +15,7 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
 }) => {
   const [sessionData, setSessionData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState('Communication');
+  const [category, setCategory] = useState('Team communication');
   const [note, setNote] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -42,14 +43,14 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
   };
 
   const handlePostNote = async () => {
-    if (!note) return;
+    if (!note.trim()) return;
     try {
       const res = await trainingApi.addObservation(sessionId, {
         category,
-        note
+        note: note.trim()
       });
       if (res.success) {
-        setSuccessMsg('Timestamped observation saved.');
+        setSuccessMsg('Observation note saved.');
         setNote('');
         loadSession();
       }
@@ -60,8 +61,9 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 bg-[#FAF9F6] min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#C59B27]"></div>
+      <div className="flex flex-col items-center justify-center py-24 min-h-[50vh] font-sans">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#C59B27] border-t-transparent"></div>
+        <p className="text-xs text-zinc-500 mt-3 font-sans">Loading observer view...</p>
       </div>
     );
   }
@@ -69,100 +71,118 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
   const session = sessionData;
 
   return (
-    <div 
+    <div
       id="training-observer-board-container"
-      data-view-version="training-observer-mode-v1-premium"
-      className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-sans bg-[#FAF9F6]"
+      data-view-version="training-observer-mode-v2-human"
+      className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-sans"
     >
-      <div className="flex items-center justify-between mb-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-[#18181B] tracking-tight">Observer Board</h1>
-          <p className="text-xs text-[#52525B] mt-1">Record feedback, observe checklist progress, and log strengths in real-time.</p>
+          <h1 className="text-2xl font-serif text-zinc-900 tracking-tight">
+            Observer view
+          </h1>
+          <p className="text-xs text-zinc-600 mt-1">
+            Observe team practice, follow checklist progress, and note helpful feedback.
+          </p>
         </div>
         <button
           onClick={() => onNavigate(`/admin/training/sessions/${sessionId}`)}
-          className="bg-[#C59B27] hover:bg-[#A37F1D] text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer"
+          className="inline-flex items-center justify-center min-h-[40px] px-4 py-2 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer"
         >
-          Open Participant Screen
+          View team practice screen
         </button>
       </div>
 
       {successMsg && (
-        <div className="mb-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-lg">
+        <div className="mb-6 p-3.5 bg-emerald-50/80 border border-emerald-200/90 text-emerald-900 text-xs font-medium rounded-xl">
           {successMsg}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Col: Post Note */}
-        <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm h-fit">
-          <h3 className="text-sm font-semibold text-[#18181B] uppercase tracking-wider mb-4">Record Observation</h3>
-          
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Post Note */}
+        <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs h-fit">
+          <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-4">
+            Add observation note
+          </h2>
+
           <div className="space-y-4 text-xs">
             <div>
-              <label className="block text-xs font-medium text-[#52525B] mb-1.5">Feedback Category</label>
+              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                Topic
+              </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-[#FAF9F6] border border-[#E4E4E7] rounded-lg px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
               >
-                <option value="Communication">Communication & Radio Use</option>
-                <option value="Registration Speed">Registration Speed</option>
-                <option value="Incident Coordination">Incident Coordination</option>
-                <option value="Safety Response">Safety & Escalation Response</option>
+                <option value="Team communication">Team communication</option>
+                <option value="Arrivals and check-in">Arrivals and check-in</option>
+                <option value="Team coordination">Team coordination</option>
+                <option value="Safety response">Safety response</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-[#52525B] mb-1.5">Observation Note</label>
+              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                Note
+              </label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Describe your observation factual details..."
+                placeholder="Record helpful feedback or notes on team teamwork..."
                 rows={4}
-                className="w-full bg-[#FAF9F6] border border-[#E4E4E7] rounded-lg px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
               />
             </div>
 
             <button
+              type="button"
               onClick={handlePostNote}
-              className="w-full bg-[#C59B27] hover:bg-[#A37F1D] text-white font-semibold py-2 rounded-lg cursor-pointer"
+              className="w-full min-h-[40px] px-5 py-2 rounded-xl bg-[#C59B27] hover:bg-[#A37F1D] text-white text-xs font-semibold transition-colors cursor-pointer shadow-2xs text-center"
             >
-              Post Observation Note
+              Save note
             </button>
           </div>
         </div>
 
-        {/* Center & Right: Objectives and Timeline */}
+        {/* Right 2 Columns: Objectives Progress */}
         <div className="lg:col-span-2 space-y-6">
-          
-          <div className="bg-white rounded-xl border border-[#E4E4E7] p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-[#18181B] uppercase tracking-wider mb-4">Objective Progress Board</h3>
-            <div className="space-y-3 text-xs">
-              {session?.objectives?.map((obj: any) => {
-                const matchResult = session?.objectiveResults?.find((r: any) => r.objective_id === obj.id);
-                const isCompleted = matchResult?.status === 'Completed';
+          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-4">
+              Checklist progress
+            </h2>
 
-                return (
-                  <div key={obj.id} className="flex justify-between items-center bg-[#FAF9F6] border border-[#E4E4E7] p-3 rounded-lg">
-                    <div>
-                      <h4 className="font-semibold text-[#18181B]">{obj.title}</h4>
-                      <p className="text-[#71717A] mt-0.5">{obj.description}</p>
+            <div className="space-y-2.5 text-xs">
+              {session?.objectives && session.objectives.length > 0 ? (
+                session.objectives.map((obj: any) => {
+                  const matchResult = session?.objectiveResults?.find((r: any) => r.objective_id === obj.id);
+                  const isCompleted = matchResult?.status === 'Completed';
+
+                  return (
+                    <div
+                      key={obj.id}
+                      className="p-3.5 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] flex items-start gap-2.5"
+                    >
+                      <span className={`text-sm mt-0.5 font-bold ${isCompleted ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                        {isCompleted ? '✓' : '○'}
+                      </span>
+                      <div>
+                        <h3 className="font-semibold text-zinc-900">{obj.title}</h3>
+                        <p className="text-zinc-500 mt-0.5">{obj.description}</p>
+                      </div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                      isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {isCompleted ? 'COMPLETED' : 'PENDING'}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="p-3.5 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] text-zinc-500">
+                  No specific checklist items configured.
+                </div>
+              )}
             </div>
           </div>
-
         </div>
-
       </div>
     </div>
   );

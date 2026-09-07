@@ -99,18 +99,36 @@ export function formatDuration(seconds: number): string {
   return `${hours} hour${hours > 1 ? 's' : ''} ${remainingMinutes > 0 ? remainingMinutes + ' minute' + (remainingMinutes > 1 ? 's' : '') : ''}`;
 }
 
+export interface RegistrationAnalytics {
+  totalRegistrations: number;
+  selectedTotal: number;
+  underReviewTotal: number;
+  waitlistTotal: number;
+  notSelectedTotal: number;
+  selectionRate: number;
+  registrationOutcomes: { label: string; count: number }[];
+  registrationsByAgeGroup: { [key: string]: number };
+  medicalNotesCount: number;
+  extraSupportCount: number;
+  totalCareCount: number;
+}
+
 export interface AttendanceAnalytics {
   totalRegistrations: number;
+  expectedTotal: number;
   checkedInTotal: number;
-  attendanceRate: number;
+  insideTotal: number;
   releasedTotal: number;
+  notArrivedTotal: number;
+  attendanceRate: number;
   releaseRate: number;
   pendingRelease: number;
   peakCheckInHour: string;
   peakPickupHour: string;
   checkInTimeSeries: { hour: string; count: number }[];
   pickupTimeSeries: { hour: string; count: number }[];
-  ageGroupDistribution: { [key: string]: { registered: number; checkedIn: number; released: number } };
+  ageGroupDistribution: { [key: string]: { registered: number; expected: number; checkedIn: number; released: number } };
+  ageGroupAttendance: { ageGroup: string; expected: number; attended: number; attendanceRate: number }[];
   genderDistribution: { [key: string]: number };
 }
 
@@ -243,6 +261,7 @@ export interface ComprehensiveAnalytics {
   startsAt: string;
   cutoffTime: string;
   timezone: string;
+  registrations: RegistrationAnalytics;
   attendance: AttendanceAnalytics;
   volunteers: VolunteerAnalytics;
   devices: DeviceReadinessAnalytics;
@@ -255,6 +274,8 @@ export interface ComprehensiveAnalytics {
   training?: TrainingAnalytics;
   dataQuality: DataQualityReport;
   insights: GroundedInsight[];
+  keyFindings?: string[];
+  managementAttention?: string[];
   comparison?: EventComparisonReport;
 }
 
@@ -272,17 +293,72 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   const eventTitle = snapshot.event?.title || 'The General Assembly';
   const startsAt = snapshot.event?.starts_at || '2026-11-18';
 
-  // 1. Attendance & Child Flow
+  // 1. Registrations & Selection
   const childEntries = snapshot.childEntries || [];
   const totalRegistrations = childEntries.length;
-  const checkedInEntries = childEntries.filter((c: any) => c.checked_in_at);
+  const selectedStatuses = ['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'];
+  const selectedEntries = childEntries.filter((c: any) => selectedStatuses.includes(c.status));
+  const selectedTotal = selectedEntries.length;
+  const underReviewEntries = childEntries.filter((c: any) => c.status === 'under_review' || c.status === 'pending_review');
+  const underReviewTotal = underReviewEntries.length;
+  const waitlistEntries = childEntries.filter((c: any) => c.status === 'waiting_list' || c.status === 'waitlist');
+  const waitlistTotal = waitlistEntries.length;
+  const notSelectedEntries = childEntries.filter((c: any) => c.status === 'not_selected' || c.status === 'rejected');
+  const notSelectedTotal = notSelectedEntries.length;
+  const selectionRate = totalRegistrations > 0 ? (selectedTotal / totalRegistrations) * 100 : 0;
+
+  const registrationOutcomes = [
+    { label: 'Selected', count: selectedTotal },
+    { label: 'Awaiting review', count: underReviewTotal },
+    { label: 'Waiting list', count: waitlistTotal },
+    { label: 'Not selected', count: notSelectedTotal }
+  ];
+
+  const registrationsByAgeGroup: { [key: string]: number } = {};
+  let medicalNotesCount = 0;
+  let extraSupportCount = 0;
+  let totalCareCount = 0;
+
+  childEntries.forEach((c: any) => {
+    const ag = normalizeAgeGroupLabel(c.age_group);
+    registrationsByAgeGroup[ag] = (registrationsByAgeGroup[ag] || 0) + 1;
+    if (c.has_medical_notes === 1 || c.has_medical_notes === true) medicalNotesCount++;
+    if (c.needs_extra_support === 1 || c.needs_extra_support === true) extraSupportCount++;
+    if (c.has_medical_notes === 1 || c.needs_extra_support === 1 || c.needs_age_review === 1) totalCareCount++;
+  });
+
+  const registrations: RegistrationAnalytics = {
+    totalRegistrations,
+    selectedTotal,
+    underReviewTotal,
+    waitlistTotal,
+    notSelectedTotal,
+    selectionRate,
+    registrationOutcomes,
+    registrationsByAgeGroup,
+    medicalNotesCount,
+    extraSupportCount,
+    totalCareCount
+  };
+
+  // 2. Attendance & Child Flow
+  const expectedTotal = selectedTotal;
+  const checkedInEntries = childEntries.filter((c: any) => 
+    ['checked_in', 'inside', 'picked_up'].includes(c.status) || !!c.checked_in_at
+  );
   const checkedInTotal = checkedInEntries.length;
-  const attendanceRate = totalRegistrations > 0 ? (checkedInTotal / totalRegistrations) * 100 : 0;
-  
-  const releasedEntries = childEntries.filter((c: any) => c.picked_up_at);
+  const releasedEntries = childEntries.filter((c: any) => 
+    c.status === 'picked_up' || !!c.picked_up_at
+  );
   const releasedTotal = releasedEntries.length;
+  const insideEntries = childEntries.filter((c: any) => 
+    c.status === 'inside' || (c.status === 'checked_in' && !c.picked_up_at) || (!!c.checked_in_at && !c.picked_up_at)
+  );
+  const insideTotal = insideEntries.length;
+  const notArrivedTotal = Math.max(0, expectedTotal - checkedInTotal);
+  const attendanceRate = expectedTotal > 0 ? (checkedInTotal / expectedTotal) * 100 : 0;
   const releaseRate = checkedInTotal > 0 ? (releasedTotal / checkedInTotal) * 100 : 0;
-  const pendingRelease = Math.max(0, checkedInTotal - releasedTotal);
+  const pendingRelease = insideTotal;
 
   // Time Series
   const checkInHourMap: { [key: string]: number } = {};
@@ -326,27 +402,41 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   });
 
   // Age Group & Gender distributions using canonical age-cohort normalisation
-  const ageGroupDistribution: { [key: string]: { registered: number; checkedIn: number; released: number } } = {};
+  const ageGroupDistribution: { [key: string]: { registered: number; expected: number; checkedIn: number; released: number } } = {};
   const genderDistribution: { [key: string]: number } = {};
 
   childEntries.forEach((c: any) => {
     const ag = normalizeAgeGroupLabel(c.age_group);
     if (!ageGroupDistribution[ag]) {
-      ageGroupDistribution[ag] = { registered: 0, checkedIn: 0, released: 0 };
+      ageGroupDistribution[ag] = { registered: 0, expected: 0, checkedIn: 0, released: 0 };
     }
     ageGroupDistribution[ag].registered++;
-    if (c.checked_in_at) ageGroupDistribution[ag].checkedIn++;
-    if (c.picked_up_at) ageGroupDistribution[ag].released++;
+    if (selectedStatuses.includes(c.status)) ageGroupDistribution[ag].expected++;
+    if (['checked_in', 'inside', 'picked_up'].includes(c.status) || c.checked_in_at) ageGroupDistribution[ag].checkedIn++;
+    if (c.status === 'picked_up' || c.picked_up_at) ageGroupDistribution[ag].released++;
 
     const gen = c.gender || 'Unknown';
     genderDistribution[gen] = (genderDistribution[gen] || 0) + 1;
   });
 
+  const ageGroupAttendance = Object.keys(ageGroupDistribution).map((ag) => {
+    const d = ageGroupDistribution[ag];
+    return {
+      ageGroup: ag,
+      expected: d.expected,
+      attended: d.checkedIn,
+      attendanceRate: d.expected > 0 ? (d.checkedIn / d.expected) * 100 : 0
+    };
+  });
+
   const attendance: AttendanceAnalytics = {
     totalRegistrations,
+    expectedTotal,
     checkedInTotal,
-    attendanceRate,
+    insideTotal,
     releasedTotal,
+    notArrivedTotal,
+    attendanceRate,
     releaseRate,
     pendingRelease,
     peakCheckInHour,
@@ -354,6 +444,7 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     checkInTimeSeries,
     pickupTimeSeries,
     ageGroupDistribution,
+    ageGroupAttendance,
     genderDistribution
   };
 
@@ -813,12 +904,63 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     };
   }
 
+  // 13. Deterministic Key Findings
+  let largestAgeGroup = 'All age cohorts';
+  let maxCohortCount = 0;
+  Object.keys(ageGroupDistribution).forEach((ag) => {
+    if (ageGroupDistribution[ag].checkedIn > maxCohortCount) {
+      maxCohortCount = ageGroupDistribution[ag].checkedIn;
+      largestAgeGroup = `Children aged ${ag}`;
+    }
+  });
+
+  const keyFindings: string[] = [];
+  if (expectedTotal > 0) {
+    keyFindings.push(`${checkedInTotal} of ${expectedTotal} selected children attended the event.`);
+  } else if (totalRegistrations > 0) {
+    keyFindings.push(`${totalRegistrations} children registered for this event.`);
+  }
+  if (releasedTotal > 0) {
+    keyFindings.push(`${releasedTotal} child${releasedTotal > 1 ? 'ren' : ''} had been picked up at the time this report was created.`);
+  }
+  if (maxCohortCount > 0) {
+    keyFindings.push(`${largestAgeGroup} represented the largest participating age group.`);
+  }
+  const openSafetyCount = alertsByStatus.open + alertsByStatus.in_progress + alertsByStatus.reopened;
+  if (openSafetyCount === 0) {
+    keyFindings.push('No unresolved safety concerns were recorded.');
+  } else {
+    keyFindings.push(`${openSafetyCount} safety concern${openSafetyCount > 1 ? 's' : ''} remained open.`);
+  }
+  if (underReviewTotal > 0) {
+    keyFindings.push(`${underReviewTotal} registration${underReviewTotal > 1 ? 's' : ''} remained under review.`);
+  }
+
+  // 14. Deterministic Management Attention Items
+  const managementAttention: string[] = [];
+  if (notArrivedTotal > 0) {
+    managementAttention.push(`${notArrivedTotal} child${notArrivedTotal > 1 ? 'ren were' : ' was'} expected but had not arrived.`);
+  }
+  if (underReviewTotal > 0) {
+    managementAttention.push(`${underReviewTotal} registration${underReviewTotal > 1 ? 's' : ''} remained awaiting review.`);
+  }
+  if (openSafetyCount > 0) {
+    managementAttention.push(`${openSafetyCount} safety matter${openSafetyCount > 1 ? 's' : ''} remained unresolved.`);
+  }
+  if (coverageGaps > 0) {
+    managementAttention.push(`${coverageGaps} location${coverageGaps > 1 ? 's' : ''} had insufficient volunteer coverage.`);
+  }
+  if (managementAttention.length === 0) {
+    managementAttention.push('No items require management attention.');
+  }
+
   return {
     eventId,
     eventTitle,
     startsAt,
     cutoffTime,
     timezone,
+    registrations,
     attendance,
     volunteers,
     devices,
@@ -830,6 +972,8 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     offline,
     dataQuality,
     insights,
+    keyFindings,
+    managementAttention,
     comparison
   };
 }
@@ -872,12 +1016,29 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
     medianResolutionTimeSeconds: countAck > 0 ? (sumAck * 1.8) / countAck : null
   };
 
+  const registrations: RegistrationAnalytics = {
+    totalRegistrations: participants.length,
+    selectedTotal: participants.length,
+    underReviewTotal: 0,
+    waitlistTotal: 0,
+    notSelectedTotal: 0,
+    selectionRate: 100,
+    registrationOutcomes: [{ label: 'Selected', count: participants.length }],
+    registrationsByAgeGroup: {},
+    medicalNotesCount: 0,
+    extraSupportCount: 0,
+    totalCareCount: 0
+  };
+
   // Safe mock attendance for training sessions
   const attendance: AttendanceAnalytics = {
     totalRegistrations: participants.length,
+    expectedTotal: participants.length,
     checkedInTotal: participants.length,
-    attendanceRate: 100,
+    insideTotal: 0,
     releasedTotal: participants.length,
+    notArrivedTotal: 0,
+    attendanceRate: 100,
     releaseRate: 100,
     pendingRelease: 0,
     peakCheckInHour: 'Drill window',
@@ -885,6 +1046,7 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
     checkInTimeSeries: [],
     pickupTimeSeries: [],
     ageGroupDistribution: {},
+    ageGroupAttendance: [],
     genderDistribution: {}
   };
 
@@ -994,6 +1156,7 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
     startsAt: cutoffTime.slice(0, 10),
     cutoffTime,
     timezone,
+    registrations,
     attendance,
     volunteers,
     devices,

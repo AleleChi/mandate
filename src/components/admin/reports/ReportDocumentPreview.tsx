@@ -72,23 +72,23 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         )}
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Band (Prompt Section 16 & 37) */}
       {model.kpis && model.kpis.length > 0 && (
-        <div id="section-kpis" data-report-section="kpis" className="space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-serif font-semibold text-stone-500 uppercase tracking-wider">
-            Key attendance figures
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div id="section-kpis" data-report-section="kpis" className="scroll-mt-6">
+          <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
             {model.kpis.map((kpi, idx) => (
-              <div
-                key={idx}
-                className={`p-4 rounded-xl border-l-4 border border-stone-200/80 shadow-2xs space-y-1 ${getKpiColor(kpi.color)}`}
-              >
-                <span className="text-[11px] font-medium text-stone-600 block truncate">{kpi.label}</span>
-                <span className="text-xl sm:text-2xl font-serif font-bold text-stone-900 block tracking-tight">
+              <div key={idx} className="p-3.5 space-y-1 bg-white">
+                <span className="text-[10px] uppercase font-semibold text-stone-500 block tracking-wider truncate">
+                  {kpi.label}
+                </span>
+                <span className="text-xl font-bold text-stone-900 block tracking-tight tabular-nums">
                   {kpi.value}
                 </span>
-                <span className="text-[10px] text-stone-500 block leading-tight">{kpi.sublabel}</span>
+                {kpi.sublabel && (
+                  <span className="text-[10px] text-stone-400 block truncate leading-tight">
+                    {kpi.sublabel}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -111,33 +111,41 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         </div>
       )}
 
-      {/* Key Findings */}
+      {/* Key Findings (Prompt Section 17) */}
       {model.findings && model.findings.length > 0 && (
-        <div id="section-findings" data-report-section="findings" className="bg-stone-50/80 border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
+        <div id="section-findings" data-report-section="findings" className="bg-stone-50/70 border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
+          <h2 className="text-xs font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
             Key findings
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {model.findings.map((f, idx) => (
-              <div key={f.id || idx} className="bg-white p-3.5 rounded-lg border border-stone-200 text-xs space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-stone-900">{f.title}</span>
-                  {f.severity && f.severity !== 'info' && (
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${
-                      f.severity === 'warning' || f.severity === 'critical' || f.severity === 'attention' || f.severity === 'follow-up required'
-                        ? 'bg-amber-100 text-amber-900'
-                        : 'bg-stone-100 text-stone-700'
-                    }`}>
-                      {f.severity}
-                    </span>
-                  )}
-                </div>
-                <p className="text-stone-700 leading-relaxed">{f.observation}</p>
+              <div key={f.id || idx} className="text-xs text-stone-700 flex items-start gap-2">
+                <span className="text-[#C59B27] mt-0.5">•</span>
+                <span className="leading-relaxed">{f.observation}</span>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* For Management Attention (Prompt Section 18) */}
+      <div id="section-attention" data-report-section="attention" className="bg-white border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
+        <h2 className="text-xs font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
+          For management attention
+        </h2>
+        {model.managementAttention && model.managementAttention.length > 0 ? (
+          <div className="space-y-2">
+            {model.managementAttention.map((item, idx) => (
+              <div key={idx} className="text-xs text-stone-800 flex items-start gap-2">
+                <span className="text-stone-400 mt-0.5">•</span>
+                <span className="leading-relaxed font-medium">{item}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-stone-500 italic">No items require management attention.</p>
+        )}
+      </div>
 
       {/* Recommended Actions */}
       {model.recommendations && model.recommendations.length > 0 && (

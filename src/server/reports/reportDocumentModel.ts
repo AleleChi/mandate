@@ -38,8 +38,8 @@ export interface ReportChartSpec {
   yAxisLabel?: string;
   showLegend?: boolean;
   caption: string;
-  accessibleSummary: string;
-  emptyState: string;
+  accessibleSummary?: string;
+  emptyState?: string;
 }
 
 export interface ReportTableContent {
@@ -214,6 +214,7 @@ export interface ReportDocumentModel {
     status: 'High confidence' | 'Moderate confidence' | 'Limited information';
     notes: string;
   };
+  managementAttention?: string[];
   methodology: string[];
   limitations: string[];
   appendix?: {

@@ -1,46 +1,54 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { 
-  Users, 
-  UserCheck, 
-  Clock, 
-  ClipboardList, 
   MessageSquare, 
   Send, 
   Save, 
   Eye, 
   CheckCircle, 
-  XCircle, 
   Loader2, 
   Mail, 
   Phone, 
-  Sparkles, 
-  AlertTriangle,
-  Info,
-  RefreshCw,
-  Settings,
-  Search,
-  Filter,
-  Archive,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Calendar,
-  User,
-  ExternalLink,
-  Bell,
-  BellOff
+  AlertTriangle, 
+  RefreshCw, 
+  Settings, 
+  Search, 
+  Archive, 
+  Check, 
+  ChevronLeft, 
+  ChevronRight, 
+  ChevronDown, 
+  Clock, 
+  User, 
+  ExternalLink, 
+  X,
+  Inbox as InboxIcon
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { safeStorage } from '../../utils/storage';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
   onNavigate: (route: string) => void;
 }
 
+interface EventOption {
+  id: string;
+  title: string;
+  status: string;
+}
+
 const DEFAULT_TEMPLATES: Record<string, { subject: string; body: string }> = {
+  general_announcement: {
+    subject: 'Important Event Details - {Event name}',
+    body: 'Dear {Parent name},\n\nWe are looking forward to {Event name}! Please ensure your children arrive with comfortable clothing and their personal water bottles labeled with their names.\n\nWarm regards,\nThe Koinonia Team'
+  },
+  pickup_reminder: {
+    subject: 'Dismissal and Pickup Reminder - {Event name}',
+    body: 'Dear {Parent name},\n\nThis is a quick reminder that dismissal and checkout for {Child name} will begin at {Pickup time}. Please ensure you present your physical or digital pass at the checkout station.\n\nSee you soon!'
+  },
   pass_ready: {
     subject: 'Your Entry Pass is Ready - {Event name}',
     body: 'Dear {Parent name},\n\nGood news! The entry pass for {Child name} is ready for {Event name}. You can view the pass here:\n{Pass link}\n\nFor any questions or support, contact our team at {Support contact}. We look forward to welcoming you!'
@@ -52,14 +60,6 @@ const DEFAULT_TEMPLATES: Record<string, { subject: string; body: string }> = {
   waiting_list_update: {
     subject: 'Waiting List Status - {Event name}',
     body: 'Dear {Parent name},\n\nWe have received your details for {Child name}. Due to capacity limits for {Event name}, your child has been placed on our waiting list. We will notify you immediately if a spot opens up.\n\nThank you for your understanding.'
-  },
-  pickup_reminder: {
-    subject: 'Dismissal and Pickup Reminder - {Event name}',
-    body: 'Dear {Parent name},\n\nThis is a quick reminder that dismissal and checkout for {Child name} will begin at {Pickup time}. Please ensure you present your physical or digital pass at the checkout station.\n\nSee you soon!'
-  },
-  general_announcement: {
-    subject: 'Important Event Details - {Event name}',
-    body: 'Dear {Parent name},\n\nWe are looking forward to {Event name}! Please ensure your children arrive with comfortable clothing and their personal water bottles labeled with their names.\n\nWarm regards,\nThe Koinonia Team'
   }
 };
 
@@ -99,40 +99,63 @@ function formatPremiumDateDetail(dateStr: string) {
   const d = new Date(dateStr);
   const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
   const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${d.toLocaleDateString([], dateOptions)} · ${timeStr}`;
+  return `${d.toLocaleDateString([], dateOptions)} at ${timeStr}`;
 }
 
-function formatPremiumType(typeStr: string) {
-  if (!typeStr) return '';
+function formatHumanType(typeStr: string) {
+  if (!typeStr) return 'General update';
   const map: Record<string, string> = {
-    safety_alert: 'Safety alert',
+    safety_alert: 'Care update',
     escalation: 'Escalation',
     parent_message: 'Parent message',
     volunteer_message: 'Volunteer message',
-    pass_update: 'Pass update',
-    application_update: 'Application update',
-    delivery_issue: 'Delivery issue',
-    info: 'General info',
-    broadcast: 'Broadcast'
+    pass_update: 'Entry pass update',
+    application_update: 'Registration update',
+    delivery_issue: 'Not delivered',
+    info: 'General update',
+    broadcast: 'Announcement'
   };
   return map[typeStr] || typeStr.charAt(0).toUpperCase() + typeStr.slice(1).replace(/_/g, ' ');
 }
 
+function formatHumanSenderRole(roleStr?: string) {
+  if (!roleStr) return 'System';
+  const rLower = roleStr.toLowerCase();
+  if (rLower.includes('volunteer')) return 'Volunteer';
+  if (rLower.includes('parent')) return 'Parent';
+  if (rLower.includes('super')) return 'Super Admin';
+  if (rLower.includes('admin') || rLower.includes('staff')) return 'Event team';
+  if (rLower.includes('system')) return 'System';
+  return roleStr;
+}
+
 export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessagesViewProps) {
-  const { showSuccess, showError, showInfo } = useNotification();
-  const [loading, setLoading] = useState(true);
+  const { showSuccess, showError } = useNotification();
+  const [initialLoading, setInitialLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
 
-  // Messages & Updates Centre state
+  // Events scoping
+  const [events, setEvents] = useState<EventOption[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
+
+  // Main navigation tabs: 'updates' = Inbox, 'broadcast' = Send Announcement
   const [activeTab, setActiveTab] = useState<'updates' | 'broadcast'>('updates');
+
+  // Inbox state
   const [updates, setUpdates] = useState<any[]>([]);
   const [pagination, setPagination] = useState<any>({ total: 0, page: 1, limit: 15, pages: 1 });
   const [updatesLoading, setUpdatesLoading] = useState(false);
   const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
 
-  // Summary card counts state
+  // Resolution modal for safety concerns / attention items
+  const [resolvingUpdate, setResolvingUpdate] = useState<any | null>(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [resolvingAction, setResolvingAction] = useState(false);
+
+  // Summary counts state
   const [summaryStats, setSummaryStats] = useState({
+    total: 0,
     unread: 0,
     openAlerts: 0,
     urgent: 0,
@@ -141,7 +164,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
   const [summaryStatsLoading, setSummaryStatsLoading] = useState(false);
   const [summaryStatsError, setSummaryStatsError] = useState<string | null>(null);
 
-  // Filters for Updates Centre
+  // Filters for Inbox
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [senderRoleFilter, setSenderRoleFilter] = useState('all');
@@ -150,50 +173,40 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Stats from backend
-  const [stats, setStats] = useState({
-    messagesSent: 0,
-    whatsappSent: 0,
-    emailSent: 0,
-    failed: 0,
-    pending: 0
-  });
-
+  // Send Announcement / Composer states
   const [recipientGroups, setRecipientGroups] = useState<any[]>([]);
   const [messageTypes, setMessageTypes] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
-  const [emailEnabled, setEmailEnabled] = useState(false);
-  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [providerStatus, setProviderStatus] = useState<any>({
-    emailEnabled: false,
-    whatsappEnabled: false,
+    emailEnabled: true,
+    whatsappEnabled: true,
     emailProvider: null,
     whatsappProvider: null,
-    senderName: '',
-    fromEmail: '',
-    replyToEmail: ''
+    senderName: 'Koinonia Global',
+    fromEmail: 'info@themandate.dontechservicesconst.com',
+    replyToEmail: 'info@themandate.dontechservicesconst.com'
   });
 
-  // Form states
   const [selectedGroup, setSelectedGroup] = useState('all_parents');
   const [selectedType, setSelectedType] = useState('general_announcement');
   const [selectedChannel, setSelectedChannel] = useState<'email' | 'whatsapp' | 'both'>('email');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
-  // Preview tab
+  // Live preview
   const [previewTab, setPreviewTab] = useState<'email' | 'whatsapp'>('email');
   const [previewSubject, setPreviewSubject] = useState('');
   const [previewBody, setPreviewBody] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Confirmation Modal
+  // Confirmation modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [dispatchSummary, setDispatchSummary] = useState<any | null>(null);
 
-  // Mobile collapsible and sender settings edit states
-  const [showPreviewMobile, setShowPreviewMobile] = useState(false);
+  // Sender settings modal
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [editedSenderName, setEditedSenderName] = useState('');
   const [editedReplyTo, setEditedReplyTo] = useState('');
@@ -201,35 +214,116 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
-  const fetchMessagesData = async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await api.admin.getMessages();
-      if (data.success) {
-        setStats({
-          messagesSent: data.stats?.messagesSent || 0,
-          whatsappSent: data.stats?.whatsappSent || 0,
-          emailSent: data.stats?.emailSent || 0,
-          failed: data.stats?.failed || 0,
-          pending: data.stats?.pending || 0
-        });
+  // Fetch all available events to allow event scoping
+  useEffect(() => {
+    let isMounted = true;
+    const fetchEvents = async () => {
+      try {
+        const token = safeStorage.getItem('koinonia_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const backendGroups = data.recipientGroups || [
+        const res = await fetch('/api/admin/events', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const list: EventOption[] = data.events || (Array.isArray(data) ? data : []);
+          if (isMounted && list.length > 0) {
+            setEvents(list);
+            const currentEv = list.find((e) => e.status === 'current' || e.status === 'open') || list[0];
+            if (currentEv?.id) {
+              setSelectedEventId(currentEv.id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load events for messages module:', err);
+      }
+    };
+    fetchEvents();
+    return () => { isMounted = false; };
+  }, []);
+
+  const fetchSummaryStats = async (eventId = selectedEventId) => {
+    setSummaryStatsLoading(true);
+    setSummaryStatsError(null);
+    try {
+      const res = await api.adminUpdates.getSummary(eventId);
+      if (res && res.success && res.summary) {
+        setSummaryStats({
+          total: res.summary.total || 0,
+          unread: res.summary.unread || 0,
+          openAlerts: res.summary.openAlerts || 0,
+          urgent: res.summary.urgent || 0,
+          deliveryIssues: res.summary.deliveryIssues || 0
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch summary card statistics:', err);
+      setSummaryStatsError("We couldn't refresh message counts.");
+    } finally {
+      setSummaryStatsLoading(false);
+    }
+  };
+
+  const fetchUpdates = async (page = 1, silent = false, eventId = selectedEventId) => {
+    if (!silent) setUpdatesLoading(true);
+    try {
+      const res = await api.adminUpdates.getUpdates({
+        limit: 15,
+        page,
+        status: statusFilter,
+        type: typeFilter,
+        senderRole: senderRoleFilter,
+        priority: priorityFilter,
+        search: searchFilter,
+        dateFrom,
+        dateTo,
+        eventId
+      });
+      if (res && res.updates) {
+        setUpdates(res.updates);
+        setPagination(res.pagination || { total: res.updates.length, page, limit: 15, pages: 1 });
+        setCurrentPage(res.pagination?.page || page);
+        
+        // Preserve selected item if still in list
+        if (selectedUpdate) {
+          const matching = res.updates.find((u: any) => u.rawId === selectedUpdate.rawId);
+          if (matching) {
+            setSelectedUpdate(matching);
+          }
+        }
+      }
+      fetchSummaryStats(eventId);
+    } catch (err) {
+      console.error('Error loading updates:', err);
+      if (!silent) {
+        showError("We couldn't load the messages. Try again");
+      }
+    } finally {
+      if (!silent) setUpdatesLoading(false);
+    }
+  };
+
+  const fetchMessagesData = async (silent = false, eventId = selectedEventId) => {
+    if (!silent && activeTab === 'broadcast') setInitialLoading(true);
+    try {
+      const data = await api.admin.getMessages(eventId);
+      if (data.success) {
+        setRecipientGroups(data.recipientGroups || [
           { key: 'all_parents', label: 'All parents', count: 0 },
           { key: 'selected_children', label: 'Selected children', count: 0 },
           { key: 'under_review', label: 'Under review', count: 0 },
           { key: 'waiting_list', label: 'Waiting list', count: 0 },
           { key: 'not_selected', label: 'Not selected', count: 0 },
           { key: 'pass_ready', label: 'Pass ready', count: 0 }
-        ];
-        setRecipientGroups(backendGroups);
+        ]);
 
         setMessageTypes(data.messageTypes || [
-          { key: 'pass_ready', label: 'Pass ready' },
+          { key: 'general_announcement', label: 'General announcement' },
+          { key: 'pickup_reminder', label: 'Dismissal and pickup reminder' },
+          { key: 'pass_ready', label: 'Entry pass ready' },
           { key: 'review_update', label: 'Review update' },
-          { key: 'waiting_list_update', label: 'Waiting list update' },
-          { key: 'pickup_reminder', label: 'Pickup reminder' },
-          { key: 'general_announcement', label: 'General announcement' }
+          { key: 'waiting_list_update', label: 'Waiting list update' }
         ]);
 
         setRecentActivity(data.recentActivity || []);
@@ -241,19 +335,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
         if (data.providerStatus) {
           setProviderStatus(data.providerStatus);
-        } else {
-          setProviderStatus({
-            emailEnabled: mEnabled,
-            whatsappEnabled: wEnabled,
-            emailProvider: mEnabled ? 'resend' : null,
-            whatsappProvider: wEnabled ? 'twilio' : null,
-            senderName: 'Koinonia Global',
-            fromEmail: 'info@themandate.dontechservicesconst.com',
-            replyToEmail: 'info@themandate.dontechservicesconst.com'
-          });
         }
 
-        // Safe defaults
         let defaultChan: 'email' | 'whatsapp' | 'both' = 'email';
         if (!mEnabled && wEnabled) {
           defaultChan = 'whatsapp';
@@ -284,182 +367,41 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
         }
       }
     } catch (err: any) {
-      console.error('Error fetching admin messages dashboard:', err);
-      showError('Error', 'Could not load messaging details.');
+      console.error('Error fetching admin messages data:', err);
+      showError("We couldn't load messaging details. Try again");
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   };
 
-  const fetchSummaryStats = async () => {
-    setSummaryStatsLoading(true);
-    setSummaryStatsError(null);
-    try {
-      const res = await api.adminUpdates.getSummary();
-      if (res && res.success && res.summary) {
-        setSummaryStats({
-          unread: res.summary.unread,
-          openAlerts: res.summary.openAlerts,
-          urgent: res.summary.urgent,
-          deliveryIssues: res.summary.deliveryIssues
-        });
-      } else {
-        setSummaryStatsError('We could not update message totals. Please refresh.');
-      }
-    } catch (err) {
-      console.warn('Failed to fetch summary card statistics:', err);
-      setSummaryStatsError('We could not update message totals. Please refresh.');
-    } finally {
-      setSummaryStatsLoading(false);
-    }
-  };
+  // Initial load
+  useEffect(() => {
+    fetchSummaryStats(selectedEventId);
+    fetchUpdates(1, false, selectedEventId);
+    fetchMessagesData(false, selectedEventId);
+  }, [selectedEventId]);
 
-  const fetchUpdates = async (page = 1, silent = false) => {
-    if (!silent) {
-      setUpdatesLoading(true);
-    }
-    try {
-      const res = await api.adminUpdates.getUpdates({
-        limit: 15,
-        page,
-        status: statusFilter,
-        type: typeFilter,
-        senderRole: senderRoleFilter,
-        priority: priorityFilter,
-        search: searchFilter,
-        dateFrom,
-        dateTo
-      });
-      if (res && res.updates) {
-        setUpdates(res.updates);
-        setPagination(res.pagination);
-        setCurrentPage(res.pagination.page);
-        
-        // Preserve selectedUpdate in-place
-        if (selectedUpdate) {
-          const matching = res.updates.find((u: any) => u.rawId === selectedUpdate.rawId);
-          if (matching) {
-            setSelectedUpdate(matching);
-          }
-        }
-      }
-      // Also fetch stats
-      fetchSummaryStats();
-    } catch (err) {
-      console.error('Error loading updates:', err);
-      if (!silent) {
-        showError('Failed to load updates.');
-      }
-    } finally {
-      if (!silent) {
-        setUpdatesLoading(false);
-      }
-    }
-  };
-
-  const handleViewDetail = async (update: any) => {
-    setSelectedUpdate(update);
-    // Mark as read if unread
-    if (!update.isRead) {
-      try {
-        await api.adminUpdates.markAsRead(update.rawId);
-        // Update local status so we don't have to reload list
-        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: true } : u));
-        update.isRead = true;
-        // Refresh summary stats
-        fetchSummaryStats();
-      } catch (err) {
-        console.warn('Failed to mark update as read:', err);
-      }
-    }
-  };
-
-  const handleToggleRead = async (update: any, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      if (update.isRead) {
-        await api.adminUpdates.markAsUnread(update.rawId);
-        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: false, readAt: null } : u));
-        showSuccess('Marked as unread');
-      } else {
-        await api.adminUpdates.markAsRead(update.rawId);
-        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: true, readAt: new Date().toISOString() } : u));
-        showSuccess('Marked as read');
-      }
-      fetchSummaryStats();
-    } catch (err) {
-      showError('Action failed.');
-    }
-  };
-
-  const handleToggleArchive = async (update: any, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      if (update.isArchived) {
-        await api.adminUpdates.unarchiveUpdate(update.rawId);
-        showSuccess('Update unarchived');
-        if (statusFilter === 'archived') {
-          setUpdates(prev => prev.filter(u => u.rawId !== update.rawId));
-        } else {
-          setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isArchived: false, archivedAt: null } : u));
-        }
-      } else {
-        await api.adminUpdates.archiveUpdate(update.rawId);
-        showSuccess('Update archived');
-        if (statusFilter !== 'archived') {
-          setUpdates(prev => prev.filter(u => u.rawId !== update.rawId));
-        } else {
-          setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isArchived: true, archivedAt: new Date().toISOString() } : u));
-        }
-      }
-      if (selectedUpdate && selectedUpdate.rawId === update.rawId) {
-        setSelectedUpdate(prev => prev ? { ...prev, isArchived: !prev.isArchived } : null);
-      }
-      fetchSummaryStats();
-    } catch (err) {
-      showError('Action failed.');
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    try {
-      await api.adminUpdates.markAllAsRead();
-      setUpdates(prev => prev.map(u => ({ ...u, isRead: true, readAt: new Date().toISOString() })));
-      showSuccess('All updates marked as read');
-      fetchUpdates(currentPage);
-    } catch (err) {
-      showError('Action failed.');
-    }
-  };
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchUpdates(1);
-  };
-
+  // Refetch updates on filter change
   useEffect(() => {
     if (activeTab === 'updates') {
-      fetchUpdates(1);
+      fetchUpdates(1, false, selectedEventId);
     }
   }, [activeTab, statusFilter, typeFilter, senderRoleFilter, priorityFilter, dateFrom, dateTo]);
 
+  // Periodic silent refresh for real-time updates
   useEffect(() => {
     let intervalId: any;
     if (activeTab === 'updates') {
       intervalId = setInterval(() => {
-        fetchUpdates(currentPage, true);
-      }, 10000); // 10s silent poll
+        fetchUpdates(currentPage, true, selectedEventId);
+      }, 15000);
     }
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [activeTab, statusFilter, typeFilter, senderRoleFilter, priorityFilter, dateFrom, dateTo, currentPage, selectedUpdate?.rawId]);
+  }, [activeTab, statusFilter, typeFilter, senderRoleFilter, priorityFilter, dateFrom, dateTo, currentPage, selectedEventId]);
 
-  useEffect(() => {
-    fetchMessagesData();
-    fetchSummaryStats();
-  }, []);
-
+  // Live preview generation
   const generateLivePreview = async () => {
     if (!body.trim()) {
       setPreviewSubject('');
@@ -501,37 +443,118 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
     }
   }, [selectedChannel]);
 
+  // Item interaction handlers
+  const handleSelectUpdate = async (update: any) => {
+    setSelectedUpdate(update);
+    if (!update.isRead) {
+      try {
+        await api.adminUpdates.markAsRead(update.rawId);
+        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: true } : u));
+        update.isRead = true;
+        fetchSummaryStats(selectedEventId);
+      } catch (err) {
+        console.warn('Failed to mark update as read:', err);
+      }
+    }
+  };
+
+  const handleToggleRead = async (update: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (update.isRead) {
+        await api.adminUpdates.markAsUnread(update.rawId);
+        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: false, readAt: null } : u));
+        showSuccess('Marked as unread');
+      } else {
+        await api.adminUpdates.markAsRead(update.rawId);
+        setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isRead: true, readAt: new Date().toISOString() } : u));
+        showSuccess('Marked as read');
+      }
+      fetchSummaryStats(selectedEventId);
+    } catch (err) {
+      showError("We couldn't update this message. Try again");
+    }
+  };
+
+  const handleToggleArchive = async (update: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (update.isArchived) {
+        await api.adminUpdates.unarchiveUpdate(update.rawId);
+        showSuccess('Message restored from archive');
+        if (statusFilter === 'archived') {
+          setUpdates(prev => prev.filter(u => u.rawId !== update.rawId));
+        } else {
+          setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isArchived: false, archivedAt: null } : u));
+        }
+      } else {
+        await api.adminUpdates.archiveUpdate(update.rawId);
+        showSuccess('Message archived');
+        if (statusFilter !== 'archived') {
+          setUpdates(prev => prev.filter(u => u.rawId !== update.rawId));
+        } else {
+          setUpdates(prev => prev.map(u => u.rawId === update.rawId ? { ...u, isArchived: true, archivedAt: new Date().toISOString() } : u));
+        }
+      }
+      if (selectedUpdate && selectedUpdate.rawId === update.rawId) {
+        setSelectedUpdate(prev => prev ? { ...prev, isArchived: !prev.isArchived } : null);
+      }
+      fetchSummaryStats(selectedEventId);
+    } catch (err) {
+      showError("We couldn't update this message. Try again");
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await api.adminUpdates.markAllAsRead();
+      setUpdates(prev => prev.map(u => ({ ...u, isRead: true, readAt: new Date().toISOString() })));
+      showSuccess('All messages marked as read');
+      fetchUpdates(currentPage, false, selectedEventId);
+    } catch (err) {
+      showError("We couldn't mark messages as read. Try again");
+    }
+  };
+
+  // Resolve safety concern / attention item directly
+  const handleOpenResolveModal = (update: any) => {
+    setResolvingUpdate(update);
+    setResolutionNote('');
+  };
+
+  const handleConfirmResolve = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingUpdate) return;
+    setResolvingAction(true);
+    try {
+      const alertId = resolvingUpdate.metadata?.safetyAlertId || resolvingUpdate.metadata?.alertId || resolvingUpdate.rawId;
+      const res = await api.admin.resolveSafetyAlert(alertId, resolutionNote.trim());
+      if (res && res.success) {
+        showSuccess('Concern resolved and logged');
+        // Update local status
+        setUpdates(prev => prev.map(u => u.rawId === resolvingUpdate.rawId ? { ...u, actionStatus: 'resolved' } : u));
+        if (selectedUpdate && selectedUpdate.rawId === resolvingUpdate.rawId) {
+          setSelectedUpdate((prev: any) => prev ? { ...prev, actionStatus: 'resolved' } : null);
+        }
+        setResolvingUpdate(null);
+        fetchSummaryStats(selectedEventId);
+      } else {
+        showError("We couldn't resolve this concern. Try again");
+      }
+    } catch (err) {
+      showError("We couldn't resolve this concern. Try again");
+    } finally {
+      setResolvingAction(false);
+    }
+  };
+
+  // Template / token handlers
   const handleTypeChange = (type: string) => {
     setSelectedType(type);
     const template = DEFAULT_TEMPLATES[type];
     if (template) {
       setSubject(template.subject);
       setBody(template.body);
-    }
-  };
-
-  const handleSaveDraft = async () => {
-    if (!body.trim()) {
-      showError('Error', 'You cannot save an empty draft.');
-      return;
-    }
-    setSavingDraft(true);
-    try {
-      const res = await api.admin.saveMessageDraft({
-        recipientGroup: selectedGroup,
-        messageType: selectedType,
-        channel: selectedChannel,
-        subject,
-        body
-      });
-      if (res.success) {
-        showSuccess('Success', 'Draft saved successfully.');
-      }
-    } catch (err: any) {
-      const parsed = extractApiError(err);
-      showError('Error', parsed.message);
-    } finally {
-      setSavingDraft(false);
     }
   };
 
@@ -549,19 +572,45 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
     }, 50);
   };
 
+  // Composer submit handlers
+  const handleSaveDraft = async () => {
+    if (!body.trim()) {
+      showError('Please write your message before saving a draft.');
+      return;
+    }
+    setSavingDraft(true);
+    try {
+      const res = await api.admin.saveMessageDraft({
+        recipientGroup: selectedGroup,
+        messageType: selectedType,
+        channel: selectedChannel,
+        subject,
+        body
+      });
+      if (res.success) {
+        showSuccess('Draft saved');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError(parsed.message || "We couldn't save this draft. Try again");
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
   const handleSendRequest = () => {
     if (!body.trim()) {
-      showError('Error', 'You cannot send an empty message.');
+      showError('Please write a message before sending.');
       return;
     }
     if (selectedChannel !== 'whatsapp' && !subject.trim()) {
-      showError('Error', 'Subject is required for Email delivery.');
+      showError('Subject is required for email delivery.');
       return;
     }
 
     const currentGroup = recipientGroups.find(g => g.key === selectedGroup);
     if (currentGroup && currentGroup.count === 0) {
-      showError('Error', 'The selected group has 0 recipients.');
+      showError('The selected group currently has 0 recipients.');
       return;
     }
 
@@ -583,14 +632,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       
       if (res.success) {
         setDispatchSummary(res.summary);
-        showSuccess('Success', 'Messages sent successfully.');
+        showSuccess('Announcement sent');
         setBody('');
         setSubject('');
-        fetchMessagesData(true);
+        fetchMessagesData(true, selectedEventId);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Error', parsed.message || 'Failed to dispatch messages.');
+      showError(parsed.message || "We couldn't send this announcement. Try again");
     } finally {
       setActionLoading(false);
     }
@@ -605,12 +654,12 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editedSenderName.trim() || !editedReplyTo.trim()) {
-      showError('Error', 'Sender name and Reply-to email are required.');
+      showError('Sender name and reply-to email are required.');
       return;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(editedReplyTo)) {
-      showError('Error', 'Please enter a valid reply-to email address.');
+      showError('Please enter a valid reply-to email address.');
       return;
     }
 
@@ -621,21 +670,22 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
         replyToEmail: editedReplyTo.trim()
       });
       if (res.success) {
-        showSuccess('Success', 'Sender settings updated successfully.');
+        showSuccess('Sender details updated');
         setIsEditingSettings(false);
-        fetchMessagesData(true);
+        fetchMessagesData(true, selectedEventId);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Error', parsed.message || 'Failed to update sender settings.');
+      showError(parsed.message || "We couldn't save these settings. Try again");
     } finally {
       setSavingSettings(false);
     }
   };
 
   const activeGroupRecipients = recipientGroups.find(g => g.key === selectedGroup)?.count ?? 0;
+  const isFiltersActive = priorityFilter !== 'all' || statusFilter !== 'all' || typeFilter !== 'all' || senderRoleFilter !== 'all' || searchFilter || dateFrom || dateTo;
 
-  if (loading) {
+  if (initialLoading && updatesLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-12 bg-[#FAF9F6] w-full">
         <KoinoniaInlineLoader
@@ -650,338 +700,294 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
   return (
     <div 
-      data-view-version="admin-messages-updates-centre-v2-premium" 
-      className="flex-1 flex flex-col overflow-y-auto min-w-0 bg-[#FAF9F6] p-4 sm:p-8 space-y-6 animate-fade-in"
+      data-view-version="admin-messages-refined" 
+      className="flex-1 flex flex-col min-w-0 bg-[#FAF9F6] p-4 sm:p-8 space-y-6 font-sans text-[#18181B]"
     >
-      {/* PAGE HEADER */}
-      <div 
-        data-component-version="admin-messages-header-v2-premium"
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-[#EAE8E1] space-y-4 sm:space-y-0"
-      >
+      {/* 1. PAGE HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-[#EAE8E1] gap-4">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-[#18181B] tracking-tight">
+          <h1 
+            className="text-2xl sm:text-3xl font-bold text-[#18181B] tracking-tight"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
             Messages & updates
           </h1>
-          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-            Review care alerts, volunteer messages, parent updates, and delivery activity.
+          <p className="text-xs text-zinc-500 mt-1 font-normal leading-relaxed">
+            View messages from parents and volunteers, follow important updates, and send event communications.
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+
+        <div className="flex items-center space-x-3 shrink-0">
+          {events.length > 0 && (
+            <div className="relative">
+              <select
+                id="messages-event-selector"
+                value={selectedEventId}
+                onChange={(e) => setSelectedEventId(e.target.value)}
+                aria-label="Select event"
+                className="appearance-none text-xs font-medium pl-3 pr-8 py-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-800 shadow-2xs hover:border-zinc-300 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+              >
+                {events.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.title} {ev.status === 'current' ? '(Current)' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          )}
+
           <button
             onClick={() => {
               if (activeTab === 'updates') {
-                fetchUpdates(currentPage);
+                fetchUpdates(currentPage, false, selectedEventId);
               } else {
-                fetchMessagesData(false);
+                fetchMessagesData(false, selectedEventId);
               }
             }}
             className="p-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
-            title="Refresh Details"
+            aria-label="Refresh messages"
+            title="Refresh"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${updatesLoading ? 'animate-spin text-[#C59B27]' : ''}`} />
           </button>
+
           <Button 
-            id="back-to-dashboard-btn"
+            id="back-to-overview-btn"
             variant="outline" 
             onClick={onBackToOverview}
-            className="text-xs cursor-pointer shadow-2xs"
+            className="text-xs font-medium cursor-pointer shadow-2xs"
           >
-            Overview Dashboard
+            Back to Overview
           </Button>
         </div>
       </div>
 
-      {/* TABS SELECTOR */}
+      {/* 2. RESTRAINED TAB NAVIGATION */}
       <div className="flex border-b border-[#EAE8E1] space-x-6">
         <button
+          id="tab-messages-inbox"
           onClick={() => setActiveTab('updates')}
-          className={`pb-3 text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer ${
+          className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none ${
             activeTab === 'updates'
               ? 'border-[#C59B27] text-[#18181B]'
               : 'border-transparent text-zinc-400 hover:text-zinc-600'
           }`}
         >
-          Messages & Updates Centre
+          Inbox
         </button>
         <button
+          id="tab-messages-compose"
           onClick={() => setActiveTab('broadcast')}
-          className={`pb-3 text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer ${
+          className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none ${
             activeTab === 'broadcast'
               ? 'border-[#C59B27] text-[#18181B]'
               : 'border-transparent text-zinc-400 hover:text-zinc-600'
           }`}
         >
-          Broadcast Composer
+          Send Announcement
         </button>
       </div>
 
       {activeTab === 'updates' ? (
         <div className="space-y-6">
-          
-          {/* SUMMARY CARDS ROW */}
-          <div 
-            data-component-version="admin-messages-summary-v2-live"
-            data-component-override-api="admin-updates-summary-api-v1-live"
-            data-component-sync-version="admin-message-list-stats-sync-v1"
-            className="space-y-3"
-          >
+          {/* 3. RESTRAINED SUMMARY METRICS ROW */}
+          <div className="space-y-3">
             {summaryStatsError && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-3 rounded-xl flex items-center justify-between">
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-2.5 rounded-xl flex items-center justify-between">
                 <span>{summaryStatsError}</span>
                 <button 
-                  onClick={() => fetchSummaryStats()} 
-                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold px-2 py-1 rounded cursor-pointer"
+                  onClick={() => fetchSummaryStats(selectedEventId)} 
+                  className="text-amber-900 font-semibold hover:underline cursor-pointer text-xs"
                 >
-                  Retry
+                  Try again
                 </button>
               </div>
             )}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in relative">
-              {summaryStatsLoading && (
-                <div className="absolute inset-0 bg-white/40 backdrop-blur-xs flex items-center justify-center z-10 rounded-2xl">
-                  <span className="text-xs text-zinc-500 font-mono flex items-center space-x-1">
-                    <span className="animate-spin inline-block mr-1">⚡</span>
-                    <span>Updating counts...</span>
-                  </span>
-                </div>
-              )}
-
-              {/* Card 1: Unread */}
-              <div 
-                onClick={() => setStatusFilter('unread')}
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl shadow-2xs grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[#EAE8E1] overflow-hidden">
+              {/* Unread */}
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'unread' ? 'all' : 'unread');
+                }}
+                className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${statusFilter === 'unread' ? 'bg-[#C59B27]/5' : ''}`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Unread</span>
-                  <span className="w-2 h-2 rounded-full bg-[#C59B27] group-hover:animate-ping" />
-                </div>
-                <div className="flex items-baseline space-x-1">
-                  <span className="font-serif text-2xl font-bold text-zinc-900">{summaryStats.unread}</span>
-                </div>
-                <p className="text-[9px] text-zinc-400 font-medium">New notifications & care alerts</p>
-              </div>
+                <div className="text-[11px] font-semibold text-zinc-500">Unread</div>
+                <div className="text-xl font-bold text-[#18181B] mt-1">{summaryStats.unread}</div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">Messages not yet opened</div>
+              </button>
 
-              {/* Card 2: Open Alerts */}
-              <div 
-                onClick={() => setStatusFilter('open')}
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+              {/* Needs attention */}
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'open' ? 'all' : 'open');
+                }}
+                className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${statusFilter === 'open' ? 'bg-[#C59B27]/5' : ''}`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Open Alerts</span>
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                <div className="text-[11px] font-semibold text-zinc-500">Needs attention</div>
+                <div className={`text-xl font-bold mt-1 ${summaryStats.openAlerts > 0 ? 'text-amber-700' : 'text-[#18181B]'}`}>
+                  {summaryStats.openAlerts}
                 </div>
-                <div className="flex items-baseline space-x-1">
-                  <span className="font-serif text-2xl font-bold text-rose-600">{summaryStats.openAlerts}</span>
-                </div>
-                <p className="text-[9px] text-zinc-400 font-medium">Active unresolved volunteer alerts</p>
-              </div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">Updates awaiting action</div>
+              </button>
 
-              {/* Card 3: Urgent */}
-              <div 
-                onClick={() => setPriorityFilter('urgent')}
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 hover:border-[#C59B27] hover:bg-[#C59B27]/5 transition-all cursor-pointer group"
+              {/* Urgent */}
+              <button
+                type="button"
+                onClick={() => {
+                  setPriorityFilter(priorityFilter === 'urgent' ? 'all' : 'urgent');
+                }}
+                className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${priorityFilter === 'urgent' ? 'bg-[#C59B27]/5' : ''}`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Urgent</span>
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="text-[11px] font-semibold text-zinc-500">Urgent</div>
+                <div className={`text-xl font-bold mt-1 ${summaryStats.urgent > 0 ? 'text-rose-700' : 'text-[#18181B]'}`}>
+                  {summaryStats.urgent}
                 </div>
-                <div className="flex items-baseline space-x-1">
-                  <span className="font-serif text-2xl font-bold text-amber-600">{summaryStats.urgent}</span>
-                </div>
-                <p className="text-[9px] text-zinc-400 font-medium">Immediate priority attention items</p>
-              </div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">Items marked urgent</div>
+              </button>
 
-              {/* Card 4: Delivery Issues */}
-              <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1.5 group"
+              {/* Not delivered */}
+              <button
+                type="button"
+                onClick={() => {
+                  setTypeFilter(typeFilter === 'delivery_issue' ? 'all' : 'delivery_issue');
+                }}
+                className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${typeFilter === 'delivery_issue' ? 'bg-[#C59B27]/5' : ''}`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Delivery Issues</span>
-                  <span className="w-2 h-2 rounded-full bg-zinc-300" />
+                <div className="text-[11px] font-semibold text-zinc-500">Not delivered</div>
+                <div className={`text-xl font-bold mt-1 ${summaryStats.deliveryIssues > 0 ? 'text-rose-700' : 'text-[#18181B]'}`}>
+                  {summaryStats.deliveryIssues}
                 </div>
-                <div className="flex items-baseline space-x-1">
-                  <span className="font-serif text-2xl font-bold text-zinc-800">{summaryStats.deliveryIssues}</span>
-                </div>
-                <p className="text-[9px] text-zinc-400 font-medium">Failed emails or whatsapp dispatches</p>
-              </div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">Messages that could not be sent</div>
+              </button>
             </div>
           </div>
 
-          <div 
-            data-component-version="admin-messages-responsive-v1"
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-in"
-          >
-            {/* LEFT SIDE: LIST & FILTERS */}
+          {/* 4. MAIN INBOX LAYOUT */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* LEFT SIDE: SEARCH, FILTERS & LIST */}
             <div className="lg:col-span-7 space-y-4">
               
-              {/* FILTER BLOCK */}
-              <div 
-                data-component-version="admin-updates-filters-v2-premium"
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs space-y-4"
-              >
+              {/* FILTERS CARD */}
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-2xs space-y-4">
                 
-                {/* SEARCH */}
-                <form onSubmit={handleSearchSubmit} className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={searchFilter}
-                      onChange={(e) => setSearchFilter(e.target.value)}
-                      placeholder="Search messages, senders, child names..."
-                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#18181B] placeholder-zinc-400 focus:outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-xs hover:shadow-sm"
-                  >
-                    Search
-                  </button>
-                </form>
+                {/* Search input with clean icon and clear button */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    placeholder="Search messages, senders, child names..."
+                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl pl-10 pr-9 py-2 text-xs text-[#18181B] placeholder-zinc-400 focus:outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all"
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchFilter('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-                {/* TWO ROWS OF DROPDOWNS */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  {/* PRIORITY */}
+                {/* Dropdowns row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  {/* Priority */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Priority</label>
+                    <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Priority</label>
                     <select
                       value={priorityFilter}
                       onChange={(e) => setPriorityFilter(e.target.value)}
-                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-2.5 py-1.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                     >
-                      <option value="all">All Priorities</option>
+                      <option value="all">All priorities</option>
                       <option value="normal">Normal</option>
                       <option value="important">Important</option>
                       <option value="urgent">Urgent</option>
                     </select>
                   </div>
 
-                  {/* SENDER ROLE */}
+                  {/* From */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Sender Role</label>
+                    <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">From</label>
                     <select
                       value={senderRoleFilter}
                       onChange={(e) => setSenderRoleFilter(e.target.value)}
-                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-2.5 py-1.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                     >
-                      <option value="all">All Senders</option>
-                      <option value="admin">Admins</option>
-                      <option value="volunteer">Volunteers</option>
+                      <option value="all">Everyone</option>
                       <option value="parent">Parents</option>
-                      <option value="system">Platform Updates</option>
+                      <option value="volunteer">Volunteers</option>
+                      <option value="admin">Event team</option>
                     </select>
                   </div>
 
-                  {/* TYPE */}
+                  {/* Type */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Category</label>
+                    <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Type</label>
                     <select
                       value={typeFilter}
                       onChange={(e) => setTypeFilter(e.target.value)}
-                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-2.5 py-1.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                     >
-                      <option value="all">All Types</option>
-                      <option value="safety_alert">Safety Alert</option>
+                      <option value="all">All messages</option>
+                      <option value="safety_alert">Care update</option>
                       <option value="escalation">Escalation</option>
-                      <option value="info">General Info</option>
-                      <option value="broadcast">Broadcast</option>
+                      <option value="parent_message">Parent message</option>
+                      <option value="volunteer_message">Volunteer message</option>
+                      <option value="info">General update</option>
+                      <option value="broadcast">Announcement</option>
+                      <option value="delivery_issue">Not delivered</option>
                     </select>
                   </div>
 
-                  {/* STATUS */}
+                  {/* Status */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block font-sans">Status</label>
+                    <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Status</label>
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-2.5 py-1.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                     >
                       <option value="all">All</option>
                       <option value="unread">Unread</option>
                       <option value="read">Read</option>
-                      <option value="open">Open Alerts</option>
-                      <option value="acknowledged">Acknowledged Alerts</option>
-                      <option value="resolved">Resolved Alerts</option>
+                      <option value="open">Needs attention</option>
+                      <option value="acknowledged">Acknowledged</option>
+                      <option value="resolved">Resolved</option>
                       <option value="archived">Archived</option>
                     </select>
                   </div>
                 </div>
 
-                {/* DATE FILTERS & BULK ACTIONS */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-3 border-t border-[#EAE8E1] gap-3">
-                  {/* DATES */}
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                {/* Compact Date Filters & Mark All as Read */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-3 border-t border-[#EAE8E1] gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2 text-zinc-500">
                     <div className="flex items-center space-x-1.5">
-                      <span>From:</span>
+                      <span className="text-[11px]">Date from:</span>
                       <input
                         type="date"
                         value={dateFrom}
                         onChange={(e) => setDateFrom(e.target.value)}
-                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-lg px-2 py-1 text-xs text-zinc-700 focus:outline-none"
+                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-lg px-2 py-1 text-xs text-zinc-700 focus:outline-none focus:border-[#C59B27]"
                       />
                     </div>
                     <div className="flex items-center space-x-1.5">
-                      <span>To:</span>
+                      <span className="text-[11px]">Date to:</span>
                       <input
                         type="date"
                         value={dateTo}
                         onChange={(e) => setDateTo(e.target.value)}
-                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-lg px-2 py-1 text-xs text-zinc-700 focus:outline-none"
+                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-lg px-2 py-1 text-xs text-zinc-700 focus:outline-none focus:border-[#C59B27]"
                       />
                     </div>
-                    {(dateFrom || dateTo || searchFilter) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDateFrom('');
-                          setDateTo('');
-                          setSearchFilter('');
-                          // Trigger reload
-                          setTimeout(() => fetchUpdates(1), 50);
-                        }}
-                        className="text-[10px] text-[#C59B27] hover:underline font-semibold cursor-pointer"
-                      >
-                        Clear filters
-                      </button>
-                    )}
-                  </div>
-
-                  {/* BULK ACTIONS */}
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={handleMarkAllAsRead}
-                      className="text-[11px] font-semibold text-[#18181B] bg-zinc-100 hover:bg-zinc-200 border border-[#EAE8E1] px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5 text-[#C59B27]" />
-                      <span>Mark all read</span>
-                    </button>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* LIST CARDS */}
-              <div className="space-y-3">
-                {updatesLoading ? (
-                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 flex flex-col items-center justify-center space-y-4" data-component-version="admin-updates-state-v2-premium">
-                    <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-                    <span className="text-xs text-[#A37B1B] font-serif font-medium">Loading updates & alerts...</span>
-                  </div>
-                ) : updates.length === 0 ? (
-                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 text-center space-y-4 max-w-xl mx-auto" data-component-version="admin-updates-state-v2-premium">
-                    <div className="w-12 h-12 bg-[#FAF9F6] border border-[#EAE8E1] rounded-full flex items-center justify-center mx-auto shadow-xs">
-                      <BellOff className="w-5 h-5 text-zinc-400" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <h3 className="font-serif font-bold text-base text-[#18181B]">No updates found</h3>
-                      <p className="text-xs text-zinc-400 leading-relaxed max-w-xs mx-auto">
-                        There are no active messages or care updates matching your current filter parameters.
-                      </p>
-                    </div>
-                    {(priorityFilter !== 'all' || statusFilter !== 'all' || typeFilter !== 'all' || senderRoleFilter !== 'all' || searchFilter || dateFrom || dateTo) && (
+                    {isFiltersActive && (
                       <button
                         type="button"
                         onClick={() => {
@@ -992,12 +998,71 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                           setSearchFilter('');
                           setDateFrom('');
                           setDateTo('');
-                          setTimeout(() => fetchUpdates(1), 50);
                         }}
-                        className="inline-flex items-center space-x-1 px-4 py-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 text-[#18181B] font-semibold rounded-xl border border-[#EAE8E1] transition-all cursor-pointer"
+                        className="text-[11px] text-[#C59B27] hover:underline font-medium cursor-pointer ml-1"
                       >
-                        <span>Clear all filters</span>
+                        Clear filters
                       </button>
+                    )}
+                  </div>
+
+                  {summaryStats.unread > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllAsRead}
+                      className="text-[11px] font-medium text-zinc-700 hover:text-[#18181B] bg-zinc-50 hover:bg-zinc-100 border border-[#EAE8E1] px-3 py-1.5 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto shrink-0"
+                    >
+                      <Check className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>Mark all as read</span>
+                    </button>
+                  )}
+                </div>
+
+              </div>
+
+              {/* MESSAGE ROWS LIST */}
+              <div className="space-y-2">
+                {updatesLoading ? (
+                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 flex flex-col items-center justify-center space-y-3">
+                    <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                    <span className="text-xs text-zinc-500 font-medium">Loading messages…</span>
+                  </div>
+                ) : updates.length === 0 ? (
+                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center space-y-3">
+                    <div className="w-10 h-10 bg-[#FAF9F6] border border-[#EAE8E1] rounded-full flex items-center justify-center mx-auto text-zinc-400">
+                      <InboxIcon className="w-5 h-5" />
+                    </div>
+                    {isFiltersActive ? (
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-[#18181B]">No matching messages</h3>
+                        <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+                          Try changing your search or filters.
+                        </p>
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPriorityFilter('all');
+                              setStatusFilter('all');
+                              setTypeFilter('all');
+                              setSenderRoleFilter('all');
+                              setSearchFilter('');
+                              setDateFrom('');
+                              setDateTo('');
+                            }}
+                            className="text-xs text-[#C59B27] font-medium hover:underline cursor-pointer"
+                          >
+                            Clear filters
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-[#18181B]">No messages yet</h3>
+                        <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+                          Messages and updates from parents, volunteers and the event team will appear here.
+                        </p>
+                      </div>
                     )}
                   </div>
                 ) : (
@@ -1006,108 +1071,102 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                       {updates.map((update) => {
                         const isUnread = !update.isRead;
                         const isSelected = selectedUpdate?.rawId === update.rawId;
-                        
-                        const priorityStyle = update.priority === 'urgent'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200 font-semibold'
-                          : update.priority === 'important'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200 font-semibold'
-                          : 'bg-zinc-100 text-zinc-700 border border-zinc-200';
-
-                        const catStyle = update.type === 'safety_alert'
-                          ? 'bg-rose-100/50 text-rose-800 border border-rose-100'
-                          : update.type === 'escalation'
-                          ? 'bg-amber-100/50 text-amber-800 border border-amber-100'
-                          : 'bg-zinc-100/50 text-zinc-800 border border-zinc-100';
-
-                        // Format sender role nicely
-                        let cleanRole = update.senderRole;
-                        if (update.senderRole) {
-                          const rLower = update.senderRole.toLowerCase();
-                          if (rLower.includes('volunteer')) cleanRole = 'Volunteer';
-                          else if (rLower.includes('parent')) cleanRole = 'Parent';
-                          else if (rLower.includes('super')) cleanRole = 'Super Admin';
-                          else if (rLower.includes('admin')) cleanRole = 'Admin';
-                          else if (rLower.includes('system')) cleanRole = 'Platform Updates';
-                        }
+                        const cleanRole = formatHumanSenderRole(update.senderRole);
 
                         return (
                           <div
                             key={update.id}
-                            onClick={() => handleViewDetail(update)}
-                            data-component-version="admin-update-card-v2-premium"
-                            className={`group relative border rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col md:flex-row md:items-start justify-between gap-4 ${
+                            onClick={() => handleSelectUpdate(update)}
+                            className={`group relative border rounded-xl p-4 transition-all duration-150 cursor-pointer flex flex-col sm:flex-row sm:items-start justify-between gap-3 ${
                               isSelected
-                                ? 'border-[#C59B27] bg-[#C59B27]/5 shadow-xs'
+                                ? 'border-[#C59B27] bg-[#C59B27]/5 shadow-2xs'
                                 : isUnread
-                                ? 'border-[#EAE8E1] bg-[#C59B27]/3 hover:bg-[#C59B27]/8'
-                                : 'border-[#EAE8E1] bg-white hover:bg-zinc-50 shadow-2xs'
+                                ? 'border-[#EAE8E1] bg-[#C59B27]/3 hover:bg-[#C59B27]/7'
+                                : 'border-[#EAE8E1] bg-white hover:bg-zinc-50/70 shadow-2xs'
                             }`}
                           >
-                            {/* Warm left border indicator for unread item */}
+                            {/* Subtle gold left border on unread messages */}
                             {isUnread && (
-                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#C59B27] rounded-l-2xl" />
+                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#C59B27] rounded-l-xl" />
                             )}
 
-                            {/* Left: Unread dot & main body */}
-                            <div className="flex-1 flex items-start space-x-3.5 min-w-0">
-                              {isUnread && (
-                                <span className="w-2.5 h-2.5 bg-[#C59B27] rounded-full shrink-0 mt-1.5 animate-pulse" />
-                              )}
-                              <div className="space-y-2 min-w-0">
-                                <div 
-                                  data-component-version="admin-update-badges-v2-premium"
-                                  className="flex flex-wrap items-center gap-2"
-                                >
-                                  <span className={`text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${catStyle}`}>
-                                    {formatPremiumType(update.type)}
+                            {/* Main message item content */}
+                            <div className="flex-1 min-w-0 space-y-1.5">
+                              {/* Metadata line: sender, role, time */}
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className="font-semibold text-zinc-900">{update.senderName}</span>
+                                <span className="text-[11px] text-zinc-400">·</span>
+                                <span className="text-[11px] text-zinc-500">{cleanRole}</span>
+                                <span className="text-[11px] text-zinc-400">·</span>
+                                <span className="text-[11px] text-zinc-400">{formatPremiumDate(update.createdAt)}</span>
+
+                                {/* Priority tag if not normal */}
+                                {update.priority === 'urgent' && (
+                                  <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                    Urgent
                                   </span>
-                                  <span className={`text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${priorityStyle}`}>
-                                    {update.priority === 'normal' ? 'Normal' : update.priority === 'important' ? 'Important' : 'Urgent'}
+                                )}
+                                {update.priority === 'important' && (
+                                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                    Important
                                   </span>
-                                  {update.isArchived && (
-                                    <span className="text-[9px] bg-zinc-100 text-zinc-500 border border-zinc-200 px-2 py-0.5 rounded-full font-semibold">
-                                      Archived
-                                    </span>
-                                  )}
-                                </div>
-                                <h3 className="font-serif font-bold text-sm text-[#18181B] group-hover:text-[#C59B27] transition-all truncate">
-                                  {update.title}
-                                </h3>
-                                <p className="text-zinc-500 text-xs leading-relaxed line-clamp-2">
-                                  {update.bodyPreview}
-                                </p>
-                                {/* Metadata footer */}
-                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-400 font-mono">
-                                  <span className="flex items-center space-x-1 font-sans">
-                                    <span className="w-4 h-4 rounded-full bg-[#FAF9F6] border border-[#EAE8E1] text-[#A37B1B] text-[8px] font-bold flex items-center justify-center shrink-0">
-                                      {update.senderName ? update.senderName[0].toUpperCase() : '?'}
-                                    </span>
-                                    <span className="text-zinc-600 font-semibold">{update.senderName}</span>
-                                    <span className="text-zinc-400">({cleanRole})</span>
+                                )}
+
+                                {/* Needs attention alert tag */}
+                                {update.actionStatus === 'open' && (
+                                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                    Needs attention
                                   </span>
-                                  <span>•</span>
-                                  <span data-component-version="admin-update-date-format-v1">
-                                    {formatPremiumDate(update.createdAt)}
+                                )}
+                                {update.actionStatus === 'resolved' && (
+                                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                    Resolved
                                   </span>
-                                </div>
+                                )}
+
+                                {update.isArchived && (
+                                  <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 border border-zinc-200 px-1.5 py-0.5 rounded">
+                                    Archived
+                                  </span>
+                                )}
                               </div>
+
+                              {/* Title / Subject */}
+                              <h3 className={`text-xs text-[#18181B] truncate ${isUnread ? 'font-bold' : 'font-semibold'}`}>
+                                {update.title}
+                              </h3>
+
+                              {/* Preview text */}
+                              <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed">
+                                {update.bodyPreview}
+                              </p>
+
+                              {/* Related child footer if available */}
+                              {update.relatedChildName && (
+                                <div className="pt-0.5 text-[11px] text-zinc-500 flex items-center space-x-1">
+                                  <span className="text-zinc-400">Child:</span>
+                                  <span className="font-medium text-zinc-700">{update.relatedChildName}</span>
+                                </div>
+                              )}
                             </div>
 
-                            {/* Right: Quick action overlays */}
-                            <div className="flex items-center space-x-1.5 self-end md:self-start shrink-0">
+                            {/* Row end quick actions */}
+                            <div className="flex items-center space-x-1 self-end sm:self-start shrink-0 pt-1 sm:pt-0">
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleRead(update, e)}
-                                className="p-2 rounded-xl border border-[#EAE8E1] bg-white text-zinc-400 hover:text-[#C59B27] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
-                                title={isUnread ? "Mark as Read" : "Mark as Unread"}
+                                className="p-1.5 rounded-lg border border-[#EAE8E1] bg-white text-zinc-400 hover:text-[#C59B27] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
+                                title={isUnread ? 'Mark as read' : 'Mark as unread'}
+                                aria-label={isUnread ? 'Mark as read' : 'Mark as unread'}
                               >
                                 <Check className={`w-3.5 h-3.5 ${update.isRead ? 'text-emerald-600' : ''}`} />
                               </button>
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleArchive(update, e)}
-                                className="p-2 rounded-xl border border-[#EAE8E1] bg-white text-zinc-400 hover:text-[#C59B27] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
-                                title={update.isArchived ? "Restore from Archive" : "Archive Update"}
+                                className="p-1.5 rounded-lg border border-[#EAE8E1] bg-white text-zinc-400 hover:text-[#C59B27] hover:bg-zinc-50 transition-all cursor-pointer shadow-2xs"
+                                title={update.isArchived ? 'Restore message' : 'Archive message'}
+                                aria-label={update.isArchived ? 'Restore message' : 'Archive message'}
                               >
                                 <Archive className={`w-3.5 h-3.5 ${update.isArchived ? 'text-[#C59B27]' : ''}`} />
                               </button>
@@ -1117,26 +1176,26 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                       })}
                     </div>
 
-                    {/* PAGINATION CONTROLS */}
+                    {/* Pagination */}
                     {pagination && pagination.pages > 1 && (
-                      <div className="flex items-center justify-between pt-4 border-t border-[#EAE8E1]">
-                        <span className="text-xs text-zinc-500">
-                          Showing page <strong>{pagination.page}</strong> of {pagination.pages} ({pagination.total} records)
+                      <div className="flex items-center justify-between pt-3 border-t border-[#EAE8E1] text-xs text-zinc-500">
+                        <span>
+                          Showing page <strong>{pagination.page}</strong> of {pagination.pages} ({pagination.total} messages)
                         </span>
                         <div className="flex items-center space-x-1">
                           <button
                             type="button"
                             disabled={pagination.page <= 1}
-                            onClick={() => fetchUpdates(pagination.page - 1)}
-                            className="p-2 border border-[#EAE8E1] rounded-xl text-zinc-500 hover:bg-[#C59B27]/5 hover:text-[#C59B27] disabled:opacity-50 disabled:hover:bg-transparent cursor-pointer transition-all"
+                            onClick={() => fetchUpdates(pagination.page - 1, false, selectedEventId)}
+                            className="p-1.5 border border-[#EAE8E1] rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                           >
                             <ChevronLeft className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
                             disabled={pagination.page >= pagination.pages}
-                            onClick={() => fetchUpdates(pagination.page + 1)}
-                            className="p-2 border border-[#EAE8E1] rounded-xl text-zinc-500 hover:bg-[#C59B27]/5 hover:text-[#C59B27] disabled:opacity-50 disabled:hover:bg-transparent cursor-pointer transition-all"
+                            onClick={() => fetchUpdates(pagination.page + 1, false, selectedEventId)}
+                            className="p-1.5 border border-[#EAE8E1] rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                           >
                             <ChevronRight className="w-4 h-4" />
                           </button>
@@ -1149,732 +1208,536 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
             </div>
 
-            {/* RIGHT SIDE: SELECTED DETAIL PANEL */}
-            <div className="lg:col-span-5 h-full">
+            {/* RIGHT SIDE: SELECTED MESSAGE DETAIL PANEL */}
+            <div className="lg:col-span-5">
               {selectedUpdate ? (
-                <div 
-                  data-view-version="admin-update-detail-v2-premium"
-                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-sm space-y-6 sticky top-6 animate-fade-in"
-                >
-                  {/* 1. Detail header */}
-                  <div 
-                    data-component-version="admin-update-detail-header-v2"
-                    className="flex items-center justify-between pb-4 border-b border-[#EAE8E1]"
-                  >
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-5 sticky top-6">
+                  
+                  {/* Panel Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
                     <div className="flex items-center space-x-2">
-                      <span className="text-[10px] uppercase tracking-wider font-semibold bg-[#C59B27]/10 text-[#C59B27] px-2.5 py-1 rounded-full">
-                        {selectedUpdate.type.replace(/_/g, ' ')}
+                      <span className="text-[11px] font-semibold text-zinc-700 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded">
+                        {formatHumanType(selectedUpdate.type)}
                       </span>
-                      <span className={`text-[10px] px-2.5 py-1 rounded-full ${
-                        selectedUpdate.priority === 'urgent' 
-                          ? 'bg-rose-50 text-rose-700 font-semibold border border-rose-200' 
-                          : selectedUpdate.priority === 'important'
-                          ? 'bg-amber-50 text-amber-700 font-semibold border border-amber-200'
-                          : 'bg-zinc-100 text-zinc-700 border border-zinc-200'
-                      }`}>
-                        {selectedUpdate.priority === 'normal' ? 'Normal' : selectedUpdate.priority === 'important' ? 'Important' : 'Urgent'}
-                      </span>
+                      {selectedUpdate.priority === 'urgent' && (
+                        <span className="text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
+                          Urgent
+                        </span>
+                      )}
+                      {selectedUpdate.priority === 'important' && (
+                        <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                          Important
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
                       onClick={() => setSelectedUpdate(null)}
-                      className="text-zinc-400 hover:text-[#18181B] text-xs font-semibold cursor-pointer flex items-center space-x-1"
+                      className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg cursor-pointer"
+                      aria-label="Close message details"
                     >
-                      <span>Close</span>
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  {/* 2. Sender card */}
-                  <div 
-                    data-component-version="admin-update-detail-sender-v2"
-                    className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4"
-                  >
-                    <div className="flex items-center space-x-3.5" data-component-version="admin-update-sender-avatar-v2-premium">
-                      <div className="w-10 h-10 rounded-full bg-[#FAF9F6] border-2 border-[#EAE8E1] text-[#A37B1B] font-serif font-semibold text-sm flex items-center justify-center shadow-xs">
-                        {selectedUpdate.senderName ? selectedUpdate.senderName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() : '??'}
+                  {/* Sender & Received Info */}
+                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 space-y-1">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-full bg-white border border-[#EAE8E1] text-[#C59B27] font-semibold text-xs flex items-center justify-center shrink-0">
+                        {selectedUpdate.senderName ? selectedUpdate.senderName[0].toUpperCase() : 'U'}
                       </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-[#18181B] tracking-tight">{selectedUpdate.senderName}</h4>
-                        <p className="text-[10px] text-zinc-400 font-medium tracking-wide uppercase mt-0.5">
-                          {selectedUpdate.senderRole === 'system' ? 'Automated Update' : selectedUpdate.senderRole}
-                        </p>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-[#18181B] truncate">{selectedUpdate.senderName}</div>
+                        <div className="text-[11px] text-zinc-500">
+                          {formatHumanSenderRole(selectedUpdate.senderRole)}
+                        </div>
                       </div>
+                    </div>
+                    <div className="pt-2 border-t border-[#EAE8E1] text-[11px] text-zinc-400 flex items-center space-x-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Received: {formatPremiumDateDetail(selectedUpdate.createdAt)}</span>
                     </div>
                   </div>
 
-                  {/* 3. Message content card */}
-                  <div 
-                    data-component-version="admin-update-detail-content-v2"
-                    className="space-y-3"
-                  >
-                    <div className="space-y-1">
-                      <h2 className="font-serif text-lg font-bold text-[#18181B] leading-snug">
-                        {selectedUpdate.title}
-                      </h2>
-                      <div className="flex items-center space-x-1.5 text-[10px] text-zinc-400 font-mono" data-component-version="admin-update-date-format-v1">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>Sent: {formatPremiumDateDetail(selectedUpdate.createdAt)}</span>
-                      </div>
-                    </div>
-                    <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 text-xs text-zinc-700 leading-relaxed whitespace-pre-wrap font-sans">
+                  {/* Message Title & Full Body */}
+                  <div className="space-y-2">
+                    <h2 className="text-sm font-bold text-[#18181B] leading-snug">
+                      {selectedUpdate.title}
+                    </h2>
+                    <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 text-xs text-zinc-700 leading-relaxed whitespace-pre-wrap">
                       {selectedUpdate.bodyFull}
                     </div>
                   </div>
 
-                  {/* 4. Related details card */}
-                  {(selectedUpdate.relatedChildName || selectedUpdate.relatedEventId || selectedUpdate.actionStatus !== 'n/a') && (
-                    <div 
-                      data-component-version="admin-update-detail-related-v2"
-                      className="border border-[#EAE8E1] rounded-xl p-4 space-y-3 text-xs"
-                    >
-                      <span className="text-[9px] text-[#A37B1B] uppercase tracking-wider block font-serif font-bold pb-1.5 border-b border-zinc-100">Related Details</span>
-                      
+                  {/* Related Metadata */}
+                  {(selectedUpdate.relatedChildName || selectedUpdate.actionStatus !== 'n/a') && (
+                    <div className="border border-[#EAE8E1] rounded-xl p-3.5 space-y-2 text-xs">
+                      <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider pb-1 border-b border-zinc-100">
+                        Related information
+                      </div>
+
                       {selectedUpdate.relatedChildName && (
                         <div className="flex justify-between items-center">
-                          <span className="text-zinc-500 font-medium">Child:</span>
-                          <strong className="text-[#18181B] font-semibold text-xs">{selectedUpdate.relatedChildName}</strong>
-                        </div>
-                      )}
-                      
-                      {selectedUpdate.relatedEventId && (
-                        <div className="flex justify-between items-center" data-component-version="admin-update-safe-event-display-v1">
-                          <span className="text-zinc-500 font-medium">Event:</span>
-                          <strong className="text-[#18181B] font-serif text-xs">
-                            {selectedUpdate.relatedEventId === 'event-ga-2026' || selectedUpdate.relatedEventId.includes('2026')
-                              ? 'Koinonia Children & Teens Event 2026'
-                              : 'Current Event'}
-                          </strong>
+                          <span className="text-zinc-500">Child:</span>
+                          <span className="font-semibold text-zinc-900">{selectedUpdate.relatedChildName}</span>
                         </div>
                       )}
 
                       <div className="flex justify-between items-center">
-                        <span className="text-zinc-500 font-medium">Delivery Status:</span>
-                        <span className="font-semibold text-emerald-700 text-xs flex items-center space-x-1">
-                          <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full inline-block" />
-                          <span>Delivered (In-App)</span>
-                        </span>
+                        <span className="text-zinc-500">Delivery status:</span>
+                        <span className="font-medium text-emerald-700">Delivered</span>
                       </div>
 
                       {selectedUpdate.actionStatus !== 'n/a' && (
                         <div className="flex justify-between items-center">
-                          <span className="text-zinc-500 font-medium">Alert Status:</span>
-                          <span className={`font-semibold uppercase text-[10px] flex items-center space-x-1 ${
+                          <span className="text-zinc-500">Attention status:</span>
+                          <span className={`font-semibold ${
                             selectedUpdate.actionStatus === 'resolved'
                               ? 'text-emerald-700'
                               : selectedUpdate.actionStatus === 'acknowledged'
-                              ? 'text-[#C59B27]'
-                              : 'text-rose-600 animate-pulse'
+                              ? 'text-amber-700'
+                              : 'text-rose-700'
                           }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full inline-block ${
-                              selectedUpdate.actionStatus === 'resolved'
-                                ? 'bg-emerald-600'
-                                : selectedUpdate.actionStatus === 'acknowledged'
-                                ? 'bg-[#C59B27]'
-                                : 'bg-rose-600'
-                            }`} />
-                            <span>{selectedUpdate.actionStatus}</span>
+                            {selectedUpdate.actionStatus === 'resolved' ? 'Resolved' : selectedUpdate.actionStatus === 'acknowledged' ? 'Acknowledged' : 'Needs attention'}
                           </span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* 5. Action footer */}
-                  <div 
-                    data-component-version="admin-update-detail-actions-v2"
-                    className="flex flex-col gap-2 pt-1"
-                  >
+                  {/* Operational Actions */}
+                  <div className="space-y-2 pt-1">
+                    {/* Primary actions */}
                     {selectedUpdate.targetUrl && (
                       <button
                         type="button"
-                        data-component-version="admin-update-actions-v2-working"
                         onClick={() => onNavigate(selectedUpdate.targetUrl)}
-                        className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs hover:shadow-sm"
+                        className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>Open related review</span>
                       </button>
                     )}
+
+                    {/* Resolve concern button if open */}
+                    {(selectedUpdate.actionStatus === 'open' || selectedUpdate.actionStatus === 'acknowledged') && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenResolveModal(selectedUpdate)}
+                        className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold py-2 rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Resolve concern</span>
+                      </button>
+                    )}
+
+                    {/* Secondary row */}
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={(e) => handleToggleRead(selectedUpdate, e)}
-                        className="flex-1 bg-zinc-100 hover:bg-zinc-200 border border-[#EAE8E1] text-[#18181B] text-xs font-semibold py-2 rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                        className="flex-1 bg-zinc-50 hover:bg-zinc-100 border border-[#EAE8E1] text-[#18181B] text-xs font-medium py-2 rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
                       >
                         <Check className="w-3.5 h-3.5 text-[#C59B27]" />
-                        <span>{selectedUpdate.isRead ? 'Mark unread' : 'Mark read'}</span>
+                        <span>{selectedUpdate.isRead ? 'Mark as unread' : 'Mark as read'}</span>
                       </button>
                       <button
                         type="button"
                         onClick={(e) => handleToggleArchive(selectedUpdate, e)}
-                        className="flex-1 bg-zinc-100 hover:bg-zinc-200 border border-[#EAE8E1] text-[#18181B] text-xs font-semibold py-2 rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                        className="flex-1 bg-zinc-50 hover:bg-zinc-100 border border-[#EAE8E1] text-[#18181B] text-xs font-medium py-2 rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
                       >
                         <Archive className="w-3.5 h-3.5 text-zinc-500" />
                         <span>{selectedUpdate.isArchived ? 'Restore' : 'Archive'}</span>
                       </button>
                     </div>
                   </div>
+
                 </div>
               ) : (
-                <div className="bg-zinc-50 border-2 border-dashed border-zinc-200 rounded-2xl p-12 text-center text-zinc-400 space-y-2.5">
-                  <Info className="w-6 h-6 text-zinc-300 mx-auto" />
-                  <span className="text-xs block leading-relaxed max-w-xs mx-auto">Select a care update or message from the list to view complete records and execute associated review operations.</span>
+                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-10 text-center space-y-2 shadow-2xs">
+                  <h3 className="text-sm font-semibold text-[#18181B]">Select a message</h3>
+                  <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                    Choose a message from the list to read it and see any available actions.
+                  </p>
                 </div>
               )}
             </div>
+
           </div>
         </div>
       ) : (
-        <>
-          {/* METRIC CARDS ROW */}
-          <div 
-            data-component-version="admin-message-stats-v3-stitch"
-            className="grid grid-cols-2 md:grid-cols-5 gap-4"
-          >
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
-              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-                Messages sent
-              </span>
-              <p className="font-serif text-2xl font-semibold text-zinc-900">
-                {stats.messagesSent.toLocaleString()}
-              </p>
-              <span className="text-[9px] text-zinc-400 block font-mono">
-                Total sent logs
-              </span>
-            </div>
-
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
-              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-                WhatsApp sent
-              </span>
-              <p className="font-serif text-2xl font-semibold text-zinc-900">
-                {stats.whatsappSent.toLocaleString()}
-              </p>
-              <span className="text-[9px] text-zinc-400 block font-mono">
-                Total WhatsApp
-              </span>
-            </div>
-
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1">
-              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-                Email sent
-              </span>
-              <p className="font-serif text-2xl font-semibold text-zinc-900">
-                {stats.emailSent.toLocaleString()}
-              </p>
-              <span className="text-[9px] text-zinc-400 block font-mono">
-                Total Emails
-              </span>
-            </div>
-
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 border-red-100">
-              <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wider block">
-                Failed
-              </span>
-              <p className="font-serif text-2xl font-semibold text-red-600">
-                {stats.failed.toLocaleString()}
-              </p>
-              <span className="text-[9px] text-zinc-400 block font-mono">
-                Delivery faults
-              </span>
-            </div>
-
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 border-amber-100">
-              <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider block">
-                Pending
-              </span>
-              <p className="font-serif text-2xl font-semibold text-amber-600">
-                {stats.pending.toLocaleString()}
-              </p>
-              <span className="text-[9px] text-zinc-400 block font-mono">
-                Queued status
-              </span>
-            </div>
-          </div>
-
-      {/* RECIPIENT GROUP CHIPS (HORIZONTALLY SCROLLABLE) */}
-      <div 
-        data-component-version="admin-message-recipient-groups-v3"
-        className="space-y-2"
-      >
-        <span className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-          Recipient group
-        </span>
-        <div 
-          className="flex items-center space-x-2 overflow-x-auto no-scrollbar pb-1"
-          data-component-version="admin-messages-mobile-v3"
-        >
-          {recipientGroups.map(group => {
-            const isGroupActive = selectedGroup === group.key;
-            return (
-              <button
-                key={group.key}
-                type="button"
-                onClick={() => setSelectedGroup(group.key)}
-                className={`px-4 py-2 rounded-xl text-xs font-medium border transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                  isGroupActive
-                    ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27] font-semibold'
-                    : 'bg-white border-[#EAE8E1] text-zinc-600 hover:bg-zinc-50'
-                }`}
-              >
-                {group.label} ({group.count})
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* DISPATCH OUTCOME BANNER */}
-      {dispatchSummary && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slide-in-top">
-          <div className="flex items-start space-x-3">
-            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-serif font-bold text-[#18181B]">Broadcast Summary Report</h4>
-              <p className="text-xs text-zinc-600 mt-0.5">
-                Your broadcast has been processed.
-              </p>
-              <div className="flex items-center space-x-4 mt-2">
-                <span className="text-[10px] font-mono bg-white border border-emerald-100 rounded-lg px-2 py-1 text-zinc-700">
-                  Target Contacts: <strong>{dispatchSummary.requested}</strong>
-                </span>
-                <span className="text-[10px] font-mono bg-white border border-emerald-100 rounded-lg px-2 py-1 text-emerald-800">
-                  Confirmed Sent: <strong>{dispatchSummary.sent}</strong>
-                </span>
-                <span className="text-[10px] font-mono bg-white border border-emerald-100 rounded-lg px-2 py-1 text-red-700">
-                  Failed: <strong>{dispatchSummary.failed}</strong>
-                </span>
+        /* 5. SEND ANNOUNCEMENT COMPOSER TAB */
+        <div className="space-y-6">
+          {/* Dispatch Summary Banner */}
+          {dispatchSummary && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+              <div className="flex items-start space-x-3">
+                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-[#18181B]">Announcement sent</h4>
+                  <p className="text-xs text-zinc-600 mt-0.5">
+                    Requested: <strong>{dispatchSummary.requested}</strong> · Sent: <strong>{dispatchSummary.sent}</strong> · Could not send: <strong>{dispatchSummary.failed}</strong>
+                  </p>
+                </div>
               </div>
+              <button 
+                onClick={() => setDispatchSummary(null)}
+                className="text-xs text-zinc-500 hover:text-zinc-800 font-medium cursor-pointer self-end sm:self-auto"
+              >
+                Dismiss
+              </button>
             </div>
-          </div>
-          <button 
-            onClick={() => setDispatchSummary(null)}
-            className="text-zinc-400 hover:text-[#18181B] text-xs font-semibold cursor-pointer shrink-0"
-          >
-            Dismiss Report
-          </button>
-        </div>
-      )}
+          )}
 
-      {/* MAIN LAYOUT: TWO COLUMNS */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        
-        {/* LEFT COLUMN: SEND MESSAGE FORM */}
-        <div 
-          data-component-version="admin-message-composer-v3"
-          className="xl:col-span-7 bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-6 shadow-xs space-y-6"
-        >
-          <div className="flex items-center space-x-2 pb-3 border-b border-[#EAE8E1]">
-            <MessageSquare className="w-4 h-4 text-[#C59B27]" />
-            <h2 className="font-serif font-bold text-lg text-[#18181B]">Send message</h2>
-          </div>
-
-          {/* Delivery Warning Details */}
+          {/* Delivery Channel Notice if disabled */}
           {(!emailEnabled || !whatsappEnabled) && (
-            <div 
-              data-component-version="admin-message-provider-status-v2"
-              className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3.5 text-xs text-amber-800 flex items-start space-x-2.5"
-            >
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-800 flex items-start space-x-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold block text-zinc-900">Delivery channel notice</span>
+                <span className="font-semibold block text-zinc-900">Communication notice</span>
                 <p className="mt-0.5 leading-relaxed text-zinc-600">
-                  {!emailEnabled && !whatsappEnabled ? (
-                    'Both Email and WhatsApp delivery channels are unconfigured in your server settings. Dispatches are temporarily inactive.'
-                  ) : !emailEnabled ? (
-                    'Email is not ready yet. SMTP or Resend setup is required.'
-                  ) : (
-                    'WhatsApp is not ready yet. Twilio credentials are required.'
-                  )}
+                  {!emailEnabled && !whatsappEnabled
+                    ? 'Both Email and WhatsApp delivery are currently unavailable.'
+                    : !emailEnabled
+                    ? 'Email is not available right now.'
+                    : 'WhatsApp is not available right now.'}
                 </p>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Recipient group dropdown */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-                Recipient group
-              </label>
-              <select
-                value={selectedGroup}
-                onChange={(e) => setSelectedGroup(e.target.value)}
-                className="w-full bg-zinc-50 border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
-              >
-                {recipientGroups.map(group => (
-                  <option key={group.key} value={group.key}>
-                    {group.label} ({group.count} contacts)
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* Two column composer layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* Left column: Form */}
+            <div className="lg:col-span-7 bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-5">
+              <div className="pb-3 border-b border-[#EAE8E1]">
+                <h2 className="text-base font-bold text-[#18181B]">Send announcement</h2>
+                <p className="text-xs text-zinc-500 mt-0.5">Compose and send updates to parents and event groups.</p>
+              </div>
 
-            {/* Message type dropdown */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-                Message type
-              </label>
-              <select
-                value={selectedType}
-                onChange={(e) => handleTypeChange(e.target.value)}
-                className="w-full bg-zinc-50 border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
-              >
-                {messageTypes.map(type => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Channel selector */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-              Channel
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { id: 'email', label: 'Email Only', desc: 'Send to parent email addresses.', icon: Mail, enabled: emailEnabled },
-                { id: 'whatsapp', label: 'WhatsApp Only', desc: 'Send to parent WhatsApp numbers.', icon: Phone, enabled: whatsappEnabled },
-                { id: 'both', label: 'Both channels', desc: 'Send by Email and WhatsApp.', icon: MessageSquare, enabled: emailEnabled && whatsappEnabled }
-              ].map(ch => {
-                const SelectedIcon = ch.icon;
-                const isChActive = selectedChannel === ch.id;
-                const isDisabled = !ch.enabled;
-                return (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => setSelectedChannel(ch.id as any)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center space-y-1 transition-all ${
-                      isDisabled
-                        ? 'border-dashed border-zinc-200 bg-zinc-50 text-zinc-300 opacity-60 cursor-not-allowed'
-                        : isChActive
-                        ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#18181B] cursor-pointer font-semibold'
-                        : 'border-[#EAE8E1] bg-white text-zinc-500 hover:bg-zinc-50 cursor-pointer'
-                    }`}
+              {/* Group & Type Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
+                    Send to
+                  </label>
+                  <select
+                    value={selectedGroup}
+                    onChange={(e) => setSelectedGroup(e.target.value)}
+                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                   >
-                    <SelectedIcon className={`w-4 h-4 ${isDisabled ? 'text-zinc-300' : isChActive ? 'text-[#C59B27]' : 'text-zinc-400'}`} />
-                    <span className="text-[11px] block">{ch.label}</span>
-                    <span className="text-[9px] text-zinc-400 leading-none">{ch.desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                    {recipientGroups.map(group => (
+                      <option key={group.key} value={group.key}>
+                        {group.label} ({group.count} contacts)
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Subject Line (visible for email/both) */}
-          {(selectedChannel === 'email' || selectedChannel === 'both') && (
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-                Subject
-              </label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="Enter email subject line..."
-                className="w-full bg-zinc-50 border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
-              />
-            </div>
-          )}
-
-          {/* Message Body Input */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-              Message body
-            </label>
-            <textarea
-              ref={bodyRef}
-              rows={5}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write update body content..."
-              className="w-full bg-zinc-50 border border-[#EAE8E1] rounded-xl px-3 py-2.5 text-xs text-[#18181B] font-mono focus:outline-none focus:border-[#C59B27] leading-relaxed resize-y min-h-[140px] sm:min-h-[200px]"
-            />
-          </div>
-
-          {/* Insert Details Board */}
-          <div className="space-y-2 bg-[#F9F8F3] border border-[#EAE8E1] rounded-xl p-4">
-            <div className="flex items-center space-x-1.5 text-[10px] font-bold text-zinc-600 uppercase tracking-wide">
-              <Info className="w-3.5 h-3.5 text-[#C59B27]" />
-              <span>Insert details</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {TOKENS.map(token => (
-                <button
-                  key={token.key}
-                  type="button"
-                  onClick={() => handleInsertToken(token.key)}
-                  className="bg-white border border-[#EAE8E1] rounded-lg px-2 py-1 text-[10px] font-mono text-[#18181B] hover:border-[#C59B27] hover:bg-[#C59B27]/5 cursor-pointer flex items-center space-x-1 transition-colors"
-                >
-                  <strong className="text-[#C59B27]">{token.key}</strong>
-                  <span className="text-zinc-400 font-sans text-[9px] hidden sm:inline">({token.label})</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Actions Footer */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
-            <span className="text-[10px] text-zinc-500">
-              Active Target Recipients: <strong>{activeGroupRecipients} parent(s)</strong>
-            </span>
-
-            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
-              <Button
-                variant="outline"
-                onClick={handleSaveDraft}
-                disabled={savingDraft || actionLoading}
-                className="text-xs cursor-pointer flex items-center justify-center space-x-1.5 h-10 w-full sm:w-auto"
-              >
-                {savingDraft ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Save className="w-3.5 h-3.5" />
-                )}
-                <span>Save draft</span>
-              </Button>
-
-              <button
-                id="preview-trigger-btn"
-                type="button"
-                onClick={generateLivePreview}
-                disabled={previewLoading || actionLoading}
-                className="text-xs font-semibold px-3 py-2 bg-zinc-100 border border-[#EAE8E1] rounded-xl text-zinc-700 hover:bg-zinc-200 transition-all flex items-center justify-center space-x-1.5 cursor-pointer h-10 w-full sm:w-auto"
-              >
-                {previewLoading ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Eye className="w-3.5 h-3.5" />
-                )}
-                <span>Preview</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSendRequest}
-                disabled={actionLoading || !body.trim() || activeGroupRecipients === 0 || (selectedChannel === 'email' && !emailEnabled) || (selectedChannel === 'whatsapp' && !whatsappEnabled) || (selectedChannel === 'both' && (!emailEnabled || !whatsappEnabled))}
-                className={`col-span-2 text-xs font-semibold px-4 py-2 rounded-xl text-white shadow-xs transition-all flex items-center justify-center space-x-2 cursor-pointer h-10 w-full sm:w-auto ${
-                  actionLoading || !body.trim() || activeGroupRecipients === 0 || (selectedChannel === 'email' && !emailEnabled) || (selectedChannel === 'whatsapp' && !whatsappEnabled) || (selectedChannel === 'both' && (!emailEnabled || !whatsappEnabled))
-                    ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed'
-                    : 'bg-[#C59B27] hover:bg-[#A37B1B]'
-                }`}
-              >
-                {actionLoading ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5" />
-                )}
-                <span>Send message</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: PREVIEW + RECENT ACTIVITY + SENDER SETTINGS */}
-        <div className="xl:col-span-5 space-y-6 w-full min-w-0">
-          
-          {/* PREVIEW CONTAINER */}
-          <div 
-            data-component-version="admin-message-preview-v3"
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-6 shadow-xs space-y-4"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <button 
-                type="button"
-                onClick={() => setShowPreviewMobile(!showPreviewMobile)}
-                className="flex items-center space-x-2 cursor-pointer text-left focus:outline-none xl:pointer-events-none w-full"
-              >
-                <Eye className="w-4 h-4 text-[#C59B27] shrink-0" />
-                <h3 className="font-serif font-bold text-[#18181B] flex-1 text-sm sm:text-base">Preview</h3>
-                <span className="text-xs text-[#C59B27] font-semibold xl:hidden">
-                  {showPreviewMobile ? 'Collapse' : 'Expand'}
-                </span>
-              </button>
-              
-              <div className={`flex items-center bg-zinc-50 p-1 rounded-xl border border-[#EAE8E1] shrink-0 ml-2 ${showPreviewMobile ? 'flex' : 'hidden xl:flex'}`}>
-                <button
-                  type="button"
-                  onClick={() => setPreviewTab('email')}
-                  disabled={selectedChannel === 'whatsapp'}
-                  className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all ${
-                    previewTab === 'email'
-                      ? 'bg-white text-[#18181B] shadow-xs'
-                      : 'text-zinc-400 hover:text-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  Email
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewTab('whatsapp')}
-                  disabled={selectedChannel === 'email'}
-                  className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all ${
-                    previewTab === 'whatsapp'
-                      ? 'bg-white text-[#18181B] shadow-xs'
-                      : 'text-zinc-400 hover:text-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  WhatsApp
-                </button>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
+                    Message type
+                  </label>
+                  <select
+                    value={selectedType}
+                    onChange={(e) => handleTypeChange(e.target.value)}
+                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                  >
+                    {messageTypes.map(type => (
+                      <option key={type.key} value={type.key}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
 
-            {/* COLLAPSIBLE PREVIEW CONTAINER */}
-            <div className={`transition-all duration-200 ${showPreviewMobile ? 'block' : 'hidden xl:block'}`}>
-              <div className="border border-zinc-200/60 rounded-xl bg-zinc-50 p-4 min-h-[220px] sm:min-h-[250px] flex flex-col justify-between">
-                {!previewBody ? (
-                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
-                    <MessageSquare className="w-8 h-8 text-zinc-300" />
-                    <p className="text-xs text-zinc-400 leading-normal">Enter subject and body details to view live sample rendering.</p>
-                  </div>
-                ) : (
-                  <>
-                    {previewTab === 'email' ? (
-                      <div className="flex-1 flex flex-col space-y-3 animate-fade-in text-xs font-sans min-w-0">
-                        <div className="bg-white border border-[#EAE8E1] rounded-lg p-3 text-zinc-600 space-y-1 min-w-0">
-                          <div className="truncate"><strong>From:</strong> {providerStatus.senderName || 'Koinonia Global'} &lt;{providerStatus.fromEmail || 'info@themandate.dontechservicesconst.com'}&gt;</div>
-                          <div className="border-t border-zinc-100 my-1"></div>
-                          <div className="truncate"><strong>Subject:</strong> <span className="text-[#18181B] font-semibold">{previewSubject || '(No Subject Line)'}</span></div>
+              {/* Send method */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
+                  Send by
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { id: 'email', label: 'Email', desc: 'Send to parent email addresses', icon: Mail, enabled: emailEnabled },
+                    { id: 'whatsapp', label: 'WhatsApp', desc: 'Send to parent WhatsApp numbers', icon: Phone, enabled: whatsappEnabled },
+                    { id: 'both', label: 'Email & WhatsApp', desc: 'Send using both methods', icon: MessageSquare, enabled: emailEnabled && whatsappEnabled }
+                  ].map(ch => {
+                    const SelectedIcon = ch.icon;
+                    const isChActive = selectedChannel === ch.id;
+                    const isDisabled = !ch.enabled;
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={() => setSelectedChannel(ch.id as any)}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          isDisabled
+                            ? 'border-zinc-200 bg-zinc-50 text-zinc-400 opacity-60 cursor-not-allowed'
+                            : isChActive
+                            ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#18181B] font-semibold cursor-pointer'
+                            : 'border-[#EAE8E1] bg-white text-zinc-600 hover:bg-zinc-50 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <SelectedIcon className={`w-3.5 h-3.5 ${isDisabled ? 'text-zinc-400' : isChActive ? 'text-[#C59B27]' : 'text-zinc-500'}`} />
+                          <span className="text-xs">{ch.label}</span>
                         </div>
-
-                        <div className="bg-white border border-[#EAE8E1] rounded-lg p-4 text-[#18181B] leading-relaxed whitespace-pre-line flex-1 min-h-[160px] overflow-y-auto break-words">
-                          {previewBody}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex flex-col items-end animate-fade-in font-sans text-xs w-full">
-                        <div className="bg-emerald-50 text-[#18181B] border border-emerald-200 rounded-2xl rounded-tr-none p-4 leading-relaxed max-w-[90%] sm:max-w-[85%] whitespace-pre-line shadow-2xs break-words">
-                          {previewBody}
-                          <div className="text-[9px] text-zinc-400 text-right mt-2 font-mono">
-                            12:00 PM • WhatsApp Delivery
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* SENDER SETTINGS */}
-          <div 
-            data-component-version="admin-message-sender-settings-v2"
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-6 shadow-xs space-y-4"
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
-              <div className="flex items-center space-x-2">
-                <Settings className="w-4 h-4 text-[#C59B27]" />
-                <h3 className="font-serif font-bold text-[#18181B] text-sm sm:text-base">Sender settings</h3>
-              </div>
-              <button
-                type="button"
-                onClick={handleStartEditSettings}
-                className="text-xs text-[#C59B27] font-semibold hover:text-[#A37B1B] transition-colors cursor-pointer"
-              >
-                Edit settings
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-zinc-600">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 font-mono text-[10px]">
-                <div className="min-w-0">
-                  <span className="text-zinc-400 block font-sans text-[9px] uppercase tracking-wider">SENDER NAME</span>
-                  <span className="text-zinc-800 font-semibold truncate block">{providerStatus.senderName || 'Koinonia Global'}</span>
-                </div>
-                <div className="min-w-0">
-                  <span className="text-zinc-400 block font-sans text-[9px] uppercase tracking-wider">REPLY-TO EMAIL</span>
-                  <span className="text-zinc-800 font-semibold truncate block" title={providerStatus.replyToEmail}>{providerStatus.replyToEmail || 'info@themandate.dontechservicesconst.com'}</span>
+                        <span className="text-[10px] text-zinc-400 block mt-1 leading-tight">{ch.desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="border border-zinc-200/60 rounded-xl p-3 bg-zinc-50 space-y-2">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-zinc-700">Email delivery state:</span>
-                  <span className={`font-semibold px-2 py-0.5 rounded-full text-[9px] ${
-                    emailEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'
-                  }`}>
-                    {emailEnabled ? 'Ready' : 'Not ready'}
-                  </span>
+              {/* Subject */}
+              {(selectedChannel === 'email' || selectedChannel === 'both') && (
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Enter announcement subject..."
+                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
+                  />
                 </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-zinc-700">WhatsApp delivery state:</span>
-                  <span className={`font-semibold px-2 py-0.5 rounded-full text-[9px] ${
-                    whatsappEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'
-                  }`}>
-                    {whatsappEnabled ? 'Ready' : 'Not ready'}
-                  </span>
-                </div>
-                <div className="text-[10px] text-zinc-400 leading-normal border-t border-zinc-200/60 pt-2 font-serif">
-                  All dispatches are secure. Email uses a verified domain provider, and WhatsApp is routed via Twilio.
-                </div>
-              </div>
-            </div>
-          </div>
+              )}
 
-          {/* RECENT ACTIVITY */}
-          <div 
-            data-component-version="admin-message-recent-activity-v3"
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-6 shadow-xs space-y-4"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <div className="flex items-center space-x-2">
-                <Clock className="w-4 h-4 text-zinc-400" />
-                <h3 className="font-serif font-bold text-[#18181B] text-sm sm:text-base">Recent activity</h3>
+              {/* Message */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
+                  Message
+                </label>
+                <textarea
+                  ref={bodyRef}
+                  rows={6}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder="Write your announcement text here..."
+                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] leading-relaxed resize-y min-h-[140px]"
+                />
               </div>
-              <span className="text-xs text-[#C59B27] font-semibold">
-                {recentActivity.length} sent
-              </span>
-            </div>
 
-            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-              {recentActivity.length === 0 ? (
-                <div className="text-center py-10 space-y-2">
-                  <ClipboardList className="w-8 h-8 text-zinc-300 mx-auto" />
-                  <p className="text-xs font-semibold text-zinc-400">No messages have been sent yet.</p>
+              {/* Personalisation details board */}
+              <div className="space-y-2 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5">
+                <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                  Insert details
                 </div>
-              ) : (
-                recentActivity.map((log) => {
-                  const isSent = log.status === 'sent';
-                  return (
-                    <div 
-                      key={log.id}
-                      className="p-3 bg-zinc-50 border border-zinc-200/60 rounded-xl space-y-1 text-xs hover:border-zinc-300 transition-all font-sans min-w-0"
+                <div className="flex flex-wrap gap-1.5">
+                  {TOKENS.map(token => (
+                    <button
+                      key={token.key}
+                      type="button"
+                      onClick={() => handleInsertToken(token.key)}
+                      className="bg-white border border-[#EAE8E1] rounded-lg px-2.5 py-1 text-[11px] text-[#18181B] hover:border-[#C59B27] hover:bg-[#C59B27]/5 cursor-pointer flex items-center space-x-1 transition-colors"
                     >
-                      <div className="flex items-center justify-between gap-2 min-w-0">
-                        <span className="font-serif font-bold text-zinc-800 truncate flex-1 min-w-0 block">
-                          {log.subject || log.messageType.replace(/_/g, ' ').toUpperCase()}
-                        </span>
-                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-                          isSent ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'
-                        }`}>
-                          {log.status.toUpperCase()}
-                        </span>
+                      <span className="font-semibold text-[#C59B27]">{token.key}</span>
+                      <span className="text-zinc-400 text-[10px] hidden sm:inline">({token.label})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
+                <span className="text-xs text-zinc-500">
+                  Sending to: <strong>{activeGroupRecipients} parent(s)</strong>
+                </span>
+
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    disabled={savingDraft || actionLoading}
+                    className="text-xs cursor-pointer flex items-center space-x-1.5"
+                  >
+                    {savingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    <span>Save draft</span>
+                  </Button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendRequest}
+                    disabled={actionLoading || !body.trim() || activeGroupRecipients === 0 || (selectedChannel === 'email' && !emailEnabled) || (selectedChannel === 'whatsapp' && !whatsappEnabled)}
+                    className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                  >
+                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>Send announcement</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right column: Preview, Sender Details, Recent Activity */}
+            <div className="lg:col-span-5 space-y-6">
+              
+              {/* Preview Container */}
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+                  <div className="flex items-center space-x-2">
+                    <Eye className="w-4 h-4 text-[#C59B27]" />
+                    <h3 className="text-sm font-bold text-[#18181B]">Preview</h3>
+                  </div>
+
+                  <div className="flex items-center bg-zinc-50 p-1 rounded-xl border border-[#EAE8E1]">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab('email')}
+                      disabled={selectedChannel === 'whatsapp'}
+                      className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all ${
+                        previewTab === 'email'
+                          ? 'bg-white text-[#18181B] shadow-2xs'
+                          : 'text-zinc-400 hover:text-zinc-600 disabled:opacity-40'
+                      }`}
+                    >
+                      Email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab('whatsapp')}
+                      disabled={selectedChannel === 'email'}
+                      className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all ${
+                        previewTab === 'whatsapp'
+                          ? 'bg-white text-[#18181B] shadow-2xs'
+                          : 'text-zinc-400 hover:text-zinc-600 disabled:opacity-40'
+                      }`}
+                    >
+                      WhatsApp
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border border-[#EAE8E1] rounded-xl bg-[#FAF9F6] p-4 min-h-[180px]">
+                  {!previewBody ? (
+                    <div className="flex flex-col items-center justify-center p-6 text-center space-y-2 text-zinc-400">
+                      <MessageSquare className="w-6 h-6 text-zinc-300" />
+                      <p className="text-xs">Enter message text to see sample preview.</p>
+                    </div>
+                  ) : previewTab === 'email' ? (
+                    <div className="space-y-3 text-xs">
+                      <div className="bg-white border border-[#EAE8E1] rounded-lg p-3 text-zinc-600 space-y-1">
+                        <div><strong>From:</strong> {providerStatus.senderName || 'Koinonia Global'}</div>
+                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{previewSubject || '(No subject)'}</span></div>
                       </div>
-
-                      <p className="text-[10px] text-zinc-500 font-serif line-clamp-2 break-words">
-                        {log.body}
-                      </p>
-
-                      <div className="flex items-center justify-between text-[9px] text-zinc-400 pt-1 border-t border-zinc-200/40 font-mono gap-2 min-w-0">
-                        <span className="truncate block">Group: <strong className="text-[#18181B]">{log.recipientGroup.replace(/_/g, ' ')}</strong></span>
-                        <span className="shrink-0">{new Date(log.createdAt).toLocaleDateString()}</span>
+                      <div className="bg-white border border-[#EAE8E1] rounded-lg p-3.5 text-zinc-800 leading-relaxed whitespace-pre-line min-h-[120px]">
+                        {previewBody}
                       </div>
                     </div>
-                  );
-                })
-              )}
+                  ) : (
+                    <div className="flex justify-end">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl rounded-tr-none p-3.5 text-xs text-zinc-800 leading-relaxed max-w-[90%] whitespace-pre-line shadow-2xs">
+                        {previewBody}
+                        <div className="text-[10px] text-zinc-400 text-right mt-2">
+                          12:00 PM · WhatsApp
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sender Details */}
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
+                  <div className="flex items-center space-x-2">
+                    <Settings className="w-4 h-4 text-[#C59B27]" />
+                    <h3 className="text-sm font-bold text-[#18181B]">Sender details</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartEditSettings}
+                    className="text-xs text-[#C59B27] font-semibold hover:underline cursor-pointer"
+                  >
+                    Edit details
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 text-xs">
+                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Sender name</span>
+                      <span className="font-semibold text-zinc-800 truncate block">{providerStatus.senderName || 'Koinonia Global'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Reply-to email</span>
+                      <span className="font-semibold text-zinc-800 truncate block">{providerStatus.replyToEmail || 'info@themandate.dontechservicesconst.com'}</span>
+                    </div>
+                  </div>
+
+                  <div className="border border-[#EAE8E1] rounded-xl p-3 bg-zinc-50 space-y-1.5 text-[11px]">
+                    <div className="flex justify-between items-center">
+                      <span className="text-zinc-600">Email delivery:</span>
+                      <span className={`font-semibold ${emailEnabled ? 'text-emerald-700' : 'text-zinc-400'}`}>
+                        {emailEnabled ? 'Ready' : 'Not ready'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-zinc-600">WhatsApp delivery:</span>
+                      <span className={`font-semibold ${whatsappEnabled ? 'text-emerald-700' : 'text-zinc-400'}`}>
+                        {whatsappEnabled ? 'Ready' : 'Not ready'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Announcements */}
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="w-4 h-4 text-zinc-400" />
+                    <h3 className="text-sm font-bold text-[#18181B]">Recent announcements</h3>
+                  </div>
+                  <span className="text-xs text-zinc-400 font-medium">
+                    {recentActivity.length} sent
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                  {recentActivity.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-zinc-400">
+                      No announcements sent yet.
+                    </div>
+                  ) : (
+                    recentActivity.map((log) => (
+                      <div 
+                        key={log.id}
+                        className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-zinc-900 truncate">
+                            {log.subject || log.messageType.replace(/_/g, ' ')}
+                          </span>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                            log.status === 'sent' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+                          }`}>
+                            {log.status === 'sent' ? 'Sent' : 'Not delivered'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-zinc-500 line-clamp-2 leading-normal">
+                          {log.body}
+                        </p>
+                        <div className="text-[10px] text-zinc-400 pt-1 flex justify-between border-t border-zinc-200/60">
+                          <span>Group: {log.recipientGroup.replace(/_/g, ' ')}</span>
+                          <span>{new Date(log.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
             </div>
+
           </div>
-
         </div>
-
-      </div>
+      )}
 
       {/* SENDER SETTINGS EDIT MODAL */}
       {isEditingSettings && (
@@ -1885,42 +1748,47 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           />
           <form 
             onSubmit={handleSaveSettings}
-            className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4"
+            className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 animate-fade-in"
           >
-            <div className="flex items-center space-x-2 pb-3 border-b border-[#EAE8E1]">
-              <Settings className="w-5 h-5 text-[#C59B27] shrink-0" />
-              <h4 className="font-serif font-bold text-[#18181B] text-lg">Edit sender settings</h4>
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <div className="flex items-center space-x-2">
+                <Settings className="w-4 h-4 text-[#C59B27]" />
+                <h4 className="text-base font-bold text-[#18181B]">Edit sender details</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingSettings(false)}
+                className="text-zinc-400 hover:text-zinc-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="space-y-4 text-xs">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-                  Sender name
-                </label>
+            <div className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-zinc-600 block">Sender name</label>
                 <input
                   type="text"
                   value={editedSenderName}
                   onChange={(e) => setEditedSenderName(e.target.value)}
                   placeholder="e.g. Koinonia Global"
-                  className="w-full bg-zinc-50 border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
+                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
                   required
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-[#18181B] uppercase tracking-wider block">
-                  Reply-to email
-                </label>
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-zinc-600 block">Reply-to email</label>
                 <input
                   type="email"
                   value={editedReplyTo}
                   onChange={(e) => setEditedReplyTo(e.target.value)}
                   placeholder="e.g. support@koinonia.org"
-                  className="w-full bg-zinc-50 border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
+                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
                   required
                 />
-                <span className="text-[10px] text-zinc-400 block font-serif">
-                  Parents see this address when replying to automated or broadcast emails.
+                <span className="text-[10px] text-zinc-400 block">
+                  Parents see this address when replying to announcements.
                 </span>
               </div>
             </div>
@@ -1937,50 +1805,40 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
               <button
                 type="submit"
                 disabled={savingSettings}
-                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer"
+                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-2xs"
               >
-                {savingSettings ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Save className="w-3.5 h-3.5" />
-                )}
-                <span>Save settings</span>
+                {savingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                <span>Save details</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* SEND CONFIRMATION MODAL */}
+      {/* CONFIRMATION MODAL BEFORE SENDING ANNOUNCEMENT */}
       {showConfirmModal && (
-        <div 
-          data-component-version="admin-message-send-confirmation-v3"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
             onClick={() => setShowConfirmModal(false)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
           />
-          <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-4">
+          <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 animate-fade-in">
             <div className="flex items-center space-x-2.5 pb-3 border-b border-[#EAE8E1]">
               <AlertTriangle className="w-5 h-5 text-[#C59B27] shrink-0" />
-              <h4 className="font-serif font-bold text-[#18181B]">Send this message?</h4>
+              <h4 className="text-base font-bold text-[#18181B]">Send this announcement?</h4>
             </div>
 
-            <div className="space-y-3 text-xs text-zinc-600 leading-relaxed">
+            <div className="space-y-2.5 text-xs text-zinc-600 leading-relaxed">
               <p>
-                This will send to {activeGroupRecipients} recipient(s) by {selectedChannel.toUpperCase()}. Please review the preview before sending.
+                This will send your message to {activeGroupRecipients} recipient(s). Please confirm you want to proceed.
               </p>
               
-              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 space-y-1.5 font-mono text-[10px] text-zinc-700">
-                <div>• Recipient group: <strong className="text-[#18181B]">{selectedGroup.replace(/_/g, ' ')}</strong></div>
-                <div>• Channel: <strong className="text-[#18181B] font-semibold">{selectedChannel.toUpperCase()}</strong></div>
-                <div>• Estimated count: <strong className="text-emerald-700 font-bold">{activeGroupRecipients} recipient(s)</strong></div>
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 space-y-1.5 text-xs">
+                <div>• Recipient group: <strong className="text-zinc-900">{selectedGroup.replace(/_/g, ' ')}</strong></div>
+                <div>• Method: <strong className="text-zinc-900">{selectedChannel === 'both' ? 'Email & WhatsApp' : selectedChannel.toUpperCase()}</strong></div>
+                <div>• Estimated recipients: <strong className="text-emerald-700 font-bold">{activeGroupRecipients} parent(s)</strong></div>
                 {(selectedChannel === 'email' || selectedChannel === 'both') && (
-                  <>
-                    <div>• Subject line: <strong className="text-[#18181B] truncate block">{subject}</strong></div>
-                    <div>• Sender email: <strong className="text-[#18181B]">{providerStatus.fromEmail || 'info@themandate.dontechservicesconst.com'}</strong></div>
-                  </>
+                  <div>• Subject: <strong className="text-zinc-900 truncate block">{subject}</strong></div>
                 )}
               </div>
             </div>
@@ -1995,7 +1853,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
               </Button>
               <button
                 onClick={handleConfirmSend}
-                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer"
+                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-2xs"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Send now</span>
@@ -2004,7 +1862,76 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           </div>
         </div>
       )}
-        </>
+
+      {/* RESOLVE CONCERN MODAL */}
+      {resolvingUpdate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            onClick={() => setResolvingUpdate(null)}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
+          />
+          <form 
+            onSubmit={handleConfirmResolve}
+            className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 animate-fade-in"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <div className="flex items-center space-x-2">
+                <Check className="w-4 h-4 text-emerald-700" />
+                <h4 className="text-base font-bold text-[#18181B]">Resolve concern</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResolvingUpdate(null)}
+                className="text-zinc-400 hover:text-zinc-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-zinc-600 leading-relaxed">
+                Add an optional resolution note describing what actions were taken to address this update.
+              </p>
+
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs">
+                <div className="font-semibold text-zinc-900">{resolvingUpdate.title}</div>
+                {resolvingUpdate.relatedChildName && (
+                  <div className="text-zinc-500 mt-0.5">Child: {resolvingUpdate.relatedChildName}</div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-zinc-600 block">Resolution note</label>
+                <textarea
+                  rows={3}
+                  value={resolutionNote}
+                  onChange={(e) => setResolutionNote(e.target.value)}
+                  placeholder="e.g. Parent confirmed pickup with verified entry pass."
+                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-2.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#EAE8E1]">
+              <Button 
+                variant="outline" 
+                type="button"
+                onClick={() => setResolvingUpdate(null)}
+                className="text-xs cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <button
+                type="submit"
+                disabled={resolvingAction}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-2xs"
+              >
+                {resolvingAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>Mark as resolved</span>
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
     </div>

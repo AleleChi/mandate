@@ -40,6 +40,47 @@ export function resolveReportFilePath(storageKey: string | null | undefined, rep
   return canonicalPath;
 }
 
+export function formatReportFilename(eventTitle?: string, reportTitle?: string, dateVal?: any): string {
+  const d = dateVal ? new Date(dateVal) : new Date();
+  const dateStr = !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : '2026-09-07';
+
+  let eventPrefix = 'TGA-2026';
+  const cleanEvent = (eventTitle || '').trim();
+  if (cleanEvent.toLowerCase().includes('general assembly')) {
+    eventPrefix = 'TGA-2026';
+  } else if (cleanEvent) {
+    eventPrefix = cleanEvent
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 20);
+  }
+
+  let typePart = 'Management-Report';
+  const cleanTitle = (reportTitle || '').trim();
+  if (cleanTitle.toLowerCase().includes('management')) {
+    typePart = 'Management-Report';
+  } else if (cleanTitle.toLowerCase().includes('full event')) {
+    typePart = 'Full-Event-Report';
+  } else if (cleanTitle.toLowerCase().includes('registration')) {
+    typePart = 'Registration-Selection-Report';
+  } else if (cleanTitle.toLowerCase().includes('attendance')) {
+    typePart = 'Attendance-Movement-Report';
+  } else if (cleanTitle.toLowerCase().includes('volunteer')) {
+    typePart = 'Volunteer-Coverage-Report';
+  } else if (cleanTitle.toLowerCase().includes('care') || cleanTitle.toLowerCase().includes('safety')) {
+    typePart = 'Care-Safety-Report';
+  } else if (cleanTitle) {
+    typePart = cleanTitle
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 30);
+  }
+
+  return `${eventPrefix}-${typePart}-${dateStr}.pdf`;
+}
+
 // Apply authMiddleware FIRST across all report routes so req.user is guaranteed
 router.use(authMiddleware);
 
@@ -361,22 +402,19 @@ router.post('/preview/download', async (req: AuthenticatedRequest, res: Response
 
     const { pdfBytes } = await renderDocumentToPDF(docModel);
 
-    const reportTitlePart = (docModel.reportTitle || template.name).replace(/[/\\?%*:|"<>]/g, '').trim();
-    const eventContextPart = (snapshot.event?.title || (snapshot.session ? 'Training Drill Session' : 'The General Assembly')).replace(/[/\\?%*:|"<>]/g, '').trim();
-    const dateFormatted = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    
-    const rawFilename = `${reportTitlePart} - ${eventContextPart} - ${dateFormatted}.pdf`;
-    const safeFilename = rawFilename.replace(/[^a-zA-Z0-9.\- _]/g, '_');
-    const encodedFilename = encodeURIComponent(rawFilename);
+    const eventTitle = snapshot.event?.title || (snapshot.session ? 'Training Drill' : 'The General Assembly');
+    const downloadFilename = formatReportFilename(eventTitle, docModel.reportTitle || template.name, new Date());
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`
+      `attachment; filename="${downloadFilename}"`
     );
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    return res.send(Buffer.from(pdfBytes));
 
     return res.send(Buffer.from(pdfBytes));
   } catch (err: any) {
@@ -871,28 +909,11 @@ router.get('/:reportId/download', async (req: AuthenticatedRequest, res: Respons
     const dateObj = new Date(job?.completed_at || job?.created_at || Date.now());
     const datePart = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const rawHumanFilename = `${titlePart} - ${eventPart} - ${datePart}`;
-    const cleanFilename = rawHumanFilename
-      .replace(/[\/\\:*?"<>|\x00-\x1F\x7F]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 150);
-
-    const asciiFilename = cleanFilename
-      .replace(/[^\x20-\x7E]/g, '')
-      .replace(/[\/\\:*?"<>|]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim() || 'Report';
-
-    const encodedFilename = encodeURIComponent(cleanFilename + '.pdf')
-      .replace(/['()]/g, escape)
-      .replace(/\*/g, '%2A');
-
-    const downloadFilename = `${asciiFilename}.pdf`;
+    const downloadFilename = formatReportFilename(eventPart, titlePart, dateObj);
 
     console.log(`[Reports Download] response started - Filename: ${downloadFilename}`);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');

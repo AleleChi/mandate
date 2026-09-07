@@ -1,64 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  ShieldCheck, 
   RefreshCw, 
   CheckCircle2, 
   XCircle, 
   AlertTriangle, 
-  AlertCircle, 
   Users, 
-  Activity, 
   Search, 
-  Filter, 
-  Smartphone, 
-  SlidersHorizontal, 
-  UserPlus, 
-  X
+  Plus, 
+  X,
+  MapPin
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
-import ResponseCoverageRow, { CoverageCategory, Responder } from './ResponseCoverageRow';
-import ResponseCoverageCard from './ResponseCoverageCard';
-
-const REAL_EVENT_ID = 'event-ga-2026';
+import { CoverageCategory, Responder, formatRoleName } from './ResponseCoverageRow';
 
 type DutyTabType = 'devices_readiness' | 'event_team' | 'alert_routing' | 'response_coverage' | 'event_locations';
 
 interface ResponseCoverageTabProps {
+  eventId?: string;
   onNavigateTab?: (tab: DutyTabType) => void;
 }
 
-interface CoverageSummary {
-  activeResponders: number;
-  coverageGaps: number;
-  averageRespondersPerAlert: number | null;
-  routingIssues: number;
-  validCategoriesCount?: number;
+function getInitials(name?: string): string {
+  if (!name) return 'TM';
+  const clean = name.replace(/[^a-zA-Z\s]/g, '').trim();
+  const parts = clean.split(/\s+/);
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase() || 'TM';
 }
 
-export default function ResponseCoverageTab({ onNavigateTab }: ResponseCoverageTabProps) {
+function getHumanCoverageStatus(cat: CoverageCategory): {
+  label: 'Covered' | 'Needs one more person' | 'Not covered';
+  textClass: string;
+  dotClass: string;
+} {
+  const totalAssigned = cat.primaryResponders.length + cat.backupResponders.length;
+  if (cat.primaryResponders.length > 0 && cat.backupResponders.length > 0) {
+    return { label: 'Covered', textClass: 'text-emerald-700', dotClass: 'bg-emerald-500' };
+  }
+  if (totalAssigned >= 1) {
+    return { label: 'Needs one more person', textClass: 'text-amber-700', dotClass: 'bg-amber-500' };
+  }
+  return { label: 'Not covered', textClass: 'text-rose-600', dotClass: 'bg-rose-500' };
+}
+
+export default function ResponseCoverageTab({
+  eventId = 'event-ga-2026',
+  onNavigateTab
+}: ResponseCoverageTabProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [summary, setSummary] = useState<CoverageSummary>({
-    activeResponders: 0,
-    coverageGaps: 0,
-    averageRespondersPerAlert: 0.0,
-    routingIssues: 0,
-    validCategoriesCount: 0
-  });
-
   const [categories, setCategories] = useState<CoverageCategory[]>([]);
-  const [limitations, setLimitations] = useState<string[]>([]);
-
-  // Expanded row ID
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
-
-  // Search & Filters state
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
 
   const fetchCoverageReport = async (isUserRefresh = false) => {
     if (isUserRefresh) {
@@ -77,44 +75,32 @@ export default function ResponseCoverageTab({ onNavigateTab }: ResponseCoverageT
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      let res = await fetch(`/api/admin/duty/events/${REAL_EVENT_ID}/response-coverage`, { headers });
+      let res = await fetch(`/api/admin/duty/events/${eventId}/response-coverage`, { headers });
       if (!res.ok && res.status === 404) {
-        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/response-coverage`, { headers });
+        res = await fetch(`/api/admin/events/${eventId}/response-coverage`, { headers });
       }
 
       if (res.ok) {
         const data = await res.json();
         if (data.success !== false) {
-          const rawSummary = data.summary || {};
-          setSummary({
-            activeResponders: rawSummary.activeResponders ?? 0,
-            coverageGaps: rawSummary.coverageGaps ?? 0,
-            averageRespondersPerAlert: (typeof rawSummary.averageRespondersPerAlert === 'number' && !isNaN(rawSummary.averageRespondersPerAlert))
-              ? rawSummary.averageRespondersPerAlert
-              : null,
-            routingIssues: rawSummary.routingIssues ?? 0,
-            validCategoriesCount: rawSummary.validCategoriesCount ?? 0
-          });
           setCategories(data.categories || []);
-          setLimitations(data.limitations || []);
-
           if (isUserRefresh) {
-            setToastMessage('Coverage updated successfully.');
-            setTimeout(() => setToastMessage(null), 3500);
+            setToastMessage('Coverage updated.');
+            setTimeout(() => setToastMessage(null), 3000);
           }
         } else {
-          setError(data.message || data.error || 'Failed to fetch alert response coverage.');
+          setError(data.message || data.error || 'We couldn’t load the coverage data. Try again');
         }
       } else {
         if (res.status === 401 || res.status === 403) {
-          setError('Permission Denied: Administrator access required to view response coverage.');
+          setError('Permission Denied: Administrator access required.');
         } else {
-          setError('We could not load response coverage. Please check your network connection.');
+          setError('We couldn’t load the coverage data. Try again');
         }
       }
     } catch (err) {
       console.error('Failed fetching coverage report:', err);
-      setError('An error occurred while loading alert coverage data. Please try again.');
+      setError('We couldn’t load the coverage data. Try again');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -123,29 +109,34 @@ export default function ResponseCoverageTab({ onNavigateTab }: ResponseCoverageT
 
   useEffect(() => {
     fetchCoverageReport();
-  }, []);
+  }, [eventId]);
 
-  // Filtered categories
+  // Compute restrained summary numbers
+  const totalAreas = categories.length;
+  const coveredAreas = categories.filter(
+    (c) => getHumanCoverageStatus(c).label === 'Covered'
+  ).length;
+  const needSupport = totalAreas - coveredAreas;
+
   const filteredCategories = categories.filter((cat) => {
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       const matchesName = cat.name.toLowerCase().includes(q);
       const matchesKey = cat.categoryKey.toLowerCase().includes(q);
-      const matchesRoles = cat.expectedRoles.some(r => r.toLowerCase().includes(q));
-      const matchesPrimary = cat.primaryResponders.some(r => r.name.toLowerCase().includes(q) || r.responsibility.toLowerCase().includes(q));
-      const matchesBackup = cat.backupResponders.some(r => r.name.toLowerCase().includes(q) || r.responsibility.toLowerCase().includes(q));
-      const matchesAction = cat.recommendedAction.toLowerCase().includes(q);
-      if (!matchesName && !matchesKey && !matchesRoles && !matchesPrimary && !matchesBackup && !matchesAction) {
+      const matchesRoles = cat.expectedRoles.some((r) => r.toLowerCase().includes(q));
+      const matchesPrimary = cat.primaryResponders.some(
+        (r) => r.name.toLowerCase().includes(q) || r.responsibility.toLowerCase().includes(q)
+      );
+      if (!matchesName && !matchesKey && !matchesRoles && !matchesPrimary) {
         return false;
       }
     }
 
-    if (statusFilter !== 'all' && cat.coverageStatus !== statusFilter) {
-      return false;
-    }
-
-    if (severityFilter !== 'all' && cat.severity !== severityFilter) {
-      return false;
+    if (statusFilter !== 'all') {
+      const statusObj = getHumanCoverageStatus(cat);
+      if (statusFilter === 'covered' && statusObj.label !== 'Covered') return false;
+      if (statusFilter === 'needs_one' && statusObj.label !== 'Needs one more person') return false;
+      if (statusFilter === 'not_covered' && statusObj.label !== 'Not covered') return false;
     }
 
     return true;
@@ -154,282 +145,337 @@ export default function ResponseCoverageTab({ onNavigateTab }: ResponseCoverageT
   const clearFilters = () => {
     setSearchQuery('');
     setStatusFilter('all');
-    setSeverityFilter('all');
   };
 
-  const formattedAverage = (summary?.averageRespondersPerAlert !== null && summary?.averageRespondersPerAlert !== undefined && typeof summary.averageRespondersPerAlert === 'number' && !isNaN(summary.averageRespondersPerAlert))
-    ? summary.averageRespondersPerAlert.toFixed(1)
-    : '—';
-
   return (
-    <div className="space-y-6 animate-fade-in" data-view-version="admin-response-coverage-v3">
+    <div className="space-y-5 animate-fade-in" data-view-version="admin-team-coverage-v5">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-2xl flex items-center justify-between text-xs font-semibold animate-fade-in shadow-xs">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-xl flex items-center justify-between text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{toastMessage}</span>
           </div>
           <button 
             onClick={() => setToastMessage(null)}
-            className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+            className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-1"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* Header Row */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-4">
-        <div>
-          <h2 className="text-xl font-serif font-bold text-stone-900 tracking-tight">Alert Response Coverage</h2>
-          <p className="text-xs text-stone-500 mt-0.5">Ensure every alert category has assigned primary and backup responders for active event operations.</p>
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
+          <div className="flex items-center space-x-2">
+            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} className="text-rose-700 hover:text-rose-900 cursor-pointer p-1">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
-        <button
-          onClick={() => fetchCoverageReport(true)}
-          disabled={loading || refreshing}
-          className="flex items-center space-x-2 px-4 py-2.5 bg-white hover:bg-stone-50 border border-stone-200 text-stone-800 text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0 min-h-[40px]"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${(loading || refreshing) ? 'animate-spin' : ''}`} />
-          <span>{refreshing ? 'Refreshing…' : 'Refresh coverage'}</span>
-        </button>
+      )}
+
+      {/* 1. Header Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
+        <div>
+          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+            Team Coverage
+          </h2>
+          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+            Check that each event area has the people it needs.
+          </p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => fetchCoverageReport(true)}
+            disabled={loading || refreshing}
+            aria-label="Refresh coverage"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-xs font-medium text-[#18181B] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${(loading || refreshing) ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab?.('event_team')}
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A8821B] text-white text-xs font-medium rounded-lg transition-all shadow-2xs cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Assign team member</span>
+          </button>
+        </div>
       </div>
 
-      {/* Error state */}
-      {error && (
-        <div className="p-6 bg-rose-50 border border-rose-200 text-rose-950 rounded-2xl flex flex-col items-center justify-center text-center space-y-3">
-          <XCircle className="w-8 h-8 text-rose-600" />
-          <div>
-            <h3 className="font-bold text-sm text-rose-900">Coverage Assessment Error</h3>
-            <p className="text-xs text-rose-700 mt-1 max-w-md">{error}</p>
-          </div>
-          <button
-            onClick={() => fetchCoverageReport(false)}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-xs"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-
-      {/* Data Quality Warnings Panel */}
-      {!error && limitations.length > 0 && (
-        <div className="p-4 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start space-x-3 text-xs text-amber-900">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <span className="font-bold block">Coverage Data Quality Warning</span>
-            <ul className="list-disc list-inside space-y-0.5 text-amber-800">
-              {limitations.map((item, idx) => (
-                <li key={idx}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* Loading Skeletons */}
-      {loading && !refreshing ? (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white border border-stone-200 p-5 rounded-2xl space-y-3 shadow-2xs animate-pulse">
-                <div className="h-3 w-24 bg-stone-200 rounded" />
-                <div className="h-8 w-16 bg-stone-200 rounded" />
-                <div className="h-2.5 w-32 bg-stone-100 rounded" />
-              </div>
-            ))}
-          </div>
-          <div className="bg-white border border-stone-200 rounded-2xl p-12 text-center space-y-3">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#C59B27]" />
-            <span className="text-xs font-semibold text-stone-500 block">Evaluating active responder coverage…</span>
-          </div>
-        </div>
-      ) : !error && (
-        <div className="space-y-6">
-          {/* Summary KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 1: Active Responders */}
-            <div className="bg-white border border-stone-200/80 p-5 rounded-2xl space-y-1.5 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider">Active Responders</span>
-                <Users className="w-4 h-4 text-stone-400" />
-              </div>
-              <div className={`text-2xl font-bold font-mono tracking-tight ${summary.activeResponders > 0 ? 'text-stone-900' : 'text-stone-400'}`}>
-                {summary.activeResponders}
-              </div>
-              <p className="text-[10px] font-medium text-stone-500">Available across alert response roles</p>
+      {/* 2. Restrained Summary Row (Prompt Section 29) */}
+      {!loading && !error && totalAreas > 0 && (
+        <div className="bg-white border border-[#EAE8E1] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+          <div className="flex items-center divide-x divide-[#EAE8E1]">
+            <div className="pr-6">
+              <span className="text-[11px] text-zinc-400 font-medium block">Areas</span>
+              <span className="text-lg font-bold text-zinc-900">{totalAreas}</span>
             </div>
-
-            {/* Card 2: Coverage Gaps */}
-            <div className="bg-white border border-stone-200/80 p-5 rounded-2xl space-y-1.5 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider">Coverage Gaps</span>
-                <AlertTriangle className={`w-4 h-4 ${summary.coverageGaps > 0 ? 'text-rose-500' : 'text-emerald-500'}`} />
-              </div>
-              <div className={`text-2xl font-bold font-mono tracking-tight ${summary.coverageGaps > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                {summary.coverageGaps}
-              </div>
-              <p className="text-[10px] font-medium text-stone-500">Alert types requiring attention</p>
+            <div className="px-6">
+              <span className="text-[11px] text-zinc-400 font-medium block">Covered</span>
+              <span className="text-lg font-bold text-emerald-700">{coveredAreas}</span>
             </div>
-
-            {/* Card 3: Average Responders per Alert */}
-            <div className="bg-white border border-stone-200/80 p-5 rounded-2xl space-y-1.5 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider">Avg Responders / Alert</span>
-                <Activity className="w-4 h-4 text-stone-400" />
-              </div>
-              <div className="text-2xl font-bold text-stone-900 font-mono tracking-tight">
-                {formattedAverage}
-              </div>
-              <p className="text-[10px] font-medium text-stone-500">
-                {(summary.validCategoriesCount ?? 0) === 0 ? 'No routing rules available' : 'Average responders per category'}
-              </p>
-            </div>
-
-            {/* Card 4: Routing Issues */}
-            <div className="bg-white border border-stone-200/80 p-5 rounded-2xl space-y-1.5 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider">Routing Issues</span>
-                <AlertCircle className={`w-4 h-4 ${summary.routingIssues > 0 ? 'text-amber-500' : 'text-stone-400'}`} />
-              </div>
-              <div className={`text-2xl font-bold font-mono tracking-tight ${summary.routingIssues > 0 ? 'text-amber-600' : 'text-stone-700'}`}>
-                {summary.routingIssues}
-              </div>
-              <p className="text-[10px] font-medium text-stone-500">Rules requiring correction</p>
+            <div className="pl-6">
+              <span className="text-[11px] text-zinc-400 font-medium block">Need support</span>
+              <span className="text-lg font-bold text-amber-700">{needSupport}</span>
             </div>
           </div>
 
-          {/* Search & Filter Bar */}
-          <div className="bg-white border border-stone-200 p-4 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-2xs">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search alert types, roles, responders, or locations..."
-                className="w-full pl-10 pr-8 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/20"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center space-x-1 bg-stone-50 border border-stone-200 px-3 py-2 rounded-xl text-xs">
-                <Filter className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                <span className="text-stone-500 font-medium">Coverage:</span>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-transparent font-semibold text-stone-800 focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="Complete">Complete</option>
-                  <option value="Limited">Limited</option>
-                  <option value="No coverage">No coverage</option>
-                  <option value="Routing issue">Routing issue</option>
-                </select>
-              </div>
-
-              <div className="flex items-center space-x-1 bg-stone-50 border border-stone-200 px-3 py-2 rounded-xl text-xs">
-                <span className="text-stone-500 font-medium">Severity:</span>
-                <select
-                  value={severityFilter}
-                  onChange={(e) => setSeverityFilter(e.target.value)}
-                  className="bg-transparent font-semibold text-stone-800 focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All severities</option>
-                  <option value="Critical">Critical</option>
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                </select>
-              </div>
-
-              {(searchQuery || statusFilter !== 'all' || severityFilter !== 'all') && (
-                <button
-                  onClick={clearFilters}
-                  className="px-3 py-2 text-xs font-semibold text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-all cursor-pointer"
-                >
-                  Clear filters
-                </button>
-              )}
-
-              <span className="text-xs font-mono font-bold text-stone-400 pl-2 border-l border-stone-200">
-                {filteredCategories.length} {filteredCategories.length === 1 ? 'alert type' : 'alert types'}
+          <div className="text-xs font-medium self-start sm:self-center">
+            {needSupport === 0 ? (
+              <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg inline-flex items-center space-x-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>All areas are covered.</span>
               </span>
-            </div>
+            ) : (
+              <span className="text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg inline-flex items-center space-x-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <span>
+                  {needSupport === 1
+                    ? '1 area needs additional team members.'
+                    : `${needSupport} areas need additional team members.`}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Search and Status Filters */}
+      <div className="p-3 bg-white border border-[#EAE8E1] rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shadow-2xs">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search areas or roles…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-900 placeholder:text-zinc-400 font-normal"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="Filter by coverage status"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+          >
+            <option value="all">All statuses</option>
+            <option value="covered">Covered</option>
+            <option value="needs_one">Needs one more person</option>
+            <option value="not_covered">Not covered</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 4. Table / List of Areas */}
+      {loading && categories.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
+          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
+          <span>Loading team coverage…</span>
+        </div>
+      ) : categories.length === 0 ? (
+        /* Empty State (Section 30) */
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
+          <MapPin className="w-6 h-6 mx-auto text-zinc-400" />
+          <div>
+            <h3 className="font-semibold text-zinc-800 text-sm">No event areas have been added yet</h3>
+            <p className="text-zinc-500 text-xs mt-0.5">
+              Add the locations used during the event before assigning team coverage.
+            </p>
+          </div>
+          <div className="pt-1">
+            <button
+              onClick={() => onNavigateTab?.('event_locations')}
+              className="px-3.5 py-1.5 bg-[#C59B27] text-white text-xs font-medium rounded-xl hover:bg-[#A8821B] cursor-pointer"
+            >
+              Add location
+            </button>
+          </div>
+        </div>
+      ) : filteredCategories.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-2">
+          <Users className="w-6 h-6 mx-auto text-zinc-400" />
+          <h3 className="font-semibold text-zinc-800 text-sm">No matching areas found</h3>
+          <p className="text-zinc-500 text-xs">Try changing your filters or search.</p>
+          <div className="pt-2">
+            <button
+              onClick={clearFilters}
+              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-zinc-700 text-xs font-medium hover:bg-zinc-50 cursor-pointer"
+            >
+              Clear filters
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#FAF9F5] border-b border-[#EAE8E1] text-zinc-500 font-medium text-[11px]">
+                  <th className="p-3.5 pl-4 font-medium min-w-[200px]">Area</th>
+                  <th className="p-3.5 font-medium w-[220px]">Required</th>
+                  <th className="p-3.5 font-medium min-w-[220px]">Assigned</th>
+                  <th className="p-3.5 font-medium w-[170px]">Status</th>
+                  <th className="p-3.5 pr-4 font-medium text-right w-[140px]">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                {filteredCategories.map((cat) => {
+                  const statusInfo = getHumanCoverageStatus(cat);
+                  const allAssigned = [...cat.primaryResponders, ...cat.backupResponders];
+
+                  return (
+                    <tr key={cat.id} className="hover:bg-zinc-50/60 transition-colors">
+                      {/* Area */}
+                      <td className="p-3.5 pl-4">
+                        <div className="font-semibold text-zinc-900 text-xs">
+                          {cat.name}
+                        </div>
+                        <div className="text-[11px] text-zinc-400 mt-0.5">
+                          {cat.severity} priority
+                        </div>
+                      </td>
+
+                      {/* Required */}
+                      <td className="p-3.5">
+                        <div className="flex flex-wrap gap-1">
+                          {cat.expectedRoles.map((role, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-md text-[11px] font-medium"
+                            >
+                              {formatRoleName(role)}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+
+                      {/* Assigned */}
+                      <td className="p-3.5">
+                        {allAssigned.length === 0 ? (
+                          <span className="text-zinc-400 text-xs italic">
+                            No one assigned yet
+                          </span>
+                        ) : (
+                          <div className="space-y-1">
+                            <div className="flex items-center -space-x-1.5 overflow-hidden">
+                              {allAssigned.slice(0, 4).map((r, i) => (
+                                <div
+                                  key={i}
+                                  title={`${r.name} (${r.responsibility})`}
+                                  className="w-6 h-6 rounded-full bg-[#C59B27]/10 text-[#C59B27] border border-white flex items-center justify-center font-medium text-[10px] shrink-0"
+                                >
+                                  {getInitials(r.name)}
+                                </div>
+                              ))}
+                              {allAssigned.length > 4 && (
+                                <div className="w-6 h-6 rounded-full bg-zinc-100 text-zinc-600 border border-white flex items-center justify-center font-medium text-[9px] shrink-0">
+                                  +{allAssigned.length - 4}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-zinc-600 truncate max-w-xs">
+                              {allAssigned.map((r) => r.name).join(', ')}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="p-3.5">
+                        <div className="flex items-center space-x-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
+                          <span className={`text-xs font-medium ${statusInfo.textClass}`}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="p-3.5 pr-4 text-right">
+                        {statusInfo.label !== 'Covered' ? (
+                          <button
+                            onClick={() => onNavigateTab?.('event_team')}
+                            className="text-xs text-[#C59B27] hover:text-[#A8821B] font-medium px-2 py-1 rounded-lg hover:bg-[#C59B27]/10 cursor-pointer"
+                          >
+                            Assign person
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onNavigateTab?.('event_team')}
+                            className="text-xs text-zinc-500 hover:text-zinc-800 font-medium px-2 py-1 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                          >
+                            View team
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {/* Categories List / Table */}
-          {filteredCategories.length === 0 ? (
-            <div className="p-12 text-center text-xs text-stone-500 bg-white border border-stone-200 rounded-2xl space-y-3 shadow-2xs">
-              <ShieldCheck className="w-8 h-8 mx-auto text-stone-300" />
-              <div>
-                <span className="font-bold text-stone-700 block text-sm mb-1">No alert types match the selected filters</span>
-                <p className="text-stone-500">Try adjusting your search query or clear active filters to view all categories.</p>
-              </div>
-              <button
-                onClick={clearFilters}
-                className="px-4 py-2 bg-white hover:bg-stone-50 border border-stone-200 text-xs font-bold text-stone-800 rounded-xl transition-all cursor-pointer shadow-2xs"
-              >
-                Clear filters
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* DESKTOP 6-COLUMN TABLE VIEW (lg breakpoint and above) */}
-              <div className="hidden lg:block bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="sticky top-0 z-10 bg-stone-50/90 backdrop-blur-xs border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase tracking-wider font-medium">
-                        <th className="p-4 w-60 min-w-[220px]">Alert type</th>
-                        <th className="p-4 w-52 min-w-[180px]">Expected roles</th>
-                        <th className="p-4 min-w-[340px]">Response team</th>
-                        <th className="p-4 w-40 min-w-[140px]">Device readiness</th>
-                        <th className="p-4 w-36 min-w-[130px]">Coverage</th>
-                        <th className="p-4 w-56 min-w-[200px]">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-stone-100 font-medium text-stone-700">
-                      {filteredCategories.map((item) => {
-                        const rowKey = item.id || item.categoryKey;
-                        return (
-                          <ResponseCoverageRow
-                            key={rowKey}
-                            item={item}
-                            onNavigateTab={onNavigateTab}
-                            isExpanded={expandedRowId === rowKey}
-                            onToggleExpand={() => {
-                              setExpandedRowId(expandedRowId === rowKey ? null : rowKey);
-                            }}
-                          />
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+          {/* Mobile Cards View */}
+          <div className="block md:hidden divide-y divide-zinc-100">
+            {filteredCategories.map((cat) => {
+              const statusInfo = getHumanCoverageStatus(cat);
+              const allAssigned = [...cat.primaryResponders, ...cat.backupResponders];
 
-              {/* TABLET / MOBILE CARD VIEW (below lg breakpoint) */}
-              <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredCategories.map((item) => (
-                  <ResponseCoverageCard
-                    key={item.id || item.categoryKey}
-                    item={item}
-                    onNavigateTab={onNavigateTab}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+              return (
+                <div key={cat.id} className="p-4 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-zinc-900 text-xs">{cat.name}</div>
+                      <div className="text-[11px] text-zinc-400">{cat.severity} priority</div>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
+                      <span className={`text-xs font-medium ${statusInfo.textClass}`}>
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg text-xs space-y-1.5">
+                    <div>
+                      <span className="text-zinc-400 text-[11px] block">Required roles</span>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {cat.expectedRoles.map((r, i) => (
+                          <span key={i} className="text-[11px] text-zinc-700 bg-white border border-[#EAE8E1] px-1.5 py-0.5 rounded">
+                            {formatRoleName(r)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-zinc-400 text-[11px] block">Assigned team</span>
+                      <span className="text-zinc-800 text-xs font-medium">
+                        {allAssigned.length > 0 ? allAssigned.map(r => r.name).join(', ') : 'None'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end pt-1">
+                    <button
+                      onClick={() => onNavigateTab?.('event_team')}
+                      className="text-xs text-[#C59B27] font-medium hover:underline cursor-pointer"
+                    >
+                      {statusInfo.label !== 'Covered' ? 'Assign team member' : 'View assignments'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

@@ -609,6 +609,7 @@ export const api = {
       search?: string;
       dateFrom?: string;
       dateTo?: string;
+      eventId?: string;
     }) {
       const params = new URLSearchParams();
       if (filters.limit) params.append('limit', String(filters.limit));
@@ -620,6 +621,7 @@ export const api = {
       if (filters.search) params.append('search', filters.search);
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
       if (filters.dateTo) params.append('dateTo', filters.dateTo);
+      if (filters.eventId) params.append('eventId', filters.eventId);
 
       return api.request<{ updates: any[]; pagination: any }>(
         `/api/notifications/admin/updates?${params.toString()}`
@@ -640,8 +642,9 @@ export const api = {
     async unarchiveUpdate(id: string) {
       return api.request<any>(`/api/notifications/admin/updates/${id}/unarchive`, { method: 'POST' });
     },
-    async getSummary() {
-      return api.request<{ success: boolean; summary: any }>('/api/notifications/admin/updates/summary');
+    async getSummary(eventId?: string) {
+      const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{ success: boolean; summary: any }>(`/api/notifications/admin/updates/summary${qs}`);
     }
   },
 
@@ -875,7 +878,8 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
-    async getMessages() {
+    async getMessages(eventId?: string) {
+      const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
       return api.request<{
         success: boolean;
         stats: {
@@ -900,7 +904,7 @@ export const api = {
           fromEmail: string | null;
           replyToEmail: string | null;
         };
-      }>('/api/admin/messages');
+      }>(`/api/admin/messages${qs}`);
     },
     async previewMessage(payload: {
       recipientGroup: string;

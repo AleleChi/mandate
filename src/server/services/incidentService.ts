@@ -227,43 +227,70 @@ export function validateClosureChecklist(checklist: ClosureChecklist, category: 
  */
 export async function createIncident(params: {
   actor: Actor;
-  alertId: string;
+  alertId?: string;
+  eventId?: string;
   category: IncidentCategory;
   title: string;
   description: string;
-  structuredData: any;
+  structuredData?: any;
   parentContact?: string;
   firstAid?: string;
   security?: string;
   status?: IncidentStatus;
   idempotencyKey?: string;
 }) {
-  const { actor, alertId, category, title, description, structuredData, parentContact = '', firstAid = '', security = '', status = 'draft', idempotencyKey } = params;
-
-  // Enforce access policy
-  const access = await verifyIncidentAccess(actor, alertId, 'edit');
-  if (!access.allowed) {
-    throw new IncidentError(access.reason || 'Unauthorized.', 'ACCESS_DENIED', 403);
-  }
+  const { actor, category, title, description, structuredData = {}, parentContact = '', firstAid = '', security = '', status = 'draft', idempotencyKey } = params;
+  let alertId = params.alertId;
 
   return transaction(async () => {
-    // One incident record per alert constraint
-    const existing = await queryOne('SELECT id, version FROM incident_records WHERE alert_id = ?', [alertId]);
-    if (existing) {
-      // If idempotency key matches or simply alert_id already exists, return existing
-      if (idempotencyKey) {
-        const matchingIdem = await queryOne('SELECT id FROM incident_records WHERE alert_id = ? AND idempotency_key = ?', [alertId, idempotencyKey]);
-        if (matchingIdem) {
-          return getIncidentState(existing.id, actor);
-        }
-      }
-      throw new IncidentError('An incident record already exists for this alert.', 'DUPLICATE_RECORD', 409);
-    }
+    let alert: any = null;
 
-    // Verify alert exists and retrieve its event_id
-    const alert = await queryOne('SELECT event_id FROM event_safety_alerts WHERE id = ?', [alertId]);
-    if (!alert) {
-      throw new IncidentError('Alert not found.', 'ALERT_NOT_FOUND', 404);
+    if (alertId) {
+      // Enforce access policy
+      const access = await verifyIncidentAccess(actor, alertId, 'edit');
+      if (!access.allowed) {
+        throw new IncidentError(access.reason || 'Unauthorized.', 'ACCESS_DENIED', 403);
+      }
+
+      // One incident record per alert constraint
+      const existing = await queryOne('SELECT id, version FROM incident_records WHERE alert_id = ?', [alertId]);
+      if (existing) {
+        // If idempotency key matches or simply alert_id already exists, return existing
+        if (idempotencyKey) {
+          const matchingIdem = await queryOne('SELECT id FROM incident_records WHERE alert_id = ? AND idempotency_key = ?', [alertId, idempotencyKey]);
+          if (matchingIdem) {
+            return getIncidentState(existing.id, actor);
+          }
+        }
+        throw new IncidentError('An incident record already exists for this alert.', 'DUPLICATE_RECORD', 409);
+      }
+
+      // Verify alert exists and retrieve its event_id
+      alert = await queryOne('SELECT event_id FROM event_safety_alerts WHERE id = ?', [alertId]);
+      if (!alert) {
+        throw new IncidentError('Alert not found.', 'ALERT_NOT_FOUND', 404);
+      }
+    } else {
+      // Direct incident creation without prior alert
+      if (actor.role !== 'admin' && actor.role !== 'superadmin' && actor.role !== 'super_admin') {
+        throw new IncidentError('Only administrators can record incidents directly.', 'ACCESS_DENIED', 403);
+      }
+
+      let eventId = params.eventId;
+      if (!eventId) {
+        const curEvent = await queryOne("SELECT id FROM events WHERE status IN ('current', 'active') LIMIT 1");
+        eventId = curEvent?.id || 'event-ga-2026';
+      }
+
+      alertId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
+      await execute(`
+        INSERT INTO event_safety_alerts (
+          id, event_id, raised_by_user_id, raised_by_role, severity, category, title, message, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'normal', ?, ?, ?, 'resolved', ?, ?)
+      `, [alertId, eventId, actor.id, actor.role || 'admin', category, title || 'Incident Report', description || 'Incident logged directly from Incident Desk', nowIso, nowIso]);
+
+      alert = { event_id: eventId };
     }
 
     if (status === 'submitted') {

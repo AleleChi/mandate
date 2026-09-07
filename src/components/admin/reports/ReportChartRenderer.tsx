@@ -5,32 +5,33 @@ interface ReportChartRendererProps {
   chart: ReportChartSpec;
 }
 
+// Restrained palette: Koinonia Gold accent, charcoal, neutral grey, emerald green
 const COLORS = [
-  '#C59B27', // Koinonia Gold
-  '#10B981', // Emerald Green
-  '#84CC16', // Green-Gold
-  '#A67C2E', // Deep Gold
-  '#D97706', // Warm Amber
-  '#4B5563', // Muted Charcoal
-  '#2563EB', // Blue
+  '#C59B27', // Koinonia Antique Gold
+  '#3F3F46', // Charcoal
+  '#16835D', // Emerald Green (completion/attendance)
+  '#71717A', // Neutral Grey
+  '#A37D1E', // Deep Brass Gold
+  '#A8A29E', // Warm Grey
+  '#D08A1D', // Amber
 ];
 
 const getSeriesColor = (label: string, index: number): string => {
   const l = (label || '').toLowerCase();
-  if (l.includes('check') || l.includes('arrival')) return '#10B981'; // Emerald
-  if (l.includes('release') || l.includes('pickup')) return '#2563EB'; // Blue
-  if (l.includes('registered')) return '#C59B27'; // Gold
+  if (l.includes('attended') || l.includes('arrival') || l.includes('check')) return '#16835D'; // Emerald
+  if (l.includes('picked') || l.includes('release')) return '#3F3F46'; // Charcoal
+  if (l.includes('registered') || l.includes('expected') || l.includes('selected')) return '#C59B27'; // Gold
   return COLORS[index % COLORS.length];
 };
 
 const getCohortColor = (label: string, fallbackColor: string): string => {
   const l = (label || '').toLowerCase();
-  if (l.includes('under 4')) return '#10B981';
-  if (l.includes('1 to 3') || l.includes('1-3')) return '#84CC16';
-  if (l.includes('4 to 6') || l.includes('4-6')) return '#C59B27';
-  if (l.includes('7 to 9') || l.includes('7-9')) return '#A67C2E';
-  if (l.includes('10 to 12') || l.includes('10-12')) return '#D97706';
-  if (l.includes('teen') || l.includes('13+')) return '#4B5563';
+  if (l.includes('under 4') || l.includes('below 1') || l.includes('0-3')) return '#16835D';
+  if (l.includes('1-3') || l.includes('1 to 3')) return '#A37D1E';
+  if (l.includes('4-6') || l.includes('4 to 6')) return '#C59B27';
+  if (l.includes('7-9') || l.includes('7 to 9')) return '#71717A';
+  if (l.includes('10-12') || l.includes('10 to 12')) return '#3F3F46';
+  if (l.includes('teen') || l.includes('13+')) return '#52525B';
   return fallbackColor;
 };
 
@@ -56,7 +57,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
           <div key={idx} className="space-y-1.5">
             <div className="flex justify-between items-center text-xs font-medium text-stone-700">
               <span className="font-semibold text-stone-900">{label}</span>
-              <span className="font-mono text-stone-600">
+              <span className="tabular-nums text-stone-600">
                 {series.map(s => `${s.label ? s.label + ': ' : ''}${s.values[idx] || 0}`).join('  |  ')}
               </span>
             </div>
@@ -76,7 +77,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
                           className="h-full rounded-md transition-all duration-300"
                         />
                       </div>
-                      <span className="w-8 font-mono font-medium text-stone-800 text-right">{val}</span>
+                      <span className="w-8 tabular-nums font-medium text-stone-800 text-right">{val}</span>
                     </div>
                   );
                 })}
@@ -115,7 +116,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
                   className="h-full rounded-md transition-all duration-300"
                 />
               </div>
-              <span className="w-12 font-mono font-semibold text-stone-800 text-right">{val}</span>
+              <span className="w-12 tabular-nums font-semibold text-stone-800 text-right">{val}</span>
             </div>
           );
         })}
@@ -153,7 +154,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
             })}
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-xs font-semibold text-stone-900 font-mono">{total}</span>
+            <span className="text-xs font-semibold text-stone-900 tabular-nums">{total}</span>
             <span className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold">Total</span>
           </div>
         </div>
@@ -167,7 +168,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
                   <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                   <span className="text-stone-700">{label}</span>
                 </div>
-                <span className="font-mono text-stone-900 font-semibold">{val} ({pct}%)</span>
+                <span className="tabular-nums text-stone-900 font-semibold">{val} ({pct}%)</span>
               </div>
             );
           })}
@@ -257,7 +258,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
                 className="py-2 px-3 rounded-lg text-white text-xs text-center shadow-xs transition-all flex justify-between items-center min-w-[120px]"
               >
                 <span className="font-medium truncate mr-2">{label}</span>
-                <span className="font-mono font-bold shrink-0">{val}</span>
+                <span className="tabular-nums font-bold shrink-0">{val}</span>
               </div>
             </div>
           );
@@ -273,7 +274,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
       aria-label={accessibleSummary || title}
     >
       <div className="mb-4">
-        <h4 className="text-sm font-serif font-semibold text-stone-900">{title}</h4>
+        <h4 className="text-sm font-semibold text-stone-900">{title}</h4>
         {subtitle && <p className="text-xs text-stone-500 mt-0.5">{subtitle}</p>}
       </div>
 

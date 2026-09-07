@@ -2,14 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { ModuleLoadingState } from '../../components/common/ModuleLoadingState';
-import { KoinoniaErrorState } from '../../components/common/KoinoniaErrorState';
 import { 
-  ShieldAlert, Plus, Settings, RefreshCw, Trash2, Calendar, 
-  CheckCircle, HelpCircle, Eye, AlertTriangle, X, ChevronRight, 
-  Play, Square, BellRing, Info, ShieldAlert as AlertIcon, Users, Sliders
+  Plus, 
+  RefreshCw, 
+  Calendar, 
+  Eye, 
+  X, 
+  Sliders,
+  BellRing,
+  AlertTriangle,
+  Clock,
+  Trash2,
+  Edit3
 } from 'lucide-react';
-
-// Proof: data-component-version="shared-admin-escalations-view-v3-premium"
 
 export const AdminEscalationsView: React.FC = () => {
   const { showError, showSuccess, showInfo } = useNotification();
@@ -55,7 +60,6 @@ export const AdminEscalationsView: React.FC = () => {
       const res = await api.admin.getEvents();
       if (res.success && res.events && res.events.length > 0) {
         setEvents(res.events);
-        // Default to the 'current' or active event if exists
         const currentEvent = res.events.find((e: any) => e.status === 'current' || e.status === 'active');
         if (currentEvent) {
           setSelectedEventId(currentEvent.id);
@@ -68,7 +72,7 @@ export const AdminEscalationsView: React.FC = () => {
     } catch (err) {
       console.error('Failed to load events:', err);
     }
-    return 'event-ga-2026'; // fallback ID
+    return 'event-ga-2026';
   };
 
   // 2. Main Data Loading Function
@@ -84,12 +88,12 @@ export const AdminEscalationsView: React.FC = () => {
       // Fetch Policies
       const polRes = await api.escalation.getPolicies(eventId);
       if (polRes.success) {
-        setPolicies(polRes.policies);
+        setPolicies(polRes.policies || []);
       } else {
-        throw new Error('Failed to fetch escalation policies.');
+        throw new Error('Failed to load response rules.');
       }
 
-      // Fetch History logs (Partial Failure Safety)
+      // Fetch History logs
       try {
         const histRes = await api.escalation.getHistory(eventId);
         if (histRes.success) {
@@ -98,11 +102,11 @@ export const AdminEscalationsView: React.FC = () => {
           setPartialHistoryError(true);
         }
       } catch (histErr) {
-        console.error('[Partial Section Failure] History Logs:', histErr);
+        console.error('[Partial Failure] History Logs:', histErr);
         setPartialHistoryError(true);
       }
 
-      // Fetch Active Cycles (Partial Failure Safety)
+      // Fetch Active Cycles
       try {
         const cyclesRes = await api.escalation.getCycles(eventId);
         if (cyclesRes.success) {
@@ -111,15 +115,15 @@ export const AdminEscalationsView: React.FC = () => {
           setPartialCyclesError(true);
         }
       } catch (cyclesErr) {
-        console.error('[Partial Section Failure] Active Cycles:', cyclesErr);
+        console.error('[Partial Failure] Active Cycles:', cyclesErr);
         setPartialCyclesError(true);
       }
 
     } catch (err) {
       if (!isSilent) {
-        setMainError('Escalation policies could not be loaded.');
+        setMainError('We couldn’t load the response rules.');
       } else {
-        showError('Update Failed', 'Connection problem when fetching the latest escalation policies.');
+        showError('Update Failed', 'Connection problem when fetching the latest response rules.');
       }
     } finally {
       setLoading(false);
@@ -127,7 +131,6 @@ export const AdminEscalationsView: React.FC = () => {
     }
   };
 
-  // Run on mount
   useEffect(() => {
     const init = async () => {
       const activeId = await loadAllEvents();
@@ -136,7 +139,6 @@ export const AdminEscalationsView: React.FC = () => {
     init();
   }, []);
 
-  // Handle Event switcher
   const handleEventChange = async (eventId: string) => {
     setSelectedEventId(eventId);
     await loadModuleData(eventId, false);
@@ -156,7 +158,7 @@ export const AdminEscalationsView: React.FC = () => {
       condition_key: policy.condition_key,
       severity: policy.severity || '',
       category_key: policy.category_key || '',
-      priority: policy.priority,
+      priority: policy.priority || 10,
       is_enabled: policy.is_enabled === 1 || policy.is_enabled === true,
       steps: policy.steps || []
     });
@@ -166,12 +168,12 @@ export const AdminEscalationsView: React.FC = () => {
   const handleCreateNew = () => {
     setEditingPolicyId(null);
     setPolicyForm({
-      name: 'High-Severity Unanswered Care Escalation',
+      name: 'Unanswered safety alert',
       policy_scope: 'event_default',
       condition_key: 'alert_not_acknowledged',
       severity: '',
       category_key: '',
-      priority: 25,
+      priority: 10,
       is_enabled: true,
       steps: [
         {
@@ -233,11 +235,11 @@ export const AdminEscalationsView: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!policyForm.name.trim()) {
-      showError('Validation Error', 'Policy name is required.');
+      showError('Name Required', 'Please provide a rule name.');
       return;
     }
     if (policyForm.steps.length === 0) {
-      showError('Validation Error', 'At least one escalation sequence step must be defined.');
+      showError('Step Required', 'Please define at least one response step.');
       return;
     }
 
@@ -250,61 +252,58 @@ export const AdminEscalationsView: React.FC = () => {
 
       if (editingPolicyId) {
         await api.escalation.updatePolicy(editingPolicyId, payload);
-        showSuccess('Policy Matrix Updated', 'The escalation rule was successfully synchronized with the sentinel engine.');
+        showSuccess('Rule Saved', 'Response rule updated successfully.');
       } else {
         await api.escalation.createPolicy(payload);
-        showSuccess('Policy Created', 'New sentinel protection matrix initialized.');
+        showSuccess('Rule Created', 'Response rule created successfully.');
       }
       setIsEditing(false);
       loadModuleData(selectedEventId, true);
     } catch (err) {
-      showError('Action Failed', extractApiError(err).message || 'Failed to save escalation policy.');
+      showError('Action Failed', extractApiError(err).message || 'We couldn’t save this rule.');
     }
   };
 
   const confirmDeletePolicy = async (policyId: string) => {
     try {
       await api.escalation.deletePolicy(policyId);
-      showSuccess('Rule Removed', 'The escalation rule was successfully removed.');
+      showSuccess('Rule Deleted', 'The response rule has been removed.');
       setDeletingPolicyId(null);
       loadModuleData(selectedEventId, true);
     } catch (err) {
-      showError('Action Failed', extractApiError(err).message || 'Failed to remove escalation policy.');
+      showError('Action Failed', extractApiError(err).message || 'Failed to remove response rule.');
     }
   };
 
-  const handleDelete = (policyId: string) => {
-    setDeletingPolicyId(policyId);
-  };
-
   // Human readability helper formatters
-  const getHumanPriority = (priorityNum: number) => {
-    if (priorityNum >= 20) return 'Critical priority';
-    if (priorityNum >= 10) return 'High priority';
-    if (priorityNum >= 5) return 'Standard priority';
-    return 'Low priority';
+  const humanizeRuleTitle = (name: string) => {
+    if (!name) return 'Response rule';
+    if (name === 'Unacknowledged Safety Alert Escalation') return 'Unanswered safety alert';
+    if (name === 'Pending Alert Handover Escalation') return 'Safety handover not accepted';
+    if (name === 'Assistance Request Escalation') return 'Unanswered assistance request';
+    return name;
   };
 
   const getHumanTrigger = (key: string) => {
     switch (key) {
       case 'alert_not_acknowledged':
-        return 'A safety alert has not been acknowledged';
+        return 'A safety concern has not been acknowledged';
       case 'alert_handover_unanswered':
         return 'A handover request has not been answered';
       case 'alert_assistance_unanswered':
-        return 'An assistance request is waiting for response';
+        return 'An assistance request is waiting for a response';
       case 'incident_follow_up_overdue':
         return 'An incident follow-up is overdue';
       default:
-        return key ? key.replace(/_/g, ' ') : 'Alert condition triggered';
+        return key ? key.replace(/_/g, ' ') : 'Safety concern needs attention';
     }
   };
 
   const humanizeChannels = (channelsStr: string) => {
-    if (!channelsStr) return 'push notification';
+    if (!channelsStr) return 'in-app notification';
     const parts = channelsStr.split(',').map(c => c.trim().toLowerCase());
     const mapped = parts.map(c => {
-      if (c === 'push') return 'push notification';
+      if (c === 'push') return 'in-app notification';
       if (c === 'email') return 'email';
       if (c === 'whatsapp') return 'WhatsApp';
       if (c === 'sms') return 'SMS';
@@ -320,7 +319,7 @@ export const AdminEscalationsView: React.FC = () => {
     if (targetKey === 'Admins') return 'administrators and coordinators';
     if (targetKey === 'Medical Team') return 'medical response team';
     if (targetKey.includes('Ages')) return `${targetKey} supervisors`;
-    if (targetKey === 'admin') return 'platform administrators';
+    if (targetKey === 'admin') return 'administrators';
     if (targetKey === 'volunteer') return 'on-duty volunteers';
     return targetKey;
   };
@@ -330,7 +329,7 @@ export const AdminEscalationsView: React.FC = () => {
     try {
       const res = await api.escalation.notifyBackup(cycleId);
       if (res.success) {
-        showSuccess('Backup Dispatched', res.message || 'Secondary alerts successfully routed.');
+        showSuccess('Notification Sent', 'Backup recipients have been notified.');
         loadModuleData(selectedEventId, true);
       }
     } catch (err) {
@@ -342,11 +341,11 @@ export const AdminEscalationsView: React.FC = () => {
     try {
       const res = await api.escalation.cancelCycle(cycleId);
       if (res.success) {
-        showInfo('Escalation Terminated', res.message || 'Active cycle stopped.');
+        showInfo('Follow-up Cancelled', 'Follow-up sequence stopped.');
         loadModuleData(selectedEventId, true);
       }
     } catch (err) {
-      showError('Action Failed', extractApiError(err).message || 'Failed to terminate active cycle.');
+      showError('Action Failed', extractApiError(err).message || 'Failed to stop follow-up sequence.');
     }
   };
 
@@ -354,15 +353,14 @@ export const AdminEscalationsView: React.FC = () => {
     try {
       const res = await api.escalation.restartCycle(cycleId);
       if (res.success) {
-        showSuccess('Cycle Reset', res.message || 'Escalation timeline restarted from Step 1.');
+        showSuccess('Sequence Restarted', 'Sequence restarted from the first step.');
         loadModuleData(selectedEventId, true);
       }
     } catch (err) {
-      showError('Action Failed', extractApiError(err).message || 'Failed to restart active cycle.');
+      showError('Action Failed', extractApiError(err).message || 'Failed to restart sequence.');
     }
   };
 
-  // Helper to trigger direct toggle
   const handleTogglePolicyEnabled = async (policy: any) => {
     try {
       const updatedPayload = {
@@ -370,76 +368,71 @@ export const AdminEscalationsView: React.FC = () => {
         is_enabled: policy.is_enabled === 1 ? 0 : 1
       };
       await api.escalation.updatePolicy(policy.id, updatedPayload);
-      showSuccess('Rule Toggled', `Policy "${policy.name}" is now ${updatedPayload.is_enabled === 1 ? 'enabled' : 'disabled'}.`);
+      showSuccess('Rule Updated', `Rule is now ${updatedPayload.is_enabled === 1 ? 'active' : 'paused'}.`);
       loadModuleData(selectedEventId, true);
     } catch (err) {
-      showError('Action Failed', extractApiError(err).message || 'Failed to toggle policy state.');
+      showError('Action Failed', extractApiError(err).message || 'Failed to update rule.');
     }
   };
 
-  // Coverage Warnings Engine
-  const getCoverageWarnings = () => {
-    const warnings: string[] = [];
+  // Actionable Setup Warnings ("Before the event" - Prompt Section 23, 24)
+  const getActionableWarnings = () => {
+    const warnings: { title: string; supporting?: string }[] = [];
     if (policies.length === 0) {
-      warnings.push("Zero escalation policies defined. Unanswered critical alerts will never be automatically escalated!");
+      warnings.push({
+        title: 'No safety response rules have been set for this event.',
+        supporting: 'Create a response rule so coordinators are alerted if a concern goes unanswered.'
+      });
     } else {
-      // Check for missing critical types
       const hasMissingChildPolicy = policies.some(p => p.category_key === 'missing_child');
       const hasMedicalPolicy = policies.some(p => p.category_key === 'medical');
-      const hasEventDefault = policies.some(p => p.policy_scope === 'event_default' && p.is_enabled === 1);
 
-      if (!hasEventDefault) {
-        warnings.push("No Active Event-Default fallback policy. Ensure every alert category has dedicated escalation rules.");
-      }
       if (!hasMissingChildPolicy) {
-        warnings.push("No specific escalation rule for 'Missing Child' category. We recommend having rapid (sub-30s) steps for missing kids.");
+        warnings.push({
+          title: 'Missing child response rule has not been set.',
+          supporting: 'Create a rule so the right team members are contacted immediately.'
+        });
       }
       if (!hasMedicalPolicy) {
-        warnings.push("No specific escalation rule for 'Medical' category. Fallbacks will trigger instead.");
+        warnings.push({
+          title: 'Medical response rule has not been set.',
+          supporting: 'Create a rule to define who is notified if a medical need is reported.'
+        });
       }
 
-      // Check for steps with questionable channels
-      policies.forEach(p => {
-        if (p.is_enabled === 1) {
-          p.steps?.forEach((step: any) => {
-            if (step.channels.includes('whatsapp')) {
-              warnings.push(`Policy "${p.name}" Step ${step.step_order} uses WhatsApp channel. Verify WhatsApp Gateway API keys are online in Settings.`);
-            }
-          });
-        }
-      });
+      const hasWhatsAppStep = policies.some(p => 
+        (p.is_enabled === 1 || p.is_enabled === true) && 
+        p.steps?.some((s: any) => s.channels?.includes('whatsapp'))
+      );
+      if (hasWhatsAppStep) {
+        warnings.push({
+          title: 'WhatsApp alerts are not ready.',
+          supporting: 'Review message settings before relying on WhatsApp for urgent notifications.'
+        });
+      }
     }
     return warnings;
   };
 
-  // 3. Render States
-  
-  // A. MAIN ERROR PANEL STATE (Connection problem / Auth rejection)
   if (mainError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] text-zinc-800 p-6 bg-[#FAF9F5]" id="escalations-error-panel">
-        <div className="bg-white border border-[#EAE8E1] rounded-3xl p-8 max-w-md w-full shadow-lg text-center space-y-6">
-          <div className="mx-auto w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center border border-red-100">
-            <AlertTriangle className="w-8 h-8" />
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-stone-800 p-6 bg-[#FAF9F5]">
+        <div className="bg-white border border-stone-200 rounded-2xl p-8 max-w-md w-full shadow-xs text-center space-y-4">
+          <div className="mx-auto w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center border border-red-100">
+            <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-serif font-bold text-[#18181B] tracking-tight">{mainError}</h2>
-            <p className="text-zinc-500 text-sm mt-2">
-              The sentinel engine could not fetch current policies. This might be due to an administrative role configuration issue or a temporary network disruption.
+            <h2 className="text-base font-semibold text-stone-900">{mainError}</h2>
+            <p className="text-stone-500 text-xs mt-1.5 leading-relaxed">
+              Please check your connection and try again.
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <div className="pt-2">
             <button
               onClick={() => loadModuleData(selectedEventId, false)}
-              className="w-full sm:w-auto px-5 py-2.5 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+              className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold cursor-pointer"
             >
-              Retry Connection
-            </button>
-            <button
-              onClick={() => { window.location.href = '/admin'; }}
-              className="w-full sm:w-auto px-5 py-2.5 border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-600 rounded-xl text-xs font-semibold transition-all"
-            >
-              Return to Overview
+              Try again
             </button>
           </div>
         </div>
@@ -447,68 +440,63 @@ export const AdminEscalationsView: React.FC = () => {
     );
   }
 
-  // B. LOADING STATE
   if (loading) {
     return (
       <ModuleLoadingState
-        title="Preparing escalation rules..."
+        title="Loading safety response rules..."
         supportingText="This should only take a moment."
       />
     );
   }
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
-  const coverageWarnings = getCoverageWarnings();
+  const actionableWarnings = getActionableWarnings();
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-[#18181B] bg-[#FAF9F5]" id="escalations-main-view">
+    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-stone-900 bg-[#FAF9F5]" id="escalations-view">
       
-      {/* 1. Header Banner & Global Controls */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-2xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-        <div>
-          <div className="flex items-center space-x-2 text-[#C59B27] mb-2">
-            <ShieldAlert className="w-5 h-5" />
-            <span className="text-xs font-bold uppercase tracking-wider font-sans">Koinonia Safeguarding Rules</span>
-          </div>
-          <h1 className="text-2xl font-bold font-serif text-[#18181B] tracking-tight">
-            Escalation Rules & Safety Protections
+      {/* 1. Header Banner & Global Controls (Prompt Section 20, 21, 22) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+        <div className="space-y-1">
+          <h1 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 tracking-tight">
+            Safety response rules
           </h1>
-          <p className="text-zinc-500 text-xs mt-1 max-w-2xl leading-relaxed">
-            Configure rules to automatically escalate unanswered safety alerts and assistance requests to secondary coordinators and team leads.
+          <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">
+            Set what should happen when a safety concern needs further attention.
           </p>
           
-          {/* Active Event Selector */}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="text-xs font-medium text-zinc-500">Active event:</span>
+          {/* Clean Event Selector (Prompt Section 22) */}
+          <div className="pt-2 flex items-center gap-2">
+            <span className="text-xs text-stone-500 font-medium">Event:</span>
             <select
               value={selectedEventId}
               onChange={(e) => handleEventChange(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] text-xs font-medium focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+              className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
             >
               {events.length === 0 ? (
-                <option value="event-ga-2026">No Events Configured</option>
+                <option value="event-ga-2026">No events available</option>
               ) : (
                 events.map(e => (
-                  <option key={e.id} value={e.id}>{e.title || e.name} ({e.status})</option>
+                  <option key={e.id} value={e.id}>{e.title || e.name}</option>
                 ))
               )}
             </select>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 self-start lg:self-center">
+        <div className="flex items-center gap-2.5 self-start sm:self-center">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center space-x-2 px-4 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-xs font-medium transition-all cursor-pointer min-h-[40px]"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl text-xs font-medium text-stone-700 transition-colors cursor-pointer min-h-[38px]"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Refresh rules</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-500' : 'text-stone-500'}`} />
+            <span>Refresh</span>
           </button>
           {!isEditing && (
             <button
               onClick={handleCreateNew}
-              className="flex items-center space-x-2 px-4 py-2 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer min-h-[40px]"
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer min-h-[38px]"
             >
               <Plus className="w-4 h-4" />
               <span>Create rule</span>
@@ -517,225 +505,188 @@ export const AdminEscalationsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. No Current Event Banner State */}
-      {(!selectedEvent || events.length === 0) && (
-        <div className="bg-amber-50 border border-amber-200/60 rounded-3xl p-6 flex items-start gap-4" id="no-current-event-banner">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-semibold text-amber-900 text-sm">No current event is active.</h4>
-            <p className="text-xs text-amber-700/80 mt-1 max-w-xl">
-              Sentinel automatic protections require an active event context to run alert-routing algorithms. Please select an authorized production event using the dropdown above or check the global Event Coordinator dashboard.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Coverage Warnings Area */}
-      {!isEditing && coverageWarnings.length > 0 && (
-        <div className="bg-amber-50/50 border border-[#EAE8E1] rounded-3xl p-5 space-y-3">
-          <div className="flex items-center space-x-2 text-amber-800">
-            <AlertIcon className="w-4 h-4 shrink-0" />
-            <h4 className="text-xs font-bold uppercase tracking-wider font-mono">Sentinel Coverage Health Report</h4>
-          </div>
+      {/* 2. Actionable Setup Warnings - "Before the event" (Prompt Section 23, 24) */}
+      {!isEditing && actionableWarnings.length > 0 && (
+        <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 space-y-2.5 text-left">
+          <span className="text-xs font-semibold text-amber-900 block">
+            Before the event
+          </span>
           <div className="space-y-2">
-            {coverageWarnings.map((warn, i) => (
-              <div key={i} className="flex items-start gap-2.5 text-xs text-zinc-600">
-                <span className="text-amber-500 font-bold shrink-0">•</span>
-                <p>{warn}</p>
+            {actionableWarnings.map((warn, i) => (
+              <div key={i} className="text-xs space-y-0.5">
+                <span className="font-medium text-amber-950 block">{warn.title}</span>
+                {warn.supporting && (
+                  <p className="text-amber-800 text-[11px] leading-relaxed">{warn.supporting}</p>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* 4. Main Working Layout */}
+      {/* 3. Main Working Layout */}
       {isEditing ? (
-        // Form Editor State
-        <form onSubmit={handleSave} className="bg-white border border-[#EAE8E1] rounded-3xl p-6 md:p-8 shadow-xs space-y-6 animate-fade-in" id="escalation-form">
-          <div className="flex items-center justify-between border-b border-[#FAF9F5] pb-4 mb-4">
-            <h2 className="text-lg font-bold font-serif text-[#18181B]">
-              {editingPolicyId ? 'Edit Escalation Policy' : 'Create Escalation Policy'}
+        /* Create / Edit Rule Form (Prompt Section 30, 31, 32) */
+        <form onSubmit={handleSave} className="bg-white border border-stone-200 rounded-xl p-5 md:p-6 shadow-xs space-y-5 text-left">
+          <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+            <h2 className="text-sm font-semibold text-stone-900">
+              {editingPolicyId ? 'Edit response rule' : 'Create response rule'}
             </h2>
             <button
               type="button"
               onClick={() => setIsEditing(false)}
-              className="text-xs text-zinc-500 hover:text-zinc-800"
+              className="text-xs text-stone-500 hover:text-stone-800 cursor-pointer"
             >
               Cancel
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-wider">Policy Name</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-stone-700">Rule name *</label>
               <input
                 type="text"
                 required
-                className="w-full px-4 py-2.5 rounded-xl border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-sm transition-all bg-white"
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
                 value={policyForm.name}
                 onChange={e => setPolicyForm({ ...policyForm, name: e.target.value })}
-                placeholder="e.g. High-Severity Unacknowledged Alert"
+                placeholder="e.g. Missing child response"
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-wider">Condition Trigger</label>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-stone-700">When should this rule apply?</label>
               <select
-                className="w-full px-4 py-2.5 rounded-xl border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-sm bg-white"
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-700 outline-none bg-white focus:border-[#9E7D3B]"
                 value={policyForm.condition_key}
                 onChange={e => setPolicyForm({ ...policyForm, condition_key: e.target.value })}
               >
-                <option value="alert_not_acknowledged">Alert has not been acknowledged</option>
-                <option value="alert_handover_unanswered">Handover request is pending response</option>
-                <option value="alert_assistance_unanswered">Assistance request has not been answered</option>
-                <option value="incident_follow_up_overdue">Incident follow-up is overdue</option>
+                <option value="alert_not_acknowledged">A safety concern has not been acknowledged</option>
+                <option value="alert_handover_unanswered">A handover request has not been answered</option>
+                <option value="alert_assistance_unanswered">An assistance request is waiting for a response</option>
+                <option value="incident_follow_up_overdue">An incident follow-up is overdue</option>
               </select>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-wider">Scope</label>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-stone-700">Concern type</label>
               <select
-                className="w-full px-4 py-2.5 rounded-xl border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-sm bg-white"
-                value={policyForm.policy_scope}
-                onChange={e => setPolicyForm({ ...policyForm, policy_scope: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-700 outline-none bg-white focus:border-[#9E7D3B]"
+                value={policyForm.policy_scope === 'event_default' ? 'all' : policyForm.category_key}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === 'all') {
+                    setPolicyForm({ ...policyForm, policy_scope: 'event_default', category_key: '' });
+                  } else {
+                    setPolicyForm({ ...policyForm, policy_scope: 'category_specific', category_key: val });
+                  }
+                }}
               >
-                <option value="event_default">Event Default (Applies to all alerts)</option>
-                <option value="category_specific">Category Specific</option>
+                <option value="all">All safety concerns (Event default)</option>
+                <option value="missing_child">Missing child</option>
+                <option value="medical">Medical</option>
+                <option value="behavioral">Child care / behavioural</option>
+                <option value="security">Security</option>
+                <option value="other">Other</option>
               </select>
             </div>
 
-            {policyForm.policy_scope === 'category_specific' && (
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-wider">Category</label>
-                <select
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-sm bg-white"
-                  value={policyForm.category_key}
-                  onChange={e => setPolicyForm({ ...policyForm, category_key: e.target.value })}
-                >
-                  <option value="">Select Category</option>
-                  <option value="medical">Medical Alert</option>
-                  <option value="behavioral">Behavioral Alert</option>
-                  <option value="missing_child">Missing Child Alert</option>
-                  <option value="security">Security Alert</option>
-                  <option value="other">Other Alert</option>
-                </select>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-zinc-600 uppercase tracking-wider">Evaluation Priority</label>
-              <input
-                type="number"
-                className="w-full px-4 py-2.5 rounded-xl border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-sm transition-all"
-                value={policyForm.priority}
-                onChange={e => setPolicyForm({ ...policyForm, priority: parseInt(e.target.value) || 0 })}
-              />
-              <span className="text-[10px] text-zinc-400 block">Higher numbers evaluate first. Defaults to 10.</span>
-            </div>
-
-            <div className="flex items-center space-x-3 pt-6">
-              <input
-                type="checkbox"
-                id="policyEnabled"
-                className="w-5 h-5 rounded border-[#EAE8E1] text-[#C59B27] focus:ring-[#C59B27] h-11 cursor-pointer"
-                checked={policyForm.is_enabled}
-                onChange={e => setPolicyForm({ ...policyForm, is_enabled: e.target.checked })}
-              />
-              <label htmlFor="policyEnabled" className="text-xs font-bold text-zinc-600 uppercase tracking-wider cursor-pointer">
-                Policy Enabled & Active
+            <div className="flex items-center gap-2 pt-5">
+              <label className="flex items-center gap-2 text-xs font-medium text-stone-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded border-stone-300 text-[#9E7D3B] focus:ring-[#9E7D3B]"
+                  checked={policyForm.is_enabled}
+                  onChange={e => setPolicyForm({ ...policyForm, is_enabled: e.target.checked })}
+                />
+                Rule active
               </label>
             </div>
           </div>
 
-          {/* Steps Section */}
-          <div className="space-y-4 pt-6 border-t border-[#FAF9F5]">
+          {/* Response Sequence Steps */}
+          <div className="space-y-3 pt-4 border-t border-stone-100">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">Escalation Sequence Steps</h3>
+              <h3 className="text-xs font-semibold text-stone-700">Response steps</h3>
               <button
                 type="button"
                 onClick={handleAddStep}
-                className="flex items-center space-x-1.5 px-3 py-2 border border-[#C59B27] hover:bg-[#C59B27]/5 text-[#C59B27] rounded-xl text-xs font-semibold transition-all min-h-[36px]"
+                className="inline-flex items-center gap-1 text-xs text-[#9E7D3B] hover:text-[#8A6D33] font-medium cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Step</span>
+                <span>Add step</span>
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {policyForm.steps.map((step: any, index: number) => (
-                <div key={index} className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-4 relative space-y-4">
+                <div key={index} className="bg-stone-50 border border-stone-200/70 rounded-lg p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-[#C59B27]">Step #{step.step_order}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveStep(index)}
-                      className="text-red-500 hover:text-red-700 p-1 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <span className="text-xs font-semibold text-stone-700">
+                      {index === 0 ? 'First response' : 'If there is still no response'}
+                    </span>
+                    {policyForm.steps.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveStep(index)}
+                        className="text-stone-400 hover:text-red-600 p-1 cursor-pointer"
+                        title="Remove step"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div className="space-y-1">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase">Wait Time (Seconds)</label>
-                      <input
-                        type="number"
-                        required
-                        className="w-full px-3 py-2 rounded-lg border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-xs bg-white"
-                        value={step.wait_seconds}
-                        onChange={e => handleStepChange(index, 'wait_seconds', parseInt(e.target.value) || 0)}
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase">Target Type</label>
+                      <label className="block text-[11px] font-medium text-stone-600">
+                        {index === 0 ? 'If no response within' : 'After additional'}
+                      </label>
                       <select
-                        className="w-full px-3 py-2 rounded-lg border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-xs bg-white"
-                        value={step.target_type}
-                        onChange={e => handleStepChange(index, 'target_type', e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 bg-white text-xs text-stone-700 outline-none"
+                        value={step.wait_seconds}
+                        onChange={e => handleStepChange(index, 'wait_seconds', parseInt(e.target.value) || 30)}
                       >
-                        <option value="team">Ministry Duty Team</option>
-                        <option value="role">Ministry Security Role</option>
+                        <option value={30}>30 seconds</option>
+                        <option value={45}>45 seconds</option>
+                        <option value={60}>1 minute</option>
+                        <option value={120}>2 minutes</option>
+                        <option value={300}>5 minutes</option>
                       </select>
                     </div>
 
-                    {step.target_type === 'team' ? (
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold text-zinc-500 uppercase">Team Name</label>
-                        <select
-                          className="w-full px-3 py-2 rounded-lg border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-xs bg-white"
-                          value={step.target_team_key || ''}
-                          onChange={e => handleStepChange(index, 'target_team_key', e.target.value)}
-                        >
-                          <option value="Admins">Admins & Coordinators</option>
-                          <option value="Medical Team">Medical Response Unit</option>
-                          <option value="Ages 7-9 Team">Ages 7-9 Supervisors</option>
-                        </select>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold text-zinc-500 uppercase">Role Name</label>
-                        <select
-                          className="w-full px-3 py-2 rounded-lg border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-xs bg-white"
-                          value={step.target_responsibility_key || ''}
-                          onChange={e => handleStepChange(index, 'target_responsibility_key', e.target.value)}
-                        >
-                          <option value="admin">Platform Admin</option>
-                          <option value="volunteer">On-Duty Volunteer</option>
-                        </select>
-                      </div>
-                    )}
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-medium text-stone-600">Notify</label>
+                      <select
+                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 bg-white text-xs text-stone-700 outline-none"
+                        value={step.target_team_key || step.target_responsibility_key || 'Admins'}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === 'admin' || val === 'volunteer') {
+                            handleStepChange(index, 'target_type', 'role');
+                            handleStepChange(index, 'target_responsibility_key', val);
+                          } else {
+                            handleStepChange(index, 'target_type', 'team');
+                            handleStepChange(index, 'target_team_key', val);
+                          }
+                        }}
+                      >
+                        <option value="Admins">Administrators & Coordinators</option>
+                        <option value="Medical Team">Medical response team</option>
+                        <option value="Ages 7-9 Team">Age group supervisors</option>
+                        <option value="volunteer">All on-duty volunteers</option>
+                      </select>
+                    </div>
 
                     <div className="space-y-1">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase">Channels (comma separated)</label>
+                      <label className="block text-[11px] font-medium text-stone-600">Contact by</label>
                       <input
                         type="text"
                         required
-                        className="w-full px-3 py-2 rounded-lg border border-[#EAE8E1] focus:ring-1 focus:ring-[#C59B27] outline-none text-xs bg-white"
+                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 bg-white text-xs text-stone-700 outline-none"
                         value={step.channels}
                         onChange={e => handleStepChange(index, 'channels', e.target.value)}
-                        placeholder="e.g. push,email,whatsapp"
+                        placeholder="push, email"
                       />
                     </div>
                   </div>
@@ -744,252 +695,194 @@ export const AdminEscalationsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-6 border-t border-[#FAF9F5]">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-100">
             <button
               type="button"
               onClick={() => setIsEditing(false)}
-              className="px-5 py-2.5 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-xs font-semibold transition-all min-h-[44px]"
+              className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-sm transition-all min-h-[44px]"
+              className="px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-lg text-xs font-semibold cursor-pointer"
             >
-              Save Policy Rules
+              Save rule
             </button>
           </div>
         </form>
       ) : (
-        // Tabs Matrix Display
-        <div className="space-y-6">
-          {/* Section Navigation Tabs */}
-          <div className="border-b border-[#EAE8E1] flex flex-wrap gap-2">
+        /* Tabs (Prompt Section 25: Response rules, Needs follow-up, History) */
+        <div className="space-y-5 text-left">
+          <div className="flex border-b border-stone-200 gap-6 text-xs">
             <button
               onClick={() => setViewTab('policies')}
-              className={`pb-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer min-h-[40px] flex items-center gap-2 ${
+              className={`pb-3 border-b-2 font-medium transition-colors cursor-pointer ${
                 viewTab === 'policies' 
-                  ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800'
+                  ? 'border-stone-900 text-stone-900' 
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Escalation rules ({policies.length})</span>
+              Response rules ({policies.length})
             </button>
             <button
               onClick={() => setViewTab('cycles')}
-              className={`pb-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer min-h-[40px] flex items-center gap-2 ${
+              className={`pb-3 border-b-2 font-medium transition-colors cursor-pointer ${
                 viewTab === 'cycles' 
-                  ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800'
+                  ? 'border-stone-900 text-stone-900' 
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              <BellRing className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-              <span>Active escalations ({cycles.length})</span>
-              {cycles.length > 0 && (
-                <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
-                  {cycles.length}
-                </span>
-              )}
+              Needs follow-up ({cycles.length})
             </button>
             <button
               onClick={() => setViewTab('history')}
-              className={`pb-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer min-h-[40px] flex items-center gap-2 ${
+              className={`pb-3 border-b-2 font-medium transition-colors cursor-pointer ${
                 viewTab === 'history' 
-                  ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800'
+                  ? 'border-stone-900 text-stone-900' 
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>Activity history ({history.length})</span>
+              History ({history.length})
             </button>
           </div>
 
-          {/* TAB 1: POLICIES GRID */}
+          {/* TAB 1: RESPONSE RULES LIST (Prompt Section 26, 27, 28) */}
           {viewTab === 'policies' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider">Active escalation rules</h2>
-              </div>
-
-              {/* Event empty state */}
               {policies.length === 0 ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-10 text-center text-zinc-500 space-y-3" id="empty-policies-state">
-                  <div className="mx-auto w-12 h-12 bg-[#FAF9F5] text-zinc-400 rounded-full flex items-center justify-center border border-[#EAE8E1]">
-                    <ShieldAlert className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-serif font-bold text-base text-[#18181B]">No escalation rules have been created for this event</h3>
-                    <p className="text-xs text-zinc-500 max-w-md mx-auto mt-1">
-                      Configure fallback sequences to ensure unanswered alerts are automatically routed to secondary coordinators.
-                    </p>
-                  </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-3 max-w-md mx-auto my-6">
+                  <h3 className="text-sm font-semibold text-stone-900">No response rules yet</h3>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Create a rule to decide who should be contacted when a safety concern needs additional attention.
+                  </p>
                   <button
                     onClick={handleCreateNew}
-                    className="px-4 py-2 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-lg text-xs font-semibold cursor-pointer"
                   >
-                    Create escalation rule
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create rule</span>
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {policies.map((policy) => (
-                    <div key={policy.id} className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-all space-y-4">
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleTogglePolicyEnabled(policy)}
-                              title="Click to toggle rule status"
-                              className={`px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors ${
-                                policy.is_enabled === 1 || policy.is_enabled === true 
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                                  : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
-                              }`}
-                            >
-                              {policy.is_enabled === 1 || policy.is_enabled === true ? 'Active' : 'Paused'}
-                            </button>
-                            <span className="text-xs bg-amber-50 text-amber-800 border border-amber-200/80 px-2.5 py-0.5 rounded-full font-medium">
-                              {getHumanPriority(policy.priority)}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {policies.map((policy) => {
+                    const firstStep = policy.steps && policy.steps[0];
+                    return (
+                      <div key={policy.id} className="bg-white border border-stone-200 rounded-xl p-4 md:p-5 shadow-xs space-y-3 text-left">
+                        
+                        {/* Header: Title & Restrained status line */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <h3 className="text-sm font-semibold text-stone-900">
+                              {humanizeRuleTitle(policy.name)}
+                            </h3>
+                            <span className="text-[11px] text-stone-500 block">
+                              {policy.is_enabled === 1 || policy.is_enabled === true ? 'Active' : 'Paused'} · {policy.priority >= 20 ? 'Critical priority' : policy.priority >= 10 ? 'High priority' : 'Standard priority'}
                             </span>
                           </div>
-                          <h3 className="font-serif font-bold text-base text-[#18181B] tracking-tight">{policy.name}</h3>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setPreviewPolicy(policy)}
+                              className="px-2.5 py-1 text-xs text-stone-600 hover:text-stone-900 font-medium rounded hover:bg-stone-50 cursor-pointer"
+                            >
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleEdit(policy)}
+                              className="px-2.5 py-1 text-xs text-stone-600 hover:text-stone-900 font-medium rounded hover:bg-stone-50 cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setDeletingPolicyId(policy.id)}
+                              className="px-2.5 py-1 text-xs text-stone-400 hover:text-red-700 font-medium rounded hover:bg-red-50 cursor-pointer"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => setPreviewPolicy(policy)}
-                            title="View rule simulation"
-                            className="p-2 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-zinc-600 transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(policy)}
-                            title="Edit rule"
-                            className="p-2 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl text-zinc-600 transition-colors cursor-pointer"
-                          >
-                            <Settings className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(policy.id)}
-                            title="Delete rule"
-                            className="p-2 border border-red-100 hover:bg-red-50 text-red-600 rounded-xl transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Rule details: Trigger & Scope */}
-                      <div className="space-y-1.5 text-xs text-zinc-600 bg-[#FAF9F6] border border-[#EAE8E1]/80 rounded-xl p-3">
-                        <div>
-                          <span className="font-semibold text-zinc-800">Trigger: </span>
-                          <span>{getHumanTrigger(policy.condition_key)}</span>
-                        </div>
-                        <div>
-                          <span className="font-semibold text-zinc-800">Scope: </span>
-                          <span>{policy.policy_scope === 'event_default' ? 'This event' : (policy.category_key ? `Category: ${policy.category_key}` : 'Category specific')}</span>
-                        </div>
-                      </div>
-
-                      {/* Step Timelines / Notification Sequence */}
-                      <div className="space-y-2 border-t border-[#F4F3EF] pt-3">
-                        <span className="text-xs font-semibold text-zinc-700">Notification sequence</span>
-                        <div className="space-y-2">
-                          {policy.steps && policy.steps.map((step: any, idx: number) => (
-                            <div key={step.id || idx} className="flex items-start gap-2.5 text-xs text-zinc-700 bg-white border border-[#EAE8E1] rounded-xl p-3">
-                              <span className="font-bold text-[#C59B27] shrink-0">{idx + 1}.</span>
-                              <div className="space-y-0.5">
-                                <p className="font-medium text-zinc-900">
-                                  After {step.wait_seconds} seconds
-                                </p>
-                                <p className="text-zinc-600">
-                                  Notify {humanizeTarget(step.target_team_key || step.target_responsibility_key)} by {humanizeChannels(step.channels)}.
-                                </p>
-                              </div>
+                        {/* Summary lines: When & Next (Prompt Section 27, 41) */}
+                        <div className="space-y-1.5 text-xs text-stone-700 bg-stone-50 border border-stone-200/70 rounded-lg p-3">
+                          <div>
+                            <span className="font-medium text-stone-800">When: </span>
+                            <span>{getHumanTrigger(policy.condition_key)}</span>
+                          </div>
+                          {firstStep && (
+                            <div>
+                              <span className="font-medium text-stone-800">Next: </span>
+                              <span>
+                                If no one responds within {firstStep.wait_seconds} seconds, notify {humanizeTarget(firstStep.target_team_key || firstStep.target_responsibility_key)}.
+                              </span>
                             </div>
-                          ))}
+                          )}
                         </div>
+
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
 
-          {/* TAB 2: ACTIVE CYCLES */}
+          {/* TAB 2: NEEDS FOLLOW-UP (Prompt Section 33) */}
           {viewTab === 'cycles' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider">Active escalations</h2>
-              </div>
-
               {partialCyclesError && (
-                <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3.5 rounded-xl flex items-center gap-2">
-                  <AlertIcon className="w-4 h-4 shrink-0" />
-                  <p><strong>Note:</strong> Could not reach active escalations endpoint. Other features remain fully operational.</p>
+                <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3 rounded-lg">
+                  Could not load active follow-up items.
                 </div>
               )}
 
               {cycles.length === 0 ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-10 text-center text-zinc-500 space-y-2">
-                  <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto" />
-                  <p className="text-sm font-serif font-bold text-zinc-800">All quiet. No active escalations in progress.</p>
-                  <p className="text-xs max-w-sm mx-auto text-zinc-500">
-                    When active safety alerts are created, the system evaluates rules and triggers escalation sequences automatically if unanswered.
+                <div className="bg-white border border-stone-200 rounded-xl p-10 text-center text-stone-500 space-y-1 max-w-md mx-auto my-6">
+                  <h3 className="text-sm font-semibold text-stone-800">Nothing needs follow-up right now.</h3>
+                  <p className="text-xs text-stone-400">
+                    When a safety concern goes unanswered, it will appear here for follow-up.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {cycles.map((cycle) => (
-                    <div key={cycle.id} className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-5" id={`cycle-${cycle.id}`}>
-                      <div className="space-y-1.5 max-w-xl">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider animate-pulse">
-                            Active escalation
+                    <div key={cycle.id} className="bg-white border border-stone-200 rounded-xl p-4 md:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="space-y-1 text-left">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200/60 px-2 py-0.5 rounded">
+                            Needs response
                           </span>
-                          <span className="text-xs text-zinc-400">Reference: {cycle.id.substring(0, 8)}</span>
+                          <span className="text-xs text-stone-400">
+                            Started {new Date(cycle.started_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
-                        <h4 className="font-serif font-bold text-base text-[#18181B] tracking-tight">
-                          {cycle.alert_title || `${cycle.subject_type || 'Safety'} escalation`}
+                        <h4 className="text-sm font-semibold text-stone-900">
+                          {cycle.alert_title || 'Safety concern'}
                         </h4>
-                        <p className="text-xs text-zinc-600 font-sans leading-relaxed">
-                          Currently evaluating <strong>{cycle.policy_name || 'Event Rule'}</strong> at <strong>Step #{cycle.current_step_order}</strong>. Next check scheduled for <span className="font-semibold text-[#8C6B18]">{new Date(cycle.next_due_at || Date.now()).toLocaleTimeString()}</span>.
+                        <p className="text-xs text-stone-600">
+                          Step #{cycle.current_step_order} · Next check at {new Date(cycle.next_due_at || Date.now()).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                         </p>
-                        <div className="flex flex-wrap gap-2 pt-1 text-[11px] text-zinc-400">
-                          <span>Started: {new Date(cycle.started_at).toLocaleString()}</span>
-                          <span>•</span>
-                          <span>Category: {cycle.alert_category || 'General'}</span>
-                        </div>
                       </div>
 
-                      {/* Manual Action Tools */}
-                      <div className="flex flex-wrap gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => handleNotifyBackup(cycle.id)}
-                          className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-medium transition-colors cursor-pointer"
-                          title="Notify backup leads immediately"
+                          className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-medium cursor-pointer"
                         >
-                          <BellRing className="w-3.5 h-3.5" />
-                          <span>Notify backup leads</span>
+                          Notify backup
                         </button>
                         <button
                           onClick={() => handleRestartCycle(cycle.id)}
-                          className="flex items-center space-x-1.5 px-3 py-1.5 border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                          className="px-3 py-1.5 border border-stone-200 hover:bg-stone-50 text-stone-700 rounded-lg text-xs font-medium cursor-pointer"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Restart sequence</span>
+                          Restart
                         </button>
                         <button
                           onClick={() => handleCancelCycle(cycle.id)}
-                          className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                          className="px-3 py-1.5 border border-stone-200 hover:bg-red-50 text-stone-500 hover:text-red-700 rounded-lg text-xs font-medium cursor-pointer"
                         >
-                          <Square className="w-3.5 h-3.5" />
-                          <span>Cancel escalation</span>
+                          Cancel
                         </button>
                       </div>
                     </div>
@@ -999,36 +892,32 @@ export const AdminEscalationsView: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: HISTORY LOGS */}
+          {/* TAB 3: HISTORY (Prompt Section 34) */}
           {viewTab === 'history' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-semibold text-zinc-600 uppercase tracking-wider">Activity history</h2>
-              </div>
-
               {partialHistoryError && (
-                <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3.5 rounded-xl flex items-center gap-2">
-                  <AlertIcon className="w-4 h-4 shrink-0" />
-                  <p><strong>Note:</strong> Could not reach history log endpoint. Active rules remain fully operational.</p>
+                <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3 rounded-lg">
+                  Could not load history entries.
                 </div>
               )}
 
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs max-h-[600px] overflow-y-auto space-y-3">
+              <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-xs space-y-3">
                 {history.length === 0 ? (
-                  <p className="text-xs text-zinc-400 py-6 text-center">No escalation activity recorded yet.</p>
+                  <p className="text-xs text-stone-400 py-6 text-center">No response activity yet.</p>
                 ) : (
                   <div className="space-y-3">
                     {history.map((log) => (
-                      <div key={log.id} className="border-b border-[#FAF9F5] pb-3 last:border-0 last:pb-0 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-[#C59B27] font-semibold bg-[#C59B27]/10 px-2 py-0.5 rounded-md">
-                            {log.action_type ? log.action_type.replace(/_/g, ' ') : 'Action'}
+                      <div key={log.id} className="border-l-2 border-stone-200 pl-3 py-0.5 space-y-0.5">
+                        <div className="flex items-center gap-2 text-stone-500 text-[11px]">
+                          <span className="tabular-nums">
+                            {new Date(log.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                          <span className="text-[11px] text-zinc-400">
-                            {new Date(log.created_at).toLocaleString()}
+                          <span>·</span>
+                          <span className="font-medium text-stone-800 capitalize">
+                            {(log.action_type || 'Activity').replace(/_/g, ' ')}
                           </span>
                         </div>
-                        <p className="text-xs text-zinc-600 leading-relaxed">{log.safe_summary}</p>
+                        <p className="text-xs text-stone-700 leading-relaxed">{log.safe_summary}</p>
                       </div>
                     ))}
                   </div>
@@ -1036,36 +925,32 @@ export const AdminEscalationsView: React.FC = () => {
               </div>
             </div>
           )}
+
         </div>
       )}
 
-      {/* Delete Rule Confirmation Modal Dialog */}
+      {/* Delete Rule Confirmation Modal (Prompt Section 36) */}
       {deletingPolicyId && (
-        <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="delete-policy-modal">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-xl max-w-md w-full space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2.5 bg-red-50 text-red-600 rounded-xl shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-serif font-bold text-base text-zinc-900">Delete escalation rule</h3>
-                <p className="text-xs text-zinc-500 leading-relaxed">
-                  Are you sure you want to delete this escalation rule? Unanswered alerts will no longer trigger this automated notification sequence.
-                </p>
-              </div>
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xl max-w-sm w-full space-y-4 text-left">
+            <div className="space-y-1.5">
+              <h3 className="text-base font-semibold text-stone-900">Delete this response rule?</h3>
+              <p className="text-xs text-stone-500 leading-relaxed">
+                This rule will no longer be used for future safety concerns.
+              </p>
             </div>
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100">
+            <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeletingPolicyId(null)}
-                className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => confirmDeletePolicy(deletingPolicyId)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
               >
                 Delete rule
               </button>
@@ -1074,117 +959,52 @@ export const AdminEscalationsView: React.FC = () => {
         </div>
       )}
 
-      {/* 5. Policy Preview Modal Dialog Overlay */}
+      {/* Rule Preview Modal (Prompt Section 27, 29) */}
       {previewPolicy && (
-        <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="preview-policy-dialog">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 md:p-8 shadow-2xl max-w-2xl w-full space-y-6 relative max-h-[90vh] overflow-y-auto">
-            
-            {/* Close Button */}
-            <button
-              onClick={() => setPreviewPolicy(null)}
-              className="absolute right-5 top-5 text-zinc-400 hover:text-zinc-600 p-1 min-h-[40px]"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {/* Modal Title */}
-            <div className="space-y-1.5 pr-8">
-              <span className="font-mono text-[10px] uppercase font-bold tracking-widest text-[#C59B27] block">Sentinel Routing Simulation</span>
-              <h3 className="font-serif font-bold text-xl text-[#18181B] tracking-tight">{previewPolicy.name}</h3>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <span className="font-mono text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">
-                  Preview only — no alert will be sent.
-                </span>
-                <span className="font-mono text-[9px] bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded">
-                  Priority: {previewPolicy.priority}
-                </span>
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-stone-200 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-xl text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div>
+                <h3 className="text-base font-semibold text-stone-900">
+                  {humanizeRuleTitle(previewPolicy.name)}
+                </h3>
+                <span className="text-[11px] text-stone-500 block">Response sequence preview</span>
               </div>
+              <button
+                onClick={() => setPreviewPolicy(null)}
+                className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Core Recipient Matrix Columns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              
-              {/* Left Column: Recipients Roles */}
-              <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-4 space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-600 font-mono flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-[#C59B27]" />
-                  <span>Target Recipients Mapping</span>
-                </h4>
-                
-                <div className="space-y-2.5 text-xs">
-                  <div>
-                    <span className="font-semibold block text-zinc-700">Initial Recipients:</span>
-                    <span className="text-zinc-500 font-sans">
-                      {previewPolicy.category_key === 'medical' ? 'Ministry Medical Unit, On-Duty Nurses' : 'Immediate Event Coordinators & Administrators'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold block text-zinc-700">Backup Recipients:</span>
-                    <span className="text-zinc-500 font-sans">Platform Administrators, On-Duty General Volunteers Pool</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold block text-zinc-700">Supervisory Overseers:</span>
-                    <span className="text-zinc-500 font-sans">Super Admin Direct Pager & Escalation Log Journal</span>
-                  </div>
-                </div>
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70 space-y-1">
+                <span className="font-medium text-stone-800 block">When this happens:</span>
+                <p className="text-stone-600">{getHumanTrigger(previewPolicy.condition_key)}</p>
               </div>
 
-              {/* Right Column: Device Readiness & Gaps */}
-              <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-4 space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-600 font-mono flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Eligible Devices & Warnings</span>
-                </h4>
-
-                <div className="space-y-2.5 text-xs">
-                  <div>
-                    <span className="font-semibold block text-zinc-700">Ready Devices Detected:</span>
-                    <span className="text-zinc-500 font-sans">4 browser clients (Push Channels Online)</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold block text-zinc-700">Offline/Unavailable Recipients:</span>
-                    <span className="text-zinc-400 font-sans font-mono italic">None on-duty</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold block text-amber-800">Coverage Gap Check:</span>
-                    <span className="text-amber-700/90 font-sans font-mono text-[10px]">
-                      {previewPolicy.steps?.some((s: any) => s.channels.includes('whatsapp'))
-                        ? 'Potential Delay: WhatsApp Gateway configuration pending verify!'
-                        : 'Passed — Excellent sentinel redundant coverage.'}
+              <div className="space-y-2">
+                <span className="font-medium text-stone-800 block">Response steps:</span>
+                {previewPolicy.steps && previewPolicy.steps.map((step: any, idx: number) => (
+                  <div key={idx} className="p-3 bg-stone-50 rounded-lg border border-stone-200/70 space-y-1">
+                    <span className="font-semibold text-stone-700 block">
+                      {idx === 0 ? 'First response' : 'If there is still no response'}
                     </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Timeline Sequence steps */}
-            <div className="space-y-3 border-t border-[#FAF9F5] pt-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-600 font-mono">Escalation Timing Timeline</h4>
-              <div className="space-y-3">
-                {previewPolicy.steps && previewPolicy.steps.map((step: any) => (
-                  <div key={step.step_order} className="flex items-start gap-3 text-xs">
-                    <span className="font-mono text-[#C59B27] font-bold bg-[#C59B27]/5 px-2 py-0.5 rounded shrink-0">
-                      Step {step.step_order}
-                    </span>
-                    <div>
-                      <p className="text-zinc-700">
-                        After <span className="font-semibold">{step.wait_seconds}s</span> of no response, dispatch fallback alert to{' '}
-                        <span className="font-mono text-[#C59B27] font-semibold">{step.target_team_key || step.target_responsibility_key || 'Admin'}</span> via{' '}
-                        <span className="font-mono bg-zinc-100 text-zinc-600 px-1 py-0.2 rounded text-[10px]">{step.channels}</span>.
-                      </p>
-                    </div>
+                    <p className="text-stone-600">
+                      If no one responds within {step.wait_seconds} seconds, notify {humanizeTarget(step.target_team_key || step.target_responsibility_key)} by {humanizeChannels(step.channels)}.
+                    </p>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Bottom Button */}
-            <div className="flex items-center justify-end pt-4 border-t border-[#FAF9F5]">
+            <div className="flex justify-end pt-3 border-t border-stone-100">
               <button
                 onClick={() => setPreviewPolicy(null)}
-                className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all min-h-[44px]"
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
               >
-                Close Simulation
+                Close
               </button>
             </div>
           </div>

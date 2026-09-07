@@ -26,6 +26,38 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
+export function isAudioUnlocked(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (audioCtx && audioCtx.state === 'running') return true;
+  return sessionStorage.getItem('koinonia_audio_armed') === 'true' && !!audioCtx && audioCtx.state !== 'closed';
+}
+
+export async function unlockAudio(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return false;
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    // Play a brief 10ms inaudible tone to satisfy browser autoplay policy requirements
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.01);
+
+    sessionStorage.setItem('koinonia_audio_armed', 'true');
+    window.dispatchEvent(new CustomEvent('koinonia_audio_state_change', { detail: { armed: true } }));
+    return true;
+  } catch (err) {
+    console.warn('Audio unlock requires user gesture:', err);
+    return false;
+  }
+}
+
 export function playSound(
   type: 'success' | 'error' | 'notification' | 'alert' | 'notification_gentle' | 'emergency',
   options?: {
@@ -41,8 +73,19 @@ export function playSound(
     const ctx = getAudioContext();
     if (!ctx) return;
 
-    // Autoplay restrictions guard
+    // Autoplay restrictions guard: attempt inline resume if suspended
     if (ctx.state === 'suspended') {
+      ctx.resume().then(() => {
+        if (ctx.state === 'running') {
+          sessionStorage.setItem('koinonia_audio_armed', 'true');
+          window.dispatchEvent(new CustomEvent('koinonia_audio_state_change', { detail: { armed: true } }));
+          // Re-trigger playback once resumed
+          playSound(type, options);
+        }
+      }).catch(() => {
+        window.dispatchEvent(new CustomEvent('koinonia_audio_blocked'));
+      });
+      window.dispatchEvent(new CustomEvent('koinonia_audio_blocked'));
       return;
     }
 
@@ -152,14 +195,17 @@ export function resumeAudioContext() {
   try {
     const ctx = getAudioContext();
     if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch((err) => console.warn('Failed to resume AudioContext:', err));
+      ctx.resume().then(() => {
+        sessionStorage.setItem('koinonia_audio_armed', 'true');
+        window.dispatchEvent(new CustomEvent('koinonia_audio_state_change', { detail: { armed: true } }));
+      }).catch((err) => console.warn('Failed to resume AudioContext:', err));
+    } else if (ctx && ctx.state === 'running') {
+      sessionStorage.setItem('koinonia_audio_armed', 'true');
     }
   } catch (_) {}
 }
 
 export function stopAllUrgentAlertEffects() {
-  console.log('[Emergency Kill Switch] stopping all AudioContext, oscillators, timers, vibrations, and speech.');
-  
   // 0. Cancel speech synthesis
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
@@ -167,18 +213,7 @@ export function stopAllUrgentAlertEffects() {
     } catch (e) {}
   }
 
-  // 1. Close contexts
-  activeContexts.forEach(ctx => {
-    try {
-      ctx.close();
-    } catch (e) {
-      console.warn('Error closing AudioContext:', e);
-    }
-  });
-  activeContexts.clear();
-  audioCtx = null;
-
-  // 2. Stop and disconnect oscillators
+  // 1. Stop and disconnect oscillators without destroying the AudioContext
   activeOscillators.forEach(osc => {
     try {
       osc.stop();
@@ -187,7 +222,7 @@ export function stopAllUrgentAlertEffects() {
   });
   activeOscillators.clear();
 
-  // 3. Disconnect gain nodes
+  // 2. Disconnect gain nodes
   activeGainNodes.forEach(g => {
     try {
       g.disconnect();

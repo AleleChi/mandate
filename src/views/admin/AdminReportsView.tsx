@@ -1,38 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  TrendingUp, 
   Download, 
   RefreshCw, 
-  Users, 
-  UserCheck, 
-  Clock, 
-  ShieldAlert, 
-  AlertTriangle, 
+  Plus, 
+  Eye, 
+  ChevronRight, 
+  Loader2, 
   FileSpreadsheet, 
-  FileText,
-  Save,
-  Loader2,
+  X, 
+  Check, 
+  ArrowLeft, 
   Calendar,
-  AlertCircle,
-  ArrowRight,
-  Activity,
-  ArrowLeft,
-  Plus,
-  BarChart2,
-  Shield,
-  FileCheck,
-  Eye,
-  Trash2,
-  Archive,
-  History,
-  CheckCircle,
-  X,
-  FileDown,
-  ChevronRight,
-  Sparkles,
-  Search,
-  Lock,
-  LockOpen
+  AlertCircle
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
@@ -43,6 +22,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { TemplateConfigureView } from '../../components/admin/TemplateConfigureView';
 import { GeneratedReportPreviewModal } from '../../components/admin/reports/GeneratedReportPreviewModal';
 import { ReportActionsMenu } from '../../components/admin/reports/ReportActionsMenu';
+import { ReportChartRenderer } from '../../components/admin/reports/ReportChartRenderer';
 
 interface AdminReportsViewProps {
   onBackToOverview: () => void;
@@ -50,9 +30,8 @@ interface AdminReportsViewProps {
   currentRoute?: string;
 }
 
-// Tabs
+// 4 Canonical Tabs (Prompt Section 5)
 type MainTab = 'reports_centre' | 'template_library' | 'custom_builder' | 'live_metrics';
-type LegacyReportTab = 'pre_event' | 'live_event' | 'end_of_event' | 'volunteer_parent';
 
 function formatReportDate(value?: string | null): string {
   if (!value) return 'Date unavailable';
@@ -69,28 +48,24 @@ function formatReportDate(value?: string | null): string {
   }).format(date);
 }
 
+// Human-facing statuses (Prompt Section 8 & 57)
 function getReportStatusLabel(status: string): string {
   switch (status) {
     case 'queued':
-      return 'Waiting';
     case 'generating':
       return 'Preparing';
     case 'ready':
     case 'completed':
       return 'Ready';
     case 'failed':
-      return 'Needs attention';
+      return "Couldn't create report";
     case 'cancelled':
       return 'Cancelled';
     case 'archived':
       return 'Archived';
     default:
-      return 'Waiting';
+      return 'Preparing';
   }
-}
-
-function getGroundedNarrative(): string {
-  return 'All registered attendees and supervisor assignments have been reconciled against primary database tables.';
 }
 
 interface ReportTemplate {
@@ -102,20 +77,147 @@ interface ReportTemplate {
   supportedSections?: string[];
   defaultSections?: string[];
   availableFilters?: any;
-  dataAvailability?: { status: string; description: string };
-  permittedEventTypes?: string[];
-  allowedActions?: string[];
-  estimatedTime?: string;
+  includes?: string[];
   audience?: string;
   reportDomain?: string;
-  requiredDataSources?: string[];
-  analyticsCalculations?: string[];
-  reportSections?: string[];
-  charts?: string[];
-  tables?: string[];
-  insights?: string[];
-  recommendations?: string[];
 }
+
+// 6 Canonical Templates (Prompt Section 9)
+const CANONICAL_TEMPLATES: ReportTemplate[] = [
+  {
+    key: 'management-summary',
+    name: 'Management summary',
+    description: 'A concise leadership report covering participation, attendance, volunteer coverage and issues requiring attention.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: [
+      'Executive summary',
+      'Registration & participation',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & safety',
+      'Key observations'
+    ],
+    supportedSections: [
+      'Executive summary',
+      'Registration & participation',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & safety',
+      'Key observations'
+    ],
+    reportDomain: 'Leadership',
+    audience: 'Senior Leadership, Event Directors',
+    includes: [
+      'Executive KPI summary band',
+      'Deterministic key findings & attention items',
+      'Registration & attendance yields',
+      'Volunteer coverage ratios',
+      'Aggregated care & safety status'
+    ]
+  },
+  {
+    key: 'full-event-report',
+    name: 'Full event report',
+    description: 'A detailed event report covering registration, attendance, demographics, volunteers, care, safety and operational outcomes.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: [
+      'Executive summary',
+      'Registration & selection',
+      'Participation profile',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & support',
+      'Safety & incidents',
+      'Key observations',
+      'Appendix'
+    ],
+    supportedSections: [
+      'Executive summary',
+      'Registration & selection',
+      'Participation profile',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & support',
+      'Safety & incidents',
+      'Key observations',
+      'Appendix'
+    ],
+    reportDomain: 'Comprehensive',
+    audience: 'Executive Leadership, Department Leads',
+    includes: [
+      'Comprehensive executive summary',
+      'Registration pipeline & selection outcomes',
+      'Hourly arrival & pickup movement trends',
+      'Volunteer deployment & location loads',
+      'Aggregated safeguarding & care analysis',
+      'Observations and operational appendix'
+    ]
+  },
+  {
+    key: 'registration-selection',
+    name: 'Registration & selection',
+    description: 'Registration demand, review outcomes, age-group distribution and selection.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Registration & selection', 'Participation profile', 'Key observations'],
+    supportedSections: ['Executive summary', 'Registration & selection', 'Participation profile', 'Key observations'],
+    reportDomain: 'Registration',
+    audience: 'Registration Leads, Review Coordinators',
+    includes: [
+      'Registration demand & intake volumes',
+      'Application review outcome breakdown',
+      'Age-group cohort registration demand',
+      'Capacity pressure evaluation'
+    ]
+  },
+  {
+    key: 'attendance-movement',
+    name: 'Attendance & movement',
+    description: 'Attendance, check-in, pickup and participation analysis.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Attendance & movement', 'Participation profile', 'Key observations'],
+    supportedSections: ['Executive summary', 'Attendance & movement', 'Participation profile', 'Key observations'],
+    reportDomain: 'Attendance',
+    audience: 'Attendance Lead, Operations Supervisors',
+    includes: [
+      'Expected vs checked-in attendance rate',
+      'Active inside vs verified pickups',
+      'Attendance rate breakdown by age group',
+      'Chronological check-in activity flow'
+    ]
+  },
+  {
+    key: 'volunteer-coverage',
+    name: 'Volunteer coverage',
+    description: 'Volunteer participation, team coverage and service distribution.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Volunteer coverage', 'Key observations'],
+    supportedSections: ['Executive summary', 'Volunteer coverage', 'Operational appendix', 'Key observations'],
+    reportDomain: 'People',
+    audience: 'Volunteer Coordinator, Team Leads',
+    includes: [
+      'Approved vs on-duty volunteer headcounts',
+      'Volunteer deployment by ministry team',
+      'Staff-to-child ratios per location',
+      'Coverage gaps and staffing observations'
+    ]
+  },
+  {
+    key: 'care-safety-summary',
+    name: 'Care & safety summary',
+    description: 'An aggregated overview of care needs, incidents and safety follow-up without exposing unnecessary personal information.',
+    privacyClassification: 'Safeguarding restricted',
+    recommendedSections: ['Care & safety', 'Key observations'],
+    supportedSections: ['Executive summary', 'Care & safety', 'Key observations'],
+    reportDomain: 'Safeguarding',
+    audience: 'Safeguarding Lead, Executive Leadership',
+    includes: [
+      'Aggregated medical and care awareness count',
+      'Safety concerns recorded by resolution status',
+      'Incident severity distribution (anonymised)',
+      'Safeguarding follow-up items'
+    ]
+  }
+];
 
 export const AdminReportsView: React.FC<AdminReportsViewProps> = ({ 
   onBackToOverview,
@@ -124,21 +226,18 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 }) => {
   const { showError, showSuccess } = useNotification();
   
-  // Tabs State
+  // Tabs State (Prompt Section 5: Reports, Templates, Create report, Event overview)
   const [activeMainTab, setActiveMainTab] = useState<MainTab>('reports_centre');
-  const [activeLegacyTab, setActiveLegacyTab] = useState<LegacyReportTab>('end_of_event');
 
   // Loading States
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingReportsList, setLoadingReportsList] = useState(false);
+  const [loadingOverview, setLoadingOverview] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Data States
-  const [legacyReportData, setLegacyReportData] = useState<any>(null);
-  const [localNotes, setLocalNotes] = useState('');
-  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
+  // Events & Templates
+  const [availableEvents, setAvailableEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
+  const [templates, setTemplates] = useState<ReportTemplate[]>(CANONICAL_TEMPLATES);
   const [generatedReports, setGeneratedReports] = useState<any[]>([]);
 
   // Preview Modal State
@@ -146,11 +245,19 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   const [previewReportTitle, setPreviewReportTitle] = useState<string>('');
   const [previewEventTitle, setPreviewEventTitle] = useState<string>('');
   
-  // Custom Builder Form State
-  const [builderTemplate, setBuilderTemplate] = useState<string>('event-executive-report-v1');
+  // Create Report Editorial Workflow State (Prompt Sections 10-14 & 48)
+  const [createStep, setCreateStep] = useState<number>(1);
+  const [builderTemplate, setBuilderTemplate] = useState<string>('management-summary');
   const [builderClassification, setBuilderClassification] = useState<string>('Internal operational');
+  const [customReportTitle, setCustomReportTitle] = useState<string>('');
+  const [customSubtitle, setCustomSubtitle] = useState<string>('Children & Teens Ministry');
   const [builderSections, setBuilderSections] = useState<string[]>([
-    'Executive Summary', 'Operational Metrics', 'Recommended actions'
+    'Executive summary',
+    'Registration & participation',
+    'Attendance & movement',
+    'Volunteer coverage',
+    'Care & safety',
+    'Key observations'
   ]);
   const [builderFilters, setBuilderFilters] = useState({
     ageGroup: 'All',
@@ -159,72 +266,55 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   });
   const [submittingJob, setSubmittingJob] = useState(false);
   const [activeProgressJobId, setActiveProgressJobId] = useState<string | null>(null);
-  const [activeProgressStep, setActiveProgressStep] = useState<number>(0);
-  const [activeProgressText, setActiveProgressText] = useState<string>('');
 
-  // Per-row Action State
-  const [rowActionLoading, setRowActionLoading] = useState<{ [reportId: string]: string }>({});
+  // Event Overview State (Prompt Sections 44-46)
+  const [liveOverviewAnalytics, setLiveOverviewAnalytics] = useState<any>(null);
+
+  // Confirmation modal
   const [confirmModal, setConfirmModal] = useState<{ type: 'delete' | 'archive'; reportId: string } | null>(null);
-
-  // Real-time Preview States
-  const [previewData, setPreviewData] = useState<any>(null);
-  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
-  const [previewPage, setPreviewPage] = useState<number>(1);
 
   // Audit modal
   const [auditReportId, setAuditReportId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
 
-  // 1. Fetch Legacy Metrics
-  const fetchLegacyReports = async (showLoadingState = true) => {
-    if (showLoadingState) {
-      setLoadingMetrics(true);
-      setFetchError(null);
-    } else {
-      setRefreshing(true);
-    }
-
+  // 1. Fetch Events List
+  const fetchEvents = async () => {
     try {
-      if (activeLegacyTab === 'volunteer_parent') {
-        const response = await api.admin.getVolunteerParentStats();
-        if (response && response.success) {
-          setLegacyReportData(response.stats);
-          setLocalNotes('');
-        } else {
-          setFetchError('We could not load legacy metrics.');
-        }
-      } else {
-        const response = await api.admin.getReports({ reportType: activeLegacyTab });
-        if (response && response.success) {
-          setLegacyReportData(response);
-          setLocalNotes(response.notes || '');
-        } else {
-          setFetchError('We could not load legacy metrics.');
+      const res = await api.request<any>('/api/admin/events');
+      if (res && res.success && res.events && res.events.length > 0) {
+        setAvailableEvents(res.events);
+        const current = res.events.find((e: any) => e.is_current || e.status === 'published') || res.events[0];
+        if (current) {
+          setSelectedEventId(current.id);
         }
       }
-    } catch (err: any) {
-      setFetchError('Failed to fetch legacy metrics.');
-    } finally {
-      setLoadingMetrics(false);
-      setRefreshing(false);
+    } catch (err) {
+      console.warn('Could not load events list:', err);
     }
   };
 
-  // 2. Fetch Templates & Job History
+  // 2. Fetch Reports List & Server Templates
   const fetchReportsListAndTemplates = async () => {
     setLoadingReportsList(true);
     try {
-      // Templates
+      // Templates from API
       const tempRes = await api.request('/api/admin/reports/templates');
-      if (tempRes && tempRes.success) {
-        setTemplates(tempRes.templates);
+      if (tempRes && tempRes.success && tempRes.templates && tempRes.templates.length > 0) {
+        // Ensure 6 canonical templates are at the front
+        const merged = [...CANONICAL_TEMPLATES];
+        tempRes.templates.forEach((t: any) => {
+          if (!merged.some(m => m.key === t.key)) {
+            merged.push(t);
+          }
+        });
+        setTemplates(merged);
       }
       
-      // Generated Jobs
+      // Generated Reports
       const jobsRes = await api.request('/api/admin/reports');
       if (jobsRes && jobsRes.success) {
-        setGeneratedReports(jobsRes.reports);
+        setGeneratedReports(jobsRes.reports || []);
       }
     } catch (err) {
       console.error('Failed to load reports list or templates:', err);
@@ -233,118 +323,89 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     }
   };
 
+  // 3. Fetch Live Overview Analytics for Event overview Tab (Prompt Section 44-46)
+  const fetchLiveOverview = async (eventId?: string) => {
+    setLoadingOverview(true);
+    try {
+      const targetId = eventId || selectedEventId || 'event-ga-2026';
+      const res = await api.request<any>('/api/admin/reports/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          templateKey: 'management-summary',
+          privacyLevel: 'Internal operational',
+          sections: [
+            'Executive summary',
+            'Registration & participation',
+            'Attendance & movement',
+            'Volunteer coverage',
+            'Care & safety',
+            'Key observations'
+          ],
+          filters: { ageGroup: 'All', location: 'All' },
+          eventId: targetId
+        })
+      });
+      if (res && res.success && res.analytics) {
+        setLiveOverviewAnalytics(res.analytics);
+      }
+    } catch (err) {
+      console.warn('Could not load live event overview:', err);
+    } finally {
+      setLoadingOverview(false);
+    }
+  };
+
   useEffect(() => {
-    console.info('[Reports Centre] Runtime build: reports-recovery-2026-07-25-v4');
+    fetchEvents();
     fetchReportsListAndTemplates();
   }, []);
 
   useEffect(() => {
     if (activeMainTab === 'live_metrics') {
-      fetchLegacyReports(true);
+      fetchLiveOverview(selectedEventId);
     }
-  }, [activeMainTab, activeLegacyTab]);
+  }, [activeMainTab, selectedEventId]);
 
-  const fetchPreview = async () => {
-    setLoadingPreview(true);
-    try {
-      const response = await api.request('/api/admin/reports/preview', {
-        method: 'POST',
-        body: JSON.stringify({
-          templateKey: builderTemplate,
-          privacyLevel: builderClassification,
-          sections: builderSections,
-          filters: builderFilters,
-          eventId: null
-        })
-      });
-      if (response && response.success) {
-        setPreviewData(response);
-      }
-    } catch (err) {
-      console.error('Failed to fetch report preview:', err);
-    } finally {
-      setLoadingPreview(false);
-    }
-  };
-
-  const getGroundedNarrative = () => {
-    if (!previewData || !previewData.analytics) {
-      return "This official operational review provides critical summaries based on records captured in the general attendance databases up to the compiler cutoff timestamp. Real-time active check-in tracking allows coordinator supervisors to ensure optimal safeguarding ratios, secure release handoffs, and instant incident coordination responsiveness across Grace Hall and related venues.";
-    }
-    const a = previewData.analytics;
-    const isTraining = !!previewData.context?.eventTitle?.toLowerCase().includes('drill') || !!a.training;
-    
-    if (isTraining) {
-      const scenario = a.training?.scenarioTitle || 'Emergency Evacuation Drill';
-      const participants = a.training?.participantsCount ?? 0;
-      const completed = a.training?.objectivesCompletedCount ?? 0;
-      const totalObj = a.training?.objectivesCount ?? 0;
-      const pct = totalObj > 0 ? ((completed / totalObj) * 100).toFixed(1) : '0.0';
-      const ack = a.training?.medianAckTimeSeconds ? `${a.training.medianAckTimeSeconds.toFixed(1)}s` : 'N/A';
-      return `This training evaluation report details the results for simulated scenario drill: "${scenario}" conducted on ${previewData.context?.startsAt?.slice(0,10) || new Date().toISOString().slice(0,10)}. A total of ${participants} active staff participants completed safety training. Evaluated outcomes show that ${completed} of ${totalObj} critical drill objectives were successfully met, representing an objective completion rate of ${pct}%. Real-time communications verified a median acknowledgement response latency of ${ack}. This training isolation is strictly validated for safeguarding drills.`;
-    } else {
-      const title = previewData.context?.eventTitle || 'General Assembly';
-      const regs = a.attendance?.totalRegistrations ?? 0;
-      const checkedIn = a.attendance?.checkedInTotal ?? 0;
-      const pct = a.attendance?.attendanceRate?.toFixed(1) ?? '0.0';
-      const released = a.attendance?.releasedTotal ?? 0;
-      const alerts = a.alerts?.totalAlerts ?? 0;
-      const ack = a.alerts?.medianAcknowledgementTimeSeconds ? `${a.alerts.medianAcknowledgementTimeSeconds.toFixed(1)}s` : '0.0s';
-      const devices = a.devices?.totalDevices ?? 0;
-      const readiness = a.devices?.readinessRate?.toFixed(1) ?? '0.0';
-      const syncs = a.offline?.queuedActionsCount ?? 0;
-      return `This report presents authoritative operational metrics for "${title}" as of ${previewData.metadata?.cutoffTime?.slice(0, 10) || new Date().toISOString().slice(0,10)}. A total of ${regs} children were registered, with ${checkedIn} verified check-ins (attendance rate: ${pct}%) and ${released} secure releases logged. Safeguarding operations recorded ${alerts} safety alerts, with a median response acknowledgement time of ${ack}. Device audits verified ${devices} active duty devices with an overall readiness rate of ${readiness}%, ensuring healthy coverage. Network resilience metrics logged ${syncs} offline sync actions successfully reconciled.`;
-    }
-  };
-
+  // Set default report title when template or event changes
   useEffect(() => {
-    if (activeMainTab === 'custom_builder') {
-      fetchPreview();
-    }
-  }, [builderTemplate, builderClassification, builderSections, builderFilters, activeMainTab]);
+    const ev = availableEvents.find(e => e.id === selectedEventId);
+    const eventName = ev?.title || 'The General Assembly 2026';
+    const tm = templates.find(t => t.key === builderTemplate);
+    const templateName = tm?.name || 'Management summary';
+    setCustomReportTitle(`${eventName} — ${templateName}`);
+  }, [selectedEventId, builderTemplate, availableEvents, templates]);
 
-  // Handle saving notes
-  const handleSaveNotes = async () => {
-    if (!legacyReportData?.event?.id) return;
-    setSavingNotes(true);
-    try {
-      await api.admin.saveReportNotes({
-        eventId: legacyReportData.event.id,
-        reportType: activeLegacyTab,
-        notes: localNotes
-      });
-      showSuccess('Notes Saved', 'Report notes updated successfully.');
-    } catch (err: any) {
-      const parsed = extractApiError(err);
-      showError('Save Failed', parsed.message);
-    } finally {
-      setSavingNotes(false);
+  // Handle template selection from template library
+  const handleSelectTemplate = (templateKey: string) => {
+    const tm = templates.find(t => t.key === templateKey);
+    if (!tm) return;
+    setBuilderTemplate(tm.key);
+    setBuilderClassification(tm.privacyClassification || 'Internal operational');
+    setBuilderSections(tm.recommendedSections || tm.defaultSections || [
+      'Executive summary',
+      'Registration & participation',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & safety',
+      'Key observations'
+    ]);
+    setCreateStep(2); // Advance to event selection
+    setActiveMainTab('custom_builder');
+    showSuccess('Template Selected', `Configuring "${tm.name}".`);
+  };
+
+  // Toggle section selection in Step 4
+  const handleToggleSection = (sec: string) => {
+    if (builderSections.includes(sec)) {
+      setBuilderSections(builderSections.filter(s => s !== sec));
+    } else {
+      setBuilderSections([...builderSections, sec]);
     }
   };
 
-  // Trigger file download helper
-  const handleExport = (type: string, format: string) => {
-    if (format !== 'csv') {
-      showSuccess('Report Pending', `The requested ${format.toUpperCase()} report is currently being prepared by the children ministry directors.`);
-      return;
-    }
-
-    const exportUrl = `/api/admin/reports/export?type=${type}&format=csv`;
-    const link = document.createElement('a');
-    link.href = exportUrl;
-    link.setAttribute('download', `${type}_export.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showSuccess('Export Started', `Downloading ${(type || '').replace(/_/g, ' ')} CSV export...`);
-  };
-
-  // 3. Request a new PDF Report Job
-  const handleCreateReportJob = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Submit report generation job
+  const handleCreateReportJob = async () => {
     setSubmittingJob(true);
-    
-    // Auto-generate idempotency key to prevent double clicks
     const idempotencyKey = 'key-' + Math.random().toString(36).substring(2);
 
     try {
@@ -355,21 +416,18 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           privacyLevel: builderClassification,
           sections: builderSections,
           filters: builderFilters,
+          eventId: selectedEventId,
+          reportTitle: customReportTitle,
           idempotencyKey
         })
       });
 
       if (response && response.success) {
-        showSuccess('Job Queued', 'Report generation started in the background.');
         const newJobId = response.jobId;
         setActiveProgressJobId(newJobId);
-        setActiveProgressStep(1);
-        setActiveProgressText('Gathering event data and preparing report...');
-
-        // Start polling for progress
         pollJobStatus(newJobId);
       } else {
-        showError('Request Failed', 'Failed to request report generation.');
+        showError('Request Failed', 'Could not create report. Please try again.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -379,7 +437,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     }
   };
 
-  // Poll Job Status
+  // Poll Job Status (Prompt Section 58 & 59)
   const pollJobStatus = (jobId: string) => {
     let attempts = 0;
     const interval = setInterval(async () => {
@@ -387,7 +445,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       if (attempts > 30) {
         clearInterval(interval);
         setActiveProgressJobId(null);
-        showError('Timeout', 'Report generation took longer than expected. Please check Generated reports.');
+        showError('Notice', 'Report generation is taking a moment. Please check the reports list shortly.');
         fetchReportsListAndTemplates();
         return;
       }
@@ -398,31 +456,19 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         if (res && res.success && job) {
           const status = job.status;
           
-          if (status === 'queued') {
-            setActiveProgressStep(1);
-            setActiveProgressText('Gathering event information...');
-          } else if (status === 'generating') {
-            setActiveProgressStep(2);
-            setActiveProgressText('Calculating figures and applying privacy filters...');
-          } else if (status === 'completed' || status === 'ready') {
-            setActiveProgressStep(4);
-            setActiveProgressText('Report ready.');
+          if (status === 'completed' || status === 'ready') {
             clearInterval(interval);
             setTimeout(() => {
               setActiveProgressJobId(null);
-              showSuccess('Report ready', 'Your report is compiled and ready for download.');
+              showSuccess('Report ready', 'Your report has been created and is ready for review.');
               setActiveMainTab('reports_centre');
               fetchReportsListAndTemplates();
-            }, 1000);
+              setCreateStep(1);
+            }, 800);
           } else if (status === 'failed') {
             clearInterval(interval);
             setActiveProgressJobId(null);
-            showError('Generation failed', job.errorMessage || job.error_log || 'Report compilation encountered an issue.');
-            fetchReportsListAndTemplates();
-          } else if (status === 'cancelled') {
-            clearInterval(interval);
-            setActiveProgressJobId(null);
-            showError('Cancelled', 'Report generation was cancelled.');
+            showError("We couldn't create this report", 'Please try again. If the problem continues, refresh the page and try once more.');
             fetchReportsListAndTemplates();
           }
         }
@@ -432,89 +478,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     }, 1500);
   };
 
-  // View Audit Logs
-  const viewAuditLogs = async (reportId: string) => {
-    setAuditReportId(reportId);
-    setLoadingAudit(true);
-    try {
-      const res = await api.request(`/api/admin/reports/${reportId}/history`);
-      if (res && res.success) {
-        setAuditLogs(res.history);
-      }
-    } catch (err) {
-      showError('Error', 'Failed to fetch audit trails.');
-    } finally {
-      setLoadingAudit(false);
-    }
-  };
-
-  // Perform actions on generated reports
-  const handleCancelReport = async (reportId: string) => {
-    try {
-      const res = await api.request(`/api/admin/reports/${reportId}/cancel`, { method: 'POST' });
-      if (res && res.success) {
-        showSuccess('Cancelled', 'Report generation cancelled.');
-        fetchReportsListAndTemplates();
-      }
-    } catch (err: any) {
-      showError('Failed', extractApiError(err).message);
-    }
-  };
-
-  const handleRegenerateReport = async (reportId: string) => {
-    try {
-      const res = await api.request(`/api/admin/reports/${reportId}/regenerate`, { method: 'POST' });
-      if (res && res.success) {
-        showSuccess('Queued', 'Regeneration from original snapshot queued.');
-        pollJobStatus(reportId);
-        fetchReportsListAndTemplates();
-      }
-    } catch (err: any) {
-      showError('Failed', extractApiError(err).message);
-    }
-  };
-
-  const handleArchiveReport = async (reportId: string) => {
-    try {
-      const res = await api.request(`/api/admin/reports/${reportId}/archive`, { method: 'POST' });
-      if (res && res.success) {
-        showSuccess('Archived', 'Report moved to archived records.');
-        fetchReportsListAndTemplates();
-      }
-    } catch (err: any) {
-      showError('Failed', extractApiError(err).message);
-    }
-  };
-
-  const handleDeleteReport = async (reportId: string) => {
-    if (!window.confirm('Are you sure you want to permanently delete this report snapshot? This cannot be undone.')) {
-      return;
-    }
-    try {
-      const res = await api.request(`/api/admin/reports/${reportId}`, { method: 'DELETE' });
-      if (res && res.success) {
-        showSuccess('Deleted', 'Report deleted permanently.');
-        fetchReportsListAndTemplates();
-      }
-    } catch (err: any) {
-      showError('Failed', extractApiError(err).message);
-    }
-  };
-
-  const handleTriggerUpdatedVersion = async (reportId: string) => {
-    try {
-      const res = await api.request(`/api/admin/reports/${reportId}/generate-updated`, { method: 'POST' });
-      if (res && res.success) {
-        showSuccess('New Job Created', 'A new updated report has been queued.');
-        pollJobStatus(res.jobId);
-        fetchReportsListAndTemplates();
-      }
-    } catch (err: any) {
-      showError('Failed', extractApiError(err).message);
-    }
-  };
-
-  // Secure authorized download via standard auth header token
+  // Secure authorized download via standard auth header token (Prompt Section 52 & 55)
   const handleDownloadReportPDF = (reportId: string, filename?: string) => {
     const token = api.getToken();
     if (!token) {
@@ -522,7 +486,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       return;
     }
 
-    showSuccess('Preparing File', 'Preparing report download…');
+    showSuccess('Preparing file', 'Preparing report download…');
     
     const downloadUrl = buildApiUrl(`/api/admin/reports/${reportId}/download`);
     
@@ -567,56 +531,102 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         if (filenameMatch) headerFilename = filenameMatch[1];
       }
 
-      const safeDownloadName = headerFilename || (filename && !filename.startsWith('job-') && !filename.startsWith('rep-') && filename.endsWith('.pdf') ? filename : 'Attendance and Demographics Report.pdf');
+      const safeDownloadName = headerFilename || (filename && filename.endsWith('.pdf') ? filename : 'TGA-2026-Management-Report.pdf');
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
+      a.style.display = 'none';
       a.href = url;
       a.download = safeDownloadName;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      showSuccess('Success', 'PDF report successfully downloaded.');
+      
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 200);
+
+      showSuccess('Download started', `Downloading ${safeDownloadName}`);
     })
-    .catch((err: any) => {
-      console.error('[Download PDF] Frontend handling error:', err);
-      showError('Download Failed', err.message || 'We could not download this report.');
+    .catch((err) => {
+      console.error('Download error:', err);
+      showError('Download failed', err.message || 'Failed to download report.');
     });
   };
 
-  // Toggle report sections helper
-  const handleToggleSection = (sec: string) => {
-    if (builderSections.includes(sec)) {
-      setBuilderSections(builderSections.filter(s => s !== sec));
-    } else {
-      setBuilderSections([...builderSections, sec]);
+  // CSV Export
+  const handleExport = (type: string, format: string) => {
+    const url = buildApiUrl(`/api/admin/reports/export?type=${type}&format=${format}&eventId=${selectedEventId}`);
+    window.open(url, '_blank');
+  };
+
+  // Actions
+  const handleRegenerateReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/regenerate`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Queued', 'Report regeneration has been queued.');
+        pollJobStatus(reportId);
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
     }
   };
 
-  // Use recommended sections
-  const handleApplyTemplateToForm = (temp: ReportTemplate) => {
-    setBuilderTemplate(temp.key);
-    setBuilderClassification(temp.privacyClassification);
-    setBuilderSections(temp.recommendedSections);
-    setActiveMainTab('custom_builder');
-    showSuccess('Template Applied', `Form preset configured for "${temp.name}".`);
-  };
-
-  const openReportTemplate = (templateKey: string) => {
-    const exists = templates.some(t => t.key === templateKey);
-    if (!exists) {
-      showError('Navigation Error', 'The selected template key is not supported or does not exist.');
-      return;
-    }
-    
-    if (onNavigate) {
-      onNavigate(`/admin/reports/templates/${templateKey}/configure`);
-    } else {
-      showError('Navigation Error', 'Router service is currently unavailable.');
+  const handleArchiveReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/archive`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Archived', 'Report moved to archived records.');
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
     }
   };
 
+  const handleDeleteReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}`, { method: 'DELETE' });
+      if (res && res.success) {
+        showSuccess('Deleted', 'Report deleted.');
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const handleTriggerUpdatedVersion = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/generate-updated`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Queued', 'A new updated report has been queued.');
+        pollJobStatus(res.jobId);
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const viewAuditLogs = async (reportId: string) => {
+    setAuditReportId(reportId);
+    setLoadingAudit(true);
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/history`);
+      if (res && res.success) {
+        setAuditLogs(res.history || []);
+      }
+    } catch (err) {
+      showError('Error', 'Failed to fetch audit log.');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  // Sub-route handling
   const isConfigureRoute = currentRoute && currentRoute.startsWith('/admin/reports/templates/') && currentRoute.endsWith('/configure');
   const templateKey = isConfigureRoute ? currentRoute.split('/')[4] : null;
 
@@ -636,45 +646,36 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     );
   }
 
+  const selectedEventObj = availableEvents.find(e => e.id === selectedEventId) || availableEvents[0];
+  const selectedTemplateObj = templates.find(t => t.key === builderTemplate) || templates[0];
+
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
       className="space-y-8 pb-16"
       id="admin-reports-module"
-      data-build-version="reports-recovery-2026-07-25-v4"
-      data-view-version="admin-reports-v3-professional-ledger"
     >
-      {/* ----------------- TOP BANNER & STATS ----------------- */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/60 pb-6">
+      {/* ----------------- 1. MAIN PAGE HEADER (Prompt Section 4) ----------------- */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/80 pb-6">
         <div>
-          <h1 className="text-3xl font-serif font-medium text-stone-900 tracking-tight flex items-center gap-2">
-            <Shield className="w-8 h-8 text-[#C59B27] stroke-1" />
-            Reports Centre
+          <h1 className="text-3xl font-serif font-medium text-stone-900 tracking-tight">
+            Reports
           </h1>
           <p className="text-stone-500 text-sm mt-1.5 leading-relaxed">
-            Review reports created for this event, download completed files or prepare an updated version.
+            Create clear event reports for leadership, review previous reports and understand how the current event is progressing.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Button
-            onClick={onBackToOverview}
-            variant="outline"
-            className="border-stone-200 hover:bg-stone-50 text-stone-700 text-xs py-2 px-3 flex items-center gap-1.5 rounded-lg"
-            id="btn-back-overview"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Dashboard
-          </Button>
-          <Button
             onClick={() => {
               fetchReportsListAndTemplates();
-              if (activeMainTab === 'live_metrics') fetchLegacyReports(false);
+              if (activeMainTab === 'live_metrics') fetchLiveOverview(selectedEventId);
             }}
             variant="outline"
-            className="border-stone-200 hover:bg-stone-50 text-stone-700 text-xs py-2 px-3 flex items-center gap-1.5 rounded-lg"
+            className="border-stone-200 hover:bg-stone-50 text-stone-700 text-xs py-2 px-3.5 flex items-center gap-1.5 rounded-lg font-medium"
             id="btn-refresh-all-reports"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -683,28 +684,28 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         </div>
       </div>
 
-      {/* ----------------- CORE TAB SELECTION ----------------- */}
-      <div className="flex border-b border-stone-200/80 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none" data-component-version="admin-reports-main-tabs">
-        <div className="flex space-x-6 min-w-max pb-1">
+      {/* ----------------- 2. TOP-LEVEL TABS (Prompt Section 5) ----------------- */}
+      <div className="flex border-b border-stone-200 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none">
+        <div className="flex space-x-8 min-w-max pb-1">
           {[
-            { id: 'reports_centre', label: 'Generated reports' },
+            { id: 'reports_centre', label: 'Reports' },
             { id: 'template_library', label: 'Templates' },
             { id: 'custom_builder', label: 'Create report' },
-            { id: 'live_metrics', label: 'Live metrics' }
+            { id: 'live_metrics', label: 'Event overview' }
           ].map((tab) => {
             const isActive = activeMainTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveMainTab(tab.id as MainTab)}
-                className={`pb-3 text-left transition-all relative ${
+                className={`pb-3 text-left transition-all relative font-sans ${
                   isActive 
-                    ? 'text-[#C59B27]' 
-                    : 'text-stone-500 hover:text-stone-800'
+                    ? 'text-[#C59B27] font-semibold' 
+                    : 'text-stone-500 hover:text-stone-800 font-medium'
                 }`}
                 id={`main-tab-${tab.id}`}
               >
-                <div className="text-sm font-medium">{tab.label}</div>
+                <div className="text-sm">{tab.label}</div>
                 {isActive && (
                   <motion.div 
                     layoutId="activeMainTabUnderline" 
@@ -717,56 +718,43 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         </div>
       </div>
 
-      {/* ----------------- COMPILATION PROGRESS FLOATER ----------------- */}
+      {/* ----------------- 3. COMPILATION LOADING FLOATER (Prompt Section 58) ----------------- */}
       <AnimatePresence>
         {activeProgressJobId && (
           <motion.div 
-            initial={{ opacity: 0, y: 50 }}
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-6 right-6 z-50 bg-stone-900 text-stone-100 rounded-xl p-5 shadow-2xl border border-stone-800 w-96"
+            exit={{ opacity: 0, y: 40 }}
+            className="fixed bottom-6 right-6 z-50 bg-stone-900 text-stone-100 rounded-xl p-5 shadow-xl border border-stone-800 w-84"
             id="report-compilation-progress-widget"
-            data-component-version="report-generation-progress-v1"
           >
-            <div className="flex items-center justify-between mb-3 border-b border-stone-800 pb-2">
-              <span className="text-xs font-serif font-medium uppercase tracking-wider text-[#C59B27] flex items-center gap-1.5">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Preparing Report
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <Loader2 className="w-4 h-4 animate-spin text-[#C59B27]" />
+              <span className="text-sm font-medium text-white">
+                Preparing your report…
               </span>
-              <span className="text-[10px] font-mono text-stone-400">ID: {activeProgressJobId.slice(0, 8)}</span>
             </div>
-            <p className="text-xs text-stone-300 font-medium">{activeProgressText}</p>
-            <div className="w-full bg-stone-800 h-2 rounded-full mt-3 overflow-hidden">
-              <div 
-                className="bg-[#C59B27] h-full transition-all duration-500"
-                style={{ width: `${(activeProgressStep / 4) * 100}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-[10px] text-stone-500 mt-2 font-mono">
-              <span>Snapshot</span>
-              <span>Filter Privacy</span>
-              <span>Render</span>
-              <span>Sign Ledger</span>
-            </div>
+            <p className="text-xs text-stone-400 pl-6.5">This may take a moment.</p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ----------------- TAB CONTENTS ----------------- */}
-
-      {/* TAB 1: REPORTS CENTRE DIRECTORY */}
+      {/* ----------------- TAB 1: REPORTS ARCHIVE (Prompt Section 6, 7, 8) ----------------- */}
       {activeMainTab === 'reports_centre' && (
-        <div className="space-y-6" data-view-version="admin-reports-centre-v1-premium">
-          <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="text-sm font-serif font-semibold text-stone-900">Generated reports</h3>
+        <div className="space-y-6">
+          <div className="bg-white border border-stone-200/80 p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-0.5">
+              <h2 className="text-base font-semibold text-stone-900">Reports</h2>
               <p className="text-stone-500 text-xs leading-relaxed">
-                Review reports created for this event, download completed files or prepare an updated version.
+                Reports created for this event will appear here.
               </p>
             </div>
             <Button
-              onClick={() => setActiveMainTab('custom_builder')}
-              className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-sm transition-all self-start md:self-auto"
+              onClick={() => {
+                setCreateStep(1);
+                setActiveMainTab('custom_builder');
+              }}
+              className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs transition-all self-start sm:self-auto"
               id="btn-nav-custom-builder"
             >
               <Plus className="w-4 h-4" />
@@ -776,31 +764,39 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
           {loadingReportsList ? (
             <div className="flex items-center justify-center p-12 min-h-[30vh]">
-              <KoinoniaInlineLoader variant="logo" size="md" label="Loading generated reports..." />
+              <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports…" />
             </div>
           ) : generatedReports.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-stone-500 text-center space-y-4">
-              <FileText className="w-10 h-10 text-stone-300 stroke-1" />
-              <div className="space-y-1">
-                <p className="text-sm font-serif font-medium text-stone-700">No Reports Generated Yet</p>
-                <p className="text-xs text-stone-400">Prepare your first report using our custom report wizard or standard templates.</p>
+            /* Quiet Empty State (Prompt Section 7) */
+            <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-center space-y-4">
+              <div className="space-y-1.5 max-w-sm">
+                <p className="text-base font-medium text-stone-800">No reports yet</p>
+                <p className="text-xs text-stone-500 leading-relaxed">
+                  Create a report to summarise registrations, attendance, participation and event operations.
+                </p>
               </div>
               <Button
-                onClick={() => setActiveMainTab('custom_builder')}
-                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-medium py-2 px-5 rounded-lg"
+                onClick={() => {
+                  setCreateStep(1);
+                  setActiveMainTab('custom_builder');
+                }}
+                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
               >
                 Create report
               </Button>
             </div>
           ) : (
-            <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-sm" data-component-version="reports-accessibility-v1">
+            /* Generated Report List Table (Prompt Section 8) */
+            <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" aria-label="Generated Event Reports">
+                <table className="w-full text-left border-collapse" aria-label="Reports Archive">
                   <thead>
                     <tr className="bg-stone-50 border-b border-stone-200">
                       <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Prepared By</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Classification</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Event</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Type</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created</th>
+                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created by</th>
                       <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
                       <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
                     </tr>
@@ -810,61 +806,43 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                       const isComplete = report.status === 'completed' || report.status === 'ready';
                       const isPending = ['queued', 'generating'].includes(report.status);
                       const isFailed = report.status === 'failed';
-                      const isCancelled = report.status === 'cancelled';
-                      const isArchived = report.status === 'archived';
 
-                      const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Event Snapshot Report';
-                      const eventTitle = report.eventTitle || report.eventName || 'Annual General Assembly 2026';
-                      const preparedBy = report.requestedByName || report.requestedByEmail || 'Administrator';
-                      const classification = report.privacyClassification || report.privacy_classification || 'Internal operational';
+                      const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Management Report';
+                      const eventTitle = report.eventTitle || report.eventName || 'The General Assembly 2026';
+                      const typeName = report.templateName || 'Management summary';
+                      const preparedBy = report.requestedByName || report.requestedByEmail || 'Super Admin';
                       const statusLabel = getReportStatusLabel(report.status);
                       const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
 
-                      let classificationBadge = 'bg-stone-100 text-stone-700 border-stone-200';
-                      if (classification === 'Internal operational') classificationBadge = 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/20';
-                      if (classification === 'Safeguarding restricted') classificationBadge = 'bg-red-50 text-red-700 border-red-200';
-
                       return (
-                        <tr key={report.id} className="hover:bg-stone-50/50 transition-colors">
+                        <tr key={report.id} className="hover:bg-stone-50/60 transition-colors">
                           <td className="py-4 px-6">
-                            <div className="space-y-1">
-                              <h3 className="font-serif text-[17px] leading-[1.35] font-medium text-[#18181B] tracking-[-0.01em] line-clamp-2 max-w-[420px] break-words">
+                            <div className="space-y-0.5">
+                              <span className="text-sm font-semibold text-stone-900 block line-clamp-1">
                                 {reportTitle}
-                              </h3>
-                              <div className="flex flex-wrap items-center gap-1.5 text-[12px] leading-5 text-stone-500 font-normal">
-                                <span className="font-medium text-stone-700">{eventTitle}</span>
-                                <span>·</span>
-                                <span>{formattedDate}</span>
-                                {(report.fileSize || report.file_size) && (
-                                  <>
-                                    <span>·</span>
-                                    <span>{((report.fileSize || report.file_size) / 1024).toFixed(1)} KB</span>
-                                  </>
-                                )}
-                                {report.pageCount ? (
-                                  <>
-                                    <span>·</span>
-                                    <span>{report.pageCount} pages</span>
-                                  </>
-                                ) : null}
-                              </div>
+                              </span>
+                              <span className="text-xs text-stone-400 block">
+                                {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
+                              </span>
                             </div>
+                          </td>
+                          <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                            {eventTitle}
+                          </td>
+                          <td className="py-4 px-6 text-xs text-stone-600">
+                            {typeName}
+                          </td>
+                          <td className="py-4 px-6 text-xs text-stone-500 tabular-nums">
+                            {formattedDate}
                           </td>
                           <td className="py-4 px-6 text-xs text-stone-700 font-medium">
                             {preparedBy}
                           </td>
                           <td className="py-4 px-6">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium leading-4 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
-                              <Shield className="w-3 h-3 text-stone-500" />
-                              {classification}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6">
-                            <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase font-semibold tracking-wider px-2.5 py-1 rounded-full ${
-                              isComplete ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                              isPending ? 'bg-amber-50 text-amber-800 border border-amber-200' :
-                              isFailed ? 'bg-red-50 text-red-800 border border-red-200' :
-                              isCancelled ? 'bg-stone-100 text-stone-500' :
+                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
+                              isComplete ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/60' :
+                              isPending ? 'bg-amber-50 text-amber-800 border border-amber-200/60' :
+                              isFailed ? 'bg-red-50 text-red-800 border border-red-200/60' :
                               'bg-stone-100 text-stone-600'
                             }`}>
                               {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
@@ -881,16 +859,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                       setPreviewReportTitle(reportTitle);
                                       setPreviewEventTitle(eventTitle);
                                     }}
-                                    className="h-10 min-w-[104px] bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1.5 px-3 shadow-2xs"
-                                    id={`btn-preview-${report.id}`}
+                                    className="h-8 px-3 bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                    id={`btn-view-${report.id}`}
                                   >
-                                    <Eye className="w-3.5 h-3.5 text-stone-600" />
-                                    Preview
+                                    <Eye className="w-3.5 h-3.5 text-stone-500" />
+                                    View
                                   </button>
 
                                   <button
                                     onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
-                                    className="h-10 min-w-[112px] bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1.5 px-3 shadow-xs"
+                                    className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
                                     id={`btn-download-${report.id}`}
                                   >
                                     <Download className="w-3.5 h-3.5" />
@@ -902,21 +880,11 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                               {isFailed && (
                                 <button
                                   onClick={() => handleRegenerateReport(report.id)}
-                                  className="h-10 px-4 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5"
+                                  className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
                                   id={`btn-retry-${report.id}`}
                                 >
-                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <RefreshCw className="w-3 h-3" />
                                   Try again
-                                </button>
-                              )}
-
-                              {isPending && (
-                                <button
-                                  onClick={() => handleCancelReport(report.id)}
-                                  className="h-10 px-3 bg-white border border-stone-200 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-50"
-                                  id={`btn-cancel-${report.id}`}
-                                >
-                                  Cancel
                                 </button>
                               )}
 
@@ -926,8 +894,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                 onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
                                 onViewHistory={() => viewAuditLogs(report.id)}
                                 onRegenerate={() => handleRegenerateReport(report.id)}
-                                onArchive={!isArchived ? () => setConfirmModal({ type: 'archive', reportId: report.id }) : undefined}
-                                onDelete={() => setConfirmModal({ type: 'delete', reportId: report.id })}
+                                onArchive={() => handleArchiveReport(report.id)}
+                                onDelete={() => handleDeleteReport(report.id)}
                               />
                             </div>
                           </td>
@@ -942,42 +910,33 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         </div>
       )}
 
-      {/* TAB 2: TEMPLATE LIBRARY */}
+      {/* ----------------- TAB 2: TEMPLATES (Prompt Section 9 & 47) ----------------- */}
       {activeMainTab === 'template_library' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-view-version="admin-report-library-v1-premium">
-          {templates.map((temp) => {
-            let classificationBadge = 'bg-stone-100 text-stone-700';
-            if (temp.privacyClassification === 'Internal operational') classificationBadge = 'bg-[#C59B27]/5 text-[#C59B27] border border-[#C59B27]/20';
-            if (temp.privacyClassification === 'Safeguarding restricted') classificationBadge = 'bg-red-50 text-red-700 border border-red-200';
-
-            return (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {templates.slice(0, 6).map((temp) => (
               <div 
                 key={temp.key} 
-                className="bg-white p-6 rounded-xl border border-stone-200 hover:border-[#C59B27]/40 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-6"
+                className="bg-white p-6 rounded-xl border border-stone-200 hover:border-[#C59B27]/40 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-6"
                 id={`template-card-${temp.key}`}
               >
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${classificationBadge}`}>
-                      {temp.privacyClassification}
-                    </span>
-                    <span className="text-[10px] text-stone-400 font-mono bg-stone-50 px-2 py-0.5 rounded border border-stone-100">
-                      {temp.reportDomain || 'General'}
-                    </span>
-                  </div>
-                  
                   <div className="space-y-2">
-                    <h3 className="font-serif font-bold text-stone-900 text-base leading-snug">{temp.name}</h3>
-                    <p className="text-stone-500 text-xs leading-relaxed">{temp.description}</p>
+                    <h2 className="text-base font-semibold text-stone-900 leading-snug">
+                      {temp.name}
+                    </h2>
+                    <p className="text-stone-500 text-xs leading-relaxed">
+                      {temp.description}
+                    </p>
                   </div>
 
-                  {/* What this report includes */}
+                  {/* Included Sections */}
                   <div className="border-t border-stone-100 pt-3.5 space-y-2">
-                    <span className="text-[11px] font-bold text-[#C59B27] uppercase tracking-wider block font-serif">
-                      What this report includes
+                    <span className="text-[11px] font-semibold text-stone-700 uppercase tracking-wider block">
+                      Included sections
                     </span>
                     <ul className="space-y-1 text-xs text-stone-600">
-                      {((temp as any).includes || temp.defaultSections || temp.supportedSections || []).slice(0, 4).map((item: string, idx: number) => (
+                      {(temp.recommendedSections || temp.defaultSections || []).slice(0, 5).map((item: string, idx: number) => (
                         <li key={idx} className="flex items-start gap-1.5">
                           <span className="text-[#C59B27] shrink-0 font-bold">•</span>
                           <span className="leading-tight">{item}</span>
@@ -985,119 +944,219 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                       ))}
                     </ul>
                   </div>
-
-                  {/* Best Used For */}
-                  <div className="border-t border-stone-100 pt-3.5 space-y-1">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 block font-semibold">
-                      Best used for
-                    </span>
-                    <p className="text-xs text-stone-700 leading-relaxed font-serif">
-                      {(temp as any).bestUsedFor || (temp as any).audience || 'Operational review and administrative oversight'}
-                    </p>
-                  </div>
                 </div>
 
                 <div className="border-t border-stone-100 pt-4">
-                  <Button
-                    onClick={() => openReportTemplate(temp.key)}
-                    className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all"
-                    id={`btn-configure-template-${temp.key}`}
+                  <button
+                    onClick={() => handleSelectTemplate(temp.key)}
+                    className="w-full bg-white hover:bg-stone-50 border border-stone-200 text-stone-800 text-xs font-semibold py-2.5 px-4 rounded-lg flex items-center justify-between transition-all"
+                    id={`btn-use-template-${temp.key}`}
                   >
-                    Configure report
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </Button>
+                    <span>Use template</span>
+                    <span className="text-[#C59B27] font-bold text-sm">→</span>
+                  </button>
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       )}
 
-      {/* TAB 3: CUSTOM REPORT BUILDER */}
+      {/* ----------------- TAB 3: CREATE REPORT FLOW (Prompt Section 10-14 & 48) ----------------- */}
       {activeMainTab === 'custom_builder' && (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8" data-view-version="custom-report-builder-v1-premium">
-          {/* Builder Form Column */}
-          <form 
-            onSubmit={handleCreateReportJob} 
-            className="xl:col-span-7 bg-white p-6 rounded-xl border border-stone-200 shadow-sm space-y-6"
-            aria-label="Custom Report Builder Form"
-          >
-            <div className="border-b border-stone-100 pb-4">
-              <h3 className="text-lg font-serif font-semibold text-stone-900">Custom PDF Report Configuration</h3>
-              <p className="text-stone-500 text-xs leading-relaxed mt-1">
-                Customize structural sections, filters, and classifications to produce an official report.
-              </p>
+        <div className="max-w-3xl mx-auto bg-white border border-stone-200 rounded-xl p-6 sm:p-8 space-y-8 shadow-2xs">
+          {/* Step Progress Tracker */}
+          <div className="border-b border-stone-200 pb-4">
+            <div className="flex items-center justify-between text-xs font-medium text-stone-500">
+              {[
+                { step: 1, label: 'Report type' },
+                { step: 2, label: 'Event' },
+                { step: 3, label: 'Report title' },
+                { step: 4, label: 'Sections' },
+                { step: 5, label: 'Preview' }
+              ].map(({ step, label }) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => setCreateStep(step)}
+                  className={`flex items-center gap-1.5 transition-colors ${
+                    createStep === step ? 'text-[#C59B27] font-semibold' : createStep > step ? 'text-stone-800' : 'text-stone-400'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+                    createStep === step ? 'bg-[#C59B27] text-white' : createStep > step ? 'bg-stone-200 text-stone-700' : 'bg-stone-100 text-stone-400'
+                  }`}>
+                    {step}
+                  </span>
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Template Selection */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Report Base Template</label>
-              <select
-                value={builderTemplate}
-                onChange={(e) => {
-                  setBuilderTemplate(e.target.value);
-                  const matched = templates.find(t => t.key === e.target.value);
-                  if (matched) {
-                    setBuilderClassification(matched.privacyClassification);
-                    setBuilderSections(matched.recommendedSections);
-                  }
-                }}
-                className="w-full text-xs p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
-                id="select-builder-template"
-              >
-                {templates.map(t => (
-                  <option key={t.key} value={t.key}>{t.name}</option>
-                ))}
-              </select>
-            </div>
+          {/* STEP 1: CHOOSE REPORT TYPE (Prompt Section 11) */}
+          {createStep === 1 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-serif font-medium text-stone-900">Choose report type</h2>
+                <p className="text-xs text-stone-500">Select the report template designed for your audience.</p>
+              </div>
 
-            {/* Privacy Classification selection */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Privacy Classification</label>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { value: 'Public Summary', desc: 'Anonymised aggregations' },
-                  { value: 'Internal operational', desc: 'Standard supervisor details' },
-                  { value: 'Safeguarding restricted', desc: 'Authorized role only' }
-                ].map((item) => (
-                  <button
-                    type="button"
-                    key={item.value}
-                    onClick={() => setBuilderClassification(item.value)}
-                    className={`p-3 rounded-lg border text-left flex flex-col justify-between space-y-2 transition-all ${
-                      builderClassification === item.value 
-                        ? 'border-[#C59B27] bg-[#C59B27]/5' 
-                        : 'border-stone-200 hover:bg-stone-50'
-                    }`}
-                  >
-                    <span className="text-xs font-semibold text-stone-900">{item.value}</span>
-                    <span className="text-[10px] text-stone-500 leading-snug">{item.desc}</span>
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {templates.slice(0, 6).map((temp) => {
+                  const isSelected = builderTemplate === temp.key;
+                  return (
+                    <div
+                      key={temp.key}
+                      onClick={() => {
+                        setBuilderTemplate(temp.key);
+                        setBuilderClassification(temp.privacyClassification || 'Internal operational');
+                        if (temp.recommendedSections) setBuilderSections(temp.recommendedSections);
+                      }}
+                      className={`p-4 rounded-xl border cursor-pointer transition-all space-y-2 ${
+                        isSelected 
+                          ? 'border-[#C59B27] bg-[#C59B27]/5 ring-1 ring-[#C59B27]' 
+                          : 'border-stone-200 hover:border-stone-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-stone-900">{temp.name}</span>
+                        {isSelected && <Check className="w-4 h-4 text-[#C59B27]" />}
+                      </div>
+                      <p className="text-xs text-stone-500 leading-relaxed">{temp.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-stone-100">
+                <Button
+                  onClick={() => setCreateStep(2)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Continue to event selection →
+                </Button>
               </div>
             </div>
+          )}
 
-            {/* Section Checklist checkboxes */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Custom Section Checklist</label>
-              <p className="text-[11px] text-stone-400 mb-2">Toggle specific sections to compile in the final report.</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* STEP 2: CHOOSE EVENT (Prompt Section 12) */}
+          {createStep === 2 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-serif font-medium text-stone-900">Choose event</h2>
+                <p className="text-xs text-stone-500">Select the event to report on. Data will be compiled from current event records.</p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Event</label>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="w-full text-sm p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                >
+                  {availableEvents.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title} {ev.starts_at ? `(${new Date(ev.starts_at).toLocaleDateString('en-GB')})` : ''} {ev.is_current ? '· Current event' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+                <Button
+                  onClick={() => setCreateStep(1)}
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={() => setCreateStep(3)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Continue to report title →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: REPORT TITLE (Prompt Section 13) */}
+          {createStep === 3 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-serif font-medium text-stone-900">Report title</h2>
+                <p className="text-xs text-stone-500">Edit the presentation title and subtitle for the final management document.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Document title</label>
+                  <input
+                    type="text"
+                    value={customReportTitle}
+                    onChange={(e) => setCustomReportTitle(e.target.value)}
+                    placeholder="e.g. The General Assembly 2026 — Management Report"
+                    className="w-full text-sm p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Subtitle</label>
+                  <input
+                    type="text"
+                    value={customSubtitle}
+                    onChange={(e) => setCustomSubtitle(e.target.value)}
+                    placeholder="Children & Teens Ministry"
+                    className="w-full text-sm p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+                <Button
+                  onClick={() => setCreateStep(2)}
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={() => setCreateStep(4)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Continue to sections →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: INCLUDED SECTIONS (Prompt Section 14) */}
+          {createStep === 4 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-serif font-medium text-stone-900">Included sections</h2>
+                <p className="text-xs text-stone-500">Select which analysis sections to compile into this report.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
-                  'Executive Summary',
-                  'Operational Metrics',
-                  'Child Profiles & Demographic Details',
-                  'Critical Incident Logs & Escalations',
-                  'Safeguarding Audits & Device Readiness',
-                  'Medical Allergies & Specific Diet logs',
-                  'Pickup & Authorized Collectors list',
-                  'Recommended actions'
+                  'Executive summary',
+                  'Registration & selection',
+                  'Participation profile',
+                  'Attendance & movement',
+                  'Volunteer coverage',
+                  'Care & support',
+                  'Safety & incidents',
+                  'Key observations',
+                  'Appendix'
                 ].map((sec) => {
                   const checked = builderSections.includes(sec);
                   return (
                     <label 
                       key={sec} 
                       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        checked ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#C59B27]' : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                        checked ? 'border-[#C59B27] bg-[#C59B27]/5 text-stone-900 font-medium' : 'border-stone-200 text-stone-600 hover:bg-stone-50'
                       }`}
                     >
                       <input
@@ -1106,642 +1165,395 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                         onChange={() => handleToggleSection(sec)}
                         className="rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4"
                       />
-                      <span className="text-xs font-medium">{sec}</span>
+                      <span className="text-xs">{sec}</span>
                     </label>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Query Filters */}
-            <div className="space-y-3 border-t border-stone-100 pt-4">
-              <label className="text-xs font-bold text-stone-700 block uppercase tracking-wider">Snapshot Query Filters</label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-semibold text-stone-500 font-mono">AGE GROUP COHORT</span>
-                  <select
-                    value={builderFilters.ageGroup}
-                    onChange={(e) => setBuilderFilters({ ...builderFilters, ageGroup: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-stone-800"
-                  >
-                    <option value="All">All age cohorts</option>
-                    <option value="Toddlers">Toddlers (2-4)</option>
-                    <option value="Kids">Kids (5-9)</option>
-                    <option value="PreTeens">Pre-Teens (10-12)</option>
-                    <option value="Teens">Teens (13-17)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[10px] font-semibold text-stone-500 font-mono">LOCATION AREA</span>
-                  <select
-                    value={builderFilters.location}
-                    onChange={(e) => setBuilderFilters({ ...builderFilters, location: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-stone-800"
-                  >
-                    <option value="All">All rooms & fields</option>
-                    <option value="Grace Hall">Grace Hall (Primary)</option>
-                    <option value="Chapel Annex">Chapel Annex</option>
-                    <option value="Youth Dome">Youth Dome</option>
-                  </select>
-                </div>
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+                <Button
+                  onClick={() => setCreateStep(3)}
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={() => setCreateStep(5)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Preview report →
+                </Button>
               </div>
             </div>
+          )}
 
-            {/* Trigger Button */}
-            <Button
-              type="submit"
-              disabled={submittingJob}
-              className="w-full bg-[#C59B27] hover:bg-[#A37B1B] text-white text-sm font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all"
-              id="btn-trigger-generation"
-            >
-              {submittingJob ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Initializing Snapshot Pipeline...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Request Safe PDF Snapshot Report
-                </>
-              )}
-            </Button>
-          </form>
-
-          {/* Interactive Report Preview Panel Column */}
-          <div className="xl:col-span-5 space-y-6" data-view-version="report-preview-v1-premium">
-            <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <h3 className="text-xs font-serif font-semibold text-stone-900 flex items-center gap-1.5">
-                  <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
-                  Premium Interactive Preview
-                </h3>
-                <p className="text-[10px] text-stone-400">
-                  Authoritative multi-page preview powered by live database snapshots.
-                </p>
+          {/* STEP 5: PREVIEW & CREATE (Prompt Section 48) */}
+          {createStep === 5 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-serif font-medium text-stone-900">Preview report</h2>
+                <p className="text-xs text-stone-500">Review your report configuration before creating the official PDF snapshot.</p>
               </div>
-              <div className="flex items-center gap-1.5">
-                {[1, 2, 3, 4].map((p) => (
-                  <button
-                    type="button"
-                    key={p}
-                    onClick={() => setPreviewPage(p)}
-                    className={`w-5 h-5 rounded-full text-[10px] font-mono font-bold flex items-center justify-center transition-all ${
-                      previewPage === p
-                        ? 'bg-[#C59B27] text-white shadow-sm'
-                        : 'bg-stone-200 text-stone-600 hover:bg-stone-300'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            {/* A4 mockup sheet */}
-            <div className="bg-stone-100 border border-stone-200 rounded-xl p-6 flex flex-col items-center justify-center shadow-inner min-h-[550px] relative">
-              {loadingPreview && (
-                <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-10 flex flex-col items-center justify-center gap-2 rounded-xl">
-                  <Loader2 className="w-6 h-6 animate-spin text-[#C59B27]" />
-                  <span className="text-[10px] font-mono text-stone-500 font-semibold uppercase tracking-wider">Syncing live records...</span>
-                </div>
-              )}
-
-              <div 
-                className="w-full max-w-sm bg-[#FAF9F6] border border-stone-300 shadow-xl rounded-sm p-8 flex flex-col justify-between text-stone-950 font-sans relative aspect-[1/1.41]"
-                id="report-preview-a4-canvas"
-                data-component-version="premium-report-cover-v1"
-              >
-                {/* Stamp overlay */}
-                <div className="absolute top-6 right-6 border border-[#C59B27] text-[#C59B27] font-mono text-[8px] uppercase font-bold tracking-widest px-2 py-0.5 rounded rotate-12 opacity-80 select-none">
-                  OFFICIAL RECORD
+              {/* Summary Card */}
+              <div className="bg-stone-50 border border-stone-200 rounded-xl p-6 space-y-4">
+                <div className="border-b border-stone-200 pb-3 space-y-1">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider text-[#C59B27] block">Document title</span>
+                  <h3 className="text-base font-serif font-medium text-stone-900">{customReportTitle}</h3>
+                  <p className="text-xs text-stone-500">{customSubtitle}</p>
                 </div>
 
-                {/* PAGE 1: COVER PAGE */}
-                {(() => {
-                  const docModel = (previewData as any)?.documentModel;
-                  const narrativeSection = docModel?.sections?.find((s: any) => s.type === 'narrative');
-                  const narrativeText = narrativeSection?.content?.text || getGroundedNarrative();
-                  const tableSection = docModel?.sections?.find((s: any) => s.type === 'table');
-
-                  return (
-                    <>
-                      {previewPage === 1 && (
-                        <div className="flex flex-col justify-between h-full">
-                          <div className="space-y-8">
-                            {/* Branding */}
-                            <div className="border-b border-[#C59B27]/40 pb-4">
-                              <div className="text-xs font-serif font-bold text-stone-900 tracking-wider">
-                                {docModel?.branding?.organizationName || 'KOINONIA GLOBAL'}
-                              </div>
-                              <div className="text-[7px] text-stone-500 font-mono uppercase tracking-widest mt-0.5">
-                                CHILDREN & TEENS FELLOWSHIP PROGRAMME
-                              </div>
-                            </div>
-
-                            {/* Title & Classification */}
-                            <div className="space-y-4">
-                              <span className="inline-block text-[7px] uppercase font-bold tracking-widest text-white bg-stone-950 px-2 py-0.5 rounded">
-                                REGISTRY SUMMARY REPORT
-                              </span>
-                              <h2 className="text-xl font-serif font-semibold text-stone-900 tracking-tight leading-snug">
-                                {docModel?.reportTitle?.toUpperCase() || templates.find(t => t.key === builderTemplate)?.name?.toUpperCase() || 'OPERATIONAL REPORT'}
-                              </h2>
-                              <div className="space-y-1.5 text-[8px] text-stone-500">
-                                <div><strong className="text-stone-700">Scope:</strong> General Assembly Cohort 2026</div>
-                                <div><strong className="text-stone-700">Selected Filters:</strong> Age group: {builderFilters.ageGroup} | Location: {builderFilters.location}</div>
-                                <div><strong className="text-stone-700">Compiled Cutoff:</strong> {previewData?.metadata?.cutoffTime ? new Date(previewData.metadata.cutoffTime).toUTCString().slice(0, 25) : new Date().toUTCString().slice(0, 25)}</div>
-                                <div><strong className="text-stone-700">Timezone Configuration:</strong> {builderFilters.timezone} UTC</div>
-                              </div>
-                            </div>
-
-                            {/* Included Sections Representation */}
-                            <div className="space-y-2 pt-2 border-t border-stone-200">
-                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">STRUCTURED SUMMARY SECTIONS:</span>
-                              <div className="space-y-1">
-                                {docModel?.sections ? (
-                                  docModel.sections.map((sec: any, i: number) => (
-                                    <div key={i} className="flex items-center gap-1.5 text-[8px] text-stone-600 font-mono">
-                                      <span className="text-[#C59B27]">✔</span>
-                                      {sec.title}
-                                    </div>
-                                  ))
-                                ) : (
-                                  builderSections.map((sec, i) => (
-                                    <div key={i} className="flex items-center gap-1.5 text-[8px] text-stone-600 font-mono">
-                                      <span className="text-[#C59B27]">✔</span>
-                                      {sec}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-4 pt-6 border-t border-stone-200">
-                            {/* Classification Strip */}
-                            <div className={`p-2 rounded text-[8px] uppercase font-bold tracking-widest text-center ${
-                              builderClassification === 'Public Summary' ? 'bg-stone-200 text-stone-800' :
-                              builderClassification === 'Internal operational' ? 'bg-[#C59B27]/10 text-[#C59B27]' :
-                              'bg-red-50 text-red-700'
-                            }`}>
-                              Classification: {docModel?.privacyClassification || builderClassification}
-                            </div>
-
-                            {/* Footer Notice */}
-                            <div className="text-[6px] text-stone-400 leading-normal text-center font-mono">
-                              Notice: Access and download of administrative records are audited to maintain safeguarding compliance.
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* PAGE 2: TABLE OF CONTENTS & EXEC SUMMARY */}
-                      {previewPage === 2 && (
-                        <div className="flex flex-col justify-between h-full">
-                          <div className="space-y-6">
-                            <div className="border-b border-[#C59B27]/40 pb-2">
-                              <span className="text-[7px] text-stone-400 font-mono block uppercase">SECTION I</span>
-                              <h3 className="text-sm font-serif font-bold text-stone-900 uppercase">Executive Outline</h3>
-                            </div>
-
-                            {/* TOC */}
-                            <div className="space-y-1.5">
-                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">TABLE OF CONTENTS</span>
-                              <div className="space-y-1 text-[8px] text-stone-600 font-mono">
-                                <div className="flex justify-between">
-                                  <span>1. Executive summary outline</span>
-                                  <span>........................................ Page 02</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>2. Authoritative database analytics</span>
-                                  <span>........................................ Page 03</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>3. Strategic action recommendation</span>
-                                  <span>........................................ Page 04</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Executive Summary Narrative */}
-                            <div className="space-y-2 pt-2 border-t border-stone-200">
-                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">EXECUTIVE SUMMARY</span>
-                              <p className="text-[8px] text-stone-600 leading-relaxed font-serif">
-                                {narrativeText}
-                              </p>
-                              <p className="text-[8px] text-stone-600 leading-relaxed font-serif">
-                                All sensitive profiles and medical notes have been filtered in compliance with Koinonia security policy classifications.
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-stone-200 pt-3 flex justify-between items-center text-[6px] text-stone-400 font-mono">
-                            <span>PAGE 2 OF 4</span>
-                            <span>{builderTemplate.slice(0, 15)}...</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* PAGE 3: AUTHORITATIVE METRICS & CHARTS */}
-                      {previewPage === 3 && (
-                        <div className="flex flex-col justify-between h-full">
-                          <div className="space-y-4 overflow-y-auto max-h-[420px] pr-1 scrollbar-thin">
-                            <div className="border-b border-[#C59B27]/40 pb-2">
-                              <span className="text-[7px] text-stone-400 font-mono block uppercase">SECTION II</span>
-                              <h3 className="text-sm font-serif font-bold text-stone-900 uppercase">Operational Metrics</h3>
-                            </div>
-
-                            {/* Compiled KPIs */}
-                            <div className="grid grid-cols-2 gap-2">
-                              {docModel?.kpis ? (
-                                docModel.kpis.slice(0, 4).map((kpi: any, idx: number) => {
-                                  let colorClasses = 'bg-stone-50 border border-stone-200 text-stone-800';
-                                  if (kpi.color === 'gold') colorClasses = 'bg-stone-50 border border-[#C59B27]/20 text-[#C59B27]';
-                                  if (kpi.color === 'green') colorClasses = 'bg-stone-50 border border-emerald-100 text-emerald-800';
-                                  if (kpi.color === 'amber') colorClasses = 'bg-stone-50 border border-amber-100 text-amber-800';
-                                  if (kpi.color === 'red') colorClasses = 'bg-red-50/20 border-red-100 text-red-700';
-
-                                  return (
-                                    <div key={idx} className={`p-1.5 rounded relative ${colorClasses}`}>
-                                      <span className="text-[5.5px] opacity-70 font-mono uppercase block">{kpi.label}</span>
-                                      <span className="text-xs font-serif font-bold block">{kpi.value}</span>
-                                      <span className="text-[5.5px] opacity-80 block truncate mt-0.5">{kpi.sublabel}</span>
-                                    </div>
-                                  );
-                                })
-                              ) : (
-                                <>
-                                  <div className="bg-stone-50 border border-stone-200 p-2 rounded relative">
-                                    <div className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-emerald-500" />
-                                    <span className="text-[6px] text-stone-400 font-mono uppercase block">Registrations</span>
-                                    <span className="text-xs font-serif font-bold text-stone-800">
-                                      {previewData?.analytics?.attendance?.totalRegistrations ?? '—'}
-                                    </span>
-                                  </div>
-                                  <div className="bg-stone-50 border border-stone-200 p-2 rounded relative">
-                                    <span className="text-[6px] text-stone-400 font-mono uppercase block">Active Attendance</span>
-                                    <span className="text-xs font-serif font-bold text-[#C59B27]">
-                                      {previewData?.analytics?.attendance?.checkedInTotal ?? '—'}
-                                      <span className="text-[8px] text-stone-500 ml-1">
-                                        ({previewData?.analytics?.attendance?.attendanceRate?.toFixed(1) ?? '0'}%)
-                                      </span>
-                                    </span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-
-                            {/* Compiled Table Section */}
-                            {tableSection && (
-                              <div className="space-y-1 pt-2 border-t border-stone-200">
-                                <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">{tableSection.title}</span>
-                                <div className="border border-stone-200 rounded overflow-hidden">
-                                  <table className="w-full text-left text-[5.5px] font-mono leading-tight">
-                                    <thead>
-                                      <tr className="bg-stone-50 text-stone-500 border-b border-stone-200">
-                                        {tableSection.content.headers.slice(0, 3).map((h: string, i: number) => (
-                                          <th key={i} className="p-1 font-semibold">{h}</th>
-                                        ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {tableSection.content.rows.slice(0, 5).map((row: string[], rIdx: number) => (
-                                        <tr key={rIdx} className="border-b border-stone-100 text-stone-700 hover:bg-stone-50/50">
-                                          {row.slice(0, 3).map((cell: string, cIdx: number) => (
-                                            <td key={cIdx} className="p-1 truncate max-w-[90px]">{cell}</td>
-                                          ))}
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Mini visual distribution charts if no table */}
-                            {!tableSection && (
-                              <div className="space-y-2 pt-2 border-t border-stone-200">
-                                <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">COHORT DENSITY DISTRIBUTION</span>
-                                <div className="space-y-1.5">
-                                  {previewData?.analytics?.attendance?.ageGroupDistribution && Object.keys(previewData.analytics.attendance.ageGroupDistribution).map((ag) => {
-                                    const stats = previewData.analytics.attendance.ageGroupDistribution[ag];
-                                    const rate = stats.registered > 0 ? (stats.checkedIn / stats.registered) * 100 : 0;
-                                    return (
-                                      <div key={ag} className="space-y-0.5">
-                                        <div className="flex justify-between items-center text-[7px] text-stone-600 font-mono">
-                                          <span>{ag}</span>
-                                          <span>{stats.checkedIn} checked in ({rate.toFixed(0)}%)</span>
-                                        </div>
-                                        <div className="w-full bg-stone-200 h-1 rounded-full overflow-hidden">
-                                          <div className="bg-[#C59B27] h-full" style={{ width: `${rate}%` }} />
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="border-t border-stone-200 pt-3 flex justify-between items-center text-[6px] text-stone-400 font-mono">
-                            <span>PAGE 3 OF 4</span>
-                            <span>{builderTemplate.slice(0, 15)}...</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* PAGE 4: STRATEGIC RECS & APPENDIX */}
-                      {previewPage === 4 && (
-                        <div className="flex flex-col justify-between h-full">
-                          <div className="space-y-4 overflow-y-auto max-h-[420px] pr-1">
-                            <div className="border-b border-[#C59B27]/40 pb-2">
-                              <span className="text-[7px] text-stone-400 font-mono block uppercase">SECTION III</span>
-                              <h3 className="text-sm font-serif font-bold text-stone-900 uppercase">Recommendations</h3>
-                            </div>
-
-                            {/* Recommendations */}
-                            <div className="space-y-2">
-                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">STRATEGIC HIGHLIGHTS</span>
-                              <ul className="list-disc pl-3 text-[7px] text-stone-600 space-y-1 leading-relaxed font-serif">
-                                {docModel?.recommendations && docModel.recommendations.length > 0 ? (
-                                  docModel.recommendations.slice(0, 3).map((rec: any, index: number) => (
-                                    <li key={index}>
-                                      <strong className="text-stone-800">{rec.action}</strong>
-                                      <span className="text-stone-500 block text-[6.5px] font-sans mt-0.5">• Rationale: {rec.rationale} ({rec.priority.toUpperCase()} PRIORITY)</span>
-                                    </li>
-                                  ))
-                                ) : previewData?.analytics?.insights && previewData.analytics.insights.length > 0 ? (
-                                  previewData.analytics.insights.slice(0, 3).map((ins: any, index: number) => (
-                                    <li key={index}>
-                                      <strong>[{ins.category}]</strong> {ins.finding} (Recommendation: {ins.recommendation})
-                                    </li>
-                                  ))
-                                ) : (
-                                  <>
-                                    <li>Charge and distribute active communication hand-radios 30 minutes before arrival check-in.</li>
-                                    <li>Verify that every check-out is validated through security pass codes without exception.</li>
-                                    <li>Pre-stage response teams in Grace Hall primary entrance during peak arrival.</li>
-                                  </>
-                                )}
-                              </ul>
-                            </div>
-
-                            {/* Limitations */}
-                            <div className="space-y-2 pt-2 border-t border-stone-200">
-                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-wider block">METRIC LIMITATIONS & AUDIT INFO</span>
-                              {docModel?.limitations && docModel.limitations.length > 0 ? (
-                                <div className="text-[6.5px] text-stone-500 font-mono leading-relaxed space-y-0.5">
-                                  {docModel.limitations.slice(0, 4).map((lim: string, i: number) => (
-                                    <div key={i}>• {lim}</div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-[7px] text-stone-500 font-mono leading-relaxed space-y-1">
-                                  <div>• Counts are subject to network sync delays during field operations.</div>
-                                  <div>• All reports accessed are logged to track administrative data custody.</div>
-                                  <div>• Privacy classification: {builderClassification.toUpperCase()}</div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="border-t border-stone-200 pt-3 flex justify-between items-center text-[6px] text-stone-400 font-mono">
-                            <span>PAGE 4 OF 4</span>
-                            <span>{builderTemplate.slice(0, 15)}...</span>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: LEGACY REAL-TIME ANALYTICS DASHBOARD (PRESERVED) */}
-      {activeMainTab === 'live_metrics' && (
-        <div className="space-y-6">
-          {/* Legacy horizontal tabs */}
-          <div className="flex border-b border-stone-200 px-1 overflow-x-auto scrollbar-none" data-component-version="legacy-analytics-tabs">
-            <div className="flex space-x-6 min-w-max pb-1">
-              {[
-                { id: 'pre_event', label: 'Pre-event Report' },
-                { id: 'live_event', label: 'Live event Report' },
-                { id: 'end_of_event', label: 'End-of-event Report' },
-                { id: 'volunteer_parent', label: 'Volunteers & Parents' }
-              ].map((tab) => {
-                const isActive = activeLegacyTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveLegacyTab(tab.id as LegacyReportTab)}
-                    className={`pb-2.5 text-xs font-semibold border-b-2 transition-all ${
-                      isActive 
-                        ? 'border-[#C59B27] text-[#C59B27]' 
-                        : 'border-transparent text-stone-400 hover:text-stone-700'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {loadingMetrics ? (
-            <div className="flex items-center justify-center min-h-[30vh] w-full">
-              <KoinoniaInlineLoader variant="logo" size="md" label="Aggregating metrics..." />
-            </div>
-          ) : fetchError ? (
-            <div className="flex flex-col items-center justify-center p-12 bg-stone-50 border border-stone-200 rounded-xl min-h-[30vh] text-stone-500 space-y-4">
-              <AlertCircle className="w-8 h-8 text-stone-400" />
-              <p className="text-xs font-medium text-stone-600">{fetchError}</p>
-              <Button onClick={() => fetchLegacyReports(true)} className="bg-[#C59B27] text-white text-xs py-1.5 px-4 rounded">Retry</Button>
-            </div>
-          ) : !legacyReportData ? (
-            <div className="text-center py-12 text-stone-400 text-xs">Select a dashboard category to load live metric telemetry.</div>
-          ) : (
-            <div className="space-y-8 animate-fadeIn">
-              {/* LEGACY VIEW CONTROLLERS (Pre-event, Live, End, Volunteers) */}
-              
-              {/* 1. PRE-EVENT */}
-              {activeLegacyTab === 'pre_event' && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                  <div className="xl:col-span-2 space-y-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      {[
-                        { label: "Total registered", value: legacyReportData.metrics?.totalRegistered || 0, desc: "Profiles applied" },
-                        { label: "Under review", value: legacyReportData.metrics?.underReview || 0, desc: "Pending review" },
-                        { label: "Selected", value: legacyReportData.metrics?.selected || 0, desc: "Admitted list" },
-                        { label: "Waiting list", value: legacyReportData.metrics?.waitingList || 0, desc: "On hold applications" }
-                      ].map((card, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
-                          <span className="text-[9px] uppercase font-bold tracking-wider text-stone-400 block">{card.label}</span>
-                          <div className="text-xl font-serif font-bold text-stone-900 mt-1.5">{card.value}</div>
-                          <p className="text-[10px] text-stone-500 mt-1">{card.desc}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl border border-stone-200">
-                      <h3 className="text-sm font-serif font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">Readiness</h3>
-                      <div className="space-y-3">
-                        {legacyReportData.sections?.reviewReadiness?.map((item: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center text-xs">
-                            <span className="text-stone-600">{item.label}</span>
-                            <span className="font-semibold text-stone-900">{item.value} children</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-stone-400 block text-[10px] uppercase font-semibold">Event</span>
+                    <span className="font-semibold text-stone-800">{selectedEventObj?.title || 'The General Assembly'}</span>
                   </div>
-
-                  <div className="space-y-6">
-                    <div className="bg-white p-5 rounded-xl border border-stone-200">
-                      <h3 className="text-sm font-serif font-semibold text-stone-900 mb-3">Care Demographics</h3>
-                      <div className="space-y-2">
-                        {legacyReportData.careAttention?.map((item: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center text-xs">
-                            <span className="text-stone-600">{item.label}</span>
-                            <span className="font-mono font-semibold text-stone-900">{item.count}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  <div>
+                    <span className="text-stone-400 block text-[10px] uppercase font-semibold">Report type</span>
+                    <span className="font-semibold text-stone-800">{selectedTemplateObj?.name || 'Management summary'}</span>
                   </div>
                 </div>
-              )}
 
-              {/* 2. LIVE EVENT */}
-              {activeLegacyTab === 'live_event' && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                  <div className="xl:col-span-2 space-y-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      {[
-                        { label: "Expected", value: legacyReportData.metrics?.expected || 0, desc: "Seats" },
-                        { label: "Checked in", value: legacyReportData.metrics?.checkedIn || 0, desc: "Inside" },
-                        { label: "Picked up", value: legacyReportData.metrics?.pickedUp || 0, desc: "Checked-out" }
-                      ].map((card, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
-                          <span className="text-[9px] uppercase font-bold tracking-wider text-stone-400 block">{card.label}</span>
-                          <div className="text-xl font-serif font-bold text-stone-900 mt-1.5">{card.value}</div>
-                          <p className="text-[10px] text-stone-500 mt-0.5">{card.desc}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="bg-white rounded-xl border border-stone-200 p-5">
-                      <h3 className="text-sm font-serif font-semibold text-stone-900 mb-4">Recent live check-in scans</h3>
-                      {legacyReportData.sections?.recentScans?.length > 0 ? (
-                        <div className="divide-y divide-stone-100">
-                          {legacyReportData.sections?.recentScans?.map((scan: any, i: number) => (
-                            <div key={i} className="py-2.5 flex justify-between items-center text-xs">
-                              <div>
-                                <div className="font-semibold text-stone-800">{scan.childName}</div>
-                                <div className="text-[10px] text-stone-400">{scan.ageGroup}</div>
-                              </div>
-                              <span className="text-[10px] font-mono text-stone-500 bg-stone-100 px-2 py-0.5 rounded">
-                                {scan.status}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-6 text-stone-400 text-xs">No entries reported.</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-5 rounded-xl border border-stone-200 h-fit">
-                    <h3 className="text-sm font-serif font-semibold text-stone-900 mb-3">Live Ratios</h3>
-                    <div className="space-y-4">
-                      {legacyReportData.sections?.liveAttendanceOutcome?.map((item: any, i: number) => (
-                        <div key={i} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-stone-600">{item.label}</span>
-                            <span className="font-semibold text-stone-900">{item.percentage}%</span>
-                          </div>
-                          <div className="w-full bg-stone-100 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[#C59B27] h-full" style={{ width: `${item.percentage}%` }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 3. END OF EVENT */}
-              {activeLegacyTab === 'end_of_event' && (
-                <div className="bg-white p-6 rounded-xl border border-stone-200 space-y-6">
-                  <h3 className="text-sm font-serif font-semibold text-[#C59B27]">Event Performance Ledger</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    {[
-                      { label: "Total Registrations", value: legacyReportData.metrics?.totalRegistered || 0 },
-                      { label: "Admitted Seats", value: legacyReportData.metrics?.selected || 0 },
-                      { label: "Actual Arrivals", value: legacyReportData.metrics?.checkedIn || 0 },
-                      { label: "Successful Collections", value: legacyReportData.metrics?.pickedUp || 0 }
-                    ].map((m, i) => (
-                      <div key={i} className="border-l-2 border-[#C59B27] pl-3">
-                        <span className="text-[10px] uppercase font-bold text-stone-400 block">{m.label}</span>
-                        <div className="text-2xl font-serif font-bold text-stone-900 mt-1">{m.value}</div>
-                      </div>
+                <div className="border-t border-stone-200 pt-3 space-y-1.5">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400 block">Included sections</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {builderSections.map((sec) => (
+                      <span key={sec} className="text-[11px] bg-white border border-stone-200 px-2.5 py-0.5 rounded text-stone-700 font-medium">
+                        {sec}
+                      </span>
                     ))}
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* 4. VOLUNTEERS & PARENTS */}
-              {activeLegacyTab === 'volunteer_parent' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white p-5 rounded-xl border border-stone-200">
-                    <h3 className="text-sm font-serif font-semibold text-stone-900 mb-4">Supervisor roster ratios</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-xs">
-                        <span>Total approved supervisors</span>
-                        <span className="font-semibold">{legacyReportData.totalApprovedVolunteers || 0}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span>Active checks</span>
-                        <span className="font-semibold">{legacyReportData.activeVolunteersCount || 0}</span>
-                      </div>
-                    </div>
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+                <Button
+                  onClick={() => setCreateStep(4)}
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={handleCreateReportJob}
+                  disabled={submittingJob}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2"
+                >
+                  {submittingJob ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Preparing your report…
+                    </>
+                  ) : (
+                    'Create report'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ----------------- TAB 4: EVENT OVERVIEW (Prompt Section 44, 45, 46) ----------------- */}
+      {activeMainTab === 'live_metrics' && (
+        <div className="space-y-6">
+          {/* Header & Event Selector */}
+          <div className="bg-white border border-stone-200/80 p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-stone-900">Event overview</h2>
+              <p className="text-stone-500 text-xs leading-relaxed">
+                Current operational and participation data for event reporting.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-stone-500 font-medium">Event:</span>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => {
+                    setSelectedEventId(e.target.value);
+                    fetchLiveOverview(e.target.value);
+                  }}
+                  className="text-xs p-2 bg-stone-50 border border-stone-200 rounded-lg text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                >
+                  {availableEvents.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title} {ev.is_current ? '· Current' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                onClick={() => fetchLiveOverview(selectedEventId)}
+                variant="outline"
+                className="border-stone-200 text-stone-700 text-xs py-1.5 px-3 rounded-lg"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </Button>
+            </div>
+          </div>
+
+          {loadingOverview ? (
+            <div className="flex items-center justify-center p-12 min-h-[30vh]">
+              <KoinoniaInlineLoader variant="logo" size="md" label="Loading event overview…" />
+            </div>
+          ) : !liveOverviewAnalytics ? (
+            <div className="p-12 text-center text-xs text-stone-400 bg-white border border-stone-200 rounded-xl">
+              No report data available for the selected event.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Top Compact Metrics Row (Prompt Section 45: Registered, Selected, Checked in, Inside, Picked up, Volunteers) */}
+              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  {
+                    label: 'Registered',
+                    value: liveOverviewAnalytics.registrations?.totalRegistrations ?? liveOverviewAnalytics.attendance?.totalRegistrations ?? 0,
+                    sub: 'Total applications'
+                  },
+                  {
+                    label: 'Selected',
+                    value: liveOverviewAnalytics.registrations?.selectedTotal ?? liveOverviewAnalytics.attendance?.expectedTotal ?? 0,
+                    sub: 'Admitted'
+                  },
+                  {
+                    label: 'Checked in',
+                    value: liveOverviewAnalytics.attendance?.checkedInTotal ?? 0,
+                    sub: `${liveOverviewAnalytics.attendance?.attendanceRate?.toFixed(0) ?? 0}% turnout`
+                  },
+                  {
+                    label: 'Inside',
+                    value: liveOverviewAnalytics.attendance?.insideTotal ?? 0,
+                    sub: 'Currently present'
+                  },
+                  {
+                    label: 'Picked up',
+                    value: liveOverviewAnalytics.attendance?.releasedTotal ?? 0,
+                    sub: 'Verified dismissals'
+                  },
+                  {
+                    label: 'Volunteers',
+                    value: liveOverviewAnalytics.volunteers?.activeOnDuty ?? 0,
+                    sub: 'On duty'
+                  }
+                ].map((kpi, idx) => (
+                  <div key={idx} className="p-4 space-y-1 bg-white">
+                    <span className="text-[10px] uppercase font-semibold text-stone-500 block tracking-wider truncate">
+                      {kpi.label}
+                    </span>
+                    <span className="text-2xl font-bold text-stone-900 block tracking-tight tabular-nums font-sans">
+                      {kpi.value}
+                    </span>
+                    <span className="text-[10px] text-stone-400 block truncate leading-tight">
+                      {kpi.sub}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 6 Key Analytical Charts (Prompt Section 46) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Chart 1: Registration outcomes */}
+                {liveOverviewAnalytics.registrations?.registrationOutcomes?.length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-reg-outcomes',
+                      kind: 'horizontalBar',
+                      title: 'Registration outcomes',
+                      subtitle: 'Status of all applications received',
+                      labels: liveOverviewAnalytics.registrations.registrationOutcomes.map((o: any) => o.label),
+                      series: [{
+                        id: 's-reg-out',
+                        label: 'Applications',
+                        values: liveOverviewAnalytics.registrations.registrationOutcomes.map((o: any) => o.count)
+                      }],
+                      caption: 'Distribution of reviewed applications.',
+                      accessibleSummary: 'Horizontal bar chart of application review outcomes.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                    No registration outcome data recorded.
+                  </div>
+                )}
+
+                {/* Chart 2: Children by age group */}
+                {Object.keys(liveOverviewAnalytics.registrations?.registrationsByAgeGroup || {}).length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-reg-age',
+                      kind: 'horizontalBar',
+                      title: 'Children by age group',
+                      subtitle: 'Registrations across configured age cohorts',
+                      labels: Object.keys(liveOverviewAnalytics.registrations.registrationsByAgeGroup),
+                      series: [{
+                        id: 's-reg-age',
+                        label: 'Registered',
+                        values: Object.values(liveOverviewAnalytics.registrations.registrationsByAgeGroup) as number[]
+                      }],
+                      caption: 'Demand by configured age group.',
+                      accessibleSummary: 'Horizontal bar chart of registrations by age cohort.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                    No age group distribution available.
+                  </div>
+                )}
+
+                {/* Chart 3: Attendance by age group */}
+                {liveOverviewAnalytics.attendance?.ageGroupAttendance?.length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-att-age',
+                      kind: 'horizontalBar',
+                      title: 'Attendance by age group',
+                      subtitle: 'Actual checked-in attendance by cohort',
+                      labels: liveOverviewAnalytics.attendance.ageGroupAttendance.map((a: any) => a.ageGroup),
+                      series: [{
+                        id: 's-att-age',
+                        label: 'Attended',
+                        values: liveOverviewAnalytics.attendance.ageGroupAttendance.map((a: any) => a.attended)
+                      }],
+                      caption: 'Turnout across configured age groups.',
+                      accessibleSummary: 'Horizontal bar chart of attendance by age cohort.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                    No attendance has been recorded yet.
+                  </div>
+                )}
+
+                {/* Chart 4: Check-in / pickup activity over time */}
+                {liveOverviewAnalytics.attendance?.checkInTimeSeries?.length > 1 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-time-series',
+                      kind: 'line',
+                      title: 'Check-in and pickup activity',
+                      subtitle: 'Check-in arrivals across time windows',
+                      labels: liveOverviewAnalytics.attendance.checkInTimeSeries.map((t: any) => t.hour),
+                      series: [{
+                        id: 's-hourly',
+                        label: 'Check-ins',
+                        values: liveOverviewAnalytics.attendance.checkInTimeSeries.map((t: any) => t.count)
+                      }],
+                      caption: 'Gate arrival throughput recorded at check-in desks.',
+                      accessibleSummary: 'Line chart showing arrival activity over time.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                    No timestamp activity recorded yet.
+                  </div>
+                )}
+
+                {/* Chart 5: Volunteers by team */}
+                {Object.keys(liveOverviewAnalytics.volunteers?.volunteersByTeam || {}).length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-vol-teams',
+                      kind: 'horizontalBar',
+                      title: 'Volunteers by team',
+                      subtitle: 'Supervisor assignments by ministry team',
+                      labels: Object.keys(liveOverviewAnalytics.volunteers.volunteersByTeam),
+                      series: [{
+                        id: 's-vols',
+                        label: 'Volunteers',
+                        values: Object.values(liveOverviewAnalytics.volunteers.volunteersByTeam) as number[]
+                      }],
+                      caption: 'On-duty supervisors across active ministry teams.',
+                      accessibleSummary: 'Horizontal bar chart of volunteers assigned to each team.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                    No volunteer assignments are available.
+                  </div>
+                )}
+
+                {/* Chart 6: Safety summary */}
+                {liveOverviewAnalytics.alerts?.totalAlerts > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-safety',
+                      kind: 'horizontalBar',
+                      title: 'Safety matters by status',
+                      subtitle: 'Resolved vs active safety alerts',
+                      labels: ['Resolved', 'Active / open'],
+                      series: [{
+                        id: 's-alerts',
+                        label: 'Alerts',
+                        values: [
+                          liveOverviewAnalytics.alerts.alertsByStatus?.resolved || 0,
+                          (liveOverviewAnalytics.alerts.alertsByStatus?.open || 0) + (liveOverviewAnalytics.alerts.alertsByStatus?.in_progress || 0)
+                        ]
+                      }],
+                      caption: 'Recorded safeguarding alerts and status.',
+                      accessibleSummary: 'Horizontal bar chart of safety alerts by status.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                    No safety matters were recorded for this event.
+                  </div>
+                )}
+              </div>
+
+              {/* Care & Safety Aggregated Summary (Prompt Section 31: Zero child PII) */}
+              <div className="bg-white border border-stone-200 rounded-xl p-6 space-y-4">
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-semibold text-stone-900">Care & support summary</h3>
+                  <p className="text-xs text-stone-500">
+                    Aggregated care indicators requiring administrative awareness. Individual medical records remain protected.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 space-y-1">
+                    <span className="text-stone-500 font-medium block">Care records on file</span>
+                    <span className="text-xl font-bold text-stone-900 tabular-nums font-sans">
+                      {liveOverviewAnalytics.registrations?.totalCareCount ?? 0}
+                    </span>
+                    <span className="text-[10px] text-stone-400 block">Children requiring care awareness</span>
                   </div>
 
-                  <div className="bg-white p-5 rounded-xl border border-stone-200">
-                    <h3 className="text-sm font-serif font-semibold text-stone-900 mb-4">Guardian profiles</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-xs">
-                        <span>Total Registered Families</span>
-                        <span className="font-semibold">{legacyReportData.totalRegisteredParents || 0}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span>Profiles undergoing review</span>
-                        <span className="font-semibold">{legacyReportData.unapprovedParentsCount || 0}</span>
-                      </div>
-                    </div>
+                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 space-y-1">
+                    <span className="text-stone-500 font-medium block">Dietary & allergy notices</span>
+                    <span className="text-xl font-bold text-stone-900 tabular-nums font-sans">
+                      {liveOverviewAnalytics.registrations?.medicalNotesCount ?? 0}
+                    </span>
+                    <span className="text-[10px] text-stone-400 block">Notified to refreshments teams</span>
+                  </div>
+
+                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 space-y-1">
+                    <span className="text-stone-500 font-medium block">Additional support</span>
+                    <span className="text-xl font-bold text-stone-900 tabular-nums font-sans">
+                      {liveOverviewAnalytics.registrations?.extraSupportCount ?? 0}
+                    </span>
+                    <span className="text-[10px] text-stone-400 block">Support volunteers assigned</span>
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* Export Panel */}
-              <div className="bg-white p-6 rounded-xl border border-stone-200 shadow-sm space-y-4">
-                <h3 className="text-sm font-serif font-semibold text-stone-900">Standard Data Spreadsheet Exports</h3>
-                <div className="flex flex-wrap gap-2">
+              {/* Standard Spreadsheet Exports (Preserved functionality) */}
+              <div className="bg-white p-6 rounded-xl border border-stone-200 shadow-2xs space-y-3">
+                <h3 className="text-sm font-semibold text-stone-900">Data spreadsheet exports</h3>
+                <div className="flex flex-wrap gap-3">
                   <button 
                     onClick={() => handleExport('attendance', 'csv')}
-                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded flex items-center gap-1.5 transition-all"
+                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400" />
                     Download Attendance CSV
                   </button>
                   <button 
                     onClick={() => handleExport('care_notes', 'csv')}
-                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded flex items-center gap-1.5 transition-all"
+                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400" />
                     Download Care Notes CSV
@@ -1751,6 +1563,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {/* ----------------- PREVIEW MODAL ----------------- */}
+      {previewingReportId && (
+        <GeneratedReportPreviewModal
+          reportId={previewingReportId}
+          reportTitle={previewReportTitle}
+          eventTitle={previewEventTitle}
+          onClose={() => setPreviewingReportId(null)}
+          onDownloadPdf={(id) => handleDownloadReportPDF(id)}
+        />
       )}
 
       {/* ----------------- AUDIT LOG MODAL ----------------- */}
@@ -1770,13 +1593,12 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             >
               <div className="bg-[#FAF9F6] border-b border-stone-200 px-6 py-4 flex items-center justify-between">
                 <div>
-                  <h3 id="audit-modal-title" className="text-base font-serif font-bold text-stone-900">Digital Access Ledger & Audit Trail</h3>
-                  <p className="text-[10px] text-stone-400 mt-0.5">Job ID: {auditReportId}</p>
+                  <h3 id="audit-modal-title" className="text-base font-serif font-medium text-stone-900">Report history</h3>
                 </div>
                 <button 
                   onClick={() => setAuditReportId(null)}
                   className="text-stone-400 hover:text-stone-700 p-1.5 hover:bg-stone-100 rounded-full transition-all"
-                  aria-label="Close Audit Dialog"
+                  aria-label="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1788,21 +1610,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     <Loader2 className="w-6 h-6 animate-spin text-[#C59B27]" />
                   </div>
                 ) : auditLogs.length === 0 ? (
-                  <div className="text-center text-xs text-stone-400 py-12">No audit actions recorded yet.</div>
+                  <div className="text-center text-xs text-stone-400 py-12">No history actions recorded yet.</div>
                 ) : (
                   <div className="space-y-3">
                     {auditLogs.map((log) => (
-                      <div key={log.id} className="bg-stone-50 p-4 rounded-lg border border-stone-100 flex justify-between gap-4 text-xs">
+                      <div key={log.id} className="bg-stone-50 p-3.5 rounded-lg border border-stone-100 flex justify-between gap-4 text-xs">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-stone-800 capitalize">{log.action_type}</span>
-                            <span className="text-[10px] bg-stone-200 text-stone-600 px-1.5 py-0.2 rounded font-mono">
-                              By: User #{log.actor_user_id.slice(0, 8)}
-                            </span>
-                          </div>
+                          <span className="font-semibold text-stone-800 capitalize">{log.action_type.replace(/_/g, ' ')}</span>
                           <p className="text-stone-500 leading-relaxed text-[11px]">{log.safe_summary}</p>
                         </div>
-                        <span className="text-[10px] font-mono text-stone-400 shrink-0 mt-0.5">
+                        <span className="text-[10px] text-stone-400 shrink-0 mt-0.5 tabular-nums">
                           {new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                         </span>
                       </div>
@@ -1811,98 +1628,18 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 )}
               </div>
 
-              <div className="bg-stone-50 border-t border-stone-200 px-6 py-4 flex justify-end">
+              <div className="bg-stone-50 border-t border-stone-200 px-6 py-3.5 flex justify-end">
                 <Button 
                   onClick={() => setAuditReportId(null)}
                   className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-4 rounded-lg"
                 >
-                  Dismiss Ledger
+                  Close
                 </Button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-
-      {/* ----------------- CONFIRMATION MODAL ----------------- */}
-      <AnimatePresence>
-        {confirmModal && (
-          <div 
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
-            >
-              <div className="space-y-2">
-                <h3 className="text-base font-serif font-bold text-stone-900">
-                  {confirmModal.type === 'delete' ? 'Delete report snapshot?' : 'Archive report snapshot?'}
-                </h3>
-                <p className="text-xs text-stone-600 leading-relaxed">
-                  {confirmModal.type === 'delete' 
-                    ? 'This action will permanently delete the generated PDF report and its associated metadata. This action cannot be undone.'
-                    : 'This action will archive the report and hide it from the active report directory.'}
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2 border-t border-stone-100">
-                <Button
-                  onClick={() => setConfirmModal(null)}
-                  variant="outline"
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={async () => {
-                    const { type, reportId } = confirmModal;
-                    setConfirmModal(null);
-                    if (type === 'delete') {
-                      try {
-                        const res = await api.request(`/api/admin/reports/${reportId}`, { method: 'DELETE' });
-                        if (res && res.success) {
-                          showSuccess('Report deleted', 'The report was deleted.');
-                          fetchReportsListAndTemplates();
-                        }
-                      } catch (err: any) {
-                        showError('Action failed', extractApiError(err).message);
-                      }
-                    } else if (type === 'archive') {
-                      try {
-                        const res = await api.request(`/api/admin/reports/${reportId}/archive`, { method: 'POST' });
-                        if (res && res.success) {
-                          showSuccess('Report archived', 'The report has been archived.');
-                          fetchReportsListAndTemplates();
-                        }
-                      } catch (err: any) {
-                        showError('Action failed', extractApiError(err).message);
-                      }
-                    }
-                  }}
-                  className={confirmModal.type === 'delete' ? "bg-red-600 hover:bg-red-700 text-white text-xs py-2 px-4 rounded-lg" : "bg-stone-900 hover:bg-black text-white text-xs py-2 px-4 rounded-lg"}
-                >
-                  {confirmModal.type === 'delete' ? 'Delete permanently' : 'Archive report'}
-                </Button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Generated Report Preview Modal */}
-      {previewingReportId && (
-        <GeneratedReportPreviewModal
-          reportId={previewingReportId}
-          reportTitle={previewReportTitle}
-          eventTitle={previewEventTitle}
-          onClose={() => setPreviewingReportId(null)}
-          onDownloadPdf={(id) => handleDownloadReportPDF(id, `${id}.pdf`)}
-        />
-      )}
     </motion.div>
   );
 };

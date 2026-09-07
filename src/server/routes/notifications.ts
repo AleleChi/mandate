@@ -962,6 +962,7 @@ router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) =>
     const searchQuery = (req.query.search as string || '').trim().toLowerCase();
     const dateFrom = req.query.dateFrom as string;
     const dateTo = req.query.dateTo as string;
+    const eventId = req.query.eventId as string;
 
     // We build the query dynamically
     let queryStr = `
@@ -1008,6 +1009,10 @@ router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) =>
     if (dateTo) {
       queryStr += ` AND n.created_at <= ?`;
       params.push(dateTo);
+    }
+    if (eventId) {
+      queryStr += ` AND (n.event_id = ? OR n.event_id IS NULL)`;
+      params.push(eventId);
     }
 
     // Query execution
@@ -1173,16 +1178,24 @@ router.get('/admin/updates/summary', async (req: AuthenticatedRequest, res: Resp
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
+    const eventId = req.query.eventId as string;
+
     // 1. Fetch all notifications matching audience roles
-    const rawNotifs = await query(`
+    let notifsQuery = `
       SELECT n.* FROM notifications n
       WHERE (n.audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR n.audience_role IS NULL)
-    `, []);
+    `;
+    const notifsParams: any[] = [];
+    if (eventId) {
+      notifsQuery += ` AND (n.event_id = ? OR n.event_id IS NULL)`;
+      notifsParams.push(eventId);
+    }
+    const rawNotifs = await query(notifsQuery, notifsParams);
 
     // Query open safety alerts directly from the database table for perfect, independent stats integrity
     const openAlertsRow = await queryOne(`
-      SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?
-    `, [REAL_EVENT_ID]);
+      SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND (event_id = ? OR ? IS NULL)
+    `, [eventId || REAL_EVENT_ID, eventId || null]);
     const openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
 
     let total = 0;

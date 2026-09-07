@@ -12,6 +12,7 @@ import { buildPickupReleaseReport } from './templates/pickupReleaseReport';
 import { buildOfflineResilienceReport } from './templates/offlineResilienceReport';
 import { buildTrainingDrillReport } from './templates/trainingDrillReport';
 import { buildCustomEventReport } from './templates/customEventReport';
+import { buildRegistrationSelectionReport } from './templates/registrationSelectionReport';
 
 export type ReportTemplateBuilder = (
   reportId: string,
@@ -22,6 +23,15 @@ export type ReportTemplateBuilder = (
 ) => ReportDocumentModel;
 
 export const TEMPLATE_BUILDER_REGISTRY: Record<string, ReportTemplateBuilder> = {
+  // Six Canonical Templates (Section 9)
+  'management-summary': buildEventExecutiveReport,
+  'full-event-report': buildCustomEventReport,
+  'registration-selection': buildRegistrationSelectionReport,
+  'attendance-movement': buildAttendanceDemographicsReport,
+  'volunteer-coverage': buildVolunteerTeamReport,
+  'care-safety-summary': buildChildSafetyIncidentReport,
+
+  // Versioned & legacy keys
   'event-executive-report-v1': buildEventExecutiveReport,
   'attendance-demographics-report-v1': buildAttendanceDemographicsReport,
   'child-safety-incident-report-v1': buildChildSafetyIncidentReport,

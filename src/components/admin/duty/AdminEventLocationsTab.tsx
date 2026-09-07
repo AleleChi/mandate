@@ -25,7 +25,9 @@ import {
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
 
-const REAL_EVENT_ID = 'event-ga-2026';
+interface AdminEventLocationsTabProps {
+  eventId?: string;
+}
 
 interface EventLocation {
   id: string;
@@ -51,11 +53,13 @@ interface LocationCoverage {
   activeAlerts: any[];
 }
 
-export default function AdminEventLocationsTab() {
+export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: AdminEventLocationsTabProps) {
   const [locations, setLocations] = useState<EventLocation[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [locToToggleActive, setLocToToggleActive] = useState<EventLocation | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Summary counts
   const [summary, setSummary] = useState({
@@ -134,7 +138,7 @@ export default function AdminEventLocationsTab() {
       if (searchTerm) queryParams.append('search', searchTerm);
 
       // Call primary endpoint
-      let res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations?${queryParams.toString()}`, { headers });
+      let res = await fetch(`/api/admin/events/${eventId}/locations?${queryParams.toString()}`, { headers });
       if (!res.ok) {
         // Fallback endpoint
         res = await fetch(`/api/admin/locations?${queryParams.toString()}`, { headers });
@@ -146,7 +150,7 @@ export default function AdminEventLocationsTab() {
           const rawItems = data.locations || data.items || [];
           const normItems: EventLocation[] = rawItems.map((loc: any) => ({
             id: loc.id,
-            eventId: loc.eventId || loc.event_id || REAL_EVENT_ID,
+            eventId: loc.eventId || loc.event_id || eventId,
             parentLocationId: loc.parentLocationId ?? loc.parent_location_id ?? null,
             type: loc.type || loc.location_type || 'room',
             name: loc.name,
@@ -188,14 +192,14 @@ export default function AdminEventLocationsTab() {
             if (found) setSelectedLocation(found);
           }
         } else {
-          setError(data.message || data.error || 'Failed to fetch locations');
+          setError(data.message || data.error || 'We couldn’t load event locations. Try again');
         }
       } else {
-        setError('We could not load event locations. Please check your connection.');
+        setError('We couldn’t load event locations. Try again');
       }
     } catch (err) {
       console.error('Error fetching event locations:', err);
-      setError('We could not load event locations. Please refresh and try again.');
+      setError('We couldn’t load event locations. Try again');
     } finally {
       setLoading(false);
     }
@@ -209,7 +213,7 @@ export default function AdminEventLocationsTab() {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${locId}/coverage`, { headers });
+      let res = await fetch(`/api/admin/events/${eventId}/locations/${locId}/coverage`, { headers });
       if (!res.ok) {
         res = await fetch(`/api/admin/locations/${locId}/coverage`, { headers });
       }
@@ -234,7 +238,27 @@ export default function AdminEventLocationsTab() {
 
   useEffect(() => {
     fetchLocations();
-  }, [filterType]);
+  }, [eventId, filterType]);
+
+  useEffect(() => {
+    if (showFormModal || showQRModal || locToToggleActive || confirmActionModal) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          if (showFormModal) setShowFormModal(false);
+          if (showQRModal) setShowQRModal(false);
+          if (locToToggleActive) setLocToToggleActive(null);
+          if (confirmActionModal) setConfirmActionModal(null);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [showFormModal, showQRModal, locToToggleActive, confirmActionModal]);
 
   useEffect(() => {
     if (selectedLocation) {
@@ -249,7 +273,7 @@ export default function AdminEventLocationsTab() {
 
           let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { headers });
           if (!res.ok) {
-            res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${selectedLocation.id}/code`, { headers });
+            res = await fetch(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`, { headers });
           }
           if (res.ok) {
             const data = await res.json();
@@ -329,12 +353,12 @@ export default function AdminEventLocationsTab() {
   const handleSaveLocation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
-      alert('Location name is required');
+      setFormError('Add a location name.');
       return;
     }
 
     if (isEditing && formParentId && wouldBeCircular(formId, formParentId)) {
-      alert('Circular reference detected! A location cannot be set to a parent that is itself or a child of this location.');
+      setFormError('A location cannot be placed inside itself or one of its sub-areas.');
       return;
     }
 
@@ -354,14 +378,15 @@ export default function AdminEventLocationsTab() {
     };
 
     setSavingLocation(true);
+    setFormError(null);
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const primaryUrl = isEditing 
-        ? `/api/admin/events/${REAL_EVENT_ID}/locations/${formId}` 
-        : `/api/admin/events/${REAL_EVENT_ID}/locations`;
+        ? `/api/admin/events/${eventId}/locations/${formId}` 
+        : `/api/admin/events/${eventId}/locations`;
       const fallbackUrl = isEditing 
         ? `/api/admin/locations/${formId}` 
         : `/api/admin/locations`;
@@ -376,47 +401,47 @@ export default function AdminEventLocationsTab() {
       if (res.ok) {
         const data = await res.json();
         if (data.success !== false) {
-          setSuccess(isEditing ? 'Location updated successfully.' : 'Location created successfully.');
+          setSuccess(isEditing ? 'Location updated.' : 'Location created.');
           setShowFormModal(false);
           await fetchLocations();
         } else {
-          alert(data.error || 'Failed to save location.');
+          setFormError(data.error || 'We couldn’t save this location. Try again');
         }
       } else {
-        alert('Server returned an error saving the location.');
+        setFormError('We couldn’t save this location. Try again');
       }
     } catch (err) {
       console.error(err);
-      alert('Network error trying to save location.');
+      setFormError('We couldn’t save this location. Try again');
     } finally {
       setSavingLocation(false);
     }
   };
 
-  // Archive / Restore
-  const handleToggleArchive = async (loc: EventLocation) => {
+  // Toggle Active / Not in use
+  const executeToggleActive = async (loc: EventLocation) => {
     const action = loc.isActive ? 'archive' : 'restore';
-    if (!confirm(`Are you sure you want to ${action} "${loc.name}"?`)) return;
-
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${loc.id}/${action}`, { method: 'POST', headers });
+      let res = await fetch(`/api/admin/events/${eventId}/locations/${loc.id}/${action}`, { method: 'POST', headers });
       if (!res.ok) {
         res = await fetch(`/api/admin/locations/${loc.id}/${action}`, { method: 'POST', headers });
       }
 
       if (res.ok) {
-        setSuccess(`Location ${action}d successfully.`);
+        setSuccess(loc.isActive ? 'Location set to not in use.' : 'Location activated.');
         await fetchLocations();
       } else {
-        alert(`Failed to ${action} location.`);
+        setError('We couldn’t update this location. Try again');
       }
     } catch (err) {
       console.error(err);
-      alert(`Error during location ${action}.`);
+      setError('We couldn’t update this location. Try again');
+    } finally {
+      setLocToToggleActive(null);
     }
   };
 
@@ -433,7 +458,7 @@ export default function AdminEventLocationsTab() {
 
       let res = await fetch(`/api/admin/locations/${loc.id}/qr`, { headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${loc.id}/code`, { headers });
+        res = await fetch(`/api/admin/events/${eventId}/locations/${loc.id}/code`, { headers });
       }
 
       if (res.ok) {
@@ -459,14 +484,14 @@ export default function AdminEventLocationsTab() {
 
       let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'POST', headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${selectedLocation.id}/code`, { method: 'POST', headers });
+        res = await fetch(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`, { method: 'POST', headers });
       }
 
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
           setQrToken(data.token || data.code?.token_hash || null);
-          setSuccess('New unguessable QR token generated.');
+          setSuccess('New check-in code generated.');
         }
       }
     } catch (err) {
@@ -477,7 +502,7 @@ export default function AdminEventLocationsTab() {
   };
 
   const handleDisableQR = async () => {
-    if (!selectedLocation || !confirm('Are you sure you want to disable this QR code? Volunteers will no longer be able to scan it for check-in.')) return;
+    if (!selectedLocation) return;
     setQrLoading(true);
     try {
       const token = safeStorage.getItem('koinonia_token');
@@ -486,12 +511,12 @@ export default function AdminEventLocationsTab() {
 
       let res = await fetch(`/api/admin/locations/${selectedLocation.id}/qr`, { method: 'DELETE', headers });
       if (!res.ok) {
-        res = await fetch(`/api/admin/events/${REAL_EVENT_ID}/locations/${selectedLocation.id}/code/disable`, { method: 'POST', headers });
+        res = await fetch(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code/disable`, { method: 'POST', headers });
       }
 
       if (res.ok) {
         setQrToken(null);
-        setSuccess('QR code disabled.');
+        setSuccess('Check-in code disabled.');
       }
     } catch (err) {
       console.error(err);
@@ -544,20 +569,17 @@ export default function AdminEventLocationsTab() {
 
   return (
     <div 
-      data-view-version="admin-event-locations-v2-premium"
-      className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-6"
+      data-view-version="admin-locations-v5"
+      className="space-y-5 animate-fade-in"
     >
-      {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
+      {/* 1. Header Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
         <div>
-          <h2 className="text-xl font-bold text-zinc-900 tracking-tight flex items-center space-x-2.5">
-            <div className="p-2 bg-[#C59B27]/10 rounded-xl text-[#C59B27]">
-              <MapPin className="w-5 h-5" />
-            </div>
-            <span>Event Locations Directory</span>
+          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+            Locations
           </h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Manage event rooms, zones, gates, and service points, including capacity, QR access labels, and operational readiness.
+          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+            Manage the rooms and areas used during the event.
           </p>
         </div>
 
@@ -567,42 +589,42 @@ export default function AdminEventLocationsTab() {
               setShowArchived(!showArchived);
               setSelectedLocation(null);
             }}
-            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-all ${
               showArchived 
                 ? 'bg-amber-50 border-amber-200 text-amber-700' 
                 : 'bg-white border-[#EAE8E1] text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
-            <Archive className="w-3.5 h-3.5" />
-            <span>{showArchived ? 'Viewing Archived' : 'View Archived'}</span>
+            <span>{showArchived ? 'Viewing not in use' : 'View not in use'}</span>
           </button>
 
           <button
             onClick={fetchLocations}
-            className="p-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-[#EAE8E1] rounded-lg text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer text-xs font-medium"
             title="Refresh Locations"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
 
           <button
             onClick={openCreateModal}
-            className="flex items-center space-x-1.5 px-4 py-2 bg-[#C59B27] text-white rounded-xl text-xs font-bold hover:bg-[#A37E1C] transition-all cursor-pointer shadow-xs"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-[#C59B27] text-white rounded-lg text-xs font-medium hover:bg-[#A37E1C] transition-all cursor-pointer shadow-2xs"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Location</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add location</span>
           </button>
         </div>
       </div>
 
       {/* Success Notification */}
       {success && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between shadow-xs">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs rounded-xl flex items-center justify-between shadow-2xs font-medium">
           <div className="flex items-center space-x-2">
             <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-medium">{success}</span>
+            <span>{success}</span>
           </div>
-          <button onClick={() => setSuccess(null)} className="text-emerald-500 hover:text-emerald-700 p-1">
+          <button onClick={() => setSuccess(null)} className="text-emerald-700 hover:text-emerald-900 p-1 cursor-pointer">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -610,72 +632,42 @@ export default function AdminEventLocationsTab() {
 
       {/* Error Notification */}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between shadow-xs">
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 text-xs rounded-xl flex items-center justify-between shadow-2xs font-medium">
           <div className="flex items-center space-x-2">
             <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <div>
-              <p className="font-bold">We could not load event locations</p>
-              <p className="text-[11px] text-rose-700 mt-0.5">{error}</p>
-            </div>
+            <span>{error}</span>
           </div>
           <button 
             onClick={fetchLocations}
-            className="px-3 py-1 bg-white border border-rose-200 text-rose-700 rounded-lg font-bold hover:bg-rose-100 transition-all cursor-pointer text-[11px]"
+            className="px-2.5 py-1 bg-white border border-rose-200 text-rose-700 rounded-lg font-medium hover:bg-rose-50 transition-all cursor-pointer text-xs"
           >
-            Retry
+            Try again
           </button>
         </div>
       )}
 
-      {/* Summary Metrics Strip (5 Cards) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
-          <div className="p-2.5 bg-stone-100 text-stone-700 rounded-xl shrink-0">
-            <Building2 className="w-4 h-4" />
+      {/* Restrained Summary Strip */}
+      <div className="bg-white border border-[#EAE8E1] rounded-xl px-5 py-3.5 shadow-2xs">
+        <div className="flex items-center divide-x divide-[#EAE8E1] overflow-x-auto text-xs">
+          <div className="pr-6 shrink-0">
+            <span className="text-[11px] text-zinc-400 font-medium block">Total locations</span>
+            <span className="text-base font-bold text-zinc-900">{summary.totalLocations}</span>
           </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Total Locations</span>
-            <span className="text-lg font-bold text-zinc-900">{summary.totalLocations}</span>
+          <div className="px-6 shrink-0">
+            <span className="text-[11px] text-zinc-400 font-medium block">Rooms</span>
+            <span className="text-base font-bold text-zinc-800">{summary.rooms}</span>
           </div>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
-          <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl shrink-0">
-            <DoorClosed className="w-4 h-4" />
+          <div className="px-6 shrink-0">
+            <span className="text-[11px] text-zinc-400 font-medium block">Gates & points</span>
+            <span className="text-base font-bold text-zinc-800">{summary.gates}</span>
           </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Rooms</span>
-            <span className="text-lg font-bold text-zinc-900">{summary.rooms}</span>
+          <div className="px-6 shrink-0">
+            <span className="text-[11px] text-zinc-400 font-medium block">Zones</span>
+            <span className="text-base font-bold text-zinc-800">{summary.zones}</span>
           </div>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
-          <div className="p-2.5 bg-emerald-50 text-emerald-700 rounded-xl shrink-0">
-            <DoorOpen className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Gates & Points</span>
-            <span className="text-lg font-bold text-zinc-900">{summary.gates}</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3">
-          <div className="p-2.5 bg-amber-50 text-amber-700 rounded-xl shrink-0">
-            <Layers className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Zones</span>
-            <span className="text-lg font-bold text-zinc-900">{summary.zones}</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3.5 shadow-xs flex items-center space-x-3 col-span-2 sm:col-span-1">
-          <div className="p-2.5 bg-[#C59B27]/10 text-[#C59B27] rounded-xl shrink-0">
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Active Points</span>
-            <span className="text-lg font-bold text-zinc-900">{summary.activeLocations}</span>
+          <div className="pl-6 shrink-0">
+            <span className="text-[11px] text-zinc-400 font-medium block">Active</span>
+            <span className="text-base font-bold text-emerald-700">{summary.activeLocations}</span>
           </div>
         </div>
       </div>
@@ -818,7 +810,7 @@ export default function AdminEventLocationsTab() {
 
                       <div className="flex items-center space-x-1 text-[10px]">
                         <span className={`w-2 h-2 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
-                        <span className="text-zinc-500">{loc.isActive ? 'Active' : 'Archived'}</span>
+                        <span className="text-zinc-500">{loc.isActive ? 'Active' : 'Not in use'}</span>
                       </div>
                     </div>
                   </div>
@@ -846,7 +838,7 @@ export default function AdminEventLocationsTab() {
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                         : 'bg-zinc-100 text-zinc-600 border-zinc-200'
                     }`}>
-                      {selectedLocation.isActive ? 'Active' : 'Archived'}
+                      {selectedLocation.isActive ? 'Active' : 'Not in use'}
                     </span>
                   </div>
 
@@ -874,15 +866,15 @@ export default function AdminEventLocationsTab() {
                   </button>
 
                   <button
-                    onClick={() => handleToggleArchive(selectedLocation)}
+                    onClick={() => setLocToToggleActive(selectedLocation)}
                     className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
                       selectedLocation.isActive 
-                        ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100' 
+                        ? 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200' 
                         : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                     }`}
                   >
                     <Archive className="w-3.5 h-3.5" />
-                    <span>{selectedLocation.isActive ? 'Archive' : 'Restore'}</span>
+                    <span>{selectedLocation.isActive ? 'Set to not in use' : 'Activate'}</span>
                   </button>
                 </div>
               </div>
@@ -956,7 +948,7 @@ export default function AdminEventLocationsTab() {
                   <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
                     <span className="font-bold text-rose-800 flex items-center space-x-1.5 text-xs">
                       <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>EMERGENCY DISPATCH LABEL</span>
+                      <span>Emergency location name</span>
                     </span>
                     <p className="text-rose-900 font-semibold text-xs">
                       {selectedLocation.emergencyLabel}
@@ -1130,7 +1122,7 @@ export default function AdminEventLocationsTab() {
                 className="px-4 py-2 bg-[#C59B27] text-white rounded-xl text-xs font-bold hover:bg-[#A37E1C] transition-all cursor-pointer inline-flex items-center space-x-1.5 shadow-xs"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add Location</span>
+                <span>Add location</span>
               </button>
             </div>
           )}
@@ -1140,178 +1132,228 @@ export default function AdminEventLocationsTab() {
 
       {/* MODAL 1: ADD / EDIT LOCATION FORM */}
       {showFormModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-lg shadow-xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
-              <h3 className="text-base font-bold text-zinc-900 tracking-tight flex items-center space-x-2">
-                <MapPin className="w-5 h-5 text-[#C59B27]" />
-                <span>{isEditing ? 'Edit Location Configuration' : 'Add New Event Location'}</span>
-              </h3>
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="location-modal-title"
+        >
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] px-6 py-4 shrink-0">
+              <div>
+                <h3 id="location-modal-title" className="text-base font-bold text-[#18181B]">
+                  {isEditing ? 'Edit location' : 'Add location'}
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Add a room or area used during this event.
+                </p>
+              </div>
               <button 
+                type="button"
                 onClick={() => setShowFormModal(false)}
-                className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveLocation} className="space-y-4 text-xs">
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Location Name *</label>
+            <form onSubmit={handleSaveLocation} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                {formError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl text-xs font-medium flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Section 1: Location identity */}
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-zinc-800">Location name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Grace Hall, Gate A"
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-medium text-zinc-800">Location code</label>
+                        <span className="text-[11px] text-zinc-400">Optional</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="e.g. GH-101 or Gate A"
+                        value={formShortName}
+                        onChange={(e) => setFormShortName(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-zinc-800">Type</label>
+                      <select
+                        value={formType}
+                        onChange={(e) => setFormType(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                      >
+                        <option value="room">Room</option>
+                        <option value="zone">Zone</option>
+                        <option value="gate">Gate</option>
+                        <option value="pickup_point">Pickup point</option>
+                        <option value="check_in_point">Check-in point</option>
+                        <option value="first_aid_point">First aid point</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-zinc-800">Located within</label>
+                      <select
+                        value={formParentId}
+                        onChange={(e) => setFormParentId(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                      >
+                        <option value="">None</option>
+                        {locations
+                          .filter(l => l.id !== formId && l.isActive)
+                          .map(l => (
+                            <option key={l.id} value={l.id}>
+                              {l.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Event use */}
+                <div className="pt-3 border-t border-[#EAE8E1] space-y-3">
+                  <span className="block text-xs font-semibold text-zinc-900">Event use</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-medium text-zinc-800">Capacity</label>
+                        <span className="text-[11px] text-zinc-400">Optional</span>
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 50"
+                        value={formCapacity}
+                        onChange={(e) => setFormCapacity(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                      />
+                      <p className="text-[11px] text-zinc-400">Maximum number of people for this area.</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-zinc-800">Age group</label>
+                      <select
+                        value={formAgeGroup}
+                        onChange={(e) => setFormAgeGroup(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                      >
+                        <option value="all">All ages</option>
+                        <option value="nursery">Nursery & infants</option>
+                        <option value="toddlers">Toddlers</option>
+                        <option value="preschool">Preschool</option>
+                        <option value="elementary">Elementary</option>
+                        <option value="teens">Teens</option>
+                        <option value="adults">Adults</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-zinc-800">Assigned team</label>
+                    <select
+                      value={formTeamKey}
+                      onChange={(e) => setFormTeamKey(e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                    >
+                      <option value="General Response">General Response</option>
+                      <option value="Child Check-in">Child Check-in</option>
+                      <option value="Medical / First Aid">Medical / First Aid</option>
+                      <option value="Security / Safety">Security / Safety</option>
+                      <option value="Facilities">Facilities</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Section 3: Emergency information */}
+                <div className="pt-3 border-t border-[#EAE8E1] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-medium text-zinc-800">Emergency location name</label>
+                    <span className="text-[11px] text-zinc-400">Optional</span>
+                  </div>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. Grace Hall Primary, Gate A"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none"
+                    placeholder="Sector 2 emergency point"
+                    value={formEmergencyLabel}
+                    onChange={(e) => setFormEmergencyLabel(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
                   />
+                  <p className="text-[11px] text-zinc-400">
+                    Shown in urgent alerts so the team can identify this location quickly.
+                  </p>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Short Code / Tag</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. GH-101, GATE-A"
-                    value={formShortName}
-                    onChange={(e) => setFormShortName(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none font-mono uppercase"
-                  />
-                </div>
-              </div>
+                {/* Section 4: Details */}
+                <div className="pt-3 border-t border-[#EAE8E1] space-y-3.5">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-medium text-zinc-800">About this location</label>
+                      <span className="text-[11px] text-zinc-400">Optional</span>
+                    </div>
+                    <textarea
+                      rows={2}
+                      placeholder="Briefly describe this room or area."
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      className="w-full p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Location Type *</label>
-                  <select
-                    value={formType}
-                    onChange={(e) => setFormType(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none font-bold"
-                  >
-                    <option value="room">Room</option>
-                    <option value="zone">Zone</option>
-                    <option value="gate">Gate</option>
-                    <option value="pickup_point">Pickup Point</option>
-                    <option value="check_in_point">Check-in Point</option>
-                    <option value="first_aid_point">First Aid Point</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Parent Location (Hierarchy)</label>
-                  <select
-                    value={formParentId}
-                    onChange={(e) => setFormParentId(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                  >
-                    <option value="">None (Root Level)</option>
-                    {locations
-                      .filter(l => l.id !== formId && l.isActive)
-                      .map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.name} ({l.type})
-                        </option>
-                      ))}
-                  </select>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-medium text-zinc-800">Team instructions</label>
+                      <span className="text-[11px] text-zinc-400">Optional</span>
+                    </div>
+                    <textarea
+                      rows={2}
+                      placeholder="Add anything the team should know about this location."
+                      value={formInstructions}
+                      onChange={(e) => setFormInstructions(e.target.value)}
+                      className="w-full p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Capacity Limit</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="e.g. 50"
-                    value={formCapacity}
-                    onChange={(e) => setFormCapacity(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Age Target</label>
-                  <select
-                    value={formAgeGroup}
-                    onChange={(e) => setFormAgeGroup(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                  >
-                    <option value="all">All Ages</option>
-                    <option value="nursery">Nursery / Infants</option>
-                    <option value="toddlers">Toddlers</option>
-                    <option value="preschool">Preschool</option>
-                    <option value="elementary">Elementary</option>
-                    <option value="teens">Teens</option>
-                    <option value="adults">Adults</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-zinc-700 block">Duty Team</label>
-                  <select
-                    value={formTeamKey}
-                    onChange={(e) => setFormTeamKey(e.target.value)}
-                    className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                  >
-                    <option value="General Response">General Response</option>
-                    <option value="Child Check-in">Child Check-in</option>
-                    <option value="Medical / First Aid">Medical / First Aid</option>
-                    <option value="Security / Safety">Security / Safety</option>
-                    <option value="Facilities">Facilities</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Emergency Dispatch Label</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Sector 2 Emergency Point - Medical Kit Available"
-                  value={formEmergencyLabel}
-                  onChange={(e) => setFormEmergencyLabel(e.target.value)}
-                  className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Description</label>
-                <textarea
-                  rows={2}
-                  placeholder="Brief operational description of room purpose or layout..."
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-zinc-700 block">Special Instructions for Duty Responders</label>
-                <textarea
-                  rows={2}
-                  placeholder="Check wristband color before parent release. Keep fire exit clear..."
-                  value={formInstructions}
-                  onChange={(e) => setFormInstructions(e.target.value)}
-                  className="w-full bg-white px-3 py-2 border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#EAE8E1]">
+              <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] bg-white shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 bg-white border border-[#EAE8E1] text-zinc-600 rounded-xl font-bold hover:bg-zinc-50 transition-all cursor-pointer"
+                  disabled={savingLocation}
+                  className="min-h-[44px] px-4 py-2 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingLocation}
-                  className="px-5 py-2 bg-[#C59B27] text-white rounded-xl font-bold hover:bg-[#A37E1C] transition-all cursor-pointer shadow-xs disabled:opacity-50 flex items-center space-x-1.5"
+                  className="min-h-[44px] px-5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
                 >
                   {savingLocation && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{isEditing ? 'Save Changes' : 'Create Location'}</span>
+                  <span>{savingLocation ? (isEditing ? 'Saving…' : 'Adding location…') : isEditing ? 'Save changes' : 'Add location'}</span>
                 </button>
               </div>
 
@@ -1511,6 +1553,58 @@ export default function AdminEventLocationsTab() {
         </>
       )}
 
+      {/* CONFIRMATION MODAL FOR TOGGLE ACTIVE / NOT IN USE */}
+      {locToToggleActive && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-9 h-9 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5 pr-4">
+                <h3 className="text-base font-bold text-[#18181B]">
+                  {locToToggleActive.isActive ? 'Set location to not in use?' : 'Activate location?'}
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  {locToToggleActive.isActive
+                    ? 'This location will no longer be available for event duties.'
+                    : 'This location will become active and available for event duties.'}
+                </p>
+              </div>
+              <button
+                onClick={() => setLocToToggleActive(null)}
+                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-3.5 space-y-1 text-xs">
+              <span className="text-zinc-500 font-medium">Location</span>
+              <p className="font-semibold text-zinc-900">{locToToggleActive.name}</p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1]">
+              <button
+                type="button"
+                onClick={() => setLocToToggleActive(null)}
+                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeToggleActive(locToToggleActive)}
+                className="px-3.5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

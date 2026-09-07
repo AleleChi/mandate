@@ -1139,8 +1139,7 @@ export default function App() {
         <AdminProtectedRoute>
           <div className="min-h-screen bg-[#FAF9F6] flex flex-col">
             <PersistentTrainingBanner 
-              sessionName={activeTrainingSessionId ? "Simulated Drill Rehearsal" : "Scenario Configuration"} 
-              roleName={trainingRole || 'Check-in Team'} 
+              roleName={trainingRole || 'Check-in team'} 
               onExit={() => {
                 setActiveTrainingSessionId('');
                 setTrainingRole('');

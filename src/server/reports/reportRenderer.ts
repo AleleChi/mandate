@@ -195,57 +195,85 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
   currentY += 20;
 
-  // Render KPIs Bento Grid
+  // Render Clean Restrained KPI Band (Prompt Section 16 & 37)
   if (model.kpis && model.kpis.length > 0) {
-    doc.setFont('times', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text('KEY PERFORMANCE INDICATORS', marginX, currentY);
-
-    doc.setLineWidth(0.3);
-    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-
-    currentY += 7;
-
-    const count = model.kpis.length;
-    const cardGap = 3;
-    const cols = count <= 4 ? 4 : 3;
-    const cardW = (contentWidth - ((cols - 1) * cardGap)) / cols;
-    const cardH = 20;
-
-    model.kpis.forEach((kpi, idx) => {
-      const row = Math.floor(idx / cols);
-      const col = idx % cols;
-      const cardX = marginX + col * (cardW + cardGap);
-      const cardY = currentY + row * (cardH + cardGap);
-      drawKPICard(doc, cardX, cardY, cardW, cardH, kpi);
-    });
-
-    const totalRows = Math.ceil(count / cols);
-    currentY += totalRows * (cardH + cardGap) + 6;
+    const bandH = 20;
+    drawKPIBand(doc, marginX, currentY, contentWidth, bandH, model.kpis);
+    currentY += bandH + 7;
   }
 
-  // Render First Section (Leadership Overview Narrative)
+  // Render First Section (Executive Summary Narrative)
   const firstNarrativeSec = model.sections.find(s => s.type === 'narrative');
   if (firstNarrativeSec) {
     doc.setFont('times', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text(firstNarrativeSec.title, marginX, currentY);
+    doc.text(firstNarrativeSec.title.toUpperCase(), marginX, currentY);
 
     doc.setLineWidth(0.3);
     doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
     doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
 
-    currentY += 7;
+    currentY += 6;
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(39, 39, 42);
     const textLines = doc.splitTextToSize(firstNarrativeSec.content.text || '', contentWidth);
     doc.text(textLines, marginX, currentY);
-    currentY += textLines.length * 4.2 + 6;
+    currentY += textLines.length * 3.8 + 6;
+  }
+
+  // Render Key Findings (Prompt Section 17 - Deterministic from numbers)
+  const findingsList = (model.findings || []).map(f => f.observation).filter(Boolean);
+  if (findingsList.length > 0) {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
+    doc.text('KEY FINDINGS', marginX, currentY);
+
+    doc.setLineWidth(0.3);
+    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+    doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
+    currentY += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(39, 39, 42);
+    findingsList.forEach((kf) => {
+      const kfLines = doc.splitTextToSize(`•  ${kf}`, contentWidth - 4);
+      doc.text(kfLines, marginX + 2, currentY);
+      currentY += kfLines.length * 3.6 + 1;
+    });
+    currentY += 5;
+  }
+
+  // Render For Management Attention (Prompt Section 18 - Real conditions only)
+  const attentionList = model.managementAttention || [];
+  doc.setFont('times', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
+  doc.text('FOR MANAGEMENT ATTENTION', marginX, currentY);
+
+  doc.setLineWidth(0.3);
+  doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+  doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
+  currentY += 6;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  if (attentionList.length === 0) {
+    doc.setTextColor(113, 113, 122);
+    doc.text('No items require management attention.', marginX + 2, currentY);
+    currentY += 6;
+  } else {
+    doc.setTextColor(39, 39, 42);
+    attentionList.forEach((item) => {
+      const itemLines = doc.splitTextToSize(`•  ${item}`, contentWidth - 4);
+      doc.text(itemLines, marginX + 2, currentY);
+      currentY += itemLines.length * 3.6 + 1;
+    });
+    currentY += 6;
   }
 
   // =========================================================================
@@ -575,22 +603,23 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   }
 
   // =========================================================================
-  // POST-PASS: ADD FOOTERS WITH ACCURATE DYNAMIC PAGE NUMBERS
+  // POST-PASS: ADD FOOTERS WITH ACCURATE DYNAMIC PAGE NUMBERS (Section 39)
   // =========================================================================
   const totalPagesCount = doc.getNumberOfPages();
   for (let pageIdx = 1; pageIdx <= totalPagesCount; pageIdx++) {
     doc.setPage(pageIdx);
     
-    // Skip header/footer on page 1
+    // Skip on page 1 for cover elegance
     if (pageIdx === 1) continue;
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.setTextColor(161, 161, 170);
     
-    doc.text(`Page ${pageIdx} of ${totalPagesCount} | Koinonia Official Report`, marginX, 285);
-    doc.text(`Classification: ${model.privacyClassification.toUpperCase()}`, marginX + contentWidth - 65, 285);
-    doc.text(`Data Cutoff: ${formatHumanDate(model.informationConfirmedUpTo, true)}`, marginX, 289);
+    const eventName = model.eventContext?.eventTitle || 'The General Assembly';
+    doc.text(`Koinonia Children & Teens  ·  ${eventName}`, marginX, 287);
+    doc.text(`Page ${pageIdx} of ${totalPagesCount}`, marginX + (contentWidth / 2) - 8, 287);
+    doc.text('Internal management report', marginX + contentWidth - 36, 287);
   }
 
   return {
@@ -599,43 +628,49 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   };
 }
 
-// Draw individual KPI bento grid card
-function drawKPICard(doc: jsPDF, x: number, y: number, w: number, h: number, kpi: ReportKPI) {
-  doc.setFillColor(colors.lightIvory[0], colors.lightIvory[1], colors.lightIvory[2]);
+// Draw clean unified KPI band with dividers across content width (Section 16 & 37)
+function drawKPIBand(doc: jsPDF, x: number, y: number, w: number, h: number, kpis: ReportKPI[]) {
+  // Clean restrained white band with subtle neutral border
+  doc.setFillColor(255, 255, 255);
   doc.rect(x, y, w, h, 'F');
-
-  let themeColor = colors.charcoal;
-  if (kpi.color === 'gold') themeColor = colors.gold;
-  else if (kpi.color === 'green') themeColor = colors.green;
-  else if (kpi.color === 'amber') themeColor = colors.amber;
-  else if (kpi.color === 'red') themeColor = colors.red;
-
-  doc.setFillColor(themeColor[0], themeColor[1], themeColor[2]);
-  doc.rect(x, y, 1.2, h, 'F');
-
   doc.setDrawColor(228, 228, 231);
-  doc.setLineWidth(0.25);
+  doc.setLineWidth(0.3);
   doc.rect(x, y, w, h, 'S');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
-  doc.text(kpi.label.toUpperCase(), x + 3.5, y + 4.5);
+  const count = kpis.length;
+  const colW = w / count;
 
-  doc.setFont('times', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-  doc.text(String(kpi.value), x + 3.5, y + 11);
+  kpis.forEach((kpi, idx) => {
+    const colX = x + idx * colW;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6);
-  doc.setTextColor(82, 82, 91);
-  
-  const subline = doc.splitTextToSize(kpi.sublabel, w - 5);
-  doc.text(subline[0] || '', x + 3.5, y + 15.5);
-  if (subline[1]) {
-    doc.text(subline[1], x + 3.5, y + 18.5);
-  }
+    // Subtle vertical divider between items
+    if (idx > 0) {
+      doc.setDrawColor(228, 228, 231);
+      doc.setLineWidth(0.25);
+      doc.line(colX, y, colX, y + h);
+    }
+
+    // Label: uppercase, small, subtle grey (Plus Jakarta Sans / Helvetica)
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(113, 113, 122);
+    doc.text(kpi.label.toUpperCase(), colX + 3, y + 5.5);
+
+    // Value: bold, charcoal, clear tabular numerals (Helvetica bold)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(24, 24, 27);
+    doc.text(String(kpi.value), colX + 3, y + 12.5);
+
+    // Sublabel: quiet secondary
+    if (kpi.sublabel) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(161, 161, 170);
+      const sub = doc.splitTextToSize(kpi.sublabel, colW - 5);
+      doc.text(sub[0] || '', colX + 3, y + 17);
+    }
+  });
 }
 
 // Beautiful Dynamic Table with Autowrapped Row cells
@@ -707,9 +742,9 @@ function drawChartSpec(
   height: number,
   chart: ReportChartSpec
 ) {
-  // Title text
-  doc.setFont('times', 'bold');
-  doc.setFontSize(8.5);
+  // Title text (Plus Jakarta Sans equivalent: Helvetica Bold)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
   doc.setTextColor(39, 39, 42);
   doc.text(chart.title.toUpperCase(), x, y - 2);
 

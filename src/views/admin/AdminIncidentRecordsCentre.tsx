@@ -1,33 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Shield, 
   Search, 
-  Filter, 
-  Clock, 
-  CheckCircle, 
   X, 
   Plus, 
-  User, 
   Calendar, 
-  TrendingUp, 
-  ShieldAlert, 
-  History, 
-  CheckSquare, 
-  RotateCcw, 
-  Trash2, 
+  RefreshCw, 
   AlertTriangle,
-  Loader2,
   FileText,
-  Check
+  Check,
+  ChevronRight,
+  Clock,
+  UserCheck
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { IncidentEditModal } from '../../components/common/IncidentEditModal';
 import { TableSkeleton } from '../../components/common/KoinoniaSkeletons';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
-import { KoinoniaEmptyState } from '../../components/common/KoinoniaEmptyState';
-
-// Proof: data-component-version="admin-incident-records-centre-v1"
 
 interface AdminIncidentRecordsCentreProps {
   onBackToOverview?: () => void;
@@ -38,7 +27,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
   onBackToOverview,
   adminUser
 }) => {
-  const { showSuccess, showError, showInfo } = useNotification();
+  const { showSuccess, showError } = useNotification();
   const [incidents, setIncidents] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({
     totalCount: 0,
@@ -52,6 +41,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingStats, setLoadingStats] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedIncident, setSelectedIncident] = useState<any | null>(null);
   const [selectedIncidentDetail, setSelectedIncidentDetail] = useState<any | null>(null);
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
@@ -63,6 +53,23 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [page, setPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
+
+  // New standalone incident creation modal state
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [createForm, setCreateForm] = useState({
+    title: '',
+    category: 'behavioral',
+    description: '',
+    location: '',
+    parentContact: '',
+    firstAid: '',
+    security: '',
+    status: 'submitted' as 'draft' | 'submitted'
+  });
+  const [creatingIncident, setCreatingIncident] = useState<boolean>(false);
+
+  // Confirmation modal for closing an incident
+  const [showCloseConfirmModal, setShowCloseConfirmModal] = useState<boolean>(false);
 
   // Admin Change Request form state
   const [showRevisionForm, setShowRevisionForm] = useState<boolean>(false);
@@ -114,9 +121,9 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
     }
   };
 
-  const fetchIncidents = async () => {
+  const fetchIncidents = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await api.incidents.list({
         status: statusFilter === 'all' ? undefined : statusFilter,
         category: categoryFilter === 'all' ? undefined : categoryFilter,
@@ -131,9 +138,19 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
       }
     } catch (err) {
       console.error('Error fetching incidents list:', err);
-      showError('Fetch Failed', 'Could not fetch incident list from records database.');
+      showError('Fetch Failed', 'Could not load incidents. Please refresh and try again.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefreshAll = () => {
+    setRefreshing(true);
+    fetchStats();
+    fetchIncidents(true);
+    if (selectedIncident?.id) {
+      handleSelectIncident(selectedIncident);
     }
   };
 
@@ -197,9 +214,55 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
       }
     } catch (err) {
       console.error('Error fetching incident detail:', err);
-      showError('Detail Loading Error', 'Unable to inspect full incident schema logs.');
+      showError('Error', 'Unable to load incident details.');
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handleCreateIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createForm.title.trim()) {
+      showError('Title Required', 'Please provide a clear title of what happened.');
+      return;
+    }
+    setCreatingIncident(true);
+    try {
+      const res = await api.incidents.create({
+        title: createForm.title.trim(),
+        category: createForm.category,
+        description: createForm.description.trim() || 'No detailed narrative provided.',
+        structuredData: createForm.location ? { location: createForm.location } : {},
+        parentContact: createForm.parentContact.trim() || undefined,
+        firstAid: createForm.firstAid.trim() || undefined,
+        security: createForm.security.trim() || undefined,
+        status: createForm.status
+      });
+
+      if (res && res.success) {
+        showSuccess('Incident Recorded', 'The matter has been logged successfully.');
+        setShowCreateModal(false);
+        setCreateForm({
+          title: '',
+          category: 'behavioral',
+          description: '',
+          location: '',
+          parentContact: '',
+          firstAid: '',
+          security: '',
+          status: 'submitted'
+        });
+        fetchIncidents();
+        fetchStats();
+        if (res.incident) {
+          handleSelectIncident(res.incident);
+        }
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Recording Failed', parsed.message || 'Could not record incident.');
+    } finally {
+      setCreatingIncident(false);
     }
   };
 
@@ -219,14 +282,14 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
       const res = await api.incidents.updateClosureChecklist(selectedIncidentDetail.id, payload);
       if (res && res.success) {
-        showSuccess('Checklist Updated', 'Closure checklist parameters stored successfully.');
+        showSuccess('Checklist Saved', 'Closure checklist updated successfully.');
         setSelectedIncidentDetail(res.incident);
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Checklist Update Failed', parsed.message || 'Check version or database locks.');
+      showError('Checklist Update Failed', parsed.message || 'Could not save checklist.');
     } finally {
       setSubmittingAction(false);
     }
@@ -240,9 +303,10 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
         expectedVersion: selectedIncidentDetail.version
       });
       if (res && res.success) {
-        showSuccess('Incident Closed', 'Formal report completed and archived successfully.');
+        showSuccess('Incident Closed', 'The incident has been closed.');
+        setShowCloseConfirmModal(false);
         setSelectedIncidentDetail(res.incident);
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
         // Reload history
         const resHist = await api.incidents.history(selectedIncidentDetail.id);
@@ -250,7 +314,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Closure Rejected', parsed.message || 'Please satisfy all closure checklist parameters.');
+      showError('Cannot Close Incident', parsed.message || 'Please ensure all follow-ups are completed and checklist items are signed off.');
     } finally {
       setSubmittingAction(false);
     }
@@ -258,7 +322,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
   const handleReopenIncident = async () => {
     if (!selectedIncidentDetail || !administrativeReason.trim()) {
-      showError('Reason Required', 'Please provide a formal reason for reopening.');
+      showError('Reason Required', 'Please provide a reason for reopening this record.');
       return;
     }
     setSubmittingAction(true);
@@ -268,18 +332,18 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
         reason: administrativeReason,
       });
       if (res && res.success) {
-        showSuccess('Incident Reopened', 'Report status reset to submitted under revision.');
+        showSuccess('Incident Reopened', 'The incident status has been reopened for follow-up.');
         setSelectedIncidentDetail(res.incident);
         setShowReasonForm(null);
         setAdministrativeReason('');
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
         const resHist = await api.incidents.history(selectedIncidentDetail.id);
         if (resHist && resHist.success) setHistoryLogs(resHist.history);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Action Rejected', parsed.message);
+      showError('Reopen Failed', parsed.message);
     } finally {
       setSubmittingAction(false);
     }
@@ -287,7 +351,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
   const handleVoidIncident = async () => {
     if (!selectedIncidentDetail || !administrativeReason.trim()) {
-      showError('Reason Required', 'Please provide a justification for voiding this report.');
+      showError('Reason Required', 'Please provide a reason for voiding this record.');
       return;
     }
     setSubmittingAction(true);
@@ -297,18 +361,18 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
         reason: administrativeReason,
       });
       if (res && res.success) {
-        showSuccess('Incident Voided', 'Report permanently voided as raised in error.');
+        showSuccess('Incident Voided', 'This record has been marked as void.');
         setSelectedIncidentDetail(res.incident);
         setShowReasonForm(null);
         setAdministrativeReason('');
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
         const resHist = await api.incidents.history(selectedIncidentDetail.id);
         if (resHist && resHist.success) setHistoryLogs(resHist.history);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Action Failed', parsed.message);
+      showError('Void Failed', parsed.message);
     } finally {
       setSubmittingAction(false);
     }
@@ -316,7 +380,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
   const handleAddChangeRequest = async () => {
     if (!selectedIncidentDetail || !revisionNotes.trim()) {
-      showError('Notes Required', 'Please specify what amendments or logs are required.');
+      showError('Notes Required', 'Please specify what follow-up or amendment is needed.');
       return;
     }
     setSubmittingAction(true);
@@ -326,18 +390,18 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
         notes: revisionNotes,
       });
       if (res && res.success) {
-        showSuccess('Revision Dispatched', 'Volunteer notified of required incident amendments.');
+        showSuccess('Revision Requested', 'Follow-up request recorded.');
         setSelectedIncidentDetail(res.incident);
         setShowRevisionForm(false);
         setRevisionNotes('');
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
         const resHist = await api.incidents.history(selectedIncidentDetail.id);
         if (resHist && resHist.success) setHistoryLogs(resHist.history);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Dispatch Failed', parsed.message);
+      showError('Request Failed', parsed.message);
     } finally {
       setSubmittingAction(false);
     }
@@ -350,30 +414,29 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
     try {
       const res = await api.incidents.addFollowUpAction(selectedIncidentDetail.id, {
         expectedVersion: selectedIncidentDetail.version,
-        title: followUpTitle,
+        title: followUpTitle.trim(),
         assignedToUserId: followUpAssignee || undefined,
       });
       if (res && res.success) {
-        showSuccess('Action Created', 'New follow-up action listed successfully.');
+        showSuccess('Follow-up Added', 'Follow-up task added successfully.');
         setSelectedIncidentDetail(res.incident);
         setFollowUpTitle('');
         setFollowUpAssignee('');
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
+        const resHist = await api.incidents.history(selectedIncidentDetail.id);
+        if (resHist && resHist.success) setHistoryLogs(resHist.history);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Creation Failed', parsed.message);
+      showError('Action Failed', parsed.message);
     } finally {
       setSubmittingAction(false);
     }
   };
 
   const handleCompleteFollowUp = async (actionId: string) => {
-    if (!selectedIncidentDetail || !followUpCompletionNote.trim()) {
-      showError('Note Required', 'Please state the outcome of this follow-up call/visit.');
-      return;
-    }
+    if (!selectedIncidentDetail) return;
     setSubmittingAction(true);
     try {
       const res = await api.incidents.completeFollowUpAction(selectedIncidentDetail.id, actionId, {
@@ -382,11 +445,11 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
         completedNote: followUpCompletionNote,
       });
       if (res && res.success) {
-        showSuccess('Action Completed', 'Follow-up item resolved and archived.');
+        showSuccess('Follow-up Completed', 'Task marked as completed.');
         setSelectedIncidentDetail(res.incident);
         setCompletingFollowUpId(null);
         setFollowUpCompletionNote('');
-        fetchIncidents();
+        fetchIncidents(true);
         fetchStats();
       }
     } catch (err: any) {
@@ -397,35 +460,35 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
     }
   };
 
-  const getCategoryBadge = (cat: string) => {
+  const getHumanCategory = (cat: string) => {
     switch (cat) {
       case 'medical':
-        return <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider border border-emerald-100">Medical</span>;
+        return 'Medical';
       case 'behavioral':
-        return <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider border border-amber-100">Behavioral</span>;
+        return 'Child care';
       case 'missing_child':
-        return <span className="bg-red-50 text-red-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider border border-red-100">Missing Child</span>;
+        return 'Missing child';
       case 'security':
-        return <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider border border-indigo-100">Security</span>;
+        return 'Security';
       default:
-        return <span className="bg-zinc-50 text-zinc-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider border border-zinc-100">Other</span>;
+        return 'Other';
     }
   };
 
-  const getStatusBadge = (stat: string) => {
+  const getHumanStatus = (stat: string) => {
     switch (stat) {
       case 'draft':
-        return <span className="bg-zinc-100 text-zinc-600 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Draft</span>;
+        return 'New';
       case 'submitted':
-        return <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider border border-blue-100">Submitted</span>;
+        return 'Being reviewed';
       case 'needs_revision':
-        return <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Needs Revision</span>;
+        return 'Follow-up needed';
       case 'closed':
-        return <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider border border-emerald-100">Closed</span>;
+        return 'Resolved';
       case 'voided':
-        return <span className="bg-rose-50 text-rose-700 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider border border-rose-100">Voided</span>;
+        return 'Voided';
       default:
-        return <span className="bg-zinc-100 text-zinc-600 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">{stat}</span>;
+        return stat;
     }
   };
 
@@ -436,587 +499,759 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
     return (
       (inc.title || '').toLowerCase().includes(q) ||
       (inc.id || '').toLowerCase().includes(q) ||
-      (inc.category || '').toLowerCase().includes(q)
+      (inc.category || '').toLowerCase().includes(q) ||
+      (inc.description || '').toLowerCase().includes(q)
     );
   });
 
   return (
-    <div className="space-y-6" data-view-version="admin-incidents-panel-v1">
+    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-stone-900 bg-[#FAF9F5]" id="incidents-view">
       
-      {/* Upper Status Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-3.5">
-          <div className="p-3 bg-zinc-50 rounded-xl text-zinc-500">
-            <Shield className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Total Records</span>
-            <span className="text-xl font-bold text-zinc-800">{loadingStats ? '...' : stats.totalCount}</span>
-          </div>
+      {/* 1. Page Header (Prompt Section 4, 5, 21) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+        <div className="space-y-1">
+          <h1 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 tracking-tight">
+            Incidents
+          </h1>
+          <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">
+            Record and follow up on matters that need attention during the event.
+          </p>
         </div>
 
-        <div className="bg-white border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-3.5">
-          <div className="p-3 bg-blue-50 rounded-xl text-blue-500">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 block">Pending Review</span>
-            <span className="text-xl font-bold text-blue-800">{loadingStats ? '...' : stats.submittedCount}</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-3.5">
-          <div className="p-3 bg-amber-50 rounded-xl text-amber-500">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">Active Follow-ups</span>
-            <span className="text-xl font-bold text-amber-800">{loadingStats ? '...' : stats.activeFollowUpCount}</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-3.5">
-          <div className="p-3 bg-emerald-50 rounded-xl text-emerald-500">
-            <CheckCircle className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block">Formally Closed</span>
-            <span className="text-xl font-bold text-emerald-800">{loadingStats ? '...' : stats.closedCount}</span>
-          </div>
+        <div className="flex items-center gap-2.5 self-start sm:self-center">
+          <button
+            onClick={handleRefreshAll}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl text-xs font-medium text-stone-700 transition-colors cursor-pointer min-h-[38px]"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-500' : 'text-stone-500'}`} />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer min-h-[38px]"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record incident</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Split Pane */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        
-        {/* Left Side: Incident List */}
-        <div className="xl:col-span-7 space-y-4">
-          <div className="bg-white border border-[#EAE8E1] p-5 rounded-3xl space-y-4">
-            
-            {/* Filter bar */}
-            <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-zinc-100 pb-4">
-              <div className="flex flex-wrap gap-2.5 w-full md:w-auto">
-                <div>
+      {/* 2. Top Summary Strip (Prompt Section 6: One quiet summary strip, subtle dividers, no colored icons) */}
+      <div className="bg-white border border-stone-200 rounded-xl shadow-xs overflow-hidden">
+        <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-stone-200">
+          
+          <div className="p-4 md:p-5 text-left">
+            <span className="text-[11px] font-medium text-stone-500 block">All incidents</span>
+            <span className="text-xl md:text-2xl font-bold text-stone-900 tabular-nums mt-1 block">
+              {loadingStats ? '—' : stats.totalCount}
+            </span>
+          </div>
+
+          <div className="p-4 md:p-5 text-left">
+            <span className="text-[11px] font-medium text-stone-500 block">Awaiting review</span>
+            <span className={`text-xl md:text-2xl font-bold tabular-nums mt-1 block ${(stats.submittedCount + stats.draftCount) > 0 ? 'text-amber-800' : 'text-stone-900'}`}>
+              {loadingStats ? '—' : (stats.submittedCount + stats.draftCount)}
+            </span>
+          </div>
+
+          <div className="p-4 md:p-5 text-left">
+            <span className="text-[11px] font-medium text-stone-500 block">Follow-up needed</span>
+            <span className={`text-xl md:text-2xl font-bold tabular-nums mt-1 block ${(stats.activeFollowUpCount + stats.needsRevisionCount) > 0 ? 'text-amber-800' : 'text-stone-900'}`}>
+              {loadingStats ? '—' : (stats.activeFollowUpCount + stats.needsRevisionCount)}
+            </span>
+          </div>
+
+          <div className="p-4 md:p-5 text-left">
+            <span className="text-[11px] font-medium text-stone-500 block">Closed</span>
+            <span className="text-xl md:text-2xl font-bold text-stone-900 tabular-nums mt-1 block">
+              {loadingStats ? '—' : stats.closedCount}
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+      {/* 3. Global Zero Incidents State (Prompt Section 10: One wide calm empty state when 0 incidents exist) */}
+      {!loading && stats.totalCount === 0 && incidents.length === 0 ? (
+        <div className="bg-white border border-stone-200 rounded-xl p-12 text-center space-y-4 max-w-xl mx-auto my-8">
+          <div className="mx-auto w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center text-stone-400 border border-stone-100">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-stone-900">No incidents recorded</h3>
+            <p className="text-xs text-stone-500 leading-relaxed max-w-sm mx-auto">
+              Incidents reported during this event will appear here.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record incident</span>
+          </button>
+        </div>
+      ) : (
+        /* 4. Main Two-Column Master / Detail Layout (Prompt Section 40) */
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          
+          {/* Left Side: Incident List Panel */}
+          <div className="xl:col-span-6 space-y-4">
+            <div className="bg-white border border-stone-200 p-4 md:p-5 rounded-xl space-y-4 shadow-xs">
+              
+              {/* Filters Bar */}
+              <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between pb-3 border-b border-stone-100">
+                <div className="flex items-center gap-2">
                   <select
                     value={statusFilter}
                     onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                    className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-zinc-700"
+                    className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-700 outline-none focus:border-[#9E7D3B]"
                   >
-                    <option value="all">All Statuses</option>
-                    <option value="draft">Drafts</option>
-                    <option value="submitted">Submitted</option>
-                    <option value="needs_revision">Needs Revision</option>
-                    <option value="closed">Closed</option>
+                    <option value="all">All statuses</option>
+                    <option value="draft">New</option>
+                    <option value="submitted">Being reviewed</option>
+                    <option value="needs_revision">Follow-up needed</option>
+                    <option value="closed">Resolved</option>
                     <option value="voided">Voided</option>
                   </select>
-                </div>
-                <div>
+
                   <select
                     value={categoryFilter}
                     onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-                    className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-zinc-700"
+                    className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-700 outline-none focus:border-[#9E7D3B]"
                   >
-                    <option value="all">All Categories</option>
+                    <option value="all">All categories</option>
+                    <option value="behavioral">Child care</option>
                     <option value="medical">Medical</option>
-                    <option value="behavioral">Behavioral</option>
-                    <option value="missing_child">Missing Child</option>
+                    <option value="missing_child">Missing child</option>
                     <option value="security">Security</option>
                     <option value="other">Other</option>
                   </select>
                 </div>
+
+                <div className="relative flex-1 sm:max-w-xs">
+                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search incidents"
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 outline-none focus:border-[#9E7D3B]"
+                  />
+                </div>
               </div>
 
-              {/* Text search */}
-              <div className="relative w-full md:w-64">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search title, ID..."
-                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[#C59B27]"
-                />
-              </div>
-            </div>
+              {/* List Rows */}
+              {loading ? (
+                <TableSkeleton rows={4} cols={3} />
+              ) : filteredIncidents.length === 0 ? (
+                <div className="p-8 text-center space-y-1">
+                  <h4 className="text-xs font-semibold text-stone-700">No matching incidents</h4>
+                  <p className="text-xs text-stone-400">Try changing your filters or search.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredIncidents.map((inc) => {
+                    const isSelected = selectedIncident?.id === inc.id;
+                    return (
+                      <div
+                        key={inc.id}
+                        onClick={() => handleSelectIncident(inc)}
+                        className={`p-3.5 rounded-lg border transition-all cursor-pointer text-left ${
+                          isSelected 
+                            ? 'border-[#9E7D3B] bg-[#FBF9F4]' 
+                            : 'border-stone-200 hover:border-stone-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded">
+                                {getHumanCategory(inc.category)}
+                              </span>
+                              <span className="text-[10px] font-medium text-stone-500">
+                                ·
+                              </span>
+                              <span className="text-[10px] font-medium text-stone-600">
+                                {getHumanStatus(inc.status)}
+                              </span>
+                            </div>
 
-            {/* List */}
-            {loading ? (
-              <TableSkeleton rows={4} cols={4} />
-            ) : filteredIncidents.length === 0 ? (
-              <KoinoniaEmptyState
-                icon={ShieldAlert}
-                title="No incident records found"
-                description="No incident reports match your current filter settings."
-              />
-            ) : (
-              <div className="space-y-3">
-                {filteredIncidents.map((inc) => {
-                  const isSelected = selectedIncident?.id === inc.id;
-                  return (
-                    <div
-                      key={inc.id}
-                      onClick={() => handleSelectIncident(inc)}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected 
-                          ? 'border-[#C59B27] bg-[#FAF9F6] ring-1 ring-[#C59B27]/20' 
-                          : 'border-zinc-100 hover:border-zinc-200 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {getCategoryBadge(inc.category)}
-                            {getStatusBadge(inc.status)}
+                            <h4 className="text-xs font-semibold text-stone-900 truncate">
+                              {inc.title || 'Untitled Incident'}
+                            </h4>
+
+                            <div className="flex items-center gap-3 text-[11px] text-stone-500">
+                              <span>
+                                {new Date(inc.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              </span>
+                              <span>·</span>
+                              <span>
+                                {new Date(inc.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
                           </div>
-                          <h4 className="font-serif font-bold text-xs text-[#18181B] leading-snug">
-                            {inc.title || 'Untitled Incident'}
-                          </h4>
-                          <div className="flex items-center gap-3 text-[10px] text-zinc-400 font-mono">
-                            <span className="flex items-center gap-1">
-                              <User className="w-3 h-3" />
-                              By: {inc.creatorName || inc.created_by_user_id?.substring(0, 8)}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {new Date(inc.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
+
+                          <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-[#9E7D3B] translate-x-0.5' : 'text-stone-300'}`} />
                         </div>
-                        <span className="text-[10px] font-mono font-bold text-zinc-400 bg-zinc-50 px-2 py-0.5 rounded-sm border border-zinc-100">
-                          v{inc.version}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-3 border-t border-stone-100 text-xs text-stone-600">
+                  <button
+                    disabled={page <= 1}
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded border border-stone-200 disabled:opacity-40 cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-[11px] text-stone-500 tabular-nums">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    disabled={page >= totalPages}
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 rounded border border-stone-200 disabled:opacity-40 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </div>
+
+          {/* Right Side: Incident Details Panel */}
+          <div className="xl:col-span-6">
+            {selectedIncident ? (
+              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-xs flex flex-col min-h-[500px]">
+                
+                {/* Header */}
+                <div className="p-4 md:p-5 border-b border-stone-100 bg-[#FAF9F6] flex justify-between items-start gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-medium text-stone-700 bg-stone-100 px-2 py-0.5 rounded">
+                        {getHumanCategory(selectedIncident.category)}
+                      </span>
+                      <span className="text-[10px] font-medium text-stone-600">
+                        {getHumanStatus(selectedIncidentDetail?.status || selectedIncident.status)}
+                      </span>
+                    </div>
+                    <h3 className="text-sm md:text-base font-semibold text-stone-900 leading-snug">
+                      {selectedIncident.title}
+                    </h3>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedIncident(null)}
+                    className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+                    title="Close details"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {loadingDetail ? (
+                  <div className="p-12 flex flex-col items-center justify-center flex-1">
+                    <KoinoniaInlineLoader label="Loading incident details..." size="sm" />
+                  </div>
+                ) : selectedIncidentDetail ? (
+                  <div className="p-5 space-y-6 flex-1 overflow-y-auto max-h-[75vh] text-left">
+                    
+                    {/* Summary Section */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold text-stone-700">What happened</h4>
+                      <p className="text-xs text-stone-700 bg-stone-50 border border-stone-200/70 rounded-lg p-3.5 leading-relaxed">
+                        {selectedIncidentDetail.description || 'No detailed narrative provided.'}
+                      </p>
+                    </div>
+
+                    {/* Immediate Actions / Sensitive Notes */}
+                    {(selectedIncidentDetail.firstAid || selectedIncidentDetail.parentContact || selectedIncidentDetail.security) && (
+                      <div className="space-y-2 pt-2 border-t border-stone-100">
+                        <h4 className="text-xs font-semibold text-stone-700">Immediate action taken</h4>
+                        <div className="space-y-2 text-xs">
+                          {selectedIncidentDetail.firstAid && (
+                            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70">
+                              <span className="text-[10px] font-semibold text-stone-600 block">First aid care</span>
+                              <p className="text-stone-700 mt-0.5">{selectedIncidentDetail.firstAid}</p>
+                            </div>
+                          )}
+                          {selectedIncidentDetail.parentContact && (
+                            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70">
+                              <span className="text-[10px] font-semibold text-stone-600 block">Parent communication</span>
+                              <p className="text-stone-700 mt-0.5">{selectedIncidentDetail.parentContact}</p>
+                            </div>
+                          )}
+                          {selectedIncidentDetail.security && (
+                            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70">
+                              <span className="text-[10px] font-semibold text-stone-600 block">Security action</span>
+                              <p className="text-stone-700 mt-0.5">{selectedIncidentDetail.security}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Follow-up Section (Prompt Section 15) */}
+                    <div className="space-y-3 pt-2 border-t border-stone-100">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-xs font-semibold text-stone-700">Follow-up needed</h4>
+                        <span className="text-[11px] text-stone-500 tabular-nums">
+                          {selectedIncidentDetail.followUpActions?.filter((f: any) => f.status === 'pending').length || 0} remaining
                         </span>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  className="px-3 py-1.5 rounded-xl border border-zinc-200 text-xs text-zinc-600 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  className="px-3 py-1.5 rounded-xl border border-zinc-200 text-xs text-zinc-600 disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-
-          </div>
-        </div>
-
-        {/* Right Side: Detailed Inspection Panel */}
-        <div className="xl:col-span-5">
-          {selectedIncident ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-sm flex flex-col min-h-[500px]">
-              
-              {/* Detailed Header */}
-              <div className="p-5 border-b border-zinc-100 bg-[#FAF9F6] flex justify-between items-start">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-zinc-400 font-mono block">INCIDENT ID: {selectedIncident.id}</span>
-                  <h3 className="font-serif font-bold text-sm text-zinc-800">{selectedIncident.title}</h3>
-                  <div className="flex items-center gap-2 pt-1.5">
-                    {getCategoryBadge(selectedIncident.category)}
-                    {getStatusBadge(selectedIncidentDetail?.status || selectedIncident.status)}
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedIncident(null)}
-                  className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {loadingDetail ? (
-                <div className="p-12 flex flex-col items-center justify-center flex-1">
-                  <KoinoniaInlineLoader label="Loading incident details..." size="sm" />
-                </div>
-              ) : selectedIncidentDetail ? (
-                <div className="p-5 space-y-6 flex-1 overflow-y-auto max-h-[80vh]">
-                  
-                  {/* Detailed Description */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Incident Narrative Summary</span>
-                    <p className="text-xs text-zinc-700 bg-zinc-50 border border-zinc-100 rounded-2xl p-4.5 italic leading-relaxed">
-                      {selectedIncidentDetail.description || 'No detailed narrative provided yet.'}
-                    </p>
-                  </div>
-
-                  {/* Category Specific Block */}
-                  {selectedIncidentDetail.structuredData && (
-                    <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4.5 space-y-3">
-                      <h4 className="text-[10px] text-[#C59B27] font-bold uppercase tracking-wider border-b border-[#EAE8E1] pb-1">
-                        Structured Category Logs
-                      </h4>
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        {Object.entries(selectedIncidentDetail.structuredData).map(([k, v]) => (
-                          <div key={k} className="space-y-0.5">
-                            <span className="text-[10px] text-zinc-400 font-medium capitalize block">{k.replace(/([A-Z])/g, ' $1')}</span>
-                            <span className="font-semibold text-zinc-700">{String(v)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Parent & First Aid Secure Logs */}
-                  {(selectedIncidentDetail.parentContact || selectedIncidentDetail.firstAid || selectedIncidentDetail.security) && (
-                    <div className="space-y-2.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Secure Restricted Logs</span>
-                      <div className="space-y-2 text-xs">
-                        {selectedIncidentDetail.parentContact && (
-                          <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
-                            <span className="text-[9px] text-[#C59B27] font-bold block uppercase">Parent Contact Log</span>
-                            <p className="text-zinc-600 mt-0.5">{selectedIncidentDetail.parentContact}</p>
-                          </div>
-                        )}
-                        {selectedIncidentDetail.firstAid && (
-                          <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
-                            <span className="text-[9px] text-emerald-600 font-bold block uppercase">First Aid Administered</span>
-                            <p className="text-zinc-600 mt-0.5">{selectedIncidentDetail.firstAid}</p>
-                          </div>
-                        )}
-                        {selectedIncidentDetail.security && (
-                          <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
-                            <span className="text-[9px] text-indigo-600 font-bold block uppercase">Security Protocol Actions</span>
-                            <p className="text-zinc-600 mt-0.5">{selectedIncidentDetail.security}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Follow-up actions log */}
-                  <div className="space-y-3.5 border-t border-zinc-100 pt-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Required Follow-up Actions</span>
-                      <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
-                        {selectedIncidentDetail.followUpActions?.filter((f: any) => f.status === 'pending').length || 0} Pending
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {selectedIncidentDetail.followUpActions?.map((act: any) => (
-                        <div key={act.id} className="p-3.5 bg-zinc-50 border border-zinc-100 rounded-2xl text-xs space-y-2">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="font-semibold text-zinc-700 block">{act.title}</span>
-                              <span className="text-[10px] text-zinc-400 block">
-                                Assigned To: {act.assignedToUserId?.substring(0, 10) || 'None'}
-                              </span>
-                            </div>
-                            {act.status === 'pending' ? (
-                              <button
-                                onClick={() => setCompletingFollowUpId(act.id)}
-                                className="bg-[#C59B27] hover:bg-[#B08621] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] border-none cursor-pointer"
-                              >
-                                Mark Done
-                              </button>
-                            ) : (
-                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                Completed
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Completion box */}
-                          {completingFollowUpId === act.id && (
-                            <div className="p-3 bg-white border border-[#EAE8E1] rounded-xl space-y-2 mt-2">
-                              <textarea
-                                value={followUpCompletionNote}
-                                onChange={(e) => setFollowUpCompletionNote(e.target.value)}
-                                placeholder="Enter parent callback note or recovery status..."
-                                className="w-full border border-[#EAE8E1] rounded-lg p-2 text-xs"
-                              />
-                              <div className="flex justify-end gap-2">
-                                <button 
-                                  onClick={() => setCompletingFollowUpId(null)}
-                                  className="px-2.5 py-1 rounded bg-transparent border border-zinc-200 text-[10px]"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  onClick={() => handleCompleteFollowUp(act.id)}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded text-[10px]"
-                                >
-                                  Submit Resolution
-                                </button>
+                      <div className="space-y-2">
+                        {selectedIncidentDetail.followUpActions?.map((act: any) => (
+                          <div key={act.id} className="p-3 bg-stone-50 border border-stone-200/70 rounded-lg text-xs space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-0.5">
+                                <span className="font-medium text-stone-900 block">{act.title}</span>
+                                {act.assignedToUserId && (
+                                  <span className="text-[10px] text-stone-500 block">
+                                    Assigned to staff
+                                  </span>
+                                )}
                               </div>
+                              {act.status === 'pending' ? (
+                                <button
+                                  onClick={() => setCompletingFollowUpId(act.id)}
+                                  className="px-2 py-1 bg-stone-800 hover:bg-stone-900 text-white rounded text-[10px] font-medium cursor-pointer"
+                                >
+                                  Mark complete
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+                                  <Check className="w-3 h-3" />
+                                  Done
+                                </span>
+                              )}
                             </div>
-                          )}
 
-                          {act.status === 'completed' && (
-                            <p className="text-[10px] text-emerald-600 italic mt-1 font-medium bg-white p-2 rounded-lg border border-emerald-100">
-                              Resolved: {act.completedNote}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                            {completingFollowUpId === act.id && (
+                              <div className="p-2.5 bg-white border border-stone-200 rounded-lg space-y-2 mt-2">
+                                <textarea
+                                  value={followUpCompletionNote}
+                                  onChange={(e) => setFollowUpCompletionNote(e.target.value)}
+                                  placeholder="Note what was done (e.g. spoken with parent)..."
+                                  className="w-full border border-stone-200 rounded p-2 text-xs outline-none focus:border-[#9E7D3B]"
+                                  rows={2}
+                                />
+                                <div className="flex justify-end gap-2">
+                                  <button 
+                                    onClick={() => setCompletingFollowUpId(null)}
+                                    className="px-2 py-1 border border-stone-200 rounded text-[10px] text-stone-600"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => handleCompleteFollowUp(act.id)}
+                                    className="px-2.5 py-1 bg-emerald-700 text-white font-medium rounded text-[10px]"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                              </div>
+                            )}
 
-                      {/* Add new follow-up form */}
-                      <form onSubmit={handleAddFollowUp} className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-3.5 space-y-2.5">
-                        <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Add Follow-up Obligation</span>
-                        <input
-                          type="text"
-                          required
-                          value={followUpTitle}
-                          onChange={(e) => setFollowUpTitle(e.target.value)}
-                          placeholder="e.g. Call father on Sunday morning to confirm recovery..."
-                          className="w-full border border-[#EAE8E1] rounded-xl p-2.5 text-xs focus:outline-none"
-                        />
-                        <div className="flex gap-2">
-                          <select
-                            value={followUpAssignee}
-                            onChange={(e) => setFollowUpAssignee(e.target.value)}
-                            className="bg-white border border-[#EAE8E1] rounded-xl px-2.5 py-2 text-xs text-zinc-600 flex-1"
-                          >
-                            <option value="">Assignee (Optional)</option>
-                            {eligibleVolunteers.map(v => (
-                              <option key={v.id} value={v.userId}>{v.fullName}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="submit"
-                            className="bg-[#C59B27] text-white px-4 py-2 rounded-xl text-xs font-bold"
-                          >
-                            Add Action
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-
-                  {/* Review / Closure Checklists */}
-                  {selectedIncidentDetail.status !== 'closed' && selectedIncidentDetail.status !== 'voided' && (
-                    <div className="space-y-4 border-t border-zinc-100 pt-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-3xl p-5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#C59B27] block">Administrative Closure Checklist</span>
-                      
-                      <div className="space-y-2.5">
-                        <label className="flex items-center gap-3 cursor-pointer text-xs text-zinc-700 font-medium">
-                          <input
-                            type="checkbox"
-                            checked={chkParentNotified}
-                            onChange={(e) => setChkParentNotified(e.target.checked)}
-                            className="w-4 h-4 text-[#C59B27]"
-                          />
-                          Parents / Guardians formally notified of event
-                        </label>
-
-                        <label className="flex items-center gap-3 cursor-pointer text-xs text-zinc-700 font-medium">
-                          <input
-                            type="checkbox"
-                            checked={chkSafeguardingReview}
-                            onChange={(e) => setChkSafeguardingReview(e.target.checked)}
-                            className="w-4 h-4 text-[#C59B27]"
-                          />
-                          Safeguarding Review fully completed
-                        </label>
-
-                        <label className="flex items-center gap-3 cursor-pointer text-xs text-zinc-700 font-medium">
-                          <input
-                            type="checkbox"
-                            checked={chkFollowUpsClosed}
-                            onChange={(e) => setChkFollowUpsClosed(e.target.checked)}
-                            className="w-4 h-4 text-[#C59B27]"
-                          />
-                          All follow-up obligations closed / satisfied
-                        </label>
-
-                        <label className="flex items-center gap-3 cursor-pointer text-xs text-zinc-700 font-medium">
-                          <input
-                            type="checkbox"
-                            checked={chkSignedOff}
-                            onChange={(e) => setChkSignedOff(e.target.checked)}
-                            className="w-4 h-4 text-[#C59B27]"
-                          />
-                          Formal admin sign-off authorized
-                        </label>
-                      </div>
-
-                      <div className="flex gap-3 pt-2">
-                        <button
-                          onClick={handleSaveChecklist}
-                          disabled={submittingAction}
-                          className="bg-white border border-zinc-200 text-zinc-700 font-semibold py-2 px-4 rounded-xl text-xs cursor-pointer flex-1"
-                        >
-                          Save Checklist
-                        </button>
-                        <button
-                          onClick={handleCloseIncident}
-                          disabled={submittingAction}
-                          className="bg-emerald-600 hover:bg-emerald-700 border-none text-white font-bold py-2 px-4 rounded-xl text-xs cursor-pointer flex-1"
-                        >
-                          Complete Close
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Administrative Action buttons (Needs Revision, Void, Reopen) */}
-                  <div className="pt-4 border-t border-zinc-100 flex gap-2 flex-wrap">
-                    {/* Needs Revision button */}
-                    {selectedIncidentDetail.status === 'submitted' && !showRevisionForm && (
-                      <button
-                        onClick={() => setShowRevisionForm(true)}
-                        className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-2 rounded-xl text-xs font-bold flex-1 cursor-pointer"
-                      >
-                        Request Revision
-                      </button>
-                    )}
-
-                    {/* Void button */}
-                    {selectedIncidentDetail.status !== 'closed' && selectedIncidentDetail.status !== 'voided' && !showReasonForm && (
-                      <button
-                        onClick={() => setShowReasonForm('void')}
-                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-xl text-xs font-bold flex-1 cursor-pointer"
-                      >
-                        Void Record
-                      </button>
-                    )}
-
-                    {/* Reopen button */}
-                    {selectedIncidentDetail.status === 'closed' && !showReasonForm && (
-                      <button
-                        onClick={() => setShowReasonForm('reopen')}
-                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-xl text-xs font-bold flex-1 cursor-pointer"
-                      >
-                        Reopen Record
-                      </button>
-                    )}
-
-                    {/* Allow edit drafts directly */}
-                    {selectedIncidentDetail.status === 'draft' && (
-                      <button
-                        onClick={() => {
-                          setEditingIncidentId(selectedIncidentDetail.id);
-                          setEditingAlertId(selectedIncidentDetail.alert_id);
-                        }}
-                        className="bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 px-3 py-2 rounded-xl text-xs font-bold flex-1 cursor-pointer"
-                      >
-                        Edit Draft Form
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Change request form note input */}
-                  {showRevisionForm && (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
-                      <span className="text-[10px] text-amber-700 font-bold uppercase block">Revision Change Request Notes</span>
-                      <textarea
-                        value={revisionNotes}
-                        onChange={(e) => setRevisionNotes(e.target.value)}
-                        placeholder="Detail specific observations, symptoms, or logs that need correction..."
-                        className="w-full bg-white border border-amber-200 rounded-xl p-3 text-xs text-zinc-800 h-20 resize-none focus:outline-none"
-                      />
-                      <div className="flex gap-2 justify-end">
-                        <button 
-                          onClick={() => setShowRevisionForm(false)}
-                          className="px-3 py-1.5 rounded-lg border border-zinc-200 text-xs bg-white"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleAddChangeRequest}
-                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs"
-                        >
-                          Dispatch Notes
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Administrative Reason prompt */}
-                  {showReasonForm && (
-                    <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-3">
-                      <span className="text-[10px] text-zinc-500 font-bold uppercase block">
-                        Reason to {showReasonForm.toUpperCase()} report record
-                      </span>
-                      <textarea
-                        value={administrativeReason}
-                        onChange={(e) => setAdministrativeReason(e.target.value)}
-                        placeholder="State clear reason for this administrative history action..."
-                        className="w-full bg-white border border-zinc-200 rounded-xl p-3 text-xs text-zinc-800 h-16 resize-none focus:outline-none"
-                      />
-                      <div className="flex gap-2 justify-end">
-                        <button 
-                          onClick={() => setShowReasonForm(null)}
-                          className="px-3 py-1.5 rounded-lg border border-zinc-200 text-xs bg-white"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={showReasonForm === 'reopen' ? handleReopenIncident : handleVoidIncident}
-                          className="bg-zinc-800 hover:bg-zinc-900 text-white font-bold px-4 py-1.5 rounded-lg text-xs"
-                        >
-                          Confirm Action
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Audit logs timeline */}
-                  <div className="space-y-4 border-t border-zinc-100 pt-4">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Immutable Security Audit Trail</span>
-                    <div className="space-y-3">
-                      {historyLogs.map((log, index) => (
-                        <div key={log.id || index} className="flex gap-3 text-xs relative">
-                          <div className="flex flex-col items-center">
-                            <div className="p-1.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-full text-[#C59B27] z-10">
-                              <History className="w-3.5 h-3.5" />
-                            </div>
-                            {index < historyLogs.length - 1 && <div className="w-0.5 bg-[#EAE8E1] flex-1 my-1" />}
-                          </div>
-                          <div className="space-y-1 pb-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-zinc-700">{log.action_type?.toUpperCase()}</span>
-                              <span className="text-[10px] font-mono text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md">
-                                {log.state_snapshot?.status}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-zinc-400 block font-mono">
-                              {new Date(log.created_at).toLocaleString()}
-                            </span>
-                            {log.notes && (
-                              <p className="text-[10px] text-zinc-500 font-mono bg-[#FAF9F6] border border-[#EAE8E1] p-2 rounded-lg">
-                                Note: {log.notes}
+                            {act.status === 'completed' && act.completedNote && (
+                              <p className="text-[10px] text-stone-600 italic bg-white p-2 rounded border border-stone-100">
+                                {act.completedNote}
                               </p>
                             )}
                           </div>
-                        </div>
-                      ))}
+                        ))}
+
+                        {/* Add Follow-Up Form */}
+                        <form onSubmit={handleAddFollowUp} className="bg-stone-50 border border-stone-200/70 rounded-lg p-3 space-y-2">
+                          <span className="text-[11px] font-medium text-stone-700 block">Add follow-up</span>
+                          <input
+                            type="text"
+                            required
+                            value={followUpTitle}
+                            onChange={(e) => setFollowUpTitle(e.target.value)}
+                            placeholder="e.g. Call parent to check how the child is doing..."
+                            className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none focus:border-[#9E7D3B]"
+                          />
+                          <div className="flex gap-2">
+                            <select
+                              value={followUpAssignee}
+                              onChange={(e) => setFollowUpAssignee(e.target.value)}
+                              className="bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-700 flex-1 outline-none"
+                            >
+                              <option value="">Assign to team member (optional)</option>
+                              {eligibleVolunteers.map(v => (
+                                <option key={v.id} value={v.userId}>{v.fullName}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="submit"
+                              disabled={submittingAction || !followUpTitle.trim()}
+                              className="bg-stone-800 hover:bg-stone-900 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </form>
+                      </div>
                     </div>
+
+                    {/* Closure Checklist (Prompt Section 16) */}
+                    {selectedIncidentDetail.status !== 'closed' && selectedIncidentDetail.status !== 'voided' && (
+                      <div className="space-y-3 pt-2 border-t border-stone-100">
+                        <h4 className="text-xs font-semibold text-stone-700">Closure checklist</h4>
+                        
+                        <div className="space-y-2 bg-stone-50 border border-stone-200/70 rounded-lg p-3.5">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={chkParentNotified}
+                              onChange={(e) => setChkParentNotified(e.target.checked)}
+                              className="rounded border-stone-300 text-[#9E7D3B] focus:ring-[#9E7D3B]"
+                            />
+                            Parents / guardians notified
+                          </label>
+
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={chkSafeguardingReview}
+                              onChange={(e) => setChkSafeguardingReview(e.target.checked)}
+                              className="rounded border-stone-300 text-[#9E7D3B] focus:ring-[#9E7D3B]"
+                            />
+                            Safeguarding review completed
+                          </label>
+
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={chkFollowUpsClosed}
+                              onChange={(e) => setChkFollowUpsClosed(e.target.checked)}
+                              className="rounded border-stone-300 text-[#9E7D3B] focus:ring-[#9E7D3B]"
+                            />
+                            All required follow-up actions completed
+                          </label>
+
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={chkSignedOff}
+                              onChange={(e) => setChkSignedOff(e.target.checked)}
+                              className="rounded border-stone-300 text-[#9E7D3B] focus:ring-[#9E7D3B]"
+                            />
+                            Admin sign-off confirmed
+                          </label>
+
+                          <div className="flex gap-2.5 pt-2 border-t border-stone-200/60 mt-2">
+                            <button
+                              onClick={handleSaveChecklist}
+                              disabled={submittingAction}
+                              className="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium py-1.5 px-3 rounded-lg text-xs cursor-pointer flex-1"
+                            >
+                              Save checklist
+                            </button>
+                            <button
+                              onClick={() => setShowCloseConfirmModal(true)}
+                              disabled={submittingAction}
+                              className="bg-stone-900 hover:bg-stone-800 text-white font-medium py-1.5 px-3 rounded-lg text-xs cursor-pointer flex-1"
+                            >
+                              Close incident
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Other Operational Actions */}
+                    <div className="pt-2 border-t border-stone-100 flex gap-2 flex-wrap text-xs">
+                      {selectedIncidentDetail.status === 'submitted' && !showRevisionForm && (
+                        <button
+                          onClick={() => setShowRevisionForm(true)}
+                          className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 font-medium"
+                        >
+                          Request follow-up
+                        </button>
+                      )}
+
+                      {selectedIncidentDetail.status !== 'closed' && selectedIncidentDetail.status !== 'voided' && !showReasonForm && (
+                        <button
+                          onClick={() => setShowReasonForm('void')}
+                          className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:text-red-700 hover:border-red-200 font-medium"
+                        >
+                          Void incident
+                        </button>
+                      )}
+
+                      {selectedIncidentDetail.status === 'closed' && !showReasonForm && (
+                        <button
+                          onClick={() => setShowReasonForm('reopen')}
+                          className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 font-medium"
+                        >
+                          Reopen incident
+                        </button>
+                      )}
+
+                      {selectedIncidentDetail.status === 'draft' && (
+                        <button
+                          onClick={() => {
+                            setEditingIncidentId(selectedIncidentDetail.id);
+                            setEditingAlertId(selectedIncidentDetail.alert_id);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 font-medium"
+                        >
+                          Edit draft
+                        </button>
+                      )}
+                    </div>
+
+                    {showRevisionForm && (
+                      <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-lg space-y-2">
+                        <span className="text-[11px] font-medium text-stone-700 block">Follow-up request note</span>
+                        <textarea
+                          value={revisionNotes}
+                          onChange={(e) => setRevisionNotes(e.target.value)}
+                          placeholder="Describe what additional details or actions are needed..."
+                          className="w-full bg-white border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none"
+                          rows={2}
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button 
+                            onClick={() => setShowRevisionForm(false)}
+                            className="px-2.5 py-1 rounded border border-stone-200 text-xs text-stone-600 bg-white"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleAddChangeRequest}
+                            className="bg-stone-800 text-white px-3 py-1 rounded text-xs font-medium"
+                          >
+                            Send request
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {showReasonForm && (
+                      <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-lg space-y-2">
+                        <span className="text-[11px] font-medium text-stone-700 block">
+                          Reason to {showReasonForm === 'reopen' ? 'reopen' : 'void'} this incident
+                        </span>
+                        <textarea
+                          value={administrativeReason}
+                          onChange={(e) => setAdministrativeReason(e.target.value)}
+                          placeholder="Provide a reason..."
+                          className="w-full bg-white border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none"
+                          rows={2}
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button 
+                            onClick={() => setShowReasonForm(null)}
+                            className="px-2.5 py-1 rounded border border-stone-200 text-xs text-stone-600 bg-white"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={showReasonForm === 'reopen' ? handleReopenIncident : handleVoidIncident}
+                            className="bg-stone-800 text-white px-3 py-1 rounded text-xs font-medium"
+                          >
+                            Confirm
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* History Section (Prompt Section 17) */}
+                    <div className="space-y-3 pt-2 border-t border-stone-100">
+                      <h4 className="text-xs font-semibold text-stone-700">History</h4>
+                      {historyLogs.length === 0 ? (
+                        <p className="text-xs text-stone-400">No history recorded yet.</p>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {historyLogs.map((log, index) => (
+                            <div key={log.id || index} className="text-xs space-y-0.5 border-l-2 border-stone-200 pl-3 py-0.5">
+                              <div className="flex items-center gap-2 text-stone-500 text-[11px]">
+                                <span className="tabular-nums">
+                                  {new Date(log.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                <span>·</span>
+                                <span className="font-medium text-stone-800 capitalize">
+                                  {(log.action_type || 'update').replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                              {log.notes && (
+                                <p className="text-stone-600 text-xs mt-0.5">{log.notes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                   </div>
+                ) : null}
 
-                </div>
-              ) : null}
+              </div>
+            ) : (
+              /* Quiet Empty Selection State (Prompt Section 9: Remove "Audit Desk Ready") */
+              <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-2 shadow-xs">
+                <h4 className="text-xs font-semibold text-stone-700">Select an incident</h4>
+                <p className="text-xs text-stone-400 max-w-xs mx-auto leading-relaxed">
+                  Choose an incident to review the details and follow-up.
+                </p>
+              </div>
+            )}
+          </div>
 
+        </div>
+      )}
+
+      {/* Record Incident Modal (Prompt Section 11) */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-stone-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl text-left max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <h3 className="text-base font-semibold text-stone-900">Record incident</h3>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-          ) : (
-            <div className="bg-white border border-[#EAE8E1] border-dashed rounded-3xl p-12 text-center space-y-3">
-              <Shield className="w-10 h-10 text-zinc-300 mx-auto" />
-              <h4 className="font-serif font-bold text-sm text-zinc-700">Audit Desk Ready</h4>
-              <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
-                Select an incident record on the left pane to audit historical logs, add follow-ups, satisfy checklists, and sign off closure.
+
+            <form onSubmit={handleCreateIncident} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-stone-700">What happened? *</label>
+                <input
+                  type="text"
+                  required
+                  value={createForm.title}
+                  onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
+                  placeholder="e.g. Scraped knee during outdoor play"
+                  className="w-full border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-stone-700">Category</label>
+                  <select
+                    value={createForm.category}
+                    onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}
+                    className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-700 outline-none bg-white"
+                  >
+                    <option value="behavioral">Child care</option>
+                    <option value="medical">Medical</option>
+                    <option value="missing_child">Missing child</option>
+                    <option value="security">Security</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-stone-700">Location</label>
+                  <input
+                    type="text"
+                    value={createForm.location}
+                    onChange={(e) => setCreateForm({ ...createForm, location: e.target.value })}
+                    placeholder="e.g. Main Hall / Toddlers Room"
+                    className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-stone-700">Details</label>
+                <textarea
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  placeholder="Describe the incident objectively..."
+                  className="w-full border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-stone-700">Immediate action taken</label>
+                <textarea
+                  value={createForm.firstAid}
+                  onChange={(e) => setCreateForm({ ...createForm, firstAid: e.target.value })}
+                  placeholder="Any immediate care, first aid or steps taken..."
+                  className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-stone-700">Parent communication</label>
+                <input
+                  type="text"
+                  value={createForm.parentContact}
+                  onChange={(e) => setCreateForm({ ...createForm, parentContact: e.target.value })}
+                  placeholder="e.g. Mother notified at collection"
+                  className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingIncident}
+                  onClick={() => setCreateForm({ ...createForm, status: 'submitted' })}
+                  className="px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  {creatingIncident ? 'Saving...' : 'Record incident'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Close Incident Confirmation Modal (Prompt Section 16) */}
+      {showCloseConfirmModal && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-stone-200 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-xl text-left">
+            <div className="space-y-1.5">
+              <h3 className="text-base font-semibold text-stone-900">Close this incident?</h3>
+              <p className="text-xs text-stone-500 leading-relaxed">
+                Use this when the required follow-up has been completed.
               </p>
             </div>
-          )}
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCloseConfirmModal(false)}
+                className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseIncident}
+                disabled={submittingAction}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {submittingAction ? 'Closing...' : 'Close incident'}
+              </button>
+            </div>
+          </div>
         </div>
-
-      </div>
+      )}
 
       {/* Incident Editing Modal overlay */}
       {editingIncidentId && editingAlertId && (
@@ -1027,7 +1262,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
           onClose={() => {
             setEditingIncidentId(null);
             setEditingAlertId(null);
-            fetchIncidents();
+            fetchIncidents(true);
             fetchStats();
             if (selectedIncident?.id) {
               handleSelectIncident(selectedIncident);

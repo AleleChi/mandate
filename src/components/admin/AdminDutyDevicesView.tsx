@@ -1,8 +1,9 @@
-import React, { useState, lazy, Suspense } from 'react';
-import { Smartphone, Users, SlidersHorizontal, Activity, RefreshCw, MapPin } from 'lucide-react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { RefreshCw, ChevronDown } from 'lucide-react';
+import { safeStorage } from '../../utils/storage';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 
-type TabType = 'devices_readiness' | 'event_team' | 'alert_routing' | 'response_coverage' | 'event_locations';
+export type DutyTabType = 'devices_readiness' | 'event_team' | 'alert_routing' | 'response_coverage' | 'event_locations';
 
 const DevicesReadinessTab = lazy(() => import('./duty/DevicesReadinessTab'));
 const EventTeamTab = lazy(() => import('./duty/EventTeamTab'));
@@ -11,118 +12,202 @@ const ResponseCoverageTab = lazy(() => import('./duty/ResponseCoverageTab'));
 const AdminEventLocationsTab = lazy(() => import('./duty/AdminEventLocationsTab'));
 
 const TabLoading = () => (
-  <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-3xl space-y-3">
-    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#C59B27]" />
-    <span className="font-semibold block">Loading section components...</span>
+  <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
+    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C59B27]" />
+    <span className="font-medium text-zinc-600 block">Loading section…</span>
   </div>
 );
 
+interface EventOption {
+  id: string;
+  title: string;
+  status: string;
+}
+
 export function AdminDutyDevicesView() {
-  const [activeTab, setActiveTab] = useState<TabType>('devices_readiness');
+  const [activeTab, setActiveTab] = useState<DutyTabType>('devices_readiness');
+  const [events, setEvents] = useState<EventOption[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchEvents = async () => {
+      try {
+        const token = safeStorage.getItem('koinonia_token');
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const res = await fetch('/api/admin/events', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const list: EventOption[] = data.events || (Array.isArray(data) ? data : []);
+          if (isMounted && list.length > 0) {
+            setEvents(list);
+            const currentEv = list.find((e) => e.status === 'current' || e.status === 'open') || list[0];
+            if (currentEv?.id) {
+              setSelectedEventId(currentEv.id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load events for duty module:', err);
+      }
+    };
+
+    fetchEvents();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
-    <div className="space-y-6">
-      {/* Tabs Selector Row */}
-      <div className="flex flex-wrap border-b border-[#EAE8E1] gap-1 bg-zinc-50/50 p-1 rounded-2xl border">
+    <div className="space-y-6" data-view-version="admin-duty-refined">
+      {/* 1. Page Header with quiet heading and event scoping selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
+        <div>
+          <h1
+            className="text-2xl font-bold text-[#18181B] tracking-tight"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            Event Duty
+          </h1>
+          <p className="text-xs text-zinc-500 mt-1 font-normal">
+            Manage the team, locations and tools needed to run the event.
+          </p>
+        </div>
+
+        {events.length > 0 && (
+          <div className="flex items-center space-x-2 shrink-0">
+            <label htmlFor="duty-event-selector" className="text-xs text-zinc-500 font-medium">
+              Event:
+            </label>
+            <div className="relative">
+              <select
+                id="duty-event-selector"
+                value={selectedEventId}
+                onChange={(e) => setSelectedEventId(e.target.value)}
+                aria-label="Select event"
+                className="appearance-none text-xs font-medium pl-3 pr-8 py-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-800 shadow-2xs hover:border-zinc-300 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+              >
+                {events.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.title} {ev.status === 'current' ? '(Current)' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2. Restrained Admin Tab Navigation */}
+      <div className="flex border-b border-[#EAE8E1] overflow-x-auto" id="event-duty-tabs">
         <button
           onClick={() => setActiveTab('devices_readiness')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'devices_readiness' 
-              ? 'bg-white border border-[#EAE8E1] text-zinc-900 shadow-xs' 
-              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/50'
+          id="tab-duty-devices"
+          className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
+            activeTab === 'devices_readiness'
+              ? 'border-[#C59B27] text-[#18181B] font-semibold'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
           }`}
         >
-          <Smartphone className="w-4 h-4 text-[#C59B27]" />
-          <span>Devices & Readiness</span>
+          Devices
         </button>
 
         <button
           onClick={() => setActiveTab('event_team')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'event_team' 
-              ? 'bg-white border border-[#EAE8E1] text-zinc-900 shadow-xs' 
-              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/50'
+          id="tab-duty-team"
+          className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
+            activeTab === 'event_team'
+              ? 'border-[#C59B27] text-[#18181B] font-semibold'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
           }`}
         >
-          <Users className="w-4 h-4 text-[#C59B27]" />
-          <span>Event Team Assignments</span>
+          Team Assignments
         </button>
 
         <button
           onClick={() => setActiveTab('alert_routing')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'alert_routing' 
-              ? 'bg-white border border-[#EAE8E1] text-zinc-900 shadow-xs' 
-              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/50'
+          id="tab-duty-alerts"
+          className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
+            activeTab === 'alert_routing'
+              ? 'border-[#C59B27] text-[#18181B] font-semibold'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
           }`}
         >
-          <SlidersHorizontal className="w-4 h-4 text-[#C59B27]" />
-          <span>Alert Routing Rules</span>
+          Alert Rules
         </button>
 
         <button
           onClick={() => setActiveTab('response_coverage')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'response_coverage' 
-              ? 'bg-white border border-[#EAE8E1] text-zinc-900 shadow-xs' 
-              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/50'
+          id="tab-duty-coverage"
+          className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
+            activeTab === 'response_coverage'
+              ? 'border-[#C59B27] text-[#18181B] font-semibold'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
           }`}
         >
-          <Activity className="w-4 h-4 text-[#C59B27]" />
-          <span>Response Coverage</span>
+          Team Coverage
         </button>
 
         <button
           onClick={() => setActiveTab('event_locations')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'event_locations' 
-              ? 'bg-white border border-[#EAE8E1] text-zinc-900 shadow-xs' 
-              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/50'
+          id="tab-duty-locations"
+          className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
+            activeTab === 'event_locations'
+              ? 'border-[#C59B27] text-[#18181B] font-semibold'
+              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
           }`}
         >
-          <MapPin className="w-4 h-4 text-[#C59B27]" />
-          <span>Event Locations</span>
+          Locations
         </button>
       </div>
 
-      {/* Render selected active view wrapped in its own ErrorBoundary & Suspense boundary */}
+      {/* 3. Tab Contents with Event Scoping */}
       <div className="relative">
         {activeTab === 'devices_readiness' && (
-          <ErrorBoundary fallbackTitle="Devices & Readiness panel failed to load">
+          <ErrorBoundary fallbackTitle="Devices panel failed to load">
             <Suspense fallback={<TabLoading />}>
-              <DevicesReadinessTab />
+              <DevicesReadinessTab eventId={selectedEventId} />
             </Suspense>
           </ErrorBoundary>
         )}
 
         {activeTab === 'event_team' && (
-          <ErrorBoundary fallbackTitle="Event Team Assignments panel failed to load">
+          <ErrorBoundary fallbackTitle="Team Assignments panel failed to load">
             <Suspense fallback={<TabLoading />}>
-              <EventTeamTab />
+              <EventTeamTab eventId={selectedEventId} />
             </Suspense>
           </ErrorBoundary>
         )}
 
         {activeTab === 'alert_routing' && (
-          <ErrorBoundary fallbackTitle="Alert Routing Rules panel failed to load">
+          <ErrorBoundary fallbackTitle="Alert Rules panel failed to load">
             <Suspense fallback={<TabLoading />}>
-              <AlertRoutingTab />
+              <AlertRoutingTab eventId={selectedEventId} />
             </Suspense>
           </ErrorBoundary>
         )}
 
         {activeTab === 'response_coverage' && (
-          <ErrorBoundary fallbackTitle="Response Coverage panel failed to load">
+          <ErrorBoundary fallbackTitle="Team Coverage panel failed to load">
             <Suspense fallback={<TabLoading />}>
-              <ResponseCoverageTab onNavigateTab={(tab) => setActiveTab(tab)} />
+              <ResponseCoverageTab
+                eventId={selectedEventId}
+                onNavigateTab={(tab) => setActiveTab(tab)}
+              />
             </Suspense>
           </ErrorBoundary>
         )}
 
         {activeTab === 'event_locations' && (
-          <ErrorBoundary fallbackTitle="Event Locations panel failed to load">
+          <ErrorBoundary fallbackTitle="Locations panel failed to load">
             <Suspense fallback={<TabLoading />}>
-              <AdminEventLocationsTab />
+              <AdminEventLocationsTab eventId={selectedEventId} />
             </Suspense>
           </ErrorBoundary>
         )}

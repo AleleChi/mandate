@@ -44,7 +44,7 @@ import { ActiveResponseCoordinationPanel } from '../../components/common/ActiveR
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { SafeImage } from '../../components/common/SafeImage';
-import { playSound, resumeAudioContext, stopAllUrgentAlertEffects } from '../../utils/sound';
+import { playSound, resumeAudioContext, stopAllUrgentAlertEffects, isAudioUnlocked, unlockAudio } from '../../utils/sound';
 import { urgentAlertEffectsManager, getCategoryLabel, generateSpokenAlertText, speakAlert, stopSpeaking } from '../../utils/urgentAlertEffects';
 import { AdminApplicationsView } from './AdminApplicationsView';
 import { AdminReviewBoardView } from './AdminReviewBoardView';
@@ -61,7 +61,6 @@ import { AdminIncidentRecordsCentre } from './AdminIncidentRecordsCentre';
 import { AdminEscalationsView } from './AdminEscalationsView';
 import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
 import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
-import { DeviceReadinessView } from '../../components/volunteer/DeviceReadinessView';
 import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
@@ -83,7 +82,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 }) => {
   const { showError, showSuccess, showInfo } = useNotification();
   const [activeTab, setActiveTab] = useState<AdminTab>((initialTab || 'overview') as AdminTab);
-  const [showReadinessModal, setShowReadinessModal] = useState<boolean>(false);
+  const [showStatusPopover, setShowStatusPopover] = useState<boolean>(false);
+  const [audioArmed, setAudioArmed] = useState<boolean>(() => isAudioUnlocked());
+  const statusPopoverRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -656,6 +657,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     const handleGlobalInteraction = () => {
       try {
         resumeAudioContext();
+        setAudioArmed(isAudioUnlocked());
       } catch (e) {
         console.warn('Failed to resume AudioContext globally:', e);
       }
@@ -667,6 +669,45 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       document.removeEventListener('touchstart', handleGlobalInteraction);
     };
   }, []);
+
+  // Sync audio arming state with custom events
+  useEffect(() => {
+    const handleAudioStateChange = () => {
+      setAudioArmed(isAudioUnlocked());
+    };
+    const handleAudioBlocked = () => {
+      setAudioArmed(false);
+    };
+    window.addEventListener('koinonia_audio_state_change', handleAudioStateChange);
+    window.addEventListener('koinonia_audio_blocked', handleAudioBlocked);
+    return () => {
+      window.removeEventListener('koinonia_audio_state_change', handleAudioStateChange);
+      window.removeEventListener('koinonia_audio_blocked', handleAudioBlocked);
+    };
+  }, []);
+
+  // Close popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (statusPopoverRef.current && !statusPopoverRef.current.contains(e.target as Node)) {
+        setShowStatusPopover(false);
+      }
+    };
+    if (showStatusPopover) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showStatusPopover]);
+
+  const handleArmAudio = async () => {
+    const success = await unlockAudio();
+    if (success) {
+      setAudioArmed(true);
+      showSuccess('Sound enabled', 'Emergency sound alerts can now be heard.');
+    }
+  };
 
   // Poll for notifications and safety alerts
   useEffect(() => {
@@ -697,34 +738,22 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   }, [soundEnabled, spokenAlertsEnabled]);
 
-  // Listen to browser lifecycle events to immediately silence alert effects if hidden or closed
+  // Listen to window unload to clean up background audio safely
   useEffect(() => {
     const handleUnloadCleanup = () => {
       try {
-        (window as any).stopAllUrgentAlertEffects?.();
+        stopAllUrgentAlertEffects();
       } catch (e) {
         console.warn('Failed in stopAllUrgentAlertEffects during unload:', e);
       }
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        try {
-          (window as any).stopAllUrgentAlertEffects?.();
-        } catch (e) {
-          console.warn('Failed in stopAllUrgentAlertEffects during visibility change:', e);
-        }
-      }
-    };
-
     window.addEventListener('beforeunload', handleUnloadCleanup);
     window.addEventListener('pagehide', handleUnloadCleanup);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('beforeunload', handleUnloadCleanup);
       window.removeEventListener('pagehide', handleUnloadCleanup);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -1237,17 +1266,134 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
             </button>
 
-            {/* Device readiness compact status badge */}
-            <button
-              onClick={() => setShowReadinessModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#C59B27]/5 border border-[#C59B27]/20 hover:bg-[#C59B27]/10 text-zinc-700 text-[11px] font-bold rounded-full transition-all cursor-pointer mr-1"
-              title="Device readiness status"
-              data-component-version="event-duty-readiness-entry-v1"
-            >
-              <Smartphone className="w-3.5 h-3.5 text-[#C59B27]" />
-              <span className="hidden sm:inline">Device:</span>
-              <span className="text-emerald-700">Ready</span>
-            </button>
+            {/* Human-centred alert/sound status */}
+            <div className="relative" ref={statusPopoverRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!audioArmed && soundEnabled) {
+                    handleArmAudio();
+                  } else {
+                    setShowStatusPopover(!showStatusPopover);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-[13px] font-medium text-zinc-600 hover:text-zinc-900 rounded-lg transition-colors cursor-pointer font-sans select-none"
+                title={!audioArmed && soundEnabled ? "Click to enable alert sound" : "Alert settings"}
+              >
+                {!soundEnabled ? (
+                  <>
+                    <VolumeX className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <span className="text-zinc-500 hidden sm:inline">Sound alerts off</span>
+                  </>
+                ) : !audioArmed ? (
+                  <>
+                    <VolumeX className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="text-amber-800 font-medium">Sound needs enabling</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <span className="text-zinc-700 font-medium hidden sm:inline">Alerts ready</span>
+                  </>
+                )}
+              </button>
+
+              {/* Restrained Popover */}
+              {showStatusPopover && (
+                <div className="absolute right-0 mt-2 w-72 bg-white border border-[#EAE8E1] rounded-2xl shadow-xl p-4.5 z-50 animate-fade-in font-sans space-y-3.5 text-left">
+                  <div className="border-b border-[#EAE8E1] pb-2.5">
+                    <h4 className="font-semibold text-xs text-[#18181B] tracking-tight">Event alerts</h4>
+                    <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+                      Keep your device volume turned on so urgent alerts can be heard.
+                    </p>
+                  </div>
+
+                  {!audioArmed && soundEnabled && (
+                    <div className="p-3 bg-amber-50/80 border border-amber-200/60 rounded-xl space-y-2">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-semibold text-amber-900 block">Emergency sound</span>
+                        <p className="text-[11px] text-amber-700 leading-snug">
+                          Sound needs to be enabled on this browser.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleArmAudio}
+                        className="w-full py-1.5 bg-[#18181B] hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                      >
+                        Enable sound
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-700 font-medium">Emergency sound</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newVal = !soundEnabled;
+                        updatePreference('soundEnabled', newVal);
+                        if (newVal && !audioArmed) {
+                          handleArmAudio();
+                        }
+                      }}
+                      className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                        soundEnabled ? 'bg-[#FAF6EB] text-[#C59B27] border border-[#E5D5AE]' : 'bg-zinc-100 text-zinc-500'
+                      }`}
+                    >
+                      {soundEnabled ? 'On' : 'Off'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 text-xs">
+                    <span className="text-zinc-500 font-medium text-[11px]">Alert volume</span>
+                    <div className="grid grid-cols-3 gap-1 bg-zinc-50 p-1 rounded-lg border border-zinc-100">
+                      {[
+                        { id: 'standard', label: 'Normal' },
+                        { id: 'loud', label: 'Loud' },
+                        { id: 'very_loud', label: 'Very loud' }
+                      ].map((vol) => (
+                        <button
+                          key={vol.id}
+                          type="button"
+                          onClick={() => {
+                            updatePreference('urgentVolumeBoost', vol.id);
+                          }}
+                          className={`py-1 text-[11px] rounded font-medium transition-colors cursor-pointer ${
+                            alertVolume === vol.id
+                              ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200'
+                              : 'text-zinc-500 hover:text-zinc-800'
+                          }`}
+                        >
+                          {vol.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#EAE8E1] flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPlayingSoundTest) {
+                          try { stopAllUrgentAlertEffects(); } catch (_) {}
+                          setIsPlayingSoundTest(false);
+                        } else {
+                          resumeAudioContext();
+                          setIsPlayingSoundTest(true);
+                          playSound('emergency', { volume: alertVolume, profile: alertProfile });
+                          setTimeout(() => setIsPlayingSoundTest(false), 2000);
+                        }
+                      }}
+                      className="flex-1 py-1.5 px-3 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border border-zinc-200 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>{isPlayingSoundTest ? 'Stop sound' : 'Test sound'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="relative" data-component-version="notification-sound-manager-v2">
               <button
@@ -1524,9 +1670,151 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           </div>
         </header>
 
+        {/* Session Audio Arming Banner */}
+        {!audioArmed && soundEnabled && (
+          <div className="bg-[#FFFDF5] border-b border-[#F0E6D2] px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4 text-xs font-sans text-zinc-700 animate-fade-in">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Volume2 className="w-4 h-4 text-[#C59B27] shrink-0" />
+              <span className="truncate">
+                <strong className="font-semibold text-zinc-900">Emergency sound:</strong> Enable sound so urgent event alerts can be heard.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleArmAudio}
+              className="shrink-0 px-3 py-1 bg-[#18181B] hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+            >
+              Enable sound
+            </button>
+          </div>
+        )}
+
         {/* Dashboard Main container */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6 sm:space-y-8 bg-[#FAF9F6]">
           
+          {/* URGENT EMERGENCY ALERT PERSISTENT BANNER */}
+          {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length > 0 && (
+            <div 
+              className="bg-[#FFF8F8] border-l-4 border-red-600 border border-red-200/80 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in font-sans"
+              data-view-version="urgent-alert-persistent-banner-v2"
+            >
+              <div className="flex items-start space-x-3.5">
+                <div className="p-2 bg-red-50 rounded-xl text-red-600 border border-red-200 shrink-0 mt-0.5 animate-pulse">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-serif font-bold text-sm text-red-900">
+                      Urgent attention
+                    </span>
+                    <span className="bg-red-100 text-red-800 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length > 1
+                        ? `${safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length} urgent alerts`
+                        : 'Immediate attention needed'}
+                    </span>
+                  </div>
+                  {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').map((alert: any) => {
+                    const isAck = alert.status === 'acknowledged';
+                    return (
+                      <div key={alert.id} className="mt-1.5 space-y-1.5 text-xs text-zinc-600">
+                        <p className="font-medium text-zinc-800">
+                          <strong className="text-zinc-900">{alert.raised_by_name || 'A volunteer'}</strong> has requested immediate assistance
+                          {alert.location_label && <span> in <strong className="text-zinc-900">{alert.location_label}</strong></span>}
+                          {alert.child_name && <span> regarding <strong className="text-zinc-900">{alert.child_name}</strong></span>}
+                          <span className="text-zinc-400 font-normal"> · {formatTimeAgo(alert.created_at)}</span>
+                        </p>
+                        {alert.message && (
+                          <p className="italic bg-white/70 border border-red-100 rounded-lg p-2.5 text-[11px] leading-relaxed max-w-2xl text-red-950">
+                            "{alert.message}"
+                          </p>
+                        )}
+                        
+                        {/* Inline Resolution form if resolving is clicked */}
+                        {resolvingAlertId === alert.id && (
+                          <div className="mt-3 bg-white border border-red-200 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                              Resolution note (required)
+                            </label>
+                            <textarea
+                              required
+                              value={resolutionNote}
+                              onChange={(e) => setResolutionNote(e.target.value)}
+                              placeholder="Describe the action taken to resolve this alert..."
+                              className="w-full text-xs p-2.5 border border-zinc-200 rounded-xl focus:outline-none focus:border-red-500 bg-zinc-50/50"
+                              rows={2}
+                            />
+                            <div className="flex justify-end gap-2 text-xs font-bold">
+                              <button
+                                onClick={() => {
+                                  setResolvingAlertId(null);
+                                  setResolutionNote('');
+                                }}
+                                className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleResolveAlert(alert.id)}
+                                className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors cursor-pointer shadow-xs"
+                              >
+                                Submit resolution
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').slice(0, 1).map((alert: any) => {
+                  const isAck = alert.status === 'acknowledged';
+                  if (resolvingAlertId === alert.id) return null;
+                  return (
+                    <div key={alert.id} className="flex gap-2">
+                      {!isAck && (
+                        <button
+                          onClick={() => handleAcknowledgeAlert(alert.id)}
+                          disabled={isAcknowledgeInProgress === alert.id}
+                          className="font-medium text-red-800 bg-red-50 hover:bg-red-100 px-3.5 py-2 rounded-xl border border-red-200 text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                        >
+                          {isAcknowledgeInProgress === alert.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-red-600" />
+                              <span>Acknowledge</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setActiveAlertDetail(alert);
+                        }}
+                        className="font-medium text-zinc-800 bg-white hover:bg-zinc-50 border border-zinc-200 px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-xs"
+                      >
+                        View alert
+                      </button>
+                      <button
+                        onClick={() => {
+                          setResolvingAlertId(alert.id);
+                          setResolutionNote('');
+                        }}
+                        className="font-medium text-white bg-red-600 hover:bg-red-700 px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-sm shadow-red-200/50"
+                      >
+                        Resolve
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* IMPORTANT ALERT PERSISTENT BANNER */}
           {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').length > 0 && (
             <div 
@@ -2151,9 +2439,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               <div className="flex items-center space-x-2.5">
                                 <Volume2 className="w-4 h-4 text-[#C59B27] shrink-0" />
                                 <div>
-                                  <p className="text-[10px] font-black uppercase text-[#C59B27] tracking-wider">Device audio</p>
-                                  <p className="text-xs font-bold text-zinc-800 mt-0.5">
-                                    {alertProfile === 'emergency' ? 'Siren' : alertProfile === 'important' ? 'Clear' : 'Gentle'} · {alertVolume === 'very_loud' ? '4x Max' : alertVolume === 'loud' ? '2x Loud' : '1x Std'} · {spokenAlertsEnabled ? 'Voice enabled' : 'Voice disabled'}
+                                  <p className="text-[10px] font-semibold uppercase text-[#C59B27] tracking-wider">Alert sound</p>
+                                  <p className="text-xs font-medium text-zinc-800 mt-0.5">
+                                    {alertProfile === 'emergency' ? 'Urgent' : alertProfile === 'important' ? 'Standard' : 'Soft'} · {alertVolume === 'very_loud' ? 'Very loud' : alertVolume === 'loud' ? 'Loud' : 'Normal'}
                                   </p>
                                 </div>
                               </div>
@@ -2169,48 +2457,48 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                     handleSilenceAlert(activeUrgent.id);
                                   } else {
                                     try { stopAllUrgentAlertEffects(); } catch (_) {}
-                                    showSuccess('Silenced', 'Alert audio checked and silenced.');
+                                    showSuccess('Silenced', 'Alert audio silenced.');
                                   }
                                 }}
-                                className="font-bold text-[11px] text-red-700 bg-red-50 hover:bg-red-100/50 border border-red-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                className="font-medium text-[11px] text-zinc-700 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
                               >
-                                <VolumeX className="w-3.5 h-3.5 text-red-600" />
-                                <span>Silence device</span>
+                                <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
+                                <span>Mute alarm</span>
                               </button>
 
                               <button
                                 onClick={() => setIsSoundSettingsOpen(!isSoundSettingsOpen)}
-                                className="font-bold text-[11px] text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                className="font-medium text-[11px] text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
                               >
                                 <Settings className="w-3.5 h-3.5 text-zinc-500" />
-                                <span>{isSoundSettingsOpen ? 'Hide settings' : 'Open settings'}</span>
+                                <span>{isSoundSettingsOpen ? 'Hide settings' : 'Alert sound'}</span>
                               </button>
                             </div>
                           </div>
 
-                          {/* Collapsible detailed audio & devices panel */}
+                          {/* Collapsible detailed audio panel */}
                           {isSoundSettingsOpen && (
-                            <div className="bg-[#FAF9F6] border border-[#E5D5AE]/30 rounded-[24px] p-5 space-y-4 text-zinc-800 shadow-md text-left animate-fade-in">
-                              <div className="border-b border-[#E5D5AE]/20 pb-2.5">
-                                <h4 className="font-serif font-black text-xs text-[#C59B27] uppercase tracking-wider flex items-center gap-1.5">
-                                  <Settings className="w-4 h-4" />
-                                  Sound & Announcement Preferences
+                            <div className="bg-[#FAF9F6] border border-[#E5D5AE]/30 rounded-2xl p-4.5 space-y-3.5 text-zinc-800 shadow-md text-left animate-fade-in font-sans">
+                              <div className="border-b border-[#EAE8E1] pb-2">
+                                <h4 className="font-medium text-xs text-zinc-900 tracking-tight flex items-center gap-1.5">
+                                  <Settings className="w-3.5 h-3.5 text-[#C59B27]" />
+                                  Alert sound
                                 </h4>
-                                <p className="text-[10px] text-zinc-400 font-sans mt-0.5">
-                                  Configure browser safety alert chimes and speech synthesis rules.
+                                <p className="text-[11px] text-zinc-500 mt-0.5">
+                                  Set the sound used when urgent attention is needed.
                                 </p>
                               </div>
 
                               {/* Tone Selection */}
                               <div className="space-y-1.5" data-component-version="emergency-alert-sound-profile-v2-loud">
-                                <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
-                                  Alert chime profile
+                                <label className="text-[11px] font-medium text-zinc-600 block">
+                                  Alert tone
                                 </label>
-                                <div className="grid grid-cols-3 gap-1.5 bg-white p-1 rounded-xl border border-[#E5D5AE]/20">
+                                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAE8E1]">
                                   {[
-                                    { id: 'normal', label: 'Gentle' },
-                                    { id: 'important', label: 'Clear' },
-                                    { id: 'emergency', label: 'Siren' }
+                                    { id: 'normal', label: 'Soft' },
+                                    { id: 'important', label: 'Standard' },
+                                    { id: 'emergency', label: 'Urgent' }
                                   ].map((prof) => (
                                     <button
                                       key={prof.id}
@@ -2218,12 +2506,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         updatePreference('urgentSoundProfile', prof.id);
-                                        showSuccess('Profile updated', `Chime profile changed to ${prof.label}.`);
+                                        showSuccess('Tone updated', `Alert tone set to ${prof.label}.`);
                                       }}
-                                      className={`py-1.5 px-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
+                                      className={`py-1.5 px-1 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
                                         alertProfile === prof.id
-                                          ? 'bg-[#C59B27] text-white shadow-xs'
-                                          : 'text-zinc-500 hover:text-zinc-800 bg-transparent'
+                                          ? 'bg-[#18181B] text-white shadow-xs'
+                                          : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
                                       }`}
                                     >
                                       {prof.label}
@@ -2232,16 +2520,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 </div>
                               </div>
 
-                              {/* Volume Boost */}
+                              {/* Volume Selection */}
                               <div className="space-y-1.5" data-component-version="alert-sound-volume-settings-v1">
-                                <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
-                                  Alert volume boost
+                                <label className="text-[11px] font-medium text-zinc-600 block">
+                                  Alert volume
                                 </label>
-                                <div className="grid grid-cols-3 gap-1.5 bg-white p-1 rounded-xl border border-[#E5D5AE]/20">
+                                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAE8E1]">
                                   {[
-                                    { id: 'standard', label: '1x Std' },
-                                    { id: 'loud', label: '2x Loud' },
-                                    { id: 'very_loud', label: '4x Max' }
+                                    { id: 'standard', label: 'Normal' },
+                                    { id: 'loud', label: 'Loud' },
+                                    { id: 'very_loud', label: 'Very loud' }
                                   ].map((vol) => (
                                     <button
                                       key={vol.id}
@@ -2249,12 +2537,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         updatePreference('urgentVolumeBoost', vol.id);
-                                        showSuccess('Volume changed', `Boost multiplier changed to ${vol.label}.`);
+                                        showSuccess('Volume updated', `Alert volume set to ${vol.label}.`);
                                       }}
-                                      className={`py-1.5 px-1 rounded-lg font-bold text-[10px] text-center transition-all cursor-pointer ${
+                                      className={`py-1.5 px-1 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
                                         alertVolume === vol.id
-                                          ? 'bg-[#C59B27] text-white shadow-xs'
-                                          : 'text-zinc-500 hover:text-zinc-800 bg-transparent'
+                                          ? 'bg-[#18181B] text-white shadow-xs'
+                                          : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
                                       }`}
                                     >
                                       {vol.label}
@@ -2264,87 +2552,32 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
 
                               {/* Spoken Voice */}
-                              <div className="space-y-2.5 pt-1.5 border-t border-[#E5D5AE]/20" data-component-version="spoken-alert-voice-settings-v1">
+                              <div className="space-y-2 pt-1 border-t border-[#EAE8E1]" data-component-version="spoken-alert-voice-settings-v1">
                                 <div className="flex items-center justify-between">
-                                  <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
-                                    Spoken alert (Voice)
-                                  </label>
+                                  <span className="text-[11px] font-medium text-zinc-600">
+                                    Spoken announcement
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.preventDefault();
                                       const newVal = !spokenAlertsEnabled;
                                       updatePreference('spokenAlertsEnabled', newVal);
-                                      showSuccess('Spoken alerts ' + (newVal ? 'enabled' : 'disabled'), 'Emergency voice speaking updated.');
+                                      showSuccess('Announcement ' + (newVal ? 'enabled' : 'disabled'), 'Spoken announcement updated.');
                                     }}
-                                    className={`text-[9px] font-black px-2 py-0.5 rounded transition-all cursor-pointer ${
+                                    className={`text-[10px] font-medium px-2 py-0.5 rounded transition-all cursor-pointer ${
                                       spokenAlertsEnabled 
                                         ? 'bg-emerald-600 text-white shadow-xs' 
                                         : 'bg-zinc-100 text-zinc-400 hover:text-zinc-600'
                                     }`}
                                   >
-                                    {spokenAlertsEnabled ? 'Enabled' : 'Disabled'}
+                                    {spokenAlertsEnabled ? 'On' : 'Off'}
                                   </button>
                                 </div>
-
-                                {spokenAlertsEnabled && (
-                                  <>
-                                    <div className="space-y-1">
-                                      <span className="text-[9px] text-zinc-400 font-bold block uppercase">Privacy level</span>
-                                      <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-lg border border-[#E5D5AE]/10">
-                                        {[
-                                          { id: 'private', label: 'Private' },
-                                          { id: 'event', label: 'Event' },
-                                          { id: 'full_context', label: 'Full context' }
-                                        ].map((mode) => (
-                                          <button
-                                            key={mode.id}
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              updatePreference('spokenAlertMode', mode.id);
-                                              showSuccess('Privacy mode changed', `Set voice privacy level to ${mode.label}.`);
-                                            }}
-                                            className={`py-1 px-1 rounded text-[9px] text-center font-bold transition-all cursor-pointer ${
-                                              spokenAlertMode === mode.id
-                                                ? 'bg-[#C59B27] text-white font-extrabold'
-                                                : 'text-zinc-400 hover:text-zinc-600 bg-transparent'
-                                            }`}
-                                          >
-                                            {mode.label}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-[#E5D5AE]/20">
-                                      <span className="text-[9px] text-zinc-400 font-black uppercase">Repeat spoken voice</span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          const newVal = !spokenAlertRepeats;
-                                          updatePreference('spokenAlertRepeats', newVal);
-                                          showSuccess('Repeat speaking ' + (newVal ? 'enabled' : 'disabled'), 'Spoken repetitions updated.');
-                                        }}
-                                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
-                                          spokenAlertRepeats 
-                                            ? 'bg-[#C59B27] text-white shadow-xs' 
-                                            : 'bg-zinc-50 text-zinc-400'
-                                        }`}
-                                      >
-                                        {spokenAlertRepeats ? 'Repeats' : 'Once'}
-                                      </button>
-                                    </div>
-                                  </>
-                                )}
                               </div>
 
-                              {/* Alarm Test controls */}
-                              <div className="space-y-1.5 pt-1.5 border-t border-[#E5D5AE]/20" data-component-version="alert-sound-test-actions-v1">
-                                <label className="text-[10px] font-black text-zinc-500 tracking-wide block uppercase">
-                                  Verification & Tests
-                                </label>
+                              {/* Test sound controls */}
+                              <div className="space-y-1.5 pt-1 border-t border-[#EAE8E1]" data-component-version="alert-sound-test-actions-v1">
                                 <div className="flex gap-2">
                                   <button
                                     type="button"
@@ -2362,12 +2595,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         const sampleText = generateSpokenAlertText(sampleAlert, spokenAlertMode);
                                         speakAlert(sampleText);
                                       }
-                                      showSuccess('Testing Sound', 'Playing alert chime.' + (spokenAlertsEnabled ? ' with announcement.' : ''));
+                                      showSuccess('Testing sound', 'Playing alert sound.');
                                     }}
-                                    className="flex-1 font-bold text-[10px] bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                                    className="flex-1 font-medium text-xs bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                   >
-                                    <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Test Alarm</span>
+                                    <Volume2 className="w-3.5 h-3.5 text-[#C59B27]" />
+                                    <span>Test sound</span>
                                   </button>
                                   
                                   <button
@@ -2375,26 +2608,23 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                     onClick={() => {
                                       try {
                                         stopAllUrgentAlertEffects();
-                                        showSuccess('Test Stopped', 'Synthesizer silenced.');
+                                        showSuccess('Stopped', 'Sound stopped.');
                                       } catch (_) {}
                                     }}
-                                    className="font-bold text-[10px] bg-red-50 hover:bg-red-100 text-red-700 border border-red-100 px-4 py-2 rounded-xl transition-all cursor-pointer shadow-xs"
+                                    className="font-medium text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
                                   >
-                                    Stop
+                                    Stop sound
                                   </button>
                                 </div>
                               </div>
 
                               {/* Readiness Copy */}
                               <div 
-                                className="bg-[#FAF9F6]/50 border border-[#E5D5AE]/10 p-3 rounded-xl space-y-1 text-zinc-500"
+                                className="bg-zinc-50 border border-zinc-200/70 p-2.5 rounded-xl text-zinc-500"
                                 data-component-version="event-sound-readiness-copy-v1"
                               >
-                                <p className="font-sans font-black text-[8px] uppercase text-[#C59B27] tracking-wider">
-                                  ⚠️ Device Readiness Notice
-                                </p>
-                                <p className="font-sans text-[9px] leading-relaxed">
-                                  Important: Make sure your computer or phone's physical volume switches are turned up. Web applications cannot bypass local device volume sliders.
+                                <p className="text-[11px] leading-relaxed">
+                                  Keep your device volume turned on so urgent alerts can be heard.
                                 </p>
                               </div>
 
@@ -3066,23 +3296,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         </main>
       </div>
 
-      {/* Device Readiness Modal */}
-      {showReadinessModal && (
-        <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-[#FAF9F5] rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative border border-[#EAE8E1] shadow-2xl animate-fade-in">
-            <button 
-              onClick={() => setShowReadinessModal(false)}
-              className="absolute top-4 right-4 p-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-500 rounded-full cursor-pointer z-50 transition-all"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <DeviceReadinessView 
-              userRole={adminUser?.role || 'admin'} 
-              volunteerProfile={adminUser}
-            />
-          </div>
-        </div>
-      )}
 
       {/* ATTENTION CATEGORY FILTER MODAL */}
       {activeAttentionModal && (
@@ -3216,16 +3429,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 </div>
               </div>
               <div className="space-y-1">
-                <h2 className="text-2xl font-serif font-black tracking-tight text-red-600 uppercase">
-                  {activeUrgentAlert.isTest ? '⚠️ SAFETY READINESS TEST ⚠️' : 'EMERGENCY CARE ALERT ACTIVE'}
+                <h2 className="text-2xl font-serif font-bold tracking-tight text-red-700">
+                  {activeUrgentAlert.isTest ? 'Alert Sound Test' : 'Urgent Care Alert'}
                 </h2>
-                <p className="text-xs text-zinc-500 font-sans tracking-wide">
+                <p className="text-xs text-zinc-600 font-sans">
                   {activeUrgentAlert.isTest 
-                    ? 'TESTING ACTIVE DEVICE SOUND, VIBRATION, AND OVERLAY CHANNELS' 
-                    : 'IMMEDIATE CARE AND SECURITY RESPONSE REQUIRED'}
+                    ? 'Testing alert sound and notifications on this device.' 
+                    : 'Immediate attention required.'}
                 </p>
-                <p className="text-[10px] text-zinc-400 italic">
-                  Sound will continue to repeat on enabled devices until acknowledged or resolved.
+                <p className="text-[11px] text-zinc-500">
+                  Sound repeats until acknowledged or resolved.
                 </p>
               </div>
             </div>
@@ -3602,10 +3815,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           console.error('Error acknowledging inside overlay:', err);
                         }
                       }}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-red-600/20 text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border-none"
+                      className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3.5 px-6 rounded-2xl transition-all shadow-md shadow-red-600/20 text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border-none"
                     >
                       <Check className="w-5 h-5" />
-                      <span>ACKNOWLEDGE ALERT (STOPS DEVICE SOUND)</span>
+                      <span>Acknowledge</span>
                     </button>
 
                     {/* Secondary Actions Grid */}
@@ -3615,18 +3828,18 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           setShowCommandCenter(true);
                           setActiveUrgentAlert(null);
                         }}
-                        className="bg-white hover:bg-zinc-50 text-zinc-800 font-bold py-2.5 px-4 rounded-xl border border-zinc-200 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                        className="bg-white hover:bg-zinc-50 text-zinc-800 font-medium py-2.5 px-4 rounded-xl border border-zinc-200 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
                       >
                         <ShieldAlert className="w-4 h-4 text-red-600" />
-                        <span>Open Command Center</span>
+                        <span>Command Center</span>
                       </button>
 
                       <button
                         onClick={() => setShowResolutionInTakeover(true)}
-                        className="bg-white hover:bg-zinc-50 text-zinc-800 font-bold py-2.5 px-4 rounded-xl border border-zinc-200 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                        className="bg-white hover:bg-zinc-50 text-zinc-800 font-medium py-2.5 px-4 rounded-xl border border-zinc-200 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
                       >
                         <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        <span>Resolve Directly</span>
+                        <span>Resolve alert</span>
                       </button>
 
                       <button
@@ -3643,16 +3856,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             console.warn('Kill switch failed:', e);
                           }
                         }}
-                        className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 px-4 rounded-xl border border-zinc-700 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                        className="bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-2.5 px-4 rounded-xl border border-zinc-700 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
                       >
                         <VolumeX className="w-4 h-4 text-zinc-400" />
-                        <span>Silence Device</span>
+                        <span>Mute alarm</span>
                       </button>
                     </div>
 
                     <button
                       onClick={() => setActiveUrgentAlert(null)}
-                      className="w-full bg-transparent hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 py-3 rounded-xl transition-all text-xs font-semibold text-center cursor-pointer border-none"
+                      className="w-full bg-transparent hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 py-3 rounded-xl transition-all text-xs font-medium text-center cursor-pointer border-none"
                     >
                       Close Overlay View (Keeps Alert Open)
                     </button>
@@ -3660,9 +3873,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 )
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl">
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>ALREADY ACKNOWLEDGED — RESOLUTION NOTE REQUIRED TO CLOSE</span>
+                  <div className="flex items-center space-x-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl">
+                    <Check className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span>Acknowledged · Add a resolution note to close this alert</span>
                   </div>
 
                   <div className="space-y-2">

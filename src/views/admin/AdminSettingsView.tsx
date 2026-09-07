@@ -36,7 +36,7 @@ import { updateDocumentFavicon } from '../../utils/faviconHelper';
 import { AdminLandingView } from './AdminLandingView';
 import { SafeImage } from '../../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
-import { playSound, resumeAudioContext } from '../../utils/sound';
+import { playSound, resumeAudioContext, stopAllUrgentAlertEffects } from '../../utils/sound';
 import { subscribeUserToPush } from '../../utils/pushSubscription';
 import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
 
@@ -2479,14 +2479,14 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         <div className={`space-y-1.5 py-2 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
                           <div className="flex items-center justify-between">
                             <label className="text-xs font-medium text-zinc-800 block">
-                              Chime sound profile
+                              Alert tone
                             </label>
                             <span className="text-[10px] text-zinc-400">Tone urgency</span>
                           </div>
                           <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 p-1.5 rounded-xl border border-zinc-100">
                             {[
-                              { id: 'normal', label: 'Gentle' },
-                              { id: 'important', label: 'Clear' },
+                              { id: 'normal', label: 'Soft' },
+                              { id: 'important', label: 'Standard' },
                               { id: 'emergency', label: 'Urgent' }
                             ].map((prof) => (
                               <button
@@ -2495,7 +2495,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 onClick={(e) => {
                                   e.preventDefault();
                                   updateAudioPreference('urgentSoundProfile', prof.id);
-                                  showFeedback(`Sound profile changed to ${prof.label}.`);
+                                  showFeedback(`Alert tone set to ${prof.label}.`);
                                 }}
                                 className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
                                   alertProfile === prof.id
@@ -2513,15 +2513,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         <div className={`space-y-1.5 py-2 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
                           <div className="flex items-center justify-between">
                             <label className="text-xs font-medium text-zinc-800 block">
-                              Alert volume level
+                              Alert volume
                             </label>
-                            <span className="text-[10px] text-zinc-400">Audio boost</span>
+                            <span className="text-[10px] text-zinc-400">Volume level</span>
                           </div>
                           <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 p-1.5 rounded-xl border border-zinc-100">
                             {[
-                              { id: 'standard', label: 'Standard' },
+                              { id: 'standard', label: 'Normal' },
                               { id: 'loud', label: 'Loud' },
-                              { id: 'very_loud', label: 'Extra loud' }
+                              { id: 'very_loud', label: 'Very loud' }
                             ].map((vol) => (
                               <button
                                 key={vol.id}
@@ -2529,7 +2529,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 onClick={(e) => {
                                   e.preventDefault();
                                   updateAudioPreference('urgentVolumeBoost', vol.id);
-                                  showFeedback(`Volume level set to ${vol.label}.`);
+                                  showFeedback(`Alert volume set to ${vol.label}.`);
                                 }}
                                 className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
                                   alertVolume === vol.id
@@ -2541,6 +2541,45 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               </button>
                             ))}
                           </div>
+                        </div>
+
+                        {/* Test sound controls */}
+                        <div className={`space-y-2 py-2.5 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-zinc-800 block">
+                              Test sound
+                            </label>
+                            <span className="text-[10px] text-zinc-400">Preview alert tone</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resumeAudioContext();
+                                playSound('emergency', { volume: alertVolume, profile: alertProfile });
+                                showFeedback('Playing alert sound.');
+                              }}
+                              className="flex-1 font-medium text-xs bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                            >
+                              <Volume2 className="w-3.5 h-3.5 text-[#C59B27]" />
+                              <span>Test sound</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                try {
+                                  stopAllUrgentAlertEffects();
+                                  showFeedback('Sound stopped.');
+                                } catch (_) {}
+                              }}
+                              className="font-medium text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                            >
+                              Stop sound
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-zinc-500">
+                            Keep your device volume turned on so urgent alerts can be heard.
+                          </p>
                         </div>
 
                         {/* Urgent Alerts Only Toggle */}
@@ -2676,23 +2715,23 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           </div>
                           <div>
                             <h3 className="font-serif font-medium text-[#18181B] text-base">Device alert status</h3>
-                            <p className="text-xs text-zinc-500 mt-0.5">Live readiness check of alert delivery on this active terminal.</p>
+                            <p className="text-xs text-zinc-500 mt-0.5">Check that alert notifications can reach this device.</p>
                           </div>
                         </div>
                       </div>
 
-                      {/* Explainer with premium honest wording */}
+                      {/* Explainer with practical guidance */}
                       <div 
                         className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 text-xs text-zinc-600 space-y-2 leading-relaxed"
                         data-component-version="admin-alert-delivery-explainer-v2"
                       >
-                        <p className="font-semibold text-zinc-800">Honest Safety Notice</p>
+                        <p className="font-semibold text-zinc-800">Alert delivery advice</p>
                         <p>
-                          For laptops, keep this app open during the event for the full urgent alert experience. Browser push can still notify you in the background when supported and enabled.
+                          Keep your device volume turned on so urgent alerts can be heard. For the most reliable alert delivery, keep this application open on your duty device during active event hours.
                         </p>
                         <p className="text-[#C59B27] font-medium flex items-center gap-1">
                           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] animate-pulse"></span>
-                          Best protection: Keep this application open on your duty laptop during active hours.
+                          Recommended: Keep this tab open during event duty.
                         </p>
                       </div>
 
