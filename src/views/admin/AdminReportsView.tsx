@@ -11,7 +11,8 @@ import {
   Check, 
   ArrowLeft, 
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
@@ -270,8 +271,12 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   // Event Overview State (Prompt Sections 44-46)
   const [liveOverviewAnalytics, setLiveOverviewAnalytics] = useState<any>(null);
 
-  // Confirmation modal
-  const [confirmModal, setConfirmModal] = useState<{ type: 'delete' | 'archive'; reportId: string } | null>(null);
+  // Bulk selection & Delete modal states (Priority 14, 15, 16)
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   // Audit modal
   const [auditReportId, setAuditReportId] = useState<string | null>(null);
@@ -586,15 +591,112 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     }
   };
 
-  const handleDeleteReport = async (reportId: string) => {
+  // Selection Handlers (Priority 14)
+  const handleToggleSelectRow = (reportId: string) => {
+    setSelectedReportIds(prev =>
+      prev.includes(reportId) ? prev.filter(id => id !== reportId) : [...prev, reportId]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedReportIds.length === generatedReports.length) {
+      setSelectedReportIds([]);
+    } else {
+      setSelectedReportIds(generatedReports.map(r => r.id));
+    }
+  };
+
+  // Single Delete Confirmation & Execution (Priority 16)
+  const handleDeleteReport = (reportId: string, title?: string) => {
+    const report = generatedReports.find(r => r.id === reportId);
+    const reportTitle = title || report?.reportTitle || report?.report_name || report?.templateName || 'Report';
+    setDeleteTarget({ id: reportId, title: reportTitle });
+  };
+
+  const handleConfirmSingleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await api.request(`/api/admin/reports/${reportId}`, { method: 'DELETE' });
+      const res = await api.request<any>(`/api/admin/reports/${deleteTarget.id}`, { method: 'DELETE' });
       if (res && res.success) {
+        // Optimistic UI update without browser refresh
+        setGeneratedReports(prev => prev.filter(r => r.id !== deleteTarget.id));
+        setSelectedReportIds(prev => prev.filter(id => id !== deleteTarget.id));
         showSuccess('Deleted', 'Report deleted.');
+        setDeleteTarget(null);
         fetchReportsListAndTemplates();
+      } else {
+        showError('Delete Failed', res?.error || 'Could not delete report.');
       }
     } catch (err: any) {
-      showError('Failed', extractApiError(err).message);
+      showError('Delete Failed', extractApiError(err).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Bulk Delete Confirmation & Execution (Priority 15)
+  const handleConfirmBulkDelete = async () => {
+    if (selectedReportIds.length === 0) return;
+    setDeleting(true);
+    try {
+      const res = await api.request<any>('/api/admin/reports/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ reportIds: selectedReportIds })
+      });
+      if (res && res.success) {
+        const deletedCount = res.deletedCount || selectedReportIds.length;
+        // Optimistic UI update without browser refresh
+        setGeneratedReports(prev => prev.filter(r => !selectedReportIds.includes(r.id)));
+        setSelectedReportIds([]);
+        setBulkDeleteConfirmOpen(false);
+        showSuccess('Deleted', `${deletedCount} report${deletedCount === 1 ? '' : 's'} deleted.`);
+        fetchReportsListAndTemplates();
+      } else {
+        showError('Delete Failed', res?.error || 'Could not delete selected reports.');
+      }
+    } catch (err: any) {
+      showError('Delete Failed', extractApiError(err).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Bulk Download as ZIP (Priority 17)
+  const handleBulkDownload = async () => {
+    if (selectedReportIds.length === 0) return;
+    setBulkDownloading(true);
+    try {
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || '';
+      const res = await fetch(buildApiUrl('/api/admin/reports/bulk-download'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ reportIds: selectedReportIds })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to download selected reports.');
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.download = `Koinonia-Reports-Archive-${dateStr}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      showSuccess('Downloaded', `Downloaded ${selectedReportIds.length} reports in ZIP.`);
+    } catch (err: any) {
+      showError('Download Failed', err?.message || 'Could not complete bulk download.');
+    } finally {
+      setBulkDownloading(false);
     }
   };
 
@@ -786,124 +888,192 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               </Button>
             </div>
           ) : (
-            /* Generated Report List Table (Prompt Section 8) */
-            <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" aria-label="Reports Archive">
-                  <thead>
-                    <tr className="bg-stone-50 border-b border-stone-200">
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Event</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Type</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created by</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
-                      <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {generatedReports.map((report) => {
-                      const isComplete = report.status === 'completed' || report.status === 'ready';
-                      const isPending = ['queued', 'generating'].includes(report.status);
-                      const isFailed = report.status === 'failed';
+            <div className="space-y-3">
+              {/* Contextual Bulk Action Bar (Priority 14, 15, 17) */}
+              {selectedReportIds.length > 0 && (
+                <div className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-xl px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-stone-800">
+                      {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'} selected
+                    </span>
+                    <button
+                      onClick={() => setSelectedReportIds([])}
+                      className="text-xs text-stone-500 hover:text-stone-800 underline ml-2 cursor-pointer"
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleBulkDownload}
+                      disabled={bulkDownloading}
+                      variant="outline"
+                      className="bg-white border-stone-200 text-stone-700 hover:bg-stone-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                      id="btn-bulk-download"
+                    >
+                      {bulkDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : <Download className="w-3.5 h-3.5 text-stone-500" />}
+                      Download selected
+                    </Button>
+                    <Button
+                      onClick={() => setBulkDeleteConfirmOpen(true)}
+                      disabled={deleting}
+                      variant="outline"
+                      className="bg-white border-red-200 text-red-700 hover:bg-red-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                      id="btn-bulk-delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      Delete selected
+                    </Button>
+                  </div>
+                </div>
+              )}
 
-                      const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Management Report';
-                      const eventTitle = report.eventTitle || report.eventName || 'The General Assembly 2026';
-                      const typeName = report.templateName || 'Management summary';
-                      const preparedBy = report.requestedByName || report.requestedByEmail || 'Super Admin';
-                      const statusLabel = getReportStatusLabel(report.status);
-                      const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
+              {/* Generated Report List Table (Prompt Section 8) */}
+              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse" aria-label="Reports Archive">
+                    <thead>
+                      <tr className="bg-stone-50 border-b border-stone-200">
+                        <th className="py-3 px-4 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={generatedReports.length > 0 && selectedReportIds.length === generatedReports.length}
+                            ref={el => {
+                              if (el) {
+                                el.indeterminate = selectedReportIds.length > 0 && selectedReportIds.length < generatedReports.length;
+                              }
+                            }}
+                            onChange={handleToggleSelectAll}
+                            className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                            aria-label="Select all reports"
+                          />
+                        </th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Event</th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Type</th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created</th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created by</th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
+                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {generatedReports.map((report) => {
+                        const isComplete = report.status === 'completed' || report.status === 'ready';
+                        const isPending = ['queued', 'generating'].includes(report.status);
+                        const isFailed = report.status === 'failed';
 
-                      return (
-                        <tr key={report.id} className="hover:bg-stone-50/60 transition-colors">
-                          <td className="py-4 px-6">
-                            <div className="space-y-0.5">
-                              <span className="text-sm font-semibold text-stone-900 block line-clamp-1">
-                                {reportTitle}
-                              </span>
-                              <span className="text-xs text-stone-400 block">
-                                {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-4 px-6 text-xs text-stone-700 font-medium">
-                            {eventTitle}
-                          </td>
-                          <td className="py-4 px-6 text-xs text-stone-600">
-                            {typeName}
-                          </td>
-                          <td className="py-4 px-6 text-xs text-stone-500 tabular-nums">
-                            {formattedDate}
-                          </td>
-                          <td className="py-4 px-6 text-xs text-stone-700 font-medium">
-                            {preparedBy}
-                          </td>
-                          <td className="py-4 px-6">
-                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
-                              isComplete ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/60' :
-                              isPending ? 'bg-amber-50 text-amber-800 border border-amber-200/60' :
-                              isFailed ? 'bg-red-50 text-red-800 border border-red-200/60' :
-                              'bg-stone-100 text-stone-600'
-                            }`}>
-                              {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
-                              {statusLabel}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {isComplete && (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      setPreviewingReportId(report.id);
-                                      setPreviewReportTitle(reportTitle);
-                                      setPreviewEventTitle(eventTitle);
-                                    }}
-                                    className="h-8 px-3 bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1 shadow-2xs"
-                                    id={`btn-view-${report.id}`}
-                                  >
-                                    <Eye className="w-3.5 h-3.5 text-stone-500" />
-                                    View
-                                  </button>
+                        const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Management Report';
+                        const eventTitle = report.eventTitle || report.eventName || 'The General Assembly 2026';
+                        const typeName = report.templateName || 'Management summary';
+                        const preparedBy = report.requestedByName || report.requestedByEmail || 'Super Admin';
+                        const statusLabel = getReportStatusLabel(report.status);
+                        const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
+                        const isSelected = selectedReportIds.includes(report.id);
 
-                                  <button
-                                    onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
-                                    className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
-                                    id={`btn-download-${report.id}`}
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                    Download
-                                  </button>
-                                </>
-                              )}
-
-                              {isFailed && (
-                                <button
-                                  onClick={() => handleRegenerateReport(report.id)}
-                                  className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
-                                  id={`btn-retry-${report.id}`}
-                                >
-                                  <RefreshCw className="w-3 h-3" />
-                                  Try again
-                                </button>
-                              )}
-
-                              <ReportActionsMenu
-                                reportId={report.id}
-                                status={report.status}
-                                onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
-                                onViewHistory={() => viewAuditLogs(report.id)}
-                                onRegenerate={() => handleRegenerateReport(report.id)}
-                                onArchive={() => handleArchiveReport(report.id)}
-                                onDelete={() => handleDeleteReport(report.id)}
+                        return (
+                          <tr 
+                            key={report.id} 
+                            className={`hover:bg-stone-50/60 transition-colors ${isSelected ? 'bg-[#FAF9F6]' : ''}`}
+                          >
+                            <td className="py-4 px-4 w-10 text-center" onClick={e => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectRow(report.id)}
+                                className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                aria-label={`Select report ${reportTitle}`}
                               />
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="py-4 px-6">
+                              <div className="space-y-0.5">
+                                <span className="text-sm font-semibold text-stone-900 block line-clamp-1">
+                                  {reportTitle}
+                                </span>
+                                <span className="text-xs text-stone-400 block">
+                                  {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                              {eventTitle}
+                            </td>
+                            <td className="py-4 px-6 text-xs text-stone-600">
+                              {typeName}
+                            </td>
+                            <td className="py-4 px-6 text-xs text-stone-500 tabular-nums">
+                              {formattedDate}
+                            </td>
+                            <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                              {preparedBy}
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
+                                isComplete ? 'bg-stone-100 text-stone-700 border border-stone-200/80' :
+                                isPending ? 'bg-amber-50 text-amber-800 border border-amber-200/60' :
+                                isFailed ? 'bg-red-50 text-red-800 border border-red-200/60' :
+                                'bg-stone-100 text-stone-600'
+                              }`}>
+                                {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
+                                {statusLabel}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {isComplete && (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setPreviewingReportId(report.id);
+                                        setPreviewReportTitle(reportTitle);
+                                        setPreviewEventTitle(eventTitle);
+                                      }}
+                                      className="h-8 px-3 bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                      id={`btn-view-${report.id}`}
+                                    >
+                                      <Eye className="w-3.5 h-3.5 text-stone-500" />
+                                      View
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
+                                      className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                      id={`btn-download-${report.id}`}
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                      Download
+                                    </button>
+                                  </>
+                                )}
+
+                                {isFailed && (
+                                  <button
+                                    onClick={() => handleRegenerateReport(report.id)}
+                                    className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                                    id={`btn-retry-${report.id}`}
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    Try again
+                                  </button>
+                                )}
+
+                                <ReportActionsMenu
+                                  reportId={report.id}
+                                  status={report.status}
+                                  onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
+                                  onViewHistory={() => viewAuditLogs(report.id)}
+                                  onRegenerate={() => handleRegenerateReport(report.id)}
+                                  onArchive={() => handleArchiveReport(report.id)}
+                                  onDelete={() => handleDeleteReport(report.id, reportTitle)}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1634,6 +1804,112 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-4 rounded-lg"
                 >
                   Close
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- SINGLE DELETE CONFIRMATION MODAL (Priority 16) ----------------- */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="single-delete-title"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-red-50 text-red-600 rounded-full shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="single-delete-title" className="text-base font-semibold text-stone-900">
+                    Delete report?
+                  </h3>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Are you sure you want to delete <span className="font-medium text-stone-800 font-serif">"{deleteTarget.title}"</span>? This will permanently remove the generated PDF document and snapshot data.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-3.5 rounded-lg"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmSingleDelete}
+                  disabled={deleting}
+                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
+                  id="btn-confirm-single-delete"
+                >
+                  {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Delete report
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- BULK DELETE CONFIRMATION MODAL (Priority 15) ----------------- */}
+      <AnimatePresence>
+        {bulkDeleteConfirmOpen && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="bulk-delete-title"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-red-50 text-red-600 rounded-full shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="bulk-delete-title" className="text-base font-semibold text-stone-900">
+                    Delete {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'}?
+                  </h3>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Are you sure you want to delete {selectedReportIds.length} selected {selectedReportIds.length === 1 ? 'report' : 'reports'}? This will permanently remove the generated files and snapshot data.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setBulkDeleteConfirmOpen(false)}
+                  disabled={deleting}
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-3.5 rounded-lg"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmBulkDelete}
+                  disabled={deleting}
+                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
+                  id="btn-confirm-bulk-delete"
+                >
+                  {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Delete {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'}
                 </Button>
               </div>
             </motion.div>

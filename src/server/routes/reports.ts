@@ -17,6 +17,7 @@ import {
   getValidatedBrandLogo
 } from '../services/reportService';
 import { calculateAnalytics } from '../services/reportAnalyticsService';
+import { createZipArchive } from '../utils/zipHelper';
 
 const router = Router();
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), 'data', 'reports');
@@ -753,7 +754,142 @@ router.post('/:reportId/archive', async (req: AuthenticatedRequest, res: Respons
   }
 });
 
-// 9. Delete a report permanently
+// 9. Bulk delete reports (Priority 14 & 15)
+router.post('/bulk-delete', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role || 'parent';
+    if (role !== 'super_admin' && role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized access. Super Admin or Admin access required to delete reports.' });
+    }
+
+    const { reportIds } = req.body;
+    if (!Array.isArray(reportIds) || reportIds.length === 0) {
+      return res.status(400).json({ error: 'No report IDs provided for deletion.' });
+    }
+
+    const placeholders = reportIds.map(() => '?').join(',');
+
+    // Identify files to remove
+    const genReports = await query(`SELECT storage_key, report_job_id FROM generated_reports WHERE report_job_id IN (${placeholders})`, reportIds);
+    for (const gr of genReports) {
+      if (gr.storage_key) {
+        const filePath = resolveReportFilePath(gr.storage_key, gr.report_job_id);
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (e) {
+            console.error('[Bulk Delete Report] Failed to remove file:', e);
+          }
+        }
+      }
+    }
+
+    let deletedCount = 0;
+    await transaction(async () => {
+      await execute(`DELETE FROM report_history WHERE report_job_id IN (${placeholders})`, reportIds);
+      await execute(`DELETE FROM report_download_tokens WHERE generated_report_id IN (SELECT id FROM generated_reports WHERE report_job_id IN (${placeholders}))`, reportIds);
+      await execute(`DELETE FROM generated_reports WHERE report_job_id IN (${placeholders})`, reportIds);
+      const delRes = await execute(`DELETE FROM report_jobs WHERE id IN (${placeholders})`, reportIds);
+      deletedCount = delRes.changes || 0;
+    });
+
+    // Priority 15 verification:
+    // If 3 requested and 0 deleted: DO NOT return success.
+    // If 3 requested and 3 deleted: return success.
+    if (deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'None of the requested reports could be found or deleted.' });
+    }
+
+    return res.json({
+      success: true,
+      requestedCount: reportIds.length,
+      deletedCount,
+      message: `Successfully deleted ${deletedCount} report${deletedCount === 1 ? '' : 's'}.`
+    });
+  } catch (err: any) {
+    console.error('[Bulk Delete Reports] Error:', err);
+    return res.status(500).json({ error: 'Failed to delete selected reports.' });
+  }
+});
+
+// 9b. Bulk download reports as ZIP (Priority 17)
+router.post('/bulk-download', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role || 'parent';
+    const userId = req.user?.id || 'unknown';
+
+    if (!['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead', 'team'].includes(role)) {
+      return res.status(403).json({ error: 'Unauthorized access. Admin role required to download reports.' });
+    }
+
+    const { reportIds } = req.body;
+    if (!Array.isArray(reportIds) || reportIds.length === 0) {
+      return res.status(400).json({ error: 'No report IDs provided for download.' });
+    }
+
+    const placeholders = reportIds.map(() => '?').join(',');
+    const jobs = await query(`
+      SELECT rj.*, gr.storage_key, gr.document_model_json
+      FROM report_jobs rj
+      LEFT JOIN generated_reports gr ON rj.id = gr.report_job_id
+      WHERE rj.id IN (${placeholders})
+    `, reportIds);
+
+    const filesToZip: { name: string; buffer: Buffer }[] = [];
+    const usedNames = new Set<string>();
+
+    for (const job of jobs) {
+      if (!job.storage_key) continue;
+      const filePath = resolveReportFilePath(job.storage_key, job.id);
+      if (fs.existsSync(filePath)) {
+        const fileBuffer = fs.readFileSync(filePath);
+        if (fileBuffer.length > 0) {
+          let docModel: any = null;
+          if (job.document_model_json) {
+            try { docModel = JSON.parse(job.document_model_json); } catch (_) {}
+          }
+          const template = REPORT_TEMPLATES.find(t => t.key === job.template_key);
+          const title = docModel?.reportTitle || template?.name || 'Report';
+          const eventTitle = docModel?.eventContext?.eventTitle || 'Event';
+          const baseName = formatReportFilename(eventTitle, title, job.completed_at || job.created_at);
+          
+          let finalName = baseName;
+          let counter = 1;
+          while (usedNames.has(finalName)) {
+            finalName = baseName.replace(/\.pdf$/, `-${counter++}.pdf`);
+          }
+          usedNames.add(finalName);
+          filesToZip.push({ name: finalName, buffer: fileBuffer });
+
+          await execute(`
+            INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
+            VALUES (?, ?, ?, 'bulk_downloaded', 'Report PDF included in bulk ZIP download.', ?)
+          `, ['hist-' + crypto.randomUUID(), job.id, userId, new Date().toISOString()]);
+        }
+      }
+    }
+
+    if (filesToZip.length === 0) {
+      return res.status(404).json({ error: 'None of the selected reports have completed PDF files available for download.' });
+    }
+
+    const zipBuffer = createZipArchive(filesToZip);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const zipFilename = `Koinonia-Reports-Archive-${dateStr}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.send(zipBuffer);
+  } catch (err: any) {
+    console.error('[Bulk Download Reports] Error:', err);
+    return res.status(500).json({ error: 'Failed to generate bulk report download.' });
+  }
+});
+
+// 9c. Delete a single report (Priority 16)
 router.delete('/:reportId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const role = req.user?.role || 'parent';
@@ -773,14 +909,20 @@ router.delete('/:reportId', async (req: AuthenticatedRequest, res: Response) => 
       }
     }
 
+    let deletedCount = 0;
     await transaction(async () => {
       await execute('DELETE FROM report_history WHERE report_job_id = ?', [req.params.reportId]);
       await execute('DELETE FROM report_download_tokens WHERE generated_report_id IN (SELECT id FROM generated_reports WHERE report_job_id = ?)', [req.params.reportId]);
       await execute('DELETE FROM generated_reports WHERE report_job_id = ?', [req.params.reportId]);
-      await execute('DELETE FROM report_jobs WHERE id = ?', [req.params.reportId]);
+      const delRes = await execute('DELETE FROM report_jobs WHERE id = ?', [req.params.reportId]);
+      deletedCount = delRes.changes || 0;
     });
 
-    return res.json({ success: true, message: 'Report deleted successfully.' });
+    if (deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Report could not be found or was already deleted.' });
+    }
+
+    return res.json({ success: true, deletedCount, message: 'Report deleted successfully.' });
   } catch (err: any) {
     console.error('[Delete Report] Error:', err);
     return res.status(500).json({ error: 'Failed to delete report.' });

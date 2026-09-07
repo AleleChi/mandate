@@ -11,99 +11,125 @@ export function buildOfflineResilienceReport(
   const reconciledCount = analytics.offline.confirmedQueuedCount || 0;
   const queuedActionsCount = analytics.offline.queuedActionsCount || 0;
   const disconnectionsCount = analytics.offline.totalInterruptions || 0;
-  const averageSyncLatency = analytics.offline.averageOfflineDurationSeconds || 0.0;
+  const averageSyncLatency = analytics.offline.averageOfflineDurationSeconds;
 
   const kpis: ReportKPI[] = [
     {
-      label: 'Offline Scans Sync',
-      value: queuedActionsCount,
-      sublabel: `${reconciledCount} fully reconciled`,
-      color: 'gold'
+      label: 'Queued scans',
+      value: String(queuedActionsCount),
+      sublabel: `${reconciledCount} reconciled`,
+      color: 'charcoal'
     },
     {
-      label: 'Median Sync Time',
-      value: averageSyncLatency > 0 
-        ? `${averageSyncLatency.toFixed(1)}s` 
-        : '0s',
-      sublabel: 'Outbox transit duration to server',
-      color: 'green'
+      label: 'Sync duration',
+      value: averageSyncLatency !== null && averageSyncLatency !== undefined
+        ? `${averageSyncLatency.toFixed(1)}s`
+        : 'Unavailable',
+      sublabel: averageSyncLatency !== null && averageSyncLatency !== undefined
+        ? 'Average recorded sync latency'
+        : 'Duration not recorded in database',
+      color: 'charcoal'
     },
     {
-      label: 'Reconcile Success',
+      label: 'Reconciliation rate',
       value: queuedActionsCount > 0 
-        ? `${(reconciledCount / queuedActionsCount * 100).toFixed(1)}%` 
+        ? `${((reconciledCount / queuedActionsCount) * 100).toFixed(0)}%` 
         : '100%',
       sublabel: 'Conflict resolution success rate',
-      color: 'green'
+      color: 'charcoal'
     },
     {
-      label: 'Network Drops',
-      value: disconnectionsCount,
-      sublabel: 'Client-socket reconnect cycles',
-      color: disconnectionsCount > 2 ? 'amber' : 'green'
+      label: 'Network interruptions',
+      value: String(disconnectionsCount),
+      sublabel: 'Recorded reconnection cycles',
+      color: 'charcoal'
     }
   ];
 
   const sections: ReportSection[] = [];
 
-  if (selectedSections.includes('Executive Summary')) {
+  if (selectedSections.length === 0 || selectedSections.includes('Executive Summary') || selectedSections.includes('Resilience overview')) {
+    const durationText = averageSyncLatency !== null && averageSyncLatency !== undefined
+      ? `Recorded sync transmission latency averaged ${averageSyncLatency.toFixed(1)} seconds.`
+      : 'Specific offline connection durations were not tracked in system records.';
+
     sections.push({
       id: 'resilience-summary',
-      title: 'Connectivity and Offline Resilience Overview',
+      title: 'Connectivity and offline resilience overview',
       type: 'narrative',
       content: {
-        text: `This report evaluates terminal connectivity, offline data synchronization, and database reconciliation for "${analytics.eventTitle}". Terminal devices successfully buffered scanned records locally during brief network drops, queueing ${queuedActionsCount} transactions in offline storage. All queued entries were subsequently reconciled with the central database upon connection restoration. The median sync transmission delay was recorded at ${averageSyncLatency ? averageSyncLatency.toFixed(1) + ' seconds' : 'under 2 seconds'}. A total of ${disconnectionsCount} brief network reconnect cycles were detected and handled automatically.`
+        text: `This report evaluates terminal connectivity, offline data buffering, and central synchronization for "${analytics.eventTitle}". On-duty devices recorded ${queuedActionsCount} transactions buffered locally during temporary connection drops, with ${reconciledCount} successfully reconciled upon reconnect. ${durationText} A total of ${disconnectionsCount} network interruption cycle(s) were logged.`
       }
     });
   }
 
-  if (selectedSections.includes('Safeguarding Audits & Device Readiness')) {
-    sections.push({
-      id: 'resilience-table',
-      title: 'Terminal Outbox and Synchronization Summary',
-      type: 'table',
-      content: {
-        headers: ['Terminal Device Identifier', 'Outbox Queue Count', 'Reconciled Records', 'Sync Transmission Delay'],
-        rows: snapshot.deviceSyncs?.map((ds: any) => [
-          ds.deviceId || 'Terminal #1',
-          `${ds.queueSize || '0'} entries`,
-          `${ds.reconciledCount || '0'} reconciled`,
-          `${ds.avgLatencySeconds?.toFixed(1) || '0.0'}s`
-        ]) || [
-          ['Terminal #12', '4 scans', '4 reconciled', '1.8s'],
-          ['Terminal #14', '0 scans', '0 reconciled', '0.0s']
-        ]
-      }
-    });
+  // Device sync summary (real records only — no dummy Terminal #12 / #14 rows)
+  const deviceSyncs = snapshot.deviceSyncs || snapshot.syncRecords || [];
+  if (selectedSections.length === 0 || selectedSections.includes('Safeguarding Audits & Device Readiness') || selectedSections.includes('Sync records')) {
+    if (deviceSyncs.length > 0) {
+      sections.push({
+        id: 'resilience-table',
+        title: 'Terminal synchronization log',
+        type: 'table',
+        content: {
+          headers: ['Terminal identifier', 'Queued scans', 'Reconciled', 'Status'],
+          rows: deviceSyncs.map((ds: any) => [
+            ds.deviceId || ds.device_identifier || 'Terminal scanner',
+            `${ds.queueSize || ds.queued_count || 0} scans`,
+            `${ds.reconciledCount || ds.reconciled_count || 0} reconciled`,
+            ds.status || 'Active'
+          ])
+        }
+      });
+    }
   }
 
   const findings: ReportFinding[] = [
     {
       id: 'res-finding-1',
-      title: 'Outbox Sync Resolution',
-      observation: 'The client offline IndexedDB storage correctly cached scanning records, protecting all transactions from data-loss during disconnections.',
-      severity: 'info',
-      supportingData: `Sync reliability rate: 100.0% (${reconciledCount} verified reconciled items)`
+      title: 'Offline transaction preservation',
+      observation: `${reconciledCount} of ${queuedActionsCount || reconciledCount} buffered transactions were successfully committed to central records without data loss.`,
+      severity: 'info'
     }
   ];
 
-  const recommendations: ReportRecommendation[] = [
-    {
+  if (disconnectionsCount > 5) {
+    findings.push({
+      id: 'res-finding-2',
+      title: 'Elevated reconnect frequency',
+      observation: `${disconnectionsCount} network reconnection cycles were recorded during event operations.`,
+      severity: 'warning'
+    });
+  }
+
+  const recommendations: ReportRecommendation[] = [];
+  if (disconnectionsCount > 5) {
+    recommendations.push({
       id: 'res-rec-1',
-      action: 'Increase client-side local cache limits to store up to 5,000 offline scans.',
-      evidence: `${queuedActionsCount} offline action(s) were buffered across ${disconnectionsCount} network drop cycle(s) during "${analytics.eventTitle}".`,
-      rationale: 'Provide comfortable safety headroom for extended full-day events running in poor cellular coverage zones.',
+      action: 'Evaluate venue Wi-Fi access point placement and signal coverage.',
+      evidence: `${disconnectionsCount} network drop cycles occurred during the event.`,
+      rationale: 'Reduces terminal reconnection retries during peak check-in periods.',
       priority: 'medium',
-      responsibility: 'IT and Systems Administrator'
-    }
-  ];
+      responsibility: 'Technical Lead'
+    });
+  }
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'res-rec-none',
+      action: 'No immediate follow-up identified from the available event data.',
+      evidence: 'Offline data caching and server reconciliation functioned normally.',
+      rationale: 'Terminal synchronisation standards maintained.',
+      priority: 'low',
+      responsibility: 'Technical Lead'
+    });
+  }
 
   return {
     reportId,
     templateKey: 'offline-resilience-report-v1',
-    templateVersion: 1,
+    templateVersion: 2,
     reportTitle: 'Connectivity and Offline Resilience Report',
-    reportDescription: 'Tracks network interruptions, delayed offline scans, outbox queuing durations, and conflict reconciliations.',
+    reportDescription: 'Evaluates network interruptions, offline scan queuing, outbox sync completion, and database reconciliation.',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
@@ -115,13 +141,13 @@ export function buildOfflineResilienceReport(
       secondaryColor: [39, 39, 42]
     },
     privacyClassification: privacyLevel,
-    intendedAudience: 'Super Admin, IT Team',
+    intendedAudience: 'Super Admin, Technical Lead',
     reportingPeriod: {
       start: analytics.startsAt,
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 1,
+    reportVersion: 2,
     kpis,
     sections,
     findings,
@@ -129,13 +155,13 @@ export function buildOfflineResilienceReport(
     dataQuality: {
       score: analytics.dataQuality.dataConfidenceScore,
       status: analytics.dataQuality.overallConfidence,
-      notes: 'Sync metrics computed from cryptographic handshakes between supervisor local outboxes and server receipts.'
+      notes: 'Synchronization records compiled from terminal outbox logs.'
     },
     methodology: [
-      'Grounded inspection of offline scanning buffers and browser disconnect event logs.'
+      'Verification of local client database transactions and server confirmation timestamps.'
     ],
     limitations: [
-      'Sync measurements capture local database insertion intervals and cannot measure hardware network layer packets.'
+      'Offline duration is tracked only when devices record explicit disconnection and reconnection timestamps.'
     ]
   };
 }

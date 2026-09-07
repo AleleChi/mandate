@@ -8,97 +8,125 @@ export function buildTrainingDrillReport(
   privacyLevel: string,
   selectedSections: string[]
 ): ReportDocumentModel {
-  const totalObjectives = analytics.training?.objectivesCount || 5;
-  const completedObjectives = analytics.training?.objectivesCompletedCount || 5;
-  const drillCompletionRate = totalObjectives > 0 ? (completedObjectives / totalObjectives) * 100 : 100;
+  const totalObjectives = analytics.training?.objectivesCount || (snapshot.drillObjectives?.length ?? 0);
+  const completedObjectives = analytics.training?.objectivesCompletedCount || 0;
+  const drillCompletionRate = totalObjectives > 0 ? (completedObjectives / totalObjectives) * 100 : 0;
+  const activeStaff = analytics.volunteers.activeOnDuty || (snapshot.participants?.length ?? 0);
+  const medianAlarmSpeed = analytics.alerts.medianAcknowledgementTimeSeconds;
 
   const kpis: ReportKPI[] = [
     {
-      label: 'Drill Completion',
-      value: `${drillCompletionRate.toFixed(0)}%`,
-      sublabel: `${completedObjectives} of ${totalObjectives} safety objectives achieved`,
-      color: 'green'
+      label: 'Objectives completed',
+      value: totalObjectives > 0 ? `${completedObjectives} of ${totalObjectives}` : 'None recorded',
+      sublabel: totalObjectives > 0 ? `${drillCompletionRate.toFixed(0)}% completion rate` : 'No objectives evaluated',
+      color: 'charcoal'
     },
     {
-      label: 'Participating Staff',
-      value: analytics.volunteers.activeOnDuty || 12,
-      sublabel: 'Supervisors trained on protocol',
-      color: 'gold'
+      label: 'Staff participating',
+      value: String(activeStaff),
+      sublabel: 'Supervisors on drill roster',
+      color: 'charcoal'
     },
     {
-      label: 'Median Alarm Speed',
-      value: analytics.alerts.medianAcknowledgementTimeSeconds 
-        ? `${analytics.alerts.medianAcknowledgementTimeSeconds.toFixed(1)}s` 
-        : '28s',
-      sublabel: 'Acknowledge reaction test result',
-      color: 'green'
+      label: 'Median reaction',
+      value: medianAlarmSpeed !== null && medianAlarmSpeed !== undefined ? `${medianAlarmSpeed.toFixed(1)}s` : 'Unavailable',
+      sublabel: 'Simulated alarm acknowledgment',
+      color: 'charcoal'
     },
     {
-      label: 'Safety Scorecard',
-      value: 'Grade A',
-      sublabel: 'Full readiness confirmed',
+      label: 'Resolution time',
+      value: analytics.training?.medianResolutionTimeSeconds !== null && analytics.training?.medianResolutionTimeSeconds !== undefined
+        ? `${analytics.training.medianResolutionTimeSeconds.toFixed(1)}s`
+        : 'Unavailable',
+      sublabel: 'Time to complete simulated resolution',
       color: 'charcoal'
     }
   ];
 
   const sections: ReportSection[] = [];
 
-  if (selectedSections.includes('Executive Summary')) {
+  if (selectedSections.length === 0 || selectedSections.includes('Executive Summary') || selectedSections.includes('Drill summary')) {
+    const timingSentence = medianAlarmSpeed !== null && medianAlarmSpeed !== undefined
+      ? `Simulated alarms were acknowledged with a recorded median reaction time of ${medianAlarmSpeed.toFixed(1)} seconds.`
+      : 'Alarm acknowledgment timing was not captured during this session.';
+
     sections.push({
       id: 'drill-summary',
-      title: 'Training Drill Scorecard and Audit',
+      title: 'Drill overview',
       type: 'narrative',
       content: {
-        text: `This training report documents performance outcomes from the simulated safeguarding drill conducted under "${analytics.eventTitle}". The drill evaluated alarm notifications, evacuation protocols, and coordinator roles under controlled conditions. Supervisors achieved a drill completion rate of ${drillCompletionRate.toFixed(1)}%, successfully meeting ${completedObjectives} of ${totalObjectives} predefined safety goals. Simulated alarms were acknowledged with a median response time of ${analytics.alerts.medianAcknowledgementTimeSeconds ? analytics.alerts.medianAcknowledgementTimeSeconds.toFixed(1) + ' seconds' : '28 seconds'}.`
+        text: `This report documents evaluated outcomes from the simulated safeguarding drill for "${analytics.eventTitle}". The drill tested emergency alarm notification, coordinator acknowledgment, and procedural compliance under controlled conditions. ${totalObjectives > 0 ? `${completedObjectives} of ${totalObjectives} configured safety objectives were completed (${drillCompletionRate.toFixed(1)}% completion rate).` : 'No formal predefined objectives were logged for this session.'} ${timingSentence} A total of ${activeStaff} staff members participated in the drill.`
       }
     });
   }
 
-  if (selectedSections.includes('Operational Metrics')) {
-    sections.push({
-      id: 'drill-objectives-table',
-      title: 'Drill Performance by Safety Objective',
-      type: 'table',
-      content: {
-        headers: ['Safety Objective', 'Target Response Threshold', 'Measured Performance', 'Compliance Status'],
-        rows: [
-          ['Initialize Simulated Alarm', 'Under 30 seconds', '12 seconds', 'Achieved'],
-          ['Roster Supervisor Acknowledgments', 'Under 60 seconds', '28 seconds', 'Achieved'],
-          ['Trigger Safeguarding Lead Escalation', 'Under 120 seconds', '94 seconds', 'Achieved'],
-          ['Complete Simulated Evacuation Drills', 'Under 10 minutes', '6.5 minutes', 'Achieved'],
-          ['Reconcile Post-Drill Logs', 'Under 15 minutes', '3.1 minutes', 'Achieved']
-        ]
-      }
-    });
+  // Drill Results / Objectives Table (Real recorded results only)
+  const results = snapshot.drillResults || snapshot.drillObjectives || [];
+  if (selectedSections.length === 0 || selectedSections.includes('Operational Metrics') || selectedSections.includes('Objectives')) {
+    if (results.length > 0) {
+      sections.push({
+        id: 'drill-objectives-table',
+        title: 'Safety objectives performance',
+        type: 'table',
+        content: {
+          headers: ['Objective', 'Target', 'Result', 'Status'],
+          rows: results.map((r: any) => [
+            r.name || r.title || 'Safety drill scenario',
+            r.targetThreshold || 'Standard protocol',
+            r.measuredPerformance || (r.time_to_acknowledge ? `${r.time_to_acknowledge}s` : 'Completed'),
+            r.status || 'Evaluated'
+          ])
+        }
+      });
+    }
   }
 
-  const findings: ReportFinding[] = [
-    {
+  const findings: ReportFinding[] = [];
+  if (totalObjectives > 0) {
+    findings.push({
       id: 'trn-finding-1',
-      title: 'Simulated Response Accuracy',
-      observation: 'Supervisors displayed perfect compliance with the physical and digital evacuation guidelines, responding instantly to simulated device alarms.',
-      severity: 'info',
-      supportingData: 'All mock alarms acknowledged inside target limits.'
-    }
-  ];
+      title: 'Objective completion',
+      observation: `${completedObjectives} of ${totalObjectives} evaluated safety drill objectives were successfully met (${drillCompletionRate.toFixed(1)}%).`,
+      severity: drillCompletionRate >= 80 ? 'info' : 'warning'
+    });
+  }
+  if (medianAlarmSpeed !== null && medianAlarmSpeed !== undefined) {
+    findings.push({
+      id: 'trn-finding-2',
+      title: 'Alarm response latency',
+      observation: `Simulated alarms recorded a median acknowledgment interval of ${medianAlarmSpeed.toFixed(1)} seconds.`,
+      severity: medianAlarmSpeed <= 45 ? 'info' : 'warning'
+    });
+  }
 
-  const recommendations: ReportRecommendation[] = [
-    {
+  const recommendations: ReportRecommendation[] = [];
+  if (drillCompletionRate < 100 && totalObjectives > 0) {
+    recommendations.push({
       id: 'trn-rec-1',
-      action: 'Incorporate local audio alarms inside coordinator handsets during mock drills.',
-      evidence: `Drill recorded a ${drillCompletionRate.toFixed(0)}% completion rate across ${completedObjectives} completed safety objective(s) with ${analytics.volunteers.activeOnDuty || 12} participating staff members.`,
-      rationale: 'Familiarize staff with tactile feedback and specific warning frequencies used on site.',
-      priority: 'medium',
+      action: 'Schedule refresher training for unmet drill objectives before next live deployment.',
+      evidence: `${totalObjectives - completedObjectives} drill objective(s) were not fully completed.`,
+      rationale: 'Ensures full team alignment with emergency safeguarding procedures.',
+      priority: 'high',
       responsibility: 'Training Facilitator'
-    }
-  ];
+    });
+  }
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'trn-rec-none',
+      action: 'No immediate follow-up identified from the available event data.',
+      evidence: 'All evaluated drill procedures met established benchmarks.',
+      rationale: 'Routine drill cycle concluded.',
+      priority: 'low',
+      responsibility: 'Training Facilitator'
+    });
+  }
 
   return {
     reportId,
     templateKey: 'training-drill-report-v1',
-    templateVersion: 1,
+    templateVersion: 2,
     reportTitle: 'Training and Drill Report',
-    reportDescription: 'Simulated performance scorecard documenting drill scenarios, objective completions, and training observations.',
+    reportDescription: 'Performance scorecard documenting simulated emergency drill scenarios, objective completions, and supervisor reaction times.',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
@@ -116,7 +144,7 @@ export function buildTrainingDrillReport(
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 1,
+    reportVersion: 2,
     kpis,
     sections,
     findings,
@@ -124,13 +152,13 @@ export function buildTrainingDrillReport(
     dataQuality: {
       score: analytics.dataQuality.dataConfidenceScore,
       status: analytics.dataQuality.overallConfidence,
-      notes: 'Simulation metrics are grounded in recorded sandbox database logs.'
+      notes: 'Metrics reflect actual recorded results from training database records.'
     },
     methodology: [
-      'Simulated action-tracing and timed responses from active sandbox handsets.'
+      'Evaluation of recorded action timestamps from simulated training exercises.'
     ],
     limitations: [
-      'Drill metrics reflect controlled conditions; actual emergency responses may involve physical venue noise variables.'
+      'Drill metrics evaluate simulation conditions and do not reflect physical venue acoustics or real-world crowd variables.'
     ]
   };
 }

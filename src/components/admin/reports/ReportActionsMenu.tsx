@@ -130,7 +130,7 @@ export const ReportActionsMenu: React.FC<ReportActionsMenuProps> = ({
                 role="menuitem"
               >
                 <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                <span>Delete permanently</span>
+                <span>Delete report</span>
               </button>
             )}
           </div>

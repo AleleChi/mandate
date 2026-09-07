@@ -9,100 +9,124 @@ export function buildAlertEscalationReport(
   selectedSections: string[]
 ): ReportDocumentModel {
   const openAlerts = analytics.alerts.alertsByStatus?.open || 0;
-  const acknowledgedCount = analytics.alerts.totalAlerts - openAlerts;
+  const inProgressAlerts = analytics.alerts.alertsByStatus?.in_progress || 0;
+  const resolvedAlerts = analytics.alerts.alertsByStatus?.resolved || 0;
+  const totalAlerts = analytics.alerts.totalAlerts || 0;
   const totalEscalated = analytics.escalations.escalatedAlertsCount || 0;
   const maxTier = analytics.escalations.maxEscalationLevelReached || 0;
-  const ackRate = analytics.alerts.targetAcknowledgementRate || 0;
+  const medianAck = analytics.alerts.medianAcknowledgementTimeSeconds;
+  const ackRate = totalAlerts > 0 ? (resolvedAlerts / totalAlerts) * 100 : 100;
 
   const kpis: ReportKPI[] = [
     {
-      label: 'Total Alarms',
-      value: analytics.alerts.totalAlerts,
-      sublabel: `${acknowledgedCount} acknowledged`,
-      color: 'red'
+      label: 'Total alerts',
+      value: String(totalAlerts),
+      sublabel: `${resolvedAlerts} resolved`,
+      color: 'charcoal'
     },
     {
-      label: 'Median Latency',
-      value: analytics.alerts.medianAcknowledgementTimeSeconds 
-        ? `${analytics.alerts.medianAcknowledgementTimeSeconds.toFixed(1)}s` 
-        : 'N/A',
-      sublabel: 'Target response: Under 45s',
-      color: analytics.alerts.medianAcknowledgementTimeSeconds && analytics.alerts.medianAcknowledgementTimeSeconds <= 45 ? 'green' : 'amber'
+      label: 'Median response',
+      value: medianAck !== null && medianAck !== undefined ? `${medianAck.toFixed(1)}s` : 'Unavailable',
+      sublabel: 'Time to acknowledge alert',
+      color: 'charcoal'
     },
     {
-      label: 'Escalations Run',
-      value: totalEscalated,
-      sublabel: `Max Tier: ${maxTier}`,
-      color: totalEscalated > 0 ? 'red' : 'green'
+      label: 'Escalations',
+      value: String(totalEscalated),
+      sublabel: maxTier > 0 ? `Max Tier ${maxTier}` : 'No escalations',
+      color: 'charcoal'
     },
     {
-      label: 'Handshake Rate',
-      value: `${ackRate.toFixed(1)}%`,
-      sublabel: 'Alerts successfully handshaked',
-      color: 'gold'
+      label: 'Resolution rate',
+      value: `${ackRate.toFixed(0)}%`,
+      sublabel: `${resolvedAlerts} of ${totalAlerts} closed`,
+      color: 'charcoal'
     }
   ];
 
   const sections: ReportSection[] = [];
 
-  if (selectedSections.includes('Executive Summary')) {
+  if (selectedSections.length === 0 || selectedSections.includes('Executive Summary') || selectedSections.includes('Alert summary')) {
+    const timingSentence = medianAck !== null && medianAck !== undefined
+      ? `Median response latency was measured at ${medianAck.toFixed(1)} seconds.`
+      : 'Response latency was not recorded or no alerts occurred.';
+
     sections.push({
       id: 'escalation-summary',
-      title: 'Alert Response and Emergency Escalation Analysis',
+      title: 'Alert response and escalation overview',
       type: 'narrative',
       content: {
-        text: `This safeguarding audit presents response speed metrics and escalation logs for "${analytics.eventTitle}". Response operations handled a total of ${analytics.alerts.totalAlerts} safety alerts, achieving a completed resolution rate of ${ackRate.toFixed(1)}%. Response times remained within ministry safety benchmarks, with a median response latency of ${analytics.alerts.medianAcknowledgementTimeSeconds ? analytics.alerts.medianAcknowledgementTimeSeconds.toFixed(1) + ' seconds' : 'under 45 seconds'}. Incident data is fully anonymized in compliance with child protection guidelines.`
+        text: `This safeguarding audit reviews response times and escalation chains for "${analytics.eventTitle}". Response staff handled ${totalAlerts} safety alerts, with ${resolvedAlerts} resolved (${ackRate.toFixed(1)}% resolution rate). ${timingSentence} A total of ${totalEscalated} alert(s) escalated to senior roles.`
       }
     });
   }
 
-  if (selectedSections.includes('Critical Incident Logs & Escalations')) {
-    sections.push({
-      id: 'escalation-timeline-table',
-      title: 'Escalation Logs and Communication Analysis',
-      type: 'table',
-      content: {
-        headers: ['Alert Category', 'Escalation Tier', 'Acknowledgement Speed', 'Escalation Recipient'],
-        rows: snapshot.alerts?.map((al: any) => [
-          al.alertType || 'General Emergency',
-          `Tier ${al.tierCode || '2'}`,
-          al.acknowledgementLatencySeconds ? `${al.acknowledgementLatencySeconds.toFixed(1)}s` : 'Resolved',
-          al.escalatedToRole || 'Safeguarding Supervisor'
-        ]) || [
-          ['Physical Security Alert', 'Tier 2', '35 seconds', 'Safeguarding Lead'],
-          ['Emergency Medical Assist', 'Tier 1', '12 seconds', 'On-Duty Supervisor']
-        ]
-      }
-    });
-  }
-
-  const findings: ReportFinding[] = [
-    {
-      id: 'esc-finding-1',
-      title: 'Latency Threshold Compliance',
-      observation: `Emergency signaling achieved a response latency of ${analytics.alerts.medianAcknowledgementTimeSeconds ? analytics.alerts.medianAcknowledgementTimeSeconds.toFixed(1) + 's' : '0.0s'}, comfortably below the 45-second limit.`,
-      severity: 'info',
-      supportingData: 'Verified via the high-fidelity audit trail.'
+  // Alert escalation log (real records only)
+  const alerts = snapshot.alerts || [];
+  if (selectedSections.length === 0 || selectedSections.includes('Critical Incident Logs & Escalations') || selectedSections.includes('Alerts log')) {
+    if (alerts.length > 0) {
+      sections.push({
+        id: 'escalation-timeline-table',
+        title: 'Alert escalation log',
+        type: 'table',
+        content: {
+          headers: ['Category', 'Tier', 'Status', 'Logged at'],
+          rows: alerts.map((al: any) => [
+            al.category || al.alertType || 'Care concern',
+            al.escalation_level ? `Tier ${al.escalation_level}` : 'Standard',
+            al.status || 'Active',
+            al.created_at ? new Date(al.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Logged'
+          ])
+        }
+      });
     }
-  ];
+  }
 
-  const recommendations: ReportRecommendation[] = [
-    {
-      id: 'esc-rec-1',
-      action: 'Configure automated SMS escalation backups for all Tier-2 safeguarding alarms.',
-      evidence: `${totalEscalated} alert(s) required escalation during "${analytics.eventTitle}", reaching maximum tier ${maxTier}.`,
-      rationale: 'Provide failsafe redundancy if local terminal push notifications fail or experience network latency.',
+  const findings: ReportFinding[] = [];
+  if (totalAlerts === 0) {
+    findings.push({
+      id: 'esc-finding-none',
+      title: 'Zero alerts triggered',
+      observation: 'No safety alarms or emergency alerts were activated during this event period.',
+      severity: 'info'
+    });
+  } else if (medianAck !== null && medianAck !== undefined) {
+    findings.push({
+      id: 'esc-finding-timing',
+      title: 'Response latency',
+      observation: `Emergency alerts recorded a median acknowledgment latency of ${medianAck.toFixed(1)} seconds.`,
+      severity: medianAck <= 45 ? 'info' : 'warning'
+    });
+  }
+
+  const recommendations: ReportRecommendation[] = [];
+  if (openAlerts + inProgressAlerts > 0) {
+    recommendations.push({
+      id: 'esc-rec-open',
+      action: 'Complete review of all outstanding active safety alerts.',
+      evidence: `${openAlerts + inProgressAlerts} alert(s) remain open or in progress.`,
+      rationale: 'Every raised alert requires formal closure sign-off.',
       priority: 'high',
       responsibility: 'Safeguarding Lead'
-    }
-  ];
+    });
+  }
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'esc-rec-none',
+      action: 'No immediate follow-up identified from the available event data.',
+      evidence: 'All raised alerts resolved or no alerts triggered.',
+      rationale: 'Alert management standards satisfied.',
+      priority: 'low',
+      responsibility: 'Safeguarding Lead'
+    });
+  }
 
   return {
     reportId,
     templateKey: 'alert-response-escalation-report-v1',
-    templateVersion: 1,
+    templateVersion: 2,
     reportTitle: 'Alert Response and Escalation Report',
-    reportDescription: 'Analytical timeline of alerts, median acknowledgment intervals, and maximum escalation tiers reached.',
+    reportDescription: 'Timeline of safety alerts, median response intervals, and escalation tier records.',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
@@ -120,7 +144,7 @@ export function buildAlertEscalationReport(
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 1,
+    reportVersion: 2,
     kpis,
     sections,
     findings,
@@ -128,13 +152,13 @@ export function buildAlertEscalationReport(
     dataQuality: {
       score: analytics.dataQuality.dataConfidenceScore,
       status: analytics.dataQuality.overallConfidence,
-      notes: 'Anonymized alert metrics audited against server logs. Safeguarding data minimisation active.'
+      notes: 'Alert metrics compiled from verified event database logs.'
     },
     methodology: [
-      'Grounded calculation of socket connection telemetry and alert acknowledge transactions.'
+      'Measurement of alert creation and acknowledgment timestamps.'
     ],
     limitations: [
-      'Response measurements capture the interval up to the digital click and do not record physical movement times.'
+      'Latencies reflect digital terminal interaction timestamps.'
     ]
   };
 }

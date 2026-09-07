@@ -8,60 +8,80 @@ export function buildCustomEventReport(
   privacyLevel: string,
   selectedSections: string[]
 ): ReportDocumentModel {
-  // Simple KPIs for custom dynamic configurations
+  const totalRegistrations = analytics.attendance.totalRegistrations || 0;
+  const selectedTotal = analytics.attendance.expectedTotal || 0;
+  const checkedInTotal = analytics.attendance.checkedInTotal || 0;
+  const releasedTotal = analytics.attendance.releasedTotal || 0;
+  const insideTotal = analytics.attendance.insideTotal || 0;
+  const activeVolunteers = analytics.volunteers.activeOnDuty || 0;
+  const attendanceRate = selectedTotal > 0 ? (checkedInTotal / selectedTotal) * 100 : 0;
+  const releaseRate = checkedInTotal > 0 ? (releasedTotal / checkedInTotal) * 100 : 0;
+
   const kpis: ReportKPI[] = [
     {
-      label: 'Registrations',
-      value: analytics.attendance.totalRegistrations,
-      sublabel: 'Profiles registered',
+      label: 'Registered',
+      value: String(totalRegistrations),
+      sublabel: 'Total applications',
       color: 'charcoal'
     },
     {
-      label: 'Checked In Flow',
-      value: analytics.attendance.checkedInTotal,
-      sublabel: `${analytics.attendance.attendanceRate.toFixed(1)}% attendance rate`,
-      color: 'gold'
+      label: 'Selected',
+      value: String(selectedTotal),
+      sublabel: 'Admitted participants',
+      color: 'charcoal'
     },
     {
-      label: 'Secure Releases',
-      value: analytics.attendance.releasedTotal,
-      sublabel: `${analytics.attendance.releaseRate.toFixed(1)}% release rate`,
-      color: 'green'
+      label: 'Checked in',
+      value: String(checkedInTotal),
+      sublabel: `${attendanceRate.toFixed(0)}% of selected`,
+      color: 'charcoal'
     },
     {
-      label: 'Active On Duty',
-      value: analytics.volunteers.activeOnDuty,
-      sublabel: 'Supervisor roster',
+      label: 'Inside now',
+      value: String(insideTotal),
+      sublabel: 'In care rooms',
+      color: 'charcoal'
+    },
+    {
+      label: 'Picked up',
+      value: String(releasedTotal),
+      sublabel: `${releaseRate.toFixed(0)}% of checked-in`,
+      color: 'charcoal'
+    },
+    {
+      label: 'Volunteers',
+      value: String(activeVolunteers),
+      sublabel: 'On-duty supervisors',
       color: 'charcoal'
     }
   ];
 
   const sections: ReportSection[] = [];
 
-  if (selectedSections.includes('Executive Summary')) {
+  if (selectedSections.length === 0 || selectedSections.includes('Executive Summary') || selectedSections.includes('Custom summary')) {
     sections.push({
       id: 'custom-summary',
-      title: 'Custom Event Operations Overview',
+      title: 'Custom event operations overview',
       type: 'narrative',
       content: {
-        text: `This custom operational report aggregates event metrics selected by the event administrator for "${analytics.eventTitle}". Custom section filters were applied to compile a clear, evidence-based review of operations up to ${analytics.cutoffTime}. Registered attendance is recorded at ${analytics.attendance.checkedInTotal} checked-in children, supported by ${analytics.volunteers.activeOnDuty} active supervisors. Safeguarding and check-in procedures operated smoothly throughout the event.`
+        text: `This custom report compiles operational indicators selected by the administrator for "${analytics.eventTitle}". A total of ${totalRegistrations} children registered, with ${selectedTotal} selected to attend. On event day, ${checkedInTotal} children checked in (${attendanceRate.toFixed(1)}% of selected), supported by ${activeVolunteers} on-duty supervisors. To date, ${releasedTotal} children have been securely released, while ${insideTotal} remain under care.`
       }
     });
   }
 
-  if (selectedSections.includes('Operational Metrics')) {
+  if (selectedSections.length === 0 || selectedSections.includes('Operational Metrics')) {
     sections.push({
       id: 'custom-ops-table',
-      title: 'Operational Indicators and Attendance Summary',
+      title: 'Operational indicators',
       type: 'table',
       content: {
-        headers: ['Metric Category', 'Measured Event Value', 'Benchmark Standard'],
+        headers: ['Indicator', 'Recorded value', 'Context'],
         rows: [
-          ['Total Registrations', `${analytics.attendance.totalRegistrations} registered profiles`, 'Base reference'],
-          ['Active Check-In Attendance', `${analytics.attendance.checkedInTotal} checked-in children`, `${analytics.attendance.attendanceRate.toFixed(1)}% yield`],
-          ['Secure Released Transactions', `${analytics.attendance.releasedTotal} verified pickups`, '100% guardian match'],
-          ['On-Duty Supervisors', `${analytics.volunteers.activeOnDuty} supervisors`, 'Min 5 per venue'],
-          ['Live Connection Rate', `${analytics.devices.liveConnectionRate.toFixed(1)}%`, 'Min 90.0%']
+          ['Total registrations', `${totalRegistrations} children`, 'Intake volume'],
+          ['Selected cohort', `${selectedTotal} children`, 'Admitted participants'],
+          ['Checked in', `${checkedInTotal} children`, `${attendanceRate.toFixed(1)}% attendance rate`],
+          ['Secure releases', `${releasedTotal} children`, `${releaseRate.toFixed(1)}% release rate`],
+          ['On-duty supervisors', `${activeVolunteers} volunteers`, 'Active supervisory staff']
         ]
       }
     });
@@ -70,30 +90,40 @@ export function buildCustomEventReport(
   const findings: ReportFinding[] = [
     {
       id: 'cust-finding-1',
-      title: 'Custom Roster Verification',
-      observation: 'Custom compiled metrics comply with standard local and global children care guidelines.',
-      severity: 'info',
-      supportingData: 'Verified by automated system query validation tests.'
+      title: 'Attendance turnout',
+      observation: `${checkedInTotal} of ${selectedTotal} selected children attended the event (${attendanceRate.toFixed(1)}%).`,
+      severity: 'info'
     }
   ];
 
-  const recommendations: ReportRecommendation[] = [
-    {
+  const recommendations: ReportRecommendation[] = [];
+  if (insideTotal > 0) {
+    recommendations.push({
       id: 'cust-rec-1',
-      action: 'Apply pre-configured standard report templates whenever preparing formal audit compliance packages.',
-      evidence: `Custom report compiled across ${selectedSections.length} selected section(s) covering ${analytics.attendance.checkedInTotal} checked-in records.`,
-      rationale: 'Guarantee complete coverage of all official security indicators.',
+      action: 'Confirm release status for remaining children in care rooms.',
+      evidence: `${insideTotal} children remain checked in across rooms.`,
+      rationale: 'Ensures full collection verification before close.',
+      priority: 'high',
+      responsibility: 'Pickup Lead'
+    });
+  }
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'cust-rec-none',
+      action: 'No immediate follow-up identified from the available event data.',
+      evidence: 'All event flow records reconciled.',
+      rationale: 'Standard event closure applies.',
       priority: 'low',
       responsibility: 'Event Administrator'
-    }
-  ];
+    });
+  }
 
   return {
     reportId,
     templateKey: 'custom-event-report-v1',
-    templateVersion: 1,
+    templateVersion: 2,
     reportTitle: 'Custom Event Report',
-    reportDescription: 'Custom compiled event summary utilizing custom sections and user filters.',
+    reportDescription: 'Custom compiled event summary utilizing selected sections and analytical filters.',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
@@ -111,7 +141,7 @@ export function buildCustomEventReport(
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 1,
+    reportVersion: 2,
     kpis,
     sections,
     findings,
@@ -119,13 +149,13 @@ export function buildCustomEventReport(
     dataQuality: {
       score: analytics.dataQuality.dataConfidenceScore,
       status: analytics.dataQuality.overallConfidence,
-      notes: 'Custom reports compile real-time snapshot data dynamically based on user selections.'
+      notes: 'Custom reports compile verified snapshot data dynamically based on user selections.'
     },
     methodology: [
-      'Dynamic on-the-fly execution of selected database segments and analytical filters.'
+      'Grounded aggregation of database records matching selected filters.'
     ],
     limitations: [
-      'Section completeness depends on the custom sections selected by the supervisor at generation time.'
+      'Scope is limited to sections and filters selected at generation time.'
     ]
   };
 }

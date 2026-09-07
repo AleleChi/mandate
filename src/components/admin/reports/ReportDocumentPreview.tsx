@@ -19,29 +19,43 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
 
   return (
     <div className="max-w-[840px] mx-auto bg-white text-stone-900 font-sans shadow-md border border-stone-200 rounded-xl p-8 sm:p-12 space-y-8 my-4 print:shadow-none print:border-none print:p-0">
-      {/* Cover/Document Header */}
+      {/* Cover/Document Header (Priority 5: Restrained clean hierarchy) */}
       <div className="border-b-2 border-[#C59B27] pb-6 space-y-3">
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold tracking-widest uppercase text-[#C59B27]">
-                {model.branding?.organizationName || 'Koinonia Global'} · Official Report
+          <div className="space-y-1 flex-1">
+            <div className="space-y-0.5">
+              <span className="text-xs font-serif font-bold tracking-wider uppercase text-stone-900 block">
+                KOINONIA CHILDREN &amp; TEENS
               </span>
-              <span className="text-[10px] font-medium bg-stone-100 text-stone-600 px-2.5 py-0.5 rounded-full border border-stone-200">
-                Prepared for ministry leadership
+              <span className="text-[11px] font-medium tracking-wide uppercase text-stone-500 block">
+                Official Event Report
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-serif font-medium text-stone-900 tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-3xl font-serif font-medium text-stone-900 tracking-tight leading-tight pt-1">
               {model.reportTitle}
             </h1>
 
-            <div className="flex flex-wrap items-center gap-y-1 gap-x-3 text-xs text-stone-600 font-normal pt-1">
-              <span className="font-semibold text-stone-900">{model.eventContext?.eventTitle || 'The General Assembly'}</span>
-              <span>·</span>
-              <span>Period: {new Date(model.reportingPeriod?.start || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              <span>·</span>
-              <span>Cutoff: {new Date(model.informationConfirmedUpTo || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <div className="flex flex-wrap items-center gap-y-1.5 gap-x-4 text-xs text-stone-600 font-normal pt-2">
+              <div>
+                <span className="font-semibold text-stone-700">Event: </span>
+                <span className="text-stone-900">{model.eventContext?.eventTitle || 'The General Assembly'}</span>
+              </div>
+              <span className="text-stone-300">•</span>
+              <div>
+                <span className="font-semibold text-stone-700">Event date: </span>
+                <span>{new Date(model.eventContext?.startsAt || model.reportingPeriod?.start || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              </div>
+              <span className="text-stone-300">•</span>
+              <div>
+                <span className="font-semibold text-stone-700">Generated: </span>
+                <span>{new Date(model.reportingPeriod?.end || model.informationConfirmedUpTo || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} {new Date(model.reportingPeriod?.end || model.informationConfirmedUpTo || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <span className="text-stone-300">•</span>
+              <div>
+                <span className="font-semibold text-stone-700">Data cutoff: </span>
+                <span>{new Date(model.informationConfirmedUpTo || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} {new Date(model.informationConfirmedUpTo || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
             </div>
           </div>
 
@@ -78,14 +92,14 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
           <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
             {model.kpis.map((kpi, idx) => (
               <div key={idx} className="p-3.5 space-y-1 bg-white">
-                <span className="text-[10px] uppercase font-semibold text-stone-500 block tracking-wider truncate">
+                <span className="text-[11px] font-semibold text-stone-600 block tracking-wide">
                   {kpi.label}
                 </span>
                 <span className="text-xl font-bold text-stone-900 block tracking-tight tabular-nums">
                   {kpi.value}
                 </span>
                 {kpi.sublabel && (
-                  <span className="text-[10px] text-stone-400 block truncate leading-tight">
+                  <span className="text-[10px] text-stone-400 block leading-tight">
                     {kpi.sublabel}
                   </span>
                 )}
@@ -128,12 +142,12 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         </div>
       )}
 
-      {/* For Management Attention (Prompt Section 18) */}
-      <div id="section-attention" data-report-section="attention" className="bg-white border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
-        <h2 className="text-xs font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
-          For management attention
-        </h2>
-        {model.managementAttention && model.managementAttention.length > 0 ? (
+      {/* For Management Attention (Rendered only when items exist) */}
+      {model.managementAttention && model.managementAttention.length > 0 && (
+        <div id="section-attention" data-report-section="attention" className="bg-white border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
+          <h2 className="text-xs font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
+            For management attention
+          </h2>
           <div className="space-y-2">
             {model.managementAttention.map((item, idx) => (
               <div key={idx} className="text-xs text-stone-800 flex items-start gap-2">
@@ -142,16 +156,14 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
               </div>
             ))}
           </div>
-        ) : (
-          <p className="text-xs text-stone-500 italic">No items require management attention.</p>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Recommended Actions */}
       {model.recommendations && model.recommendations.length > 0 && (
         <div id="section-recommendations" data-report-section="recommendations" className="bg-stone-50/80 border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
           <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
-            Recommended actions
+            Follow-up actions
           </h2>
           <div className="space-y-3">
             {model.recommendations.map((r, idx) => (

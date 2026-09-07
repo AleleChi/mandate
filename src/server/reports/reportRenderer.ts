@@ -134,66 +134,66 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.text('KOINONIA', marginX + contentWidth - 25, 15);
   }
 
-  // Left Title Header
+  // Left Title Header (Priority 5: Restrained clean hierarchy)
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
   doc.setFont('times', 'bold');
-  doc.setFontSize(18);
-  doc.text('KOINONIA GLOBAL', marginX, 15);
+  doc.setFontSize(15);
+  doc.text('KOINONIA CHILDREN & TEENS', marginX, 14);
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(colors.brass[0], colors.brass[1], colors.brass[2]);
-  doc.text('Prepared for ministry leadership', marginX, 19);
+  doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
+  doc.text('Official Event Report', marginX, 18.5);
 
-  // Report Title (Measured height before subtitle & metadata)
-  currentY = 32;
+  // Report Title
+  currentY = 27;
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
   doc.setFont('times', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(16);
   const titleText = model.reportTitle.toUpperCase();
   const titleLines = doc.splitTextToSize(titleText, contentWidth);
   doc.text(titleLines, marginX, currentY);
-  currentY += titleLines.length * 7 + 2;
+  currentY += titleLines.length * 6.5 + 1.5;
 
   if (model.reportDescription) {
     doc.setFont('times', 'italic');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
     const descLines = doc.splitTextToSize(model.reportDescription, contentWidth);
     doc.text(descLines, marginX, currentY);
-    currentY += descLines.length * 4.2 + 2;
+    currentY += descLines.length * 4 + 2;
   }
 
-  // Metadata Box (Event Date, Cutoff Time)
+  // Metadata Box (Event name, Event date, Generated date/time, Data cutoff)
   doc.setLineWidth(0.3);
   doc.setDrawColor(228, 228, 231);
-  doc.setFillColor(244, 244, 245);
-  doc.rect(marginX, currentY, contentWidth, 15, 'F');
-  doc.rect(marginX, currentY, contentWidth, 15, 'S');
+  doc.setFillColor(248, 248, 248);
+  doc.rect(marginX, currentY, contentWidth, 14, 'F');
+  doc.rect(marginX, currentY, contentWidth, 14, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-  doc.text('EVENT:', marginX + 4, currentY + 5.5);
+  doc.text('EVENT:', marginX + 4, currentY + 5);
   doc.setFont('helvetica', 'normal');
-  doc.text(model.eventContext.eventTitle, marginX + 20, currentY + 5.5);
+  doc.text(model.eventContext.eventTitle, marginX + 18, currentY + 5);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('EVENT DATE:', marginX + 90, currentY + 5.5);
+  doc.text('EVENT DATE:', marginX + 95, currentY + 5);
   doc.setFont('helvetica', 'normal');
-  doc.text(formatHumanDate(model.eventContext.startsAt), marginX + 115, currentY + 5.5);
+  doc.text(formatHumanDate(model.eventContext.startsAt), marginX + 120, currentY + 5);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('DATA CUTOFF:', marginX + 4, currentY + 11);
+  doc.text('GENERATED:', marginX + 4, currentY + 10);
   doc.setFont('helvetica', 'normal');
-  doc.text(formatHumanDate(model.informationConfirmedUpTo, true), marginX + 28, currentY + 11);
+  doc.text(formatHumanDate(model.reportingPeriod?.end || model.informationConfirmedUpTo, true), marginX + 26, currentY + 10);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('CONFIDENCE:', marginX + 90, currentY + 11);
+  doc.text('DATA CUTOFF:', marginX + 95, currentY + 10);
   doc.setFont('helvetica', 'normal');
-  doc.text(`${model.dataQuality.score}% (${model.dataQuality.status})`, marginX + 115, currentY + 11);
+  doc.text(formatHumanDate(model.informationConfirmedUpTo, true), marginX + 122, currentY + 10);
 
-  currentY += 20;
+  currentY += 18;
 
   // Render Clean Restrained KPI Band (Prompt Section 16 & 37)
   if (model.kpis && model.kpis.length > 0) {
@@ -487,7 +487,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.setFont('times', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text('RECOMMENDED ACTIONS', marginX, currentY);
+    doc.text('FOLLOW-UP ACTIONS', marginX, currentY);
 
     doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
     doc.setLineWidth(0.3);

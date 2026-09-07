@@ -204,8 +204,10 @@ export interface PickupAnalytics {
 export interface OfflineAnalytics {
   totalInterruptions: number;
   affectedDevicesCount: number;
-  totalOfflineDurationSeconds: number;
-  averageOfflineDurationSeconds: number;
+  /** Null when actual offline duration data is not recorded in the database. */
+  totalOfflineDurationSeconds: number | null;
+  /** Null when actual offline duration data is not recorded in the database. */
+  averageOfflineDurationSeconds: number | null;
   queuedActionsCount: number;
   confirmedQueuedCount: number;
   conflictQueuedCount: number;
@@ -758,10 +760,26 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
 
   // 9. Offline Resilience
   const syncRecords = snapshot.syncRecords || [];
-  const totalInterruptions = syncRecords.filter((s: any) => s.status === 'failed' || s.error_summary?.includes('timeout')).length || 1;
-  const affectedDevicesCount = new Set(syncRecords.map((s: any) => s.device_identifier)).size || 1;
-  const totalOfflineDurationSeconds = syncRecords.length * 45; // estimated from sync frequencies
-  const averageOfflineDurationSeconds = syncRecords.length > 0 ? totalOfflineDurationSeconds / syncRecords.length : 0;
+  const failedSyncRecords = syncRecords.filter((s: any) => s.status === 'failed' || s.error_summary?.includes('timeout'));
+  const totalInterruptions = failedSyncRecords.length > 0 ? failedSyncRecords.length : (syncRecords.length > 0 ? 1 : 0);
+  const affectedDevicesCount = new Set(syncRecords.map((s: any) => s.device_identifier).filter(Boolean)).size;
+
+  // Offline duration: only use actual recorded values from the database.
+  // We do NOT estimate or extrapolate. If the field is absent, report null.
+  let totalOfflineDurationSecondsRaw = 0;
+  let hasActualDurationData = false;
+  syncRecords.forEach((s: any) => {
+    const dur = s.offline_duration_seconds ?? s.duration_seconds ?? null;
+    if (dur !== null && dur !== undefined && Number.isFinite(Number(dur))) {
+      totalOfflineDurationSecondsRaw += Number(dur);
+      hasActualDurationData = true;
+    }
+  });
+  const totalOfflineDurationSeconds: number | null = hasActualDurationData ? totalOfflineDurationSecondsRaw : null;
+  const averageOfflineDurationSeconds: number | null =
+    hasActualDurationData && syncRecords.length > 0
+      ? totalOfflineDurationSecondsRaw / syncRecords.length
+      : null;
 
   let queuedActionsCount = 0;
   let confirmedQueuedCount = 0;
@@ -834,8 +852,8 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     insights.push({
       type: 'strength',
       category: 'Attendance',
-      finding: `${attendanceRate.toFixed(1)}% attendance rate was verified.`,
-      supportingData: `${checkedInTotal} out of ${totalRegistrations} registered children successfully checked in.`,
+      finding: `${attendanceRate.toFixed(1)}% of selected children attended the event.`,
+      supportingData: `${checkedInTotal} of ${expectedTotal} selected children checked in (${totalRegistrations} total registrations).`,
       recommendation: 'Maintain the existing digital gate check-in workflows for future events.'
     });
   }
@@ -883,10 +901,13 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   let comparison: EventComparisonReport | undefined = undefined;
   if (snapshot.comparisonData) {
     const prev = snapshot.comparisonData;
-    const attendanceDiffPercentagePoints = attendanceRate - ((prev.checkedInTotal / prev.totalRegistrations) * 100);
-    const alertsDiffPer100Children = alertsPer100Children - (prev.totalAlerts / (prev.checkedInTotal || 1) * 100);
-    const volunteersDiffCount = activeOnDuty - prev.totalVolunteers;
-    const readinessDiffPercentagePoints = readinessRate - (prev.totalDev > 0 ? 100 : 0); // basic diff
+    const prevExpected = prev.expectedTotal ?? prev.selectedTotal ?? prev.totalRegistrations ?? 0;
+    const prevAttendanceRate = prevExpected > 0 ? (prev.checkedInTotal / prevExpected) * 100 : 0;
+    const attendanceDiffPercentagePoints = attendanceRate - prevAttendanceRate;
+    const prevAlertsRate = (prev.checkedInTotal || 0) > 0 ? (prev.totalAlerts / prev.checkedInTotal) * 100 : 0;
+    const alertsDiffPer100Children = alertsPer100Children - prevAlertsRate;
+    const volunteersDiffCount = activeOnDuty - (prev.totalVolunteers || 0);
+    const readinessDiffPercentagePoints = prev.readinessRate !== undefined ? readinessRate - prev.readinessRate : 0;
 
     comparison = {
       isComparable: true,
@@ -992,13 +1013,15 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
   const objectivesPartialCount = results.filter((r: any) => r.status === 'Partially completed').length;
   const objectivesNeedsPracticeCount = results.filter((r: any) => r.status === 'Needs further practice' || r.status === 'Failed').length;
 
-  // Timings
-  let sumAck = 0;
-  let countAck = 0;
+  // Timings: use actual recorded values only — no multipliers or extrapolation.
+  const ackTimes: number[] = [];
+  const resTimes: number[] = [];
   results.forEach((r: any) => {
-    if (r.time_to_acknowledge) {
-      sumAck += Number(r.time_to_acknowledge);
-      countAck++;
+    if (r.time_to_acknowledge !== null && r.time_to_acknowledge !== undefined && Number.isFinite(Number(r.time_to_acknowledge))) {
+      ackTimes.push(Number(r.time_to_acknowledge));
+    }
+    if (r.time_to_resolve !== null && r.time_to_resolve !== undefined && Number.isFinite(Number(r.time_to_resolve))) {
+      resTimes.push(Number(r.time_to_resolve));
     }
   });
 
@@ -1012,8 +1035,8 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
     objectivesGuidedCount,
     objectivesPartialCount,
     objectivesNeedsPracticeCount,
-    medianAckTimeSeconds: countAck > 0 ? sumAck / countAck : null,
-    medianResolutionTimeSeconds: countAck > 0 ? (sumAck * 1.8) / countAck : null
+    medianAckTimeSeconds: getMedian(ackTimes),
+    medianResolutionTimeSeconds: getMedian(resTimes)
   };
 
   const registrations: RegistrationAnalytics = {
@@ -1085,8 +1108,8 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
     alertsByCategory: {},
     alertsByStatus: { open: 0, in_progress: 0, resolved: results.length, reopened: 0 },
     medianAcknowledgementTimeSeconds: training.medianAckTimeSeconds,
-    percentile75AcknowledgementTimeSeconds: training.medianAckTimeSeconds ? training.medianAckTimeSeconds * 1.2 : null,
-    percentile90AcknowledgementTimeSeconds: training.medianAckTimeSeconds ? training.medianAckTimeSeconds * 1.5 : null,
+    percentile75AcknowledgementTimeSeconds: getPercentile(ackTimes, 75),
+    percentile90AcknowledgementTimeSeconds: getPercentile(ackTimes, 90),
     medianResolutionTimeSeconds: training.medianResolutionTimeSeconds,
     alertsPer100Children: 100,
     targetAcknowledgementRate: 100,

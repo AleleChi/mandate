@@ -83,7 +83,7 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     const rawItems: OutlineItem[] = [];
 
     if (model.kpis && model.kpis.length > 0) {
-      rawItems.push({ id: 'section-kpis', title: 'Key attendance figures' });
+      rawItems.push({ id: 'section-kpis', title: 'Key figures' });
     }
 
     if (model.sections && model.sections.length > 0) {
@@ -99,8 +99,12 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
       rawItems.push({ id: 'section-findings', title: 'Key findings' });
     }
 
+    if (model.managementAttention && model.managementAttention.length > 0) {
+      rawItems.push({ id: 'section-attention', title: 'For management attention' });
+    }
+
     if (model.recommendations && model.recommendations.length > 0) {
-      rawItems.push({ id: 'section-recommendations', title: 'Recommended actions' });
+      rawItems.push({ id: 'section-recommendations', title: 'Follow-up actions' });
     }
 
     if (
@@ -108,7 +112,7 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
       (model.methodology && model.methodology.length > 0) ||
       (model.limitations && model.limitations.length > 0)
     ) {
-      rawItems.push({ id: 'section-quality-methodology', title: 'Information quality and limitations' });
+      rawItems.push({ id: 'section-quality-methodology', title: 'Data notes and limitations' });
     }
 
     // Deduplicate outline items by normalised title
