@@ -2596,20 +2596,13 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     const totalVolunteersRes = await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v 
-      JOIN users u ON u.id = v.user_id 
-      WHERE COALESCE(v.is_deleted, 0) = 0 
-        AND v.deleted_at IS NULL 
-        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
-        AND COALESCE(v.status, v.approval_status) IN ('approved', 'active', 'pending_review', 'pending', 'rejected', 'declined')
+      WHERE (v.status IS NULL OR v.status != 'removed')
+        AND v.status IN ('approved', 'active', 'pending_review', 'rejected', 'declined', 'suspended')
     `);
     const pendingVolunteersRes = await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v 
-      JOIN users u ON u.id = v.user_id 
-      WHERE COALESCE(v.is_deleted, 0) = 0 
-        AND v.deleted_at IS NULL 
-        AND (COALESCE(v.status, v.approval_status) != 'removed' OR COALESCE(v.status, v.approval_status) IS NULL)
-        AND (COALESCE(v.status, v.approval_status) IN ('pending_review', 'pending') OR COALESCE(v.status, v.approval_status) IS NULL OR COALESCE(v.status, v.approval_status) = '')
+      WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
     `);
     const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]);
     const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up' AND COALESCE(is_deleted, 0) = 0", [eventId]);
@@ -5615,7 +5608,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       JOIN users u ON u.id = v.user_id
       WHERE ${filterClauses}
     `, queryParams);
-    const totalCount = countRes ? countRes.count : 0;
+    const totalCount = Number(countRes?.count ?? 0);
 
     const queryStr = `
       SELECT 
@@ -5668,45 +5661,49 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
     }));
 
     // Calculate metrics using only columns confirmed to exist in production schema.
+    // PostgreSQL COUNT(*) returns bigint which the pg driver serialises as a string.
+    // All counts MUST be cast with Number() before any arithmetic to prevent string concatenation.
+
     // ACTIVE: Current approved/active volunteers only
-    const approvedVolunteers = (await queryOne(`
+    const approvedVolunteers = Number((await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
       WHERE v.status IN ('approved', 'active')
-    `))?.count || 0;
+    `))?.count ?? 0);
 
     // AWAITING REVIEW: Pending volunteer profiles
-    const pendingReview = (await queryOne(`
+    const pendingReview = Number((await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
       WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
-    `))?.count || 0;
+    `))?.count ?? 0);
 
     // NOT APPROVED: Declined/rejected/suspended volunteer profiles
-    const declinedVolunteers = (await queryOne(`
+    const declinedVolunteers = Number((await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
       WHERE v.status IN ('rejected', 'declined', 'suspended')
-    `))?.count || 0;
+    `))?.count ?? 0);
 
     // REMOVED: Volunteers explicitly marked as removed via status
-    const removedVolunteers = (await queryOne(`
+    const removedVolunteers = Number((await queryOne(`
       SELECT COUNT(*) as count 
       FROM volunteer_profiles v
       WHERE v.status = 'removed'
-    `))?.count || 0;
+    `))?.count ?? 0);
 
     // TEAMS: Distinct teams represented by active volunteers
-    const assignedTeamsCount = (await queryOne(`
+    const assignedTeamsCount = Number((await queryOne(`
       SELECT COUNT(DISTINCT v.preferred_team) as count 
       FROM volunteer_profiles v
       WHERE v.status IN ('approved', 'active')
         AND v.preferred_team IS NOT NULL
         AND v.preferred_team != ''
-    `))?.count || 0;
+    `))?.count ?? 0);
 
     // VOLUNTEERS: All current NON-REMOVED volunteer profiles = Active + Awaiting review + Not approved
-    const totalVolunteers = approvedVolunteers + pendingReview + declinedVolunteers;
+    // All operands are Number() — safe integer addition, not string concatenation
+    const totalVolunteers: number = approvedVolunteers + pendingReview + declinedVolunteers;
 
     return res.json({ 
       success: true, 

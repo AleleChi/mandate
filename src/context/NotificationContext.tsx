@@ -35,13 +35,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const addToast = useCallback(
     (type: ToastNotification['type'], message: string, description?: string, duration?: number) => {
       const now = Date.now();
+      // Deduplication window matches each type's visible display duration so an identical toast
+      // cannot appear while a previous one is still on-screen (e.g. after a quick re-mount).
+      const dedupWindow = type === 'error' ? 6000 : type === 'warning' ? 4000 : 2000;
       if (
         lastToastRef.current &&
         lastToastRef.current.type === type &&
         lastToastRef.current.message === message &&
-        now - lastToastRef.current.timestamp < 2000
+        now - lastToastRef.current.timestamp < dedupWindow
       ) {
-        // Deduplicate identical toasts within 2 seconds
+        // Deduplicate identical toasts within the dedup window
         return;
       }
       lastToastRef.current = { type, message, timestamp: now };
