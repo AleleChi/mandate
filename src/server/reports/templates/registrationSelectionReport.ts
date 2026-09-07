@@ -120,6 +120,23 @@ export function buildRegistrationSelectionReport(
       type: 'chart',
       content: { charts }
     });
+  } else {
+    sections.push({
+      id: 'reg-visualizations-empty',
+      title: 'Application & age cohort charts',
+      type: 'chart',
+      content: {
+        charts: [{
+          id: 'chart-reg-empty',
+          kind: 'horizontalBar' as const,
+          title: 'Registration summary',
+          subtitle: 'Application review and cohort demand',
+          labels: [],
+          series: [],
+          emptyState: 'No registration demand or cohort distribution recorded for this event.'
+        }]
+      }
+    });
   }
 
   const findings: ReportFinding[] = (analytics.keyFindings || []).slice(0, 3).map((f, i) => ({
@@ -163,7 +180,7 @@ export function buildRegistrationSelectionReport(
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 1,
+    reportVersion: snapshot.version || snapshot.report_version || 1,
     kpis,
     sections,
     findings,

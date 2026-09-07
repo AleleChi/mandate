@@ -289,9 +289,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       const res = await api.request<any>('/api/admin/events');
       if (res && res.success && res.events && res.events.length > 0) {
         setAvailableEvents(res.events);
-        const current = res.events.find((e: any) => e.is_current || e.status === 'published') || res.events[0];
+        const current = res.events.find((e: any) => e.status === 'current' || e.is_current)
+          || res.events.find((e: any) => e.status === 'open' || e.status === 'active')
+          || res.events[0];
         if (current) {
-          setSelectedEventId(current.id);
+          setSelectedEventId(prev => {
+            if (prev && res.events.some((e: any) => e.id === prev)) {
+              return prev;
+            }
+            return current.id;
+          });
         }
       }
     } catch (err) {
@@ -1227,7 +1234,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 >
                   {availableEvents.map((ev) => (
                     <option key={ev.id} value={ev.id}>
-                      {ev.title} {ev.starts_at ? `(${new Date(ev.starts_at).toLocaleDateString('en-GB')})` : ''} {ev.is_current ? '· Current event' : ''}
+                      {ev.title} {ev.starts_at ? `(${new Date(ev.starts_at).toLocaleDateString('en-GB')})` : ''} {ev.is_current || ev.status === 'current' ? '· Current event' : ''}
                     </option>
                   ))}
                 </select>
@@ -1451,7 +1458,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 >
                   {availableEvents.map((ev) => (
                     <option key={ev.id} value={ev.id}>
-                      {ev.title} {ev.is_current ? '· Current' : ''}
+                      {ev.title} {ev.is_current || ev.status === 'current' ? '· Current' : ''}
                     </option>
                   ))}
                 </select>
@@ -1471,7 +1478,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               <KoinoniaInlineLoader variant="logo" size="md" label="Loading event overview…" />
             </div>
           ) : !liveOverviewAnalytics ? (
-            <div className="p-12 text-center text-xs text-stone-400 bg-white border border-stone-200 rounded-xl">
+            <div className="p-12 text-center text-xs text-stone-500 bg-white border border-stone-200 rounded-xl">
               No report data available for the selected event.
             </div>
           ) : (
@@ -1507,7 +1514,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   {
                     label: 'Volunteers',
                     value: liveOverviewAnalytics.volunteers?.activeOnDuty ?? 0,
-                    sub: 'On duty'
+                    sub: `${liveOverviewAnalytics.volunteers?.totalApproved ?? 0} assigned`
                   }
                 ].map((kpi, idx) => (
                   <div key={idx} className="p-4 space-y-1 bg-white">
@@ -1545,7 +1552,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
                     No registration outcome data recorded.
                   </div>
                 )}
@@ -1569,7 +1576,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
                     No age group distribution available.
                   </div>
                 )}
@@ -1593,7 +1600,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
                     No attendance has been recorded yet.
                   </div>
                 )}
@@ -1617,8 +1624,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
-                    No timestamp activity recorded yet.
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                    Check-in times were not recorded in enough detail to show an arrival trend.
                   </div>
                 )}
 
@@ -1641,8 +1648,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
-                    No volunteer assignments are available.
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                    No recorded team distribution is available for this event.
                   </div>
                 )}
 
@@ -1668,7 +1675,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-400 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
                     No safety matters were recorded for this event.
                   </div>
                 )}

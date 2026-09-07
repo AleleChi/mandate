@@ -203,7 +203,27 @@ export function buildAttendanceDemographicsReport(
               description: 'Hourly distribution of arrivals and pickups based on recorded scan timestamps.',
               caption: `${checkedInTotal} arrivals and ${releasedTotal} pickups recorded in event logs.`,
               accessibleSummary: 'Bar chart showing hourly arrivals and pickups over the event timeline.',
-              emptyState: 'No scan timestamps recorded.'
+              emptyState: 'Check-in times were not recorded in enough detail to show an arrival trend.'
+            }
+          ]
+        }
+      });
+    } else {
+      sections.push({
+        id: 'arrival-pickup-timeline-empty',
+        title: 'Arrival and pickup activity',
+        description: 'Hourly movement recorded at reception check-in and pickup points.',
+        type: 'chart',
+        content: {
+          charts: [
+            {
+              id: 'chart-arrival-pickup-empty',
+              kind: 'bar',
+              title: 'Arrival & Pickup Activity Over Time',
+              subtitle: 'Hourly volume of check-in entries and completed releases',
+              labels: [],
+              series: [],
+              emptyState: 'Check-in times were not recorded in enough detail to show an arrival trend.'
             }
           ]
         }
@@ -431,7 +451,7 @@ export function buildAttendanceDemographicsReport(
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 2,
+    reportVersion: snapshot.version || snapshot.report_version || 1,
     kpis,
     sections,
     findings,

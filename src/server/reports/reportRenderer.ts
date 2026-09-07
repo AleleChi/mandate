@@ -905,9 +905,11 @@ function drawHorizontalBarChartSpec(
 ) {
   const labels = chart.labels || [];
   const series = chart.series || [];
-  const primarySeries = series[0]?.values || [];
 
-  if (labels.length === 0 || primarySeries.length === 0) {
+  const allValues = series.flatMap(s => s.values || []);
+  const maxValAll = Math.max(...allValues, 0);
+
+  if (labels.length === 0 || series.length === 0 || maxValAll === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(161, 161, 170);
@@ -915,30 +917,73 @@ function drawHorizontalBarChartSpec(
     return;
   }
 
-  const maxValue = Math.max(...primarySeries, 1);
+  const isMultiSeries = series.length > 1;
+  const maxValue = Math.max(maxValAll, 1);
   const rowH = (height - 4) / labels.length;
 
-  labels.forEach((label, idx) => {
-    const val = primarySeries[idx] || 0;
-    const rowY = y + (idx * rowH);
-    const barW = (val / maxValue) * (width - 35);
+  if (isMultiSeries) {
+    const subBarH = Math.max((rowH - 3) / series.length, 1.5);
+    const seriesPalette = [
+      [colors.gold[0], colors.gold[1], colors.gold[2]],
+      [colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]],
+      [22, 131, 93],
+      [113, 113, 122]
+    ];
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
-    doc.setTextColor(63, 63, 70);
-    doc.text(label, x, rowY + 3.5, { maxWidth: 28 });
+    labels.forEach((label, idx) => {
+      const rowY = y + (idx * rowH);
 
-    doc.setFillColor(244, 244, 245);
-    doc.rect(x + 30, rowY, width - 35, rowH - 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6);
+      doc.setTextColor(63, 63, 70);
+      doc.text(label, x, rowY + 3, { maxWidth: 30 });
 
-    doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.rect(x + 30, rowY, Math.max(barW, 1), rowH - 2, 'F');
+      series.forEach((s, sIdx) => {
+        const val = s.values[idx] || 0;
+        const subY = rowY + (sIdx * subBarH);
+        const barW = (val / maxValue) * (width - 45);
+        const col = seriesPalette[sIdx % seriesPalette.length];
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
-    doc.setTextColor(24, 24, 27);
-    doc.text(String(val), x + 32 + Math.max(barW, 1), rowY + 3.5);
-  });
+        doc.setFillColor(244, 244, 245);
+        doc.rect(x + 32, subY, width - 45, subBarH - 0.5, 'F');
+
+        if (val > 0) {
+          doc.setFillColor(col[0], col[1], col[2]);
+          doc.rect(x + 32, subY, Math.max(barW, 1), subBarH - 0.5, 'F');
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5);
+        doc.setTextColor(82, 82, 91);
+        doc.text(String(val), x + 34 + Math.max(barW, 1), subY + subBarH - 0.5);
+      });
+    });
+  } else {
+    const primarySeries = series[0]?.values || [];
+    labels.forEach((label, idx) => {
+      const val = primarySeries[idx] || 0;
+      const rowY = y + (idx * rowH);
+      const barW = (val / maxValue) * (width - 35);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(63, 63, 70);
+      doc.text(label, x, rowY + 3.5, { maxWidth: 28 });
+
+      doc.setFillColor(244, 244, 245);
+      doc.rect(x + 30, rowY, width - 35, rowH - 2, 'F');
+
+      if (val > 0) {
+        doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+        doc.rect(x + 30, rowY, Math.max(barW, 1), rowH - 2, 'F');
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6);
+      doc.setTextColor(24, 24, 27);
+      doc.text(String(val), x + 32 + Math.max(barW, 1), rowY + 3.5);
+    });
+  }
 }
 
 function drawDonutChartSpec(

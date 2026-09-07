@@ -617,16 +617,95 @@ export async function compileReportSnapshot(
       filters
     };
   } else {
-    const targetEventId = eventId || 'event-ga-2026';
+    // Resolve target event strictly from requested eventId or current event from database
+    let targetEventId = eventId;
+    if (!targetEventId) {
+      const currentEv = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1")
+        || await queryOne("SELECT id FROM events WHERE status IN ('active', 'open') LIMIT 1")
+        || await queryOne("SELECT id FROM events ORDER BY starts_at DESC, created_at DESC LIMIT 1");
+      if (currentEv) {
+        targetEventId = currentEv.id;
+      }
+    }
+
+    if (!targetEventId) {
+      throw new Error('No valid event ID was provided or could be resolved.');
+    }
+
     const event = await queryOne('SELECT * FROM events WHERE id = ?', [targetEventId]);
-    if (!event) throw new Error('Production event not found.');
+    if (!event) {
+      throw new Error(`The requested event "${targetEventId}" does not exist in the database.`);
+    }
 
     const attendanceRecords = await query('SELECT * FROM attendance_records WHERE child_event_entry_id IN (SELECT id FROM child_event_entries WHERE event_id = ?)', [targetEventId]);
     const syncRecords = await query('SELECT * FROM offline_sync_records WHERE event_id = ?', [targetEventId]);
-    let locations = await query('SELECT * FROM event_locations WHERE event_id = ?', [targetEventId]);
+    
+    // Only active, non-archived locations belonging strictly to this event
+    let locations = await query(`
+      SELECT * FROM event_locations 
+      WHERE event_id = ? 
+        AND (is_active = 1 OR is_active IS NULL) 
+        AND archived_at IS NULL
+      ORDER BY sort_order ASC, name ASC
+    `, [targetEventId]);
+
     const deviceReadiness = await query('SELECT * FROM device_readiness_logs WHERE event_id = ?', [targetEventId]);
     const dutyDevices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [targetEventId]);
-    const dutyAssignments = await query('SELECT * FROM event_duty_assignments WHERE event_id = ?', [targetEventId]);
+
+    // Volunteer duty assignments: strictly join users and volunteer_profiles.
+    // Exclude deleted/removed/suspended volunteers and cancelled assignments.
+    const dutyAssignments = await query(`
+      SELECT 
+        eda.id as assignment_id,
+        eda.id,
+        eda.event_id,
+        eda.user_id,
+        eda.responsibility_key,
+        eda.team_key,
+        eda.assignment_level,
+        eda.status as assignment_status,
+        eda.status,
+        eda.starts_at,
+        eda.ends_at,
+        eda.temporarily_unavailable_at,
+        eda.expected_return_at,
+        eda.note,
+        COALESCE(eda.location_id, eda.assigned_location_id) as location_id,
+        vp.id as volunteer_profile_id,
+        vp.full_name as volunteer_name,
+        vp.status as volunteer_status,
+        vp.preferred_team,
+        vp.is_deleted as volunteer_is_deleted,
+        vp.deleted_at as volunteer_deleted_at,
+        u.email as volunteer_email,
+        u.role as user_role
+      FROM event_duty_assignments eda
+      JOIN users u ON eda.user_id = u.id
+      JOIN volunteer_profiles vp ON eda.user_id = vp.user_id
+      WHERE eda.event_id = ?
+        AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+        AND vp.deleted_at IS NULL
+        AND vp.status IN ('approved', 'active')
+        AND eda.status NOT IN ('cancelled', 'removed', 'inactive')
+    `, [targetEventId]);
+
+    // Active approved volunteers from the volunteer directory for workforce context
+    const rosterVolunteers = await query(`
+      SELECT 
+        vp.id as volunteer_profile_id,
+        vp.user_id,
+        vp.full_name,
+        vp.status,
+        vp.preferred_team,
+        u.email,
+        u.role
+      FROM volunteer_profiles vp
+      JOIN users u ON vp.user_id = u.id
+      WHERE (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+        AND vp.deleted_at IS NULL
+        AND vp.status IN ('approved', 'active')
+    `);
+
     const incidentRecords = await query('SELECT * FROM incident_records WHERE event_id = ?', [targetEventId]);
     const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ?', [targetEventId]);
 
@@ -729,6 +808,7 @@ export async function compileReportSnapshot(
       deviceReadiness,
       dutyDevices,
       dutyAssignments,
+      rosterVolunteers,
       childEntries,
       safetyAlerts,
       pickupRecords,

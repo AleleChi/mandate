@@ -101,6 +101,53 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
 
   const renderHorizontalBarChart = () => {
     const maxVal = Math.max(...series.flatMap(s => s.values), 1);
+    const isMultiSeries = series.length > 1;
+
+    if (isMultiSeries) {
+      return (
+        <div className="space-y-4">
+          {/* Legend */}
+          <div className="flex flex-wrap gap-4 text-xs mb-1">
+            {series.map((s, sIdx) => (
+              <div key={s.id || sIdx} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: getSeriesColor(s.label, sIdx) }} />
+                <span className="text-stone-600 font-medium">{s.label || `Series ${sIdx + 1}`}</span>
+              </div>
+            ))}
+          </div>
+          {labels.map((label, idx) => (
+            <div key={idx} className="space-y-1.5">
+              <div className="flex justify-between items-center text-xs font-medium text-stone-700">
+                <span className="font-semibold text-stone-900">{label}</span>
+                <span className="tabular-nums text-stone-600">
+                  {series.map(s => `${s.label ? s.label + ': ' : ''}${s.values[idx] || 0}`).join('  |  ')}
+                </span>
+              </div>
+              <div className="space-y-1 pl-2 border-l-2 border-stone-200">
+                {series.map((s, sIdx) => {
+                  const val = s.values[idx] || 0;
+                  const pct = Math.min((val / maxVal) * 100, 100);
+                  const color = getSeriesColor(s.label, sIdx);
+                  return (
+                    <div key={s.id || sIdx} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-24 text-stone-600 truncate text-right font-normal">{s.label || `Series ${sIdx + 1}`}</span>
+                      <div className="flex-1 bg-stone-100 h-3.5 rounded-md overflow-hidden relative">
+                        <div
+                          style={{ width: `${pct}%`, backgroundColor: color }}
+                          className="h-full rounded-md transition-all duration-300"
+                        />
+                      </div>
+                      <span className="w-8 tabular-nums font-medium text-stone-800 text-right">{val}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-2.5">
         {labels.map((label, idx) => {

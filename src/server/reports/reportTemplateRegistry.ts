@@ -87,8 +87,11 @@ export function compileReportDocument(
 
   // Development logging requested by pipeline hardening specs:
   console.log(`REPORT TEMPLATE SELECTED: ${templateKey}`);
-  console.log(`REPORT BUILDER EXECUTED: ${builder.name}`);
-  console.log(`REPORT SECTIONS GENERATED: ${activeSections.join(', ')}`);
-
-  return builder(reportId, snapshot, analytics, privacyLevel, activeSections);
+  const doc = builder(reportId, snapshot, analytics, privacyLevel, activeSections);
+  const canonicalVersion = snapshot.targetReportVersion || snapshot.report_version || snapshot.version || 1;
+  doc.reportVersion = canonicalVersion;
+  if ((doc as any).metadata) {
+    (doc as any).metadata.version = canonicalVersion;
+  }
+  return doc;
 }

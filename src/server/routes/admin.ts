@@ -3110,7 +3110,7 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
       sql += ' WHERE status = ?';
       params.push(statusFilter);
     }
-    sql += ' ORDER BY starts_at DESC, created_at DESC';
+    sql += " ORDER BY CASE WHEN status = 'current' THEN 0 WHEN status IN ('active', 'open') THEN 1 ELSE 2 END, starts_at DESC NULLS LAST, created_at DESC";
     const events = await query(sql, params);
 
     const enrichedEvents = [];
@@ -3137,6 +3137,7 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
         dailyStartTime: event.daily_start_time,
         dailyEndTime: event.daily_end_time,
         status: event.status,
+        is_current: event.status === 'current',
         timezone: event.timezone || 'Africa/Lagos',
         parentAccessOpensAt: event.parent_access_opens_at,
         parentAccessClosesAt: event.parent_access_closes_at,

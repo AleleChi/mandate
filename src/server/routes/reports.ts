@@ -253,6 +253,13 @@ router.post('/preview', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ error: 'Invalid report preview request payload.' });
     }
 
+    if (eventId) {
+      const eventExists = await queryOne('SELECT id, title FROM events WHERE id = ?', [eventId]);
+      if (!eventExists) {
+        return res.status(404).json({ error: `Event not found: The requested event "${eventId}" does not exist.` });
+      }
+    }
+
     const hasAccess = await checkReportAccess(req, eventId || null);
     if (!hasAccess) {
       return res.status(403).json({ error: 'Access denied: You do not have access to this event.' });
@@ -354,6 +361,13 @@ router.post('/preview/download', async (req: AuthenticatedRequest, res: Response
 
     if (!templateKey || !privacyLevel) {
       return res.status(400).json({ error: 'Invalid report preview download request payload.' });
+    }
+
+    if (eventId) {
+      const eventExists = await queryOne('SELECT id, title FROM events WHERE id = ?', [eventId]);
+      if (!eventExists) {
+        return res.status(404).json({ error: `Event not found: The requested event "${eventId}" does not exist.` });
+      }
     }
 
     const hasAccess = await checkReportAccess(req, eventId || null);
@@ -477,6 +491,13 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
 
     if (!templateKey || !privacyLevel || !sections || !Array.isArray(sections)) {
       return res.status(400).json({ error: 'Invalid report configuration payload.' });
+    }
+
+    if (eventId) {
+      const eventExists = await queryOne('SELECT id, title FROM events WHERE id = ?', [eventId]);
+      if (!eventExists) {
+        return res.status(404).json({ error: `Event not found: The requested event "${eventId}" does not exist.` });
+      }
     }
 
     const hasAccess = await checkReportAccess(req, eventId || null);
@@ -708,6 +729,21 @@ router.post('/:reportId/generate-updated', async (req: AuthenticatedRequest, res
       return res.status(404).json({ error: 'Report job not found.' });
     }
 
+    if (oldJob.event_id) {
+      const evExists = await queryOne('SELECT id FROM events WHERE id = ?', [oldJob.event_id]);
+      if (!evExists) {
+        return res.status(404).json({ error: `Cannot update report: The underlying event "${oldJob.event_id}" does not exist.` });
+      }
+    }
+
+    const oldGen = await queryOne('SELECT report_version FROM generated_reports WHERE report_job_id = ?', [oldJob.id]);
+    const nextVersion = (oldGen?.report_version || 1) + 1;
+
+    // Clean old filters to remove any stale idempotencyKey so a fresh job is queued with incremented version
+    const oldFilters = JSON.parse(oldJob.filter_configuration || '{}');
+    delete oldFilters.idempotencyKey;
+    oldFilters.targetReportVersion = nextVersion;
+
     const newJobId = await requestReportJob(
       oldJob.event_id,
       oldJob.training_session_id,
@@ -716,7 +752,7 @@ router.post('/:reportId/generate-updated', async (req: AuthenticatedRequest, res
       role,
       oldJob.privacy_classification,
       JSON.parse(oldJob.section_configuration || '[]'),
-      JSON.parse(oldJob.filter_configuration || '{}')
+      oldFilters
     );
 
     const now = new Date().toISOString();

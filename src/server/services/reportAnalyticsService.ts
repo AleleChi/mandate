@@ -133,13 +133,38 @@ export interface AttendanceAnalytics {
 }
 
 export interface VolunteerAnalytics {
+  /** Currently-valid distinct volunteers assigned to the selected event */
   totalApproved: number;
+  /** Currently-valid distinct volunteers on duty for the selected event */
   activeOnDuty: number;
+  /** Turnout percentage of assigned volunteers who are on duty */
   participationRate: number;
+  /** Distinct assigned volunteers by responsibility */
   volunteersByResponsibility: { [key: string]: number };
+  /** Distinct assigned volunteers by team */
   volunteersByTeam: { [key: string]: number };
+  /** Legacy ratio metric */
   volunteersPer100Children: number;
+  /** Human-readable ratio string (e.g. "1 : 12" or "Not available") */
+  ratioText: string;
+  /** Human-readable ratio sublabel (e.g. "1 volunteer per 12 children") */
+  ratioSublabel: string;
+  /** Number of event locations with no active volunteers */
   coverageGaps: number;
+  /** Total approved volunteers currently active in the ministry directory */
+  totalRosterVolunteers: number;
+  /** Structured team deployment for charts: team, assigned, onDuty */
+  teamDeployment: { team: string; assigned: number; onDuty: number }[];
+  /** Breakdown by volunteer duty status */
+  dutyStatusComposition: { status: string; count: number }[];
+  /** Distinct assigned volunteers by location ID */
+  volunteersByLocation: { [locationId: string]: number };
+  /** Locations with at least one active volunteer */
+  staffedLocationsCount: number;
+  /** Total relevant event locations */
+  totalLocationsCount: number;
+  /** Room coverage percentage */
+  roomCoverageScore: number;
 }
 
 export interface DeviceReadinessAnalytics {
@@ -452,32 +477,166 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
 
   // 2. Volunteers & Teams
   const rawAssignments = snapshot.dutyAssignments || [];
-  const assignments = rawAssignments.map((a: any) => ({
-    ...a,
-    location_id: a.location_id || a.assigned_location_id
-  }));
-  const totalApproved = assignments.length;
-  // Unique users with non-cancelled scheduled duty
-  const activeAssignments = assignments.filter((a: any) => a.status !== 'cancelled' && a.status !== 'scheduled');
-  const activeOnDuty = new Set(activeAssignments.map((a: any) => a.user_id)).size || snapshot.dutyDevices?.length || 0;
-  const participationRate = totalApproved > 0 ? (activeOnDuty / totalApproved) * 100 : 0;
+  const rosterVolunteers = snapshot.rosterVolunteers || [];
+  const totalRosterVolunteers = rosterVolunteers.length;
 
-  const volunteersByResponsibility: { [key: string]: number } = {};
-  const volunteersByTeam: { [key: string]: number } = {};
+  // Filter assignments strictly according to business rules:
+  // 1. Volunteer profile exists and is active/approved
+  // 2. Linked user exists
+  // 3. Volunteer is not soft-deleted (deleted_at is null, is_deleted is 0)
+  // 4. Volunteer is not removed (status !== 'removed')
+  // 5. Assignment belongs to this event
+  // 6. Assignment is not removed, cancelled, or inactive
+  // 7. Orphaned assignments never count
+  const validAssignments = rawAssignments.filter((a: any) => {
+    // Check event ID
+    if (a.event_id && a.event_id !== eventId) return false;
 
-  assignments.forEach((a: any) => {
-    const resp = a.responsibility_key || 'Unknown';
-    const team = a.team_key || 'Unknown';
-    volunteersByResponsibility[resp] = (volunteersByResponsibility[resp] || 0) + 1;
-    volunteersByTeam[team] = (volunteersByTeam[team] || 0) + 1;
+    // Check assignment status
+    const asgStatus = (a.assignment_status || a.status || '').toLowerCase();
+    if (['cancelled', 'removed', 'inactive'].includes(asgStatus)) return false;
+
+    // Check volunteer profile validity
+    if (a.volunteer_profile_id === null || a.volunteer_profile_id === undefined) {
+      // Cross-reference with active approved roster if available
+      const inRoster = rosterVolunteers.find((rv: any) => rv.user_id === a.user_id);
+      if (!inRoster) return false;
+    }
+
+    if (a.volunteer_is_deleted === 1 || a.volunteer_is_deleted === true || a.volunteer_deleted_at) {
+      return false;
+    }
+
+    const volStatus = (a.volunteer_status || '').toLowerCase();
+    if (volStatus && !['approved', 'active'].includes(volStatus)) {
+      return false;
+    }
+
+    return true;
   });
 
-  const volunteersPer100Children = checkedInTotal > 0 ? (activeOnDuty / checkedInTotal) * 100 : 0;
+  // "Volunteers assigned" = distinct currently-valid volunteers assigned to the selected event
+  const assignedUserIds = new Set<string>(validAssignments.map((a: any) => a.user_id));
+  const totalApproved = assignedUserIds.size;
 
-  // Let's count location gaps
-  const locationsList = snapshot.locations || [];
-  const coveredLocSet = new Set(activeAssignments.map((a: any) => a.location_id).filter(Boolean));
-  const coverageGaps = Math.max(0, locationsList.length - coveredLocSet.size);
+  // "Volunteers on duty" = distinct currently-valid volunteers with an active/on-duty assignment for the selected event
+  const onDutyAssignments = validAssignments.filter((a: any) => {
+    const s = (a.assignment_status || a.status || '').toLowerCase();
+    return s === 'active' || s === 'on_duty' || s === 'checked_in';
+  });
+  const onDutyUserIds = new Set<string>(onDutyAssignments.map((a: any) => a.user_id));
+  const activeOnDuty = onDutyUserIds.size;
+
+  const participationRate = totalApproved > 0 ? (activeOnDuty / totalApproved) * 100 : 0;
+
+  // Volunteers by responsibility (distinct users per responsibility)
+  const volunteersByResponsibility: { [key: string]: number } = {};
+  const respUserSets: { [key: string]: Set<string> } = {};
+  validAssignments.forEach((a: any) => {
+    const resp = a.responsibility_key || 'Room Operator';
+    if (!respUserSets[resp]) respUserSets[resp] = new Set();
+    respUserSets[resp].add(a.user_id);
+  });
+  Object.keys(respUserSets).forEach(k => {
+    volunteersByResponsibility[k] = respUserSets[k].size;
+  });
+
+  // Volunteers by team (distinct users per team)
+  const volunteersByTeam: { [key: string]: number } = {};
+  const teamMap: { [team: string]: { assignedSet: Set<string>; onDutySet: Set<string> } } = {};
+  validAssignments.forEach((a: any) => {
+    const team = a.team_key || a.preferred_team || 'Children Ministry';
+    if (!teamMap[team]) {
+      teamMap[team] = { assignedSet: new Set(), onDutySet: new Set() };
+    }
+    teamMap[team].assignedSet.add(a.user_id);
+    const s = (a.assignment_status || a.status || '').toLowerCase();
+    if (s === 'active' || s === 'on_duty' || s === 'checked_in') {
+      teamMap[team].onDutySet.add(a.user_id);
+    }
+  });
+  Object.keys(teamMap).forEach(k => {
+    volunteersByTeam[k] = teamMap[k].assignedSet.size;
+  });
+
+  const teamDeployment = Object.keys(teamMap).map(team => ({
+    team,
+    assigned: teamMap[team].assignedSet.size,
+    onDuty: teamMap[team].onDutySet.size
+  }));
+
+  // Duty status composition (distinct users per status)
+  const statusSets: { [status: string]: Set<string> } = {
+    'On duty': new Set(),
+    'Scheduled': new Set(),
+    'On break': new Set(),
+    'Unavailable': new Set()
+  };
+
+  validAssignments.forEach((a: any) => {
+    const s = (a.assignment_status || a.status || '').toLowerCase();
+    if (s === 'active' || s === 'on_duty' || s === 'checked_in') {
+      statusSets['On duty'].add(a.user_id);
+    } else if (s === 'scheduled' || s === 'assigned' || s === 'confirmed') {
+      statusSets['Scheduled'].add(a.user_id);
+    } else if (s === 'on_break' || s === 'break') {
+      statusSets['On break'].add(a.user_id);
+    } else if (s === 'temporarily_unavailable' || s === 'unavailable') {
+      statusSets['Unavailable'].add(a.user_id);
+    }
+  });
+
+  const dutyStatusComposition = Object.entries(statusSets)
+    .filter(([_, set]) => set.size > 0)
+    .map(([status, set]) => ({ status, count: set.size }));
+
+  // Human-readable ratio calculation
+  const volunteersPer100Children = checkedInTotal > 0 ? Number(((activeOnDuty / checkedInTotal) * 100).toFixed(1)) : 0;
+  
+  let ratioText = 'Not available';
+  let ratioSublabel = 'No children checked in';
+  if (checkedInTotal > 0 && activeOnDuty > 0) {
+    const childrenPerVol = Number((checkedInTotal / activeOnDuty).toFixed(1));
+    if (childrenPerVol >= 1) {
+      const formatted = childrenPerVol % 1 === 0 ? childrenPerVol.toFixed(0) : childrenPerVol.toFixed(1);
+      ratioText = `1 : ${formatted}`;
+      ratioSublabel = `1 volunteer per ${formatted} children`;
+    } else {
+      const volPerChild = Number((activeOnDuty / checkedInTotal).toFixed(1));
+      ratioText = `${volPerChild} : 1`;
+      ratioSublabel = `${volPerChild} volunteers per child`;
+    }
+  } else if (checkedInTotal > 0 && activeOnDuty === 0) {
+    ratioText = 'Not available';
+    ratioSublabel = 'No volunteers on duty';
+  }
+
+  // Location staffing: Only active non-archived event locations
+  const locationsList = (snapshot.locations || []).filter((loc: any) => 
+    (!loc.event_id || loc.event_id === eventId) && 
+    (loc.is_active === 1 || loc.is_active === true || loc.is_active === undefined) && 
+    !loc.archived_at
+  );
+  const totalLocationsCount = locationsList.length;
+
+  // Distinct valid on-duty volunteers per location
+  const volunteersByLocation: { [locationId: string]: number } = {};
+  const locUserSets: { [locationId: string]: Set<string> } = {};
+  onDutyAssignments.forEach((a: any) => {
+    const locId = a.location_id || a.assigned_location_id;
+    if (locId) {
+      if (!locUserSets[locId]) locUserSets[locId] = new Set();
+      locUserSets[locId].add(a.user_id);
+    }
+  });
+
+  locationsList.forEach((loc: any) => {
+    volunteersByLocation[loc.id] = locUserSets[loc.id]?.size || 0;
+  });
+
+  const staffedLocationsCount = locationsList.filter((loc: any) => (volunteersByLocation[loc.id] || 0) >= 1).length;
+  const roomCoverageScore = totalLocationsCount > 0 ? Math.round((staffedLocationsCount / totalLocationsCount) * 100) : 0;
+  const coverageGaps = Math.max(0, totalLocationsCount - staffedLocationsCount);
 
   const volunteers: VolunteerAnalytics = {
     totalApproved,
@@ -486,7 +645,16 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     volunteersByResponsibility,
     volunteersByTeam,
     volunteersPer100Children,
-    coverageGaps
+    ratioText,
+    ratioSublabel,
+    coverageGaps,
+    totalRosterVolunteers,
+    teamDeployment,
+    dutyStatusComposition,
+    volunteersByLocation,
+    staffedLocationsCount,
+    totalLocationsCount,
+    roomCoverageScore
   };
 
   // 3. Device Readiness
@@ -530,8 +698,7 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   let totalAssignedKidsAcrossRooms = 0;
 
   const locationLoads = locationsList.map((loc: any) => {
-    const locAssignments = activeAssignments.filter((a: any) => a.location_id === loc.id);
-    const volCount = locAssignments.length;
+    const volCount = volunteersByLocation[loc.id] || 0;
     
     // Age groups associated with this location
     const ageGroupsInLoc = snapshot.ageGroups?.filter((ag: any) => ag.location_id === loc.id) || [];
@@ -1080,7 +1247,16 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
     volunteersByResponsibility: {},
     volunteersByTeam: {},
     volunteersPer100Children: 100,
-    coverageGaps: 0
+    coverageGaps: 0,
+    ratioText: 'Not available',
+    ratioSublabel: 'Training scenario session',
+    totalRosterVolunteers: participants.length,
+    teamDeployment: [],
+    dutyStatusComposition: [{ status: 'On duty', count: participants.length }],
+    volunteersByLocation: {},
+    staffedLocationsCount: 0,
+    totalLocationsCount: 0,
+    roomCoverageScore: 100
   };
 
   const devices: DeviceReadinessAnalytics = {

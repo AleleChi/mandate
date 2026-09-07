@@ -81,6 +81,94 @@ export function buildChildSafetyIncidentReport(
     }
   }
 
+  // Care & Safety Visualizations
+  const careCharts = [];
+
+  // Chart 1: Care awareness indicators (aggregated non-identifying)
+  const medCount = analytics.registrations?.medicalNotesCount || 0;
+  const supCount = analytics.registrations?.extraSupportCount || 0;
+  const careTotal = analytics.registrations?.totalCareCount || 0;
+  if (careTotal > 0 || medCount > 0 || supCount > 0) {
+    careCharts.push({
+      id: 'chart-care-indicators',
+      kind: 'horizontalBar' as const,
+      title: 'Care & support flags by category',
+      subtitle: 'Aggregated non-identifying care indicators',
+      labels: ['Dietary & allergy awareness', 'Medical notices', 'Additional support assigned'],
+      series: [{
+        id: 's-care-flags',
+        label: 'Children',
+        values: [careTotal, medCount, supCount]
+      }],
+      caption: 'Aggregated care indicators requiring administrative coordination.',
+      accessibleSummary: 'Horizontal bar chart showing care flags across categories.'
+    });
+  }
+
+  // Chart 2: Alert resolution status
+  if (totalAlerts > 0) {
+    careCharts.push({
+      id: 'chart-alert-status',
+      kind: 'horizontalBar' as const,
+      title: 'Safety alerts by resolution status',
+      subtitle: 'Resolved vs active safeguarding concerns',
+      labels: ['Resolved', 'Active / In progress'],
+      series: [{
+        id: 's-alert-status',
+        label: 'Alerts',
+        values: [resolvedAlerts, openAlerts + inProgressAlerts]
+      }],
+      caption: `${resolvedAlerts} of ${totalAlerts} safety matters closed.`,
+      accessibleSummary: 'Horizontal bar chart of safety alerts by status.'
+    });
+  }
+
+  // Chart 3: Severity distribution (where supported)
+  const sevMap = analytics.alerts.alertsBySeverity || {};
+  const sevKeys = Object.keys(sevMap);
+  if (sevKeys.length > 0 && sevKeys.some(k => sevMap[k] > 0)) {
+    careCharts.push({
+      id: 'chart-alert-severity',
+      kind: 'horizontalBar' as const,
+      title: 'Safety concerns by severity',
+      subtitle: 'Distribution of recorded alerts by urgency tier',
+      labels: sevKeys.map(k => k.charAt(0).toUpperCase() + k.slice(1)),
+      series: [{
+        id: 's-alert-sev',
+        label: 'Concerns',
+        values: sevKeys.map(k => sevMap[k])
+      }],
+      caption: 'Severity classification of logged safeguarding matters.',
+      accessibleSummary: 'Horizontal bar chart of safety concerns by severity.'
+    });
+  }
+
+  if (careCharts.length > 0) {
+    sections.push({
+      id: 'care-safety-charts',
+      title: 'Care & safety visual analysis',
+      type: 'chart',
+      content: { charts: careCharts }
+    });
+  } else {
+    sections.push({
+      id: 'care-safety-charts-empty',
+      title: 'Care & safety visual analysis',
+      type: 'chart',
+      content: {
+        charts: [{
+          id: 'chart-care-safety-empty',
+          kind: 'horizontalBar' as const,
+          title: 'Care & safety summary',
+          subtitle: 'Operational incident and care indicator overview',
+          labels: [],
+          series: [],
+          emptyState: 'No safety incidents or emergency alarms were recorded for this event.'
+        }]
+      }
+    });
+  }
+
   const findings: ReportFinding[] = [];
   if (totalAlerts === 0) {
     findings.push({
@@ -132,7 +220,7 @@ export function buildChildSafetyIncidentReport(
   return {
     reportId,
     templateKey: 'child-safety-incident-report-v1',
-    templateVersion: 2,
+    templateVersion: 1,
     reportTitle: 'Child Safety and Incident Report',
     reportDescription: 'Review of raised safety alerts, resolution timelines, and follow-up completion status.',
     eventContext: {
@@ -152,7 +240,7 @@ export function buildChildSafetyIncidentReport(
       end: analytics.cutoffTime
     },
     informationConfirmedUpTo: analytics.cutoffTime,
-    reportVersion: 2,
+    reportVersion: snapshot.version || snapshot.report_version || 1,
     kpis,
     sections,
     findings,
