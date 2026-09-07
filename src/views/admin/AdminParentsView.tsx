@@ -7,7 +7,8 @@ import {
   Trash2,
   Plus,
   MoreHorizontal,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -20,11 +21,13 @@ import { AppRoute } from '../../types';
 interface AdminParentsViewProps {
   onBackToOverview?: () => void;
   onNavigate: (route: AppRoute) => void;
+  adminUser?: any;
 }
 
 type ParentTab = 'active' | 'removed';
 
-export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }) => {
+export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser }) => {
+  const isSuperAdmin = adminUser?.role === 'super_admin';
   const { showError, showSuccess } = useNotification();
   const [parents, setParents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +41,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
   const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
   const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
   const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
+  const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
+
+  // Bulk Permanent Delete
+  const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
+  const [bulkPurgeConfirmText, setBulkPurgeConfirmText] = useState('');
+  const [submittingBulkPurge, setSubmittingBulkPurge] = useState(false);
 
   // Stats across active parents
   const [stats, setStats] = useState({
@@ -165,12 +174,39 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
     }
   };
 
+  const handleBulkPurge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bulkPurgeConfirmText.trim() !== 'DELETE' || submittingBulkPurge) return;
+    if (selectedParentIds.length === 0) return;
+    setSubmittingBulkPurge(true);
+    try {
+      const res = await api.admin.bulkPermanentlyDeleteParents({
+        parentIds: selectedParentIds,
+        confirmText: 'DELETE',
+        reason: 'Bulk permanent deletion by Super Admin'
+      });
+      if (res.success) {
+        showSuccess('Parents deleted', `${res.count || selectedParentIds.length} parent(s) permanently deleted.`);
+        setShowBulkPurgeModal(false);
+        setBulkPurgeConfirmText('');
+        setSelectedParentIds([]);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete selected parents. Nothing was changed.");
+    } finally {
+      setSubmittingBulkPurge(false);
+    }
+  };
+
   // Close overflow action menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
         setOpenActionMenuId(null);
       }
+      setBulkMoreDropdownOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -179,6 +215,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
   const handleTabChange = (tab: ParentTab) => {
     setActiveTab(tab);
     setOpenActionMenuId(null);
+    setBulkMoreDropdownOpen(false);
     setSelectedParentIds([]);
   };
 
@@ -225,22 +262,18 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
   const handlePermanentDeleteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!parentToDelete) return;
-    if (deleteConfirmationText !== 'DELETE') {
+    if (deleteConfirmationText.trim() !== 'DELETE') {
       showError('Confirmation required', 'Please type DELETE to confirm.');
-      return;
-    }
-    if (!deleteReason.trim()) {
-      showError('Reason required', 'Please specify a reason for deletion.');
       return;
     }
     setSubmittingDelete(true);
     try {
       const res = await api.admin.permanentlyDeleteParent(parentToDelete.id, {
-        reason: deleteReason,
-        confirmation: deleteConfirmationText
+        reason: 'Single permanent deletion by Super Admin',
+        confirmation: deleteConfirmationText.trim()
       });
       if (res.success) {
-        showSuccess('Parent permanently deleted', 'Contact details have been removed and login access revoked.');
+        showSuccess('Parent permanently deleted', `${getDisplayName(parentToDelete)} was permanently deleted.`);
         setParentToDelete(null);
         setDeleteReason('');
         setDeleteConfirmationText('');
@@ -249,7 +282,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Action failed', parsed.message);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete this parent. Nothing was changed.");
     } finally {
       setSubmittingDelete(false);
     }
@@ -371,7 +404,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
   ) : null;
 
   const permanentDeleteModal = (parentToDelete && isDomReady) ? createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-single-parent-delete-modal">
       <div
         className="fixed inset-0 bg-black/50"
         onClick={() => setParentToDelete(null)}
@@ -380,35 +413,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
       <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
         <div className="flex items-center gap-2 text-red-600">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B]">Delete parent permanently</h3>
+          <h3 className="font-semibold text-base text-[#18181B]">
+            Delete {getDisplayName(parentToDelete)} permanently?
+          </h3>
         </div>
-        <p className="text-xs text-zinc-500 leading-relaxed">
-          You are about to permanently delete and anonymise the profile for <strong>{getDisplayName(parentToDelete)}</strong>.
+        <p className="text-xs text-zinc-600 leading-relaxed">
+          Their profile and associated personal information will be permanently removed and cannot be restored.
         </p>
-        <div className="text-xs bg-red-50 text-red-700 p-3.5 rounded-xl border border-red-100 space-y-1.5">
-          <span className="font-semibold block">This action is irreversible</span>
-          <ul className="list-disc pl-4 space-y-1 text-[11px] text-red-600">
-            <li>Contact details (email, phone, home address) will be permanently removed.</li>
-            <li>Login credentials will be permanently revoked.</li>
-            <li>Child registration and event records will be preserved as "Deleted parent".</li>
-          </ul>
-        </div>
         <form onSubmit={handlePermanentDeleteSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-              Reason (required)
-            </label>
-            <textarea
-              required
-              value={deleteReason}
-              onChange={(e) => setDeleteReason(e.target.value)}
-              placeholder="Explain why this profile is being permanently deleted..."
-              className="w-full h-16 px-3 py-2 text-xs border border-red-100 bg-zinc-50 rounded-xl focus:outline-none focus:border-red-400 transition-all resize-none text-zinc-700"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-              Type <span className="text-red-600 font-bold">DELETE</span> to confirm
+            <label className="text-xs font-medium text-zinc-600 block">
+              Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
             </label>
             <input
               required
@@ -416,7 +431,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
               value={deleteConfirmationText}
               onChange={(e) => setDeleteConfirmationText(e.target.value)}
               placeholder="DELETE"
-              className="w-full px-3 py-2 text-xs border border-red-100 bg-zinc-50 rounded-xl focus:outline-none focus:border-red-400 transition-all text-zinc-700"
+              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
+              id="single-parent-delete-confirm-input"
             />
           </div>
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
@@ -428,15 +444,71 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
             >
               Cancel
             </Button>
-            <Button
+            <button
               type="submit"
-              variant="primary"
-              loading={submittingDelete}
-              disabled={submittingDelete || deleteConfirmationText !== 'DELETE' || !deleteReason.trim()}
-              className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold disabled:opacity-50"
+              disabled={submittingDelete || deleteConfirmationText.trim() !== 'DELETE'}
+              className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+              id="confirm-single-parent-delete-btn"
             >
-              Delete permanently
+              {submittingDelete ? 'Deleting…' : 'Delete permanently'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkPurgeModal = (showBulkPurgeModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-parent-purge-modal">
+      <div
+        onClick={() => !submittingBulkPurge && setShowBulkPurgeModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
+        <div className="flex items-center gap-2 text-red-600">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h3 className="font-semibold text-base text-[#18181B]">
+            Delete {selectedParentIds.length} parents permanently?
+          </h3>
+        </div>
+        <p className="text-xs text-zinc-600 leading-relaxed">
+          These profiles and their associated personal information will be permanently removed and cannot be restored.
+        </p>
+        <form onSubmit={handleBulkPurge} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-600 block">
+              Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
+            </label>
+            <input
+              required
+              type="text"
+              value={bulkPurgeConfirmText}
+              onChange={(e) => setBulkPurgeConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
+              id="bulk-parent-purge-confirm-input"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkPurgeModal(false)}
+              variant="secondary"
+              disabled={submittingBulkPurge}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
             </Button>
+            <button
+              type="submit"
+              disabled={submittingBulkPurge || bulkPurgeConfirmText.trim() !== 'DELETE'}
+              className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+              id="confirm-bulk-parent-purge-btn"
+            >
+              {submittingBulkPurge ? 'Deleting…' : 'Delete permanently'}
+            </button>
           </div>
         </form>
       </div>
@@ -553,6 +625,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
       {permanentDeleteModal}
       {bulkRemoveModal}
       {bulkRestoreModal}
+      {bulkPurgeModal}
 
       {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
@@ -649,7 +722,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
 
       {/* Contextual Action Bar */}
       {selectedParentIds.length > 0 && (
-        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in">
+        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
           <div className="flex items-center gap-3">
             <span className="font-semibold text-[#18181B] whitespace-nowrap">
               {selectedParentIds.length} selected
@@ -665,13 +738,44 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
                   Remove
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkRestoreModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer"
-                >
-                  Restore
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkRestoreModal(true)}
+                    disabled={submittingBulkRestore}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer disabled:opacity-50"
+                  >
+                    {submittingBulkRestore ? 'Restoring…' : 'Restore'}
+                  </button>
+                  {isSuperAdmin && (
+                    <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                      >
+                        <span>More</span>
+                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                      </button>
+                      {bulkMoreDropdownOpen && (
+                        <div className="absolute left-0 mt-1 w-44 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkMoreDropdownOpen(false);
+                              setBulkPurgeConfirmText('');
+                              setShowBulkPurgeModal(true);
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                            <span>Delete permanently</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -843,16 +947,22 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate }
                                       <RotateCcw className="w-3.5 h-3.5" />
                                       <span>Restore parent</span>
                                     </button>
-                                    <button
-                                      onClick={() => {
-                                        setOpenActionMenuId(null);
-                                        setParentToDelete(p);
-                                      }}
-                                      className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      <span>Delete permanently</span>
-                                    </button>
+                                    {isSuperAdmin && (
+                                      <>
+                                        <div className="h-px bg-zinc-100 my-1" />
+                                        <button
+                                          onClick={() => {
+                                            setOpenActionMenuId(null);
+                                            setParentToDelete(p);
+                                            setDeleteConfirmationText('');
+                                          }}
+                                          className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span>Delete permanently</span>
+                                        </button>
+                                      </>
+                                    )}
                                   </>
                                 )}
                               </div>

@@ -7102,9 +7102,12 @@ router.post('/applications/bulk-remove', authMiddleware, async (req: Authenticat
   }
 });
 
-// POST /api/admin/applications/bulk-purge - Controlled bulk permanent removal of eligible records
+// POST /api/admin/applications/bulk-purge - Controlled bulk permanent removal of eligible records (Super Admin only)
 router.post('/applications/bulk-purge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
     const { applicationIds, reason, confirmText } = req.body;
     if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
       return res.status(400).json({ success: false, error: 'At least one record is required for permanent removal.' });
@@ -7112,11 +7115,11 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
     if (!reason || !reason.trim()) {
       return res.status(400).json({ success: false, error: 'Removal reason is required.' });
     }
-    if (confirmText !== 'REMOVE') {
-      return res.status(400).json({ success: false, error: 'Confirmation text must be REMOVE.' });
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE.' });
     }
 
-    const adminId = req.user?.id || 'admin';
+    const adminId = req.user.id;
     const now = new Date().toISOString();
 
     let permanentlyRemoved = 0;
@@ -7126,7 +7129,7 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
     for (const id of applicationIds) {
       try {
         const entry = await queryOne(`
-          SELECT e.id, e.child_id, e.status, e.checked_in_at, e.picked_up_at, c.full_name
+          SELECT e.id, e.child_id, e.status, e.is_deleted, e.checked_in_at, e.picked_up_at, c.full_name
           FROM child_event_entries e
           JOIN children c ON c.id = e.child_id
           WHERE e.id = ?
@@ -7134,6 +7137,11 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
 
         if (!entry) {
           failures.push({ id, reason: 'Record not found.' });
+          continue;
+        }
+
+        if (entry.is_deleted !== 1 && entry.status !== 'removed') {
+          failures.push({ id, reason: 'Only removed children can be permanently deleted. Remove this child first.' });
           continue;
         }
 
@@ -7148,29 +7156,7 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
           entry.picked_up_at != null
         ) {
           hasProtectedHistory = true;
-          protectionReason = 'This record must be retained because it contains protected attendance history.';
-        }
-
-        // 2. Safeguarding alerts check
-        if (!hasProtectedHistory) {
-          try {
-            const alertCheck = await queryOne(`SELECT COUNT(*) as count FROM event_safety_alerts WHERE child_id = ?`, [entry.child_id]);
-            if (alertCheck && alertCheck.count > 0) {
-              hasProtectedHistory = true;
-              protectionReason = 'This record must be retained because it contains linked safeguarding alerts or reports.';
-            }
-          } catch (e) {}
-        }
-
-        // 3. Incident reports check
-        if (!hasProtectedHistory) {
-          try {
-            const incidentCheck = await queryOne(`SELECT COUNT(*) as count FROM incident_reports WHERE child_id = ?`, [entry.child_id]);
-            if (incidentCheck && incidentCheck.count > 0) {
-              hasProtectedHistory = true;
-              protectionReason = 'This record must be retained because it contains linked incident reports.';
-            }
-          } catch (e) {}
+          protectionReason = 'This child is currently attending or has active attendance and cannot be permanently deleted.';
         }
 
         if (hasProtectedHistory) {
@@ -7179,43 +7165,43 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
           continue;
         }
 
-        // Record is eligible for permanent deletion
-        try {
+        // Record is eligible for permanent deletion inside a safe transaction
+        await transaction(async () => {
+          await execute(`UPDATE notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+          await execute(`DELETE FROM child_attention_items WHERE child_id = ?`, [entry.child_id]);
           await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
-        } catch (e) {}
-
-        try {
           await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
-        } catch (e) {}
+          await execute(`DELETE FROM child_event_entries WHERE id = ?`, [id]);
 
-        await execute(`DELETE FROM child_event_entries WHERE id = ?`, [id]);
+          const otherEntries = await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE child_id = ?`, [entry.child_id]);
+          if (!otherEntries || otherEntries.count === 0) {
+            await execute(`DELETE FROM children WHERE id = ?`, [entry.child_id]);
+          }
 
-        // If no other entries exist for this child profile, delete child row
-        const otherEntries = await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE child_id = ?`, [entry.child_id]);
-        if (!otherEntries || otherEntries.count === 0) {
-          await execute(`DELETE FROM children WHERE id = ?`, [entry.child_id]);
-        }
-
-        // Audit log
-        try {
-          await execute(`
-            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
-            Math.random().toString(36).substring(2, 15),
-            adminId,
-            'admin',
-            'Permanently Remove Child',
-            'child_event_entry',
-            id,
-            JSON.stringify({ reason, confirmText }),
-            now
-          ]);
-        } catch (aErr) {}
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              adminId,
+              req.user.role,
+              'Child permanently deleted by Super Admin',
+              'child',
+              entry.child_id,
+              JSON.stringify({ reason }),
+              now
+            ]);
+          } catch (aErr) {}
+        });
 
         permanentlyRemoved++;
       } catch (err: any) {
-        failures.push({ id, reason: 'Record could not be removed.' });
+        console.error('Error permanently deleting child record:', err);
+        failures.push({ id, reason: "We couldn't permanently delete this child. Nothing was changed." });
       }
     }
 
@@ -7228,11 +7214,12 @@ router.post('/applications/bulk-purge', authMiddleware, async (req: Authenticate
         retained,
         failures
       },
-      summary
+      summary,
+      message: `${permanentlyRemoved} child record(s) permanently deleted.`
     });
   } catch (err: any) {
     console.error('Error in bulk-purge:', err);
-    return res.status(500).json({ success: false, error: 'We could not complete the permanent removal right now. Please try again.' });
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete selected children. Nothing was changed." });
   }
 });
 
@@ -7403,18 +7390,202 @@ router.post('/applications/:id/restore', authMiddleware, async (req: Authenticat
   }
 });
 
-// POST /api/admin/parents/:parentId/permanent-delete - Permanently delete parent (Anonymization)
+// POST /api/admin/applications/:id/permanent-delete - Permanently delete removed child (Super Admin only)
+router.post('/applications/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const { id } = req.params;
+    const { reason, confirmation } = req.body;
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+    }
+
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.status, e.is_deleted, e.checked_in_at, e.picked_up_at, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child record not found' });
+    }
+
+    if (entry.is_deleted !== 1 && entry.status !== 'removed') {
+      return res.status(400).json({ success: false, error: 'Only removed children can be permanently deleted. Remove this child first.' });
+    }
+
+    if (
+      ['checked_in', 'inside', 'picked_up'].includes(entry.status) ||
+      entry.checked_in_at != null ||
+      entry.picked_up_at != null
+    ) {
+      return res.status(400).json({ success: false, error: 'This child is currently attending or has active attendance and cannot be permanently deleted.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Child permanently deleted by Super Admin',
+          'child',
+          entry.child_id,
+          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
+          now
+        ]);
+      } catch (aErr) {}
+
+      await execute(`UPDATE notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+      await execute(`DELETE FROM child_attention_items WHERE child_id = ?`, [entry.child_id]);
+      await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
+      await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
+      await execute(`DELETE FROM child_event_entries WHERE id = ?`, [id]);
+
+      const otherEntries = await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE child_id = ?`, [entry.child_id]);
+      if (!otherEntries || otherEntries.count === 0) {
+        await execute(`DELETE FROM children WHERE id = ?`, [entry.child_id]);
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({ success: true, message: 'Child registration permanently deleted successfully.', summary });
+  } catch (err: any) {
+    console.error('Error in permanent child delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete this child. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/parents/bulk-permanent-delete - Bulk permanent delete removed parents (Super Admin only)
+router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const { parentIds, confirmText, reason } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let deletedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of parentIds) {
+      try {
+        const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+        if (!parent) {
+          failures.push({ id, reason: 'Parent profile not found' });
+          continue;
+        }
+        if (parent.is_deleted !== 1) {
+          failures.push({ id, reason: 'Only removed parents can be permanently deleted. Remove this parent first.' });
+          continue;
+        }
+
+        // Check if any linked children are currently checked in or inside
+        const activeAttendance = await query(`
+          SELECT COUNT(*) as count 
+          FROM child_event_entries e 
+          JOIN children c ON c.id = e.child_id 
+          WHERE c.parent_profile_id = ? AND e.status IN ('checked_in', 'inside')
+        `, [id]);
+        if (activeAttendance[0]?.count > 0) {
+          failures.push({ id, reason: 'Cannot permanently delete this parent because one or more of their children are currently checked in or attending an event.' });
+          continue;
+        }
+
+        await transaction(async () => {
+          // 1. Audit log before deletion
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              req.user.id,
+              req.user.role,
+              'Parent permanently deleted by Super Admin',
+              'parent_profile',
+              id,
+              JSON.stringify({ reason: reason || 'Bulk permanent deletion' }),
+              nowStr
+            ]);
+          } catch (aErr) {}
+
+          // 2. Clean up child records belonging to this parent
+          const childRows = await query('SELECT id FROM children WHERE parent_profile_id = ?', [id]);
+          for (const ch of childRows) {
+            const entryRows = await query('SELECT id FROM child_event_entries WHERE child_id = ?', [ch.id]);
+            for (const ent of entryRows) {
+              await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
+              await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
+            }
+            await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
+            await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('DELETE FROM children WHERE id = ?', [ch.id]);
+          }
+
+          // 3. Clean up parent records
+          await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM admin_parent_notes WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM parent_profiles WHERE id = ?', [id]);
+          if (parent.user_id) {
+            await execute('DELETE FROM auth_tokens WHERE user_id = ?', [parent.user_id]);
+            await execute('DELETE FROM users WHERE id = ?', [parent.user_id]);
+          }
+        });
+
+        deletedCount++;
+      } catch (itemErr: any) {
+        console.error('Error permanently deleting parent:', itemErr);
+        failures.push({ id, reason: "We couldn't permanently delete this parent. Nothing was changed." });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: deletedCount,
+      failures,
+      message: `${deletedCount} parent(s) permanently deleted.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk parent permanent delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete selected parents. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/parents/:id/permanent-delete - Permanently delete parent (Super Admin only)
 router.post('/parents/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, error: 'Admin access required' });
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
     }
     const parentId = req.params.id;
     const { reason, confirmation } = req.body;
 
-    if (!reason || !reason.trim()) {
-      return res.status(400).json({ success: false, error: 'Delete reason is required' });
-    }
     if (confirmation !== 'DELETE') {
       return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
     }
@@ -7428,85 +7599,164 @@ router.post('/parents/:id/permanent-delete', authMiddleware, async (req: Authent
       return res.status(400).json({ success: false, error: 'Only removed parents can be permanently deleted. Remove this parent first.' });
     }
 
-    // Block if there are active (non-deleted) children
-    const activeChildren = await queryOne('SELECT COUNT(*) as count FROM children WHERE parent_profile_id = ? AND is_deleted = 0', [parentId]);
-    if (activeChildren && activeChildren.count > 0) {
+    // Check if any linked children are currently checked in or inside
+    const activeAttendance = await query(`
+      SELECT COUNT(*) as count 
+      FROM child_event_entries e 
+      JOIN children c ON c.id = e.child_id 
+      WHERE c.parent_profile_id = ? AND e.status IN ('checked_in', 'inside')
+    `, [parentId]);
+    if (activeAttendance[0]?.count > 0) {
       return res.status(400).json({ 
         success: false, 
-        error: 'This parent still has active child records. Remove those children first before permanent deletion.' 
+        error: 'Cannot permanently delete this parent because one or more of their children are currently checked in or attending an event.' 
       });
     }
 
     const now = new Date().toISOString();
     const adminId = req.user.id;
 
-    // Anonymize user login record
-    const anonymizedEmail = `deleted_parent_${parentId}@koinonia.org`;
-    await execute(`
-      UPDATE users 
-      SET email = ?, password_hash = NULL, email_verified = 0, role = 'removed_parent' 
-      WHERE id = ?
-    `, [anonymizedEmail, parent.user_id]);
+    await transaction(async () => {
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Parent permanently deleted by Super Admin',
+          'parent_profile',
+          parentId,
+          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
+          now
+        ]);
+      } catch (auditErr) {}
 
-    // Anonymize parent profile
-    await execute(`
-      UPDATE parent_profiles 
-      SET full_name = 'Deleted parent', 
-          phone_number = NULL, 
-          whatsapp_number = NULL, 
-          email = NULL, 
-          home_address = NULL, 
-          photo_file_id = NULL, 
-          preferred_contact = NULL, 
-          is_deleted = 1,
-          permanently_deleted_at = ?, 
-          permanently_deleted_by = ?, 
-          permanent_delete_reason = ?, 
-          anonymized_at = ?
-      WHERE id = ?
-    `, [now, adminId, reason, now, parentId]);
+      const childRows = await query('SELECT id FROM children WHERE parent_profile_id = ?', [parentId]);
+      for (const ch of childRows) {
+        const entryRows = await query('SELECT id FROM child_event_entries WHERE child_id = ?', [ch.id]);
+        for (const ent of entryRows) {
+          await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
+          await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
+        }
+        await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
+        await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('DELETE FROM children WHERE id = ?', [ch.id]);
+      }
 
-    // Revoke any active sessions
-    await execute(`DELETE FROM auth_tokens WHERE user_id = ?`, [parent.user_id]);
+      await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM admin_parent_notes WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM parent_profiles WHERE id = ?', [parentId]);
+      if (parent.user_id) {
+        await execute('DELETE FROM auth_tokens WHERE user_id = ?', [parent.user_id]);
+        await execute('DELETE FROM users WHERE id = ?', [parent.user_id]);
+      }
+    });
 
-    // Add audit history trail safely
-    try {
-      await execute(`
-        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        Math.random().toString(36).substring(2, 15),
-        adminId,
-        'admin',
-        'Permanent Delete Parent',
-        'parent_profile',
-        parentId,
-        JSON.stringify({ reason }),
-        now
-      ]);
-    } catch (auditErr) {
-      console.error('[Safe Audit Warning] Failed to log permanent parent delete:', auditErr);
-    }
-
-    return res.json({ success: true, message: 'Parent profile and login permanently deleted/anonymized successfully.' });
+    return res.json({ success: true, message: 'Parent profile permanently deleted successfully.' });
   } catch (err: any) {
     console.error('Error in permanent parent delete:', err);
-    return res.status(500).json({ success: false, error: 'We could not delete parent profile right now. Please try again.' });
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete this parent. Nothing was changed." });
   }
 });
 
-// POST /api/admin/volunteers/:volunteerId/permanent-delete - Permanently delete volunteer (Anonymization)
+// POST /api/admin/volunteers/bulk-permanent-delete - Bulk permanent delete removed volunteers (Super Admin only)
+router.post('/volunteers/bulk-permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const { volunteerIds, confirmText, reason } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let deletedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!volunteer) {
+          failures.push({ id, reason: 'Volunteer profile not found' });
+          continue;
+        }
+        if (volunteer.is_deleted !== 1) {
+          failures.push({ id, reason: 'Only removed volunteers can be permanently deleted. Remove this volunteer first.' });
+          continue;
+        }
+
+        await transaction(async () => {
+          // 1. Audit log before deletion
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              req.user.id,
+              req.user.role,
+              'Volunteer permanently deleted by Super Admin',
+              'volunteer_profile',
+              id,
+              JSON.stringify({ reason: reason || 'Bulk permanent deletion' }),
+              nowStr
+            ]);
+          } catch (aErr) {}
+
+          // 2. Clean up volunteer assignments and operational data
+          if (volunteer.user_id) {
+            await execute('DELETE FROM event_duty_assignments WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM event_duty_devices WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM device_readiness_logs WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM user_duty_status WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM safety_alert_recipients WHERE recipient_user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM auth_tokens WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM users WHERE id = ?', [volunteer.user_id]);
+          }
+          await execute('DELETE FROM volunteer_event_reports WHERE volunteer_profile_id = ?', [id]);
+          await execute('DELETE FROM volunteer_profiles WHERE id = ?', [id]);
+        });
+
+        deletedCount++;
+      } catch (itemErr: any) {
+        console.error('Error permanently deleting volunteer:', itemErr);
+        failures.push({ id, reason: "We couldn't permanently delete this volunteer. Nothing was changed." });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: deletedCount,
+      failures,
+      message: `${deletedCount} volunteer(s) permanently deleted.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer permanent delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete selected volunteers. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/volunteers/:volunteerId/permanent-delete - Permanently delete volunteer (Super Admin only)
 router.post('/volunteers/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, error: 'Admin access required' });
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
     }
     const volunteerId = req.params.id;
     const { reason, confirmation } = req.body;
 
-    if (!reason || !reason.trim()) {
-      return res.status(400).json({ success: false, error: 'Delete reason is required' });
-    }
     if (confirmation !== 'DELETE') {
       return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
     }
@@ -7523,57 +7773,40 @@ router.post('/volunteers/:id/permanent-delete', authMiddleware, async (req: Auth
     const now = new Date().toISOString();
     const adminId = req.user.id;
 
-    // Anonymize user login record
-    const anonymizedEmail = `deleted_volunteer_${volunteerId}@koinonia.org`;
-    await execute(`
-      UPDATE users 
-      SET email = ?, password_hash = NULL, email_verified = 0, role = 'removed_volunteer' 
-      WHERE id = ?
-    `, [anonymizedEmail, volunteer.user_id]);
+    await transaction(async () => {
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Volunteer permanently deleted by Super Admin',
+          'volunteer_profile',
+          volunteerId,
+          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
+          now
+        ]);
+      } catch (aErr) {}
 
-    // Anonymize volunteer profile
-    await execute(`
-      UPDATE volunteer_profiles 
-      SET full_name = 'Deleted volunteer', 
-          phone = '00000000000', 
-          whatsapp = '00000000000', 
-          note = NULL, 
-          photo_file_id = NULL, 
-          department = NULL, 
-          is_deleted = 1,
-          permanently_deleted_at = ?, 
-          permanently_deleted_by = ?, 
-          permanent_delete_reason = ?, 
-          anonymized_at = ?
-      WHERE id = ?
-    `, [now, adminId, reason, now, volunteerId]);
+      if (volunteer.user_id) {
+        await execute('DELETE FROM event_duty_assignments WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM event_duty_devices WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM device_readiness_logs WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM user_duty_status WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM safety_alert_recipients WHERE recipient_user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM auth_tokens WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM users WHERE id = ?', [volunteer.user_id]);
+      }
+      await execute('DELETE FROM volunteer_event_reports WHERE volunteer_profile_id = ?', [volunteerId]);
+      await execute('DELETE FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    });
 
-    // Revoke any active sessions
-    await execute(`DELETE FROM auth_tokens WHERE user_id = ?`, [volunteer.user_id]);
-
-    // Add audit history trail safely
-    try {
-      await execute(`
-        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        Math.random().toString(36).substring(2, 15),
-        adminId,
-        'admin',
-        'Permanent Delete Volunteer',
-        'volunteer_profile',
-        volunteerId,
-        JSON.stringify({ reason }),
-        now
-      ]);
-    } catch (auditErr) {
-      console.error('[Safe Audit Warning] Failed to log permanent volunteer delete:', auditErr);
-    }
-
-    return res.json({ success: true, message: 'Volunteer profile and login permanently deleted/anonymized successfully.' });
+    return res.json({ success: true, message: 'Volunteer profile permanently deleted successfully.' });
   } catch (err: any) {
     console.error('Error in permanent volunteer delete:', err);
-    return res.status(500).json({ success: false, error: 'We could not delete volunteer profile right now. Please try again.' });
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete this volunteer. Nothing was changed." });
   }
 });
 

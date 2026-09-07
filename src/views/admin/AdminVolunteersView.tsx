@@ -31,11 +31,13 @@ import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCh
 
 interface AdminVolunteersViewProps {
   onBackToOverview: () => void;
+  adminUser?: any;
 }
 
 type VolunteerTab = 'active' | 'pending' | 'declined' | 'removed';
 
-export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
+export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBackToOverview, adminUser }) => {
+  const isSuperAdmin = adminUser?.role === 'super_admin';
   const { showError, showSuccess } = useNotification();
   const [volunteers, setVolunteers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +61,12 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
   const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
   const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
+  const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
+
+  // Bulk Permanent Delete
+  const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
+  const [bulkPurgeConfirmText, setBulkPurgeConfirmText] = useState('');
+  const [submittingBulkPurge, setSubmittingBulkPurge] = useState(false);
 
   // Selected volunteer for profile/review modal
   const [selectedVolId, setSelectedVolId] = useState<string | null>(null);
@@ -553,23 +561,34 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   };
 
   const selectedVolunteers = volunteers.filter(v => selectedVolIds.includes(String(v.id)));
-  const canApprove = selectedVolunteers.length > 0 && selectedVolunteers.every(v => v.status === 'pending_review' || v.status === 'pending' || v.status === 'rejected' || v.status === 'declined');
-  const canDecline = selectedVolunteers.length > 0 && selectedVolunteers.every(v => v.status === 'pending_review' || v.status === 'pending');
-  const canAssignTeam = selectedVolunteers.length > 0 && selectedVolunteers.every(v => !v.isDeleted && activeTab !== 'removed');
-  const canRemove = selectedVolunteers.length > 0 && selectedVolunteers.every(v => !v.isDeleted && activeTab !== 'removed');
-  const canRestore = selectedVolunteers.length > 0 && selectedVolunteers.every(v => v.isDeleted || activeTab === 'removed');
+
+  // State-aware eligibility
+  const pendingVolunteers = selectedVolunteers.filter(v => !v.isDeleted && (v.status === 'pending_review' || v.status === 'pending'));
+  const canBeApprovedVolunteers = selectedVolunteers.filter(v => !v.isDeleted && (v.status === 'pending_review' || v.status === 'pending' || v.status === 'rejected' || v.status === 'declined'));
+  const activeVolunteers = selectedVolunteers.filter(v => !v.isDeleted && (v.status === 'approved' || v.status === 'active'));
+  const notRemovedVolunteers = selectedVolunteers.filter(v => !v.isDeleted && activeTab !== 'removed');
+  const removedVolunteers = selectedVolunteers.filter(v => v.isDeleted || activeTab === 'removed');
+
+  const canApprove = canBeApprovedVolunteers.length > 0 && activeTab !== 'removed';
+  const canDecline = pendingVolunteers.length > 0 && activeTab !== 'removed';
+  const canAssignTeam = activeVolunteers.length > 0 && activeTab !== 'removed';
+  const canRemove = notRemovedVolunteers.length > 0 && activeTab !== 'removed';
+  const canRestore = removedVolunteers.length > 0 && activeTab === 'removed';
+  const canPurge = isSuperAdmin && removedVolunteers.length > 0 && activeTab === 'removed';
 
   const handleBulkAssignTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bulkAssignTeam) return;
+    const targetIds = activeVolunteers.map(v => String(v.id));
+    if (targetIds.length === 0) return;
     setSubmittingBulkAssign(true);
     try {
       const res = await api.admin.bulkAssignVolunteerTeam({
-        volunteerIds: selectedVolIds,
+        volunteerIds: targetIds,
         assignedTeam: bulkAssignTeam
       });
       if (res.success) {
-        showSuccess('Team assigned', `${res.count} volunteer(s) assigned to ${bulkAssignTeam}.`);
+        showSuccess('Team assigned', `${res.count || targetIds.length} volunteer(s) assigned to ${bulkAssignTeam}.`);
         setShowBulkAssignModal(false);
         setBulkAssignTeam('');
         setSelectedVolIds([]);
@@ -584,15 +603,17 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   };
 
   const handleBulkApprove = async () => {
+    const targetIds = canBeApprovedVolunteers.map(v => String(v.id));
+    if (targetIds.length === 0) return;
     setSubmittingBulkApprove(true);
     try {
       const res = await api.admin.bulkReviewVolunteers({
-        volunteerIds: selectedVolIds,
+        volunteerIds: targetIds,
         status: 'approved',
         team: bulkApproveTeam || undefined
       });
       if (res.success) {
-        showSuccess('Volunteers approved', `${res.count} volunteer(s) approved.`);
+        showSuccess('Volunteers approved', `${res.count || targetIds.length} volunteer(s) approved.`);
         setShowBulkApproveModal(false);
         setBulkApproveTeam('');
         setSelectedVolIds([]);
@@ -607,14 +628,16 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   };
 
   const handleBulkDecline = async () => {
+    const targetIds = pendingVolunteers.map(v => String(v.id));
+    if (targetIds.length === 0) return;
     setSubmittingBulkDecline(true);
     try {
       const res = await api.admin.bulkReviewVolunteers({
-        volunteerIds: selectedVolIds,
+        volunteerIds: targetIds,
         status: 'rejected'
       });
       if (res.success) {
-        showSuccess('Applications declined', `${res.count} application(s) marked as not approved.`);
+        showSuccess('Applications declined', `${res.count || targetIds.length} application(s) marked as not approved.`);
         setShowBulkDeclineModal(false);
         setSelectedVolIds([]);
         await fetchVolunteers();
@@ -629,14 +652,16 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
 
   const handleBulkRemove = async (e: React.FormEvent) => {
     e.preventDefault();
+    const targetIds = notRemovedVolunteers.map(v => String(v.id));
+    if (targetIds.length === 0) return;
     setSubmittingBulkRemove(true);
     try {
       const res = await api.admin.bulkRemoveVolunteers({
-        volunteerIds: selectedVolIds,
+        volunteerIds: targetIds,
         reason: bulkRemoveReason || undefined
       });
       if (res.success) {
-        showSuccess('Volunteers removed', `${res.count} volunteer(s) removed.`);
+        showSuccess('Volunteers removed', `${res.count || targetIds.length} volunteer(s) removed.`);
         setShowBulkRemoveModal(false);
         setBulkRemoveReason('');
         setSelectedVolIds([]);
@@ -651,13 +676,15 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   };
 
   const handleBulkRestore = async () => {
+    const targetIds = removedVolunteers.map(v => String(v.id));
+    if (targetIds.length === 0) return;
     setSubmittingBulkRestore(true);
     try {
       const res = await api.admin.bulkRestoreVolunteers({
-        volunteerIds: selectedVolIds
+        volunteerIds: targetIds
       });
       if (res.success) {
-        showSuccess('Volunteers restored', `${res.count} volunteer(s) restored.`);
+        showSuccess('Volunteers restored', `${res.count || targetIds.length} volunteer(s) restored.`);
         setShowBulkRestoreModal(false);
         setSelectedVolIds([]);
         await fetchVolunteers();
@@ -667,6 +694,33 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
       showError('Restore failed', parsed.message);
     } finally {
       setSubmittingBulkRestore(false);
+    }
+  };
+
+  const handleBulkPurge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bulkPurgeConfirmText.trim() !== 'DELETE' || submittingBulkPurge) return;
+    const targetIds = removedVolunteers.map(v => String(v.id));
+    if (targetIds.length === 0) return;
+    setSubmittingBulkPurge(true);
+    try {
+      const res = await api.admin.bulkPermanentlyDeleteVolunteers({
+        volunteerIds: targetIds,
+        confirmText: 'DELETE',
+        reason: 'Bulk permanent deletion by Super Admin'
+      });
+      if (res.success) {
+        showSuccess('Volunteers deleted', `${res.count || targetIds.length} volunteer(s) permanently deleted.`);
+        setShowBulkPurgeModal(false);
+        setBulkPurgeConfirmText('');
+        setSelectedVolIds([]);
+        await fetchVolunteers();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete selected volunteers. Nothing was changed.");
+    } finally {
+      setSubmittingBulkPurge(false);
     }
   };
 
@@ -1126,7 +1180,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
   ) : null;
 
   const permanentDeleteModal = (volToDelete && isDomReady) ? createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans">
       <div
         className="fixed inset-0 bg-black/50"
         onClick={() => setVolToDelete(null)}
@@ -1135,35 +1189,17 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
       <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
         <div className="flex items-center gap-2 text-red-600">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B]">Delete volunteer permanently</h3>
+          <h3 className="font-semibold text-base text-[#18181B]">
+            Delete {volToDelete.fullName || volToDelete.name || 'Volunteer'} permanently?
+          </h3>
         </div>
-        <p className="text-xs text-zinc-500 leading-relaxed">
-          You are about to permanently delete and anonymise the profile for <strong>{volToDelete.fullName || volToDelete.name || 'this volunteer'}</strong>.
+        <p className="text-xs text-zinc-600 leading-relaxed">
+          Their profile and associated personal information will be permanently removed and cannot be restored.
         </p>
-        <div className="text-xs bg-red-50 text-red-700 p-3.5 rounded-xl border border-red-100 space-y-1.5">
-          <span className="font-semibold block">This action is irreversible</span>
-          <ul className="list-disc pl-4 space-y-1 text-[11px] text-red-600">
-            <li>Contact details (email, phone, WhatsApp) will be permanently removed.</li>
-            <li>Login credentials will be permanently revoked.</li>
-            <li>Historical check-in logs will be preserved as "Deleted volunteer".</li>
-          </ul>
-        </div>
         <form onSubmit={handlePermanentDeleteSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-              Reason (required)
-            </label>
-            <textarea
-              required
-              value={deleteReason}
-              onChange={(e) => setDeleteReason(e.target.value)}
-              placeholder="Explain why this profile is being permanently deleted..."
-              className="w-full h-16 px-3 py-2 text-xs border border-red-100 bg-zinc-50 rounded-xl focus:outline-none focus:border-red-400 transition-all resize-none text-zinc-700"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
-              Type <span className="text-red-600 font-bold font-mono">DELETE</span> to confirm
+            <label className="text-xs font-medium text-zinc-600 block">
+              Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
             </label>
             <input
               required
@@ -1171,7 +1207,8 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
               value={deleteConfirmationText}
               onChange={(e) => setDeleteConfirmationText(e.target.value)}
               placeholder="DELETE"
-              className="w-full px-3 py-2 text-xs font-mono border border-red-100 bg-zinc-50 rounded-xl focus:outline-none focus:border-red-400 transition-all text-zinc-700"
+              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
+              id="single-vol-delete-confirm-input"
             />
           </div>
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
@@ -1183,15 +1220,14 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
             >
               Cancel
             </Button>
-            <Button
+            <button
               type="submit"
-              variant="primary"
-              loading={submittingDelete}
-              disabled={submittingDelete || deleteConfirmationText !== 'DELETE' || !deleteReason.trim()}
-              className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold disabled:opacity-50"
+              disabled={submittingDelete || deleteConfirmationText.trim() !== 'DELETE'}
+              className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+              id="confirm-single-vol-delete-btn"
             >
-              Delete permanently
-            </Button>
+              {submittingDelete ? 'Deleting…' : 'Delete permanently'}
+            </button>
           </div>
         </form>
       </div>
@@ -1457,6 +1493,63 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
     document.body
   ) : null;
 
+  const bulkPurgeModal = (showBulkPurgeModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-vol-purge-modal">
+      <div
+        onClick={() => !submittingBulkPurge && setShowBulkPurgeModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
+        <div className="flex items-center gap-2 text-red-600">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h3 className="font-semibold text-base text-[#18181B]">
+            Delete {selectedVolIds.length} volunteers permanently?
+          </h3>
+        </div>
+        <p className="text-xs text-zinc-600 leading-relaxed">
+          These profiles and their associated personal information will be permanently removed and cannot be restored.
+        </p>
+        <form onSubmit={handleBulkPurge} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-600 block">
+              Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
+            </label>
+            <input
+              required
+              type="text"
+              value={bulkPurgeConfirmText}
+              onChange={(e) => setBulkPurgeConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
+              id="bulk-vol-purge-confirm-input"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkPurgeModal(false)}
+              variant="secondary"
+              disabled={submittingBulkPurge}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <button
+              type="submit"
+              disabled={submittingBulkPurge || bulkPurgeConfirmText.trim() !== 'DELETE'}
+              className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+              id="confirm-bulk-vol-purge-btn"
+            >
+              {submittingBulkPurge ? 'Deleting…' : 'Delete permanently'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   // ---- RENDER ----
   return (
     <div
@@ -1474,6 +1567,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
       {bulkDeclineModal}
       {bulkRemoveModal}
       {bulkRestoreModal}
+      {bulkPurgeModal}
 
       {/* 1. Header */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
@@ -1587,57 +1681,135 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
 
       {/* Contextual Action Bar */}
       {selectedVolIds.length > 0 && (
-        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in">
-          <div className="flex items-center gap-3">
+        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="font-semibold text-[#18181B] whitespace-nowrap">
               {selectedVolIds.length} selected
             </span>
+            {activeTab !== 'removed' && (
+              <>
+                <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
+                <span className="text-zinc-500 font-medium">
+                  {canBeApprovedVolunteers.length > 0 && activeVolunteers.length > 0
+                    ? `${canBeApprovedVolunteers.length} can be approved · ${activeVolunteers.length} already active`
+                    : canBeApprovedVolunteers.length > 0
+                    ? `${canBeApprovedVolunteers.length} eligible for review`
+                    : `${activeVolunteers.length} active`
+                  }
+                </span>
+              </>
+            )}
+            {activeTab === 'removed' && (
+              <>
+                <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
+                <span className="text-zinc-500 font-medium">
+                  {selectedVolIds.length} removed {selectedVolIds.length === 1 ? 'record' : 'records'}
+                </span>
+              </>
+            )}
             <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
             <div className="flex flex-wrap items-center gap-2">
-              {canApprove && (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkApproveModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#C59B27] text-white font-medium hover:bg-[#b08a23] transition-colors focus:outline-none"
-                >
-                  {activeTab === 'declined' ? 'Reconsider / Approve' : 'Approve'}
-                </button>
-              )}
-              {canAssignTeam && (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkAssignModal(true)}
-                  className={`px-3.5 py-1.5 rounded-xl font-medium transition-colors focus:outline-none ${!canApprove ? 'bg-[#C59B27] text-white hover:bg-[#b08a23]' : 'bg-white border border-[#EAE8E1] text-zinc-700 hover:bg-zinc-50'}`}
-                >
-                  Assign team
-                </button>
-              )}
-              {canDecline && (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkDeclineModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none"
-                >
-                  Decline
-                </button>
-              )}
-              {canRestore && (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkRestoreModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none"
-                >
-                  Restore
-                </button>
-              )}
-              {canRemove && (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkRemoveModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none"
-                >
-                  Remove
-                </button>
+              {activeTab !== 'removed' ? (
+                <>
+                  {canApprove && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkApproveModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#C59B27] text-white font-medium hover:bg-[#b08a23] transition-colors focus:outline-none cursor-pointer"
+                    >
+                      {activeTab === 'declined'
+                        ? (canBeApprovedVolunteers.length === selectedVolIds.length ? 'Reconsider / Approve' : `Reconsider / Approve ${canBeApprovedVolunteers.length}`)
+                        : (canBeApprovedVolunteers.length === selectedVolIds.length ? 'Approve' : `Approve ${canBeApprovedVolunteers.length}`)
+                      }
+                    </button>
+                  )}
+                  {canAssignTeam && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkAssignModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer"
+                    >
+                      Assign team{activeVolunteers.length < selectedVolIds.length ? ` (${activeVolunteers.length})` : ''}
+                    </button>
+                  )}
+                  {canDecline && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkDeclineModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer"
+                    >
+                      Decline{pendingVolunteers.length < selectedVolIds.length ? ` ${pendingVolunteers.length}` : ''}
+                    </button>
+                  )}
+                  {canRemove && (
+                    <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                      >
+                        <span>More</span>
+                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                      </button>
+                      {bulkMoreDropdownOpen && (
+                        <div className="absolute left-0 mt-1 w-36 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkMoreDropdownOpen(false);
+                              setShowBulkRemoveModal(true);
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {canRestore && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkRestoreModal(true)}
+                      disabled={submittingBulkRestore}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer disabled:opacity-50"
+                    >
+                      {submittingBulkRestore ? 'Restoring…' : 'Restore'}
+                    </button>
+                  )}
+                  {canPurge && (
+                    <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                      >
+                        <span>More</span>
+                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                      </button>
+                      {bulkMoreDropdownOpen && (
+                        <div className="absolute left-0 mt-1 w-44 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkMoreDropdownOpen(false);
+                              setBulkPurgeConfirmText('');
+                              setShowBulkPurgeModal(true);
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                            <span>Delete permanently</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1815,7 +1987,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
 
                             {/* Overflow menu */}
                             {isRemoved ? (
-                              <div className="inline-flex gap-1.5">
+                              <div className="flex items-center gap-1.5 justify-end">
                                 <button
                                   onClick={() => setVolToRestore(vol)}
                                   className="px-2.5 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200/60 hover:border-emerald-300 rounded-xl transition-all cursor-pointer focus:outline-none flex items-center gap-1"
@@ -1823,13 +1995,43 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = () => {
                                   <RotateCcw className="w-3 h-3" />
                                   Restore
                                 </button>
-                                <button
-                                  onClick={() => setVolToDelete(vol)}
-                                  className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 border border-zinc-200/60 hover:border-red-200 rounded-xl transition-all cursor-pointer focus:outline-none"
-                                  title="Delete permanently"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {isSuperAdmin && (
+                                  <div className="relative inline-block text-left" ref={openActionMenuId === vol.id ? actionMenuRef : undefined}>
+                                    <button
+                                      onClick={() => setOpenActionMenuId(openActionMenuId === vol.id ? null : vol.id)}
+                                      className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer focus:outline-none"
+                                      aria-label="More options"
+                                    >
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </button>
+                                    {openActionMenuId === vol.id && (
+                                      <div className="absolute right-0 top-8 z-[200] bg-white border border-[#EAE8E1] rounded-2xl shadow-xl p-1.5 min-w-[160px] flex flex-col gap-0.5 animate-fade-in text-left">
+                                        <button
+                                          onClick={() => {
+                                            setOpenActionMenuId(null);
+                                            setVolToRestore(vol);
+                                          }}
+                                          className="w-full text-left px-3.5 py-2 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition-colors cursor-pointer rounded-lg"
+                                        >
+                                          <RotateCcw className="w-3.5 h-3.5" />
+                                          <span>Restore</span>
+                                        </button>
+                                        <div className="h-px bg-zinc-100 my-1" />
+                                        <button
+                                          onClick={() => {
+                                            setOpenActionMenuId(null);
+                                            setVolToDelete(vol);
+                                            setDeleteConfirmationText('');
+                                          }}
+                                          className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer rounded-lg"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span>Delete permanently</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <div className="relative" ref={openActionMenuId === vol.id ? actionMenuRef : undefined}>

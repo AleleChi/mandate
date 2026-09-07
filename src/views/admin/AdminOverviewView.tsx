@@ -3211,7 +3211,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* CHILDREN MODULE VIEW PANEL */}
           {activeTab === 'children' && (
-            <AdminChildrenView onBackToOverview={() => handleTabChange('overview')} />
+            <AdminChildrenView onBackToOverview={() => handleTabChange('overview')} adminUser={adminUser} />
           )}
 
           {/* ATTENDANCE VIEW PANEL */}
@@ -3241,7 +3241,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* VOLUNTEERS MODULE VIEW PANEL */}
           {activeTab === 'volunteers' && (
-            <AdminVolunteersView onBackToOverview={() => handleTabChange('overview')} />
+            <AdminVolunteersView onBackToOverview={() => handleTabChange('overview')} adminUser={adminUser} />
           )}
 
           {/* PARENTS MODULE VIEW PANEL */}
@@ -3254,7 +3254,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 adminUser={adminUser}
               />
             ) : (
-              <AdminParentsView onBackToOverview={() => handleTabChange('overview')} onNavigate={onNavigate} />
+              <AdminParentsView onBackToOverview={() => handleTabChange('overview')} onNavigate={onNavigate} adminUser={adminUser} />
             )
           )}
 

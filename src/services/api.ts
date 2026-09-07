@@ -774,6 +774,12 @@ export const api = {
         body: JSON.stringify({ applicationIds, reason, confirmText })
       });
     },
+    async permanentlyDeleteChild(id: string, reason?: string, confirmation?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/permanent-delete`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, confirmation: confirmation || 'DELETE' })
+      });
+    },
     async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean }) {
       return api.request<any>(`/api/admin/applications/${id}/review`, {
         method: 'POST',
@@ -1125,6 +1131,12 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async bulkPermanentlyDeleteVolunteers(payload: { volunteerIds: string[]; confirmText: string; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-permanent-delete', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async permanentlyDeleteVolunteer(id: string, payload: { reason: string; confirmation: string }) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/permanent-delete`, {
         method: 'POST',
@@ -1160,6 +1172,12 @@ export const api = {
     },
     async bulkRestoreParents(payload: { parentIds: string[] }) {
       return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkPermanentlyDeleteParents(payload: { parentIds: string[]; confirmText: string; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-permanent-delete', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
