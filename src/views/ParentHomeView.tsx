@@ -112,7 +112,6 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
-  const [showDeviceSecurityDrawer, setShowDeviceSecurityDrawer] = useState(false);
   const [passUnlockedChildId, setPassUnlockedChildId] = useState<string | null>(null);
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
@@ -1511,6 +1510,12 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         showError={showError}
       />
 
+      {/* 5c. Device Security settings */}
+      <DeviceSecuritySettings
+        showSuccess={showSuccess}
+        showError={showError}
+      />
+
       {/* 6. Account actions card */}
       <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-2xs divide-y divide-[#FAF8F4] overflow-hidden">
         {isAppInstalled() ? (
@@ -1550,23 +1555,6 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
           </button>
         )}
-
-        <button
-          type="button"
-          onClick={() => {
-            setShowDeviceSecurityDrawer(true);
-            try {
-              window.history.pushState(null, '', '#/parent/device-security');
-            } catch {}
-          }}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <div className="flex items-center space-x-3.5">
-            <Fingerprint className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B]">Device security</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
-        </button>
 
         <button
           type="button"
@@ -1610,24 +1598,12 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* Top Header shown on all screens with calm, minimal, premium design */}
       <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 backdrop-blur-md border-b border-[#EAE8E1]/50" data-component-version={activeTab === 'Passes' ? 'parent-passes-header-v2-stitch' : 'parent-mobile-header-v2-clean'}>
         <div className="px-5 h-14 flex items-center justify-between">
-          <div className="flex items-center">
-            {activeTab === 'Passes' ? (
-              <button 
-                onClick={() => setShowHelpDrawer(true)}
-                className="p-2 -ml-2 rounded-xl text-[#3F3F46] hover:text-[#C59B27] active:scale-95 transition-all cursor-pointer focus:outline-none" 
-                title="Menu"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-            ) : (
-              <BrandLogo
-                context="compact"
-                data-component-version="parent-brand-logo-v1-configured"
-                onClick={() => handleTabChange('Home')}
-                className="mr-1"
-              />
-            )}
-          </div>
+            <BrandLogo
+              context="compact"
+              data-component-version="parent-brand-logo-v1-configured"
+              onClick={() => handleTabChange('Home')}
+              className="mr-1"
+            />
 
           <div className="text-center">
             <span className="font-serif-koinonia font-bold text-xs sm:text-sm text-[#18181B] tracking-wider uppercase leading-none">
@@ -1687,6 +1663,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             return (
               <button
                 key={item.label}
+                type="button"
                 onClick={() => handleTabChange(item.label)}
                 className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all cursor-pointer focus:outline-none ${
                   isActive
@@ -1836,7 +1813,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* Help and questions Drawer Bottom Sheet */}
       {showHelpDrawer && (
         <div 
-          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
           data-view-version="parent-help-v1-brand"
           onClick={() => setShowHelpDrawer(false)}
         >
@@ -1938,7 +1915,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* Safety information Drawer Bottom Sheet */}
       {showSafetyDrawer && (
         <div 
-          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
           data-view-version="parent-safety-v1-brand"
           onClick={() => setShowSafetyDrawer(false)}
         >
@@ -2031,60 +2008,6 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
               >
                 Close safety guide
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Device security Drawer Bottom Sheet */}
-      {showDeviceSecurityDrawer && (
-        <div 
-          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
-          onClick={() => setShowDeviceSecurityDrawer(false)}
-        >
-          <div 
-            className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-3.5">
-                <div className="p-2.5 bg-[#FAF6EB] rounded-2xl border border-[#E5D5AE]/60 text-[#C59B27]">
-                  <Fingerprint className="w-5 h-5 stroke-[1.75]" />
-                </div>
-                <div className="text-left">
-                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
-                    Device security
-                  </h3>
-                  <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
-                    Fast confirmation and secure access settings.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowDeviceSecurityDrawer(false)}
-                className="p-2 rounded-xl hover:bg-[#FAF6EB] text-[#6B7280] hover:text-[#18181B] cursor-pointer transition-colors focus:outline-none"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Scrollable Content */}
-            <div className="p-5 overflow-y-auto space-y-4 max-h-[50vh]">
-              <DeviceSecuritySettings 
-                showSuccess={(t, m) => showSuccess(t, m)}
-                showError={(t, m) => showError(t, m)}
-              />
-            </div>
-
-            {/* Footer */}
-            <div className="p-4.5 bg-white border-t border-[#EAE8E1]/60 flex justify-center shrink-0">
-              <button
-                onClick={() => setShowDeviceSecurityDrawer(false)}
-                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
-              >
-                Close device settings
               </button>
             </div>
           </div>

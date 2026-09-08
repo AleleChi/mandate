@@ -41,7 +41,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
         setPasskeys(res.passkeys || []);
       }
     } catch (err) {
-      console.warn('Error fetching registered device keys:', err);
+      console.warn('Error fetching registered devices:', err);
     } finally {
       setLoading(false);
     }
@@ -85,12 +85,12 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
   }, []);
 
   const handleRegisterSuccess = () => {
-    showSuccess('Device security active', 'Your device key has been registered and is now active.');
+    showSuccess('Secure sign-in is ready', 'You can now use this device to sign in without entering your password.');
     fetchPasskeys();
   };
 
   const handleTestSuccess = () => {
-    showSuccess('Verification successful', 'Device security verification completed successfully. Unlock is fully active.');
+    showSuccess('Verification successful', 'Secure sign-in verification completed successfully.');
   };
 
   const handleConfirmRevoke = async () => {
@@ -101,13 +101,13 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
       const res = await api.auth.passkeys.revoke(targetId);
       if (res && res.success) {
         setConfirmRevokeItem(null);
-        showSuccess('Device removed', 'The device key was successfully revoked.');
+        showSuccess('Device removed', 'The device was successfully removed.');
         await fetchPasskeys();
       } else {
-        showError('Removal failed', res?.error || 'Could not revoke device key.');
+        showError('Removal failed', res?.error || 'Could not remove device.');
       }
     } catch (err) {
-      showError('Error', 'An error occurred while revoking device credentials.');
+      showError('Error', 'An error occurred while removing device credentials.');
     } finally {
       setRevokingId(null);
     }
@@ -117,10 +117,10 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
     setPassUnlockEnabled(checked);
     localStorage.setItem('koinonia_pass_biometric_unlock', checked ? 'true' : 'false');
     showSuccess(
-      checked ? 'Secure unlock active' : 'Secure unlock off',
+      checked ? 'Secure sign-in active' : 'Secure sign-in off',
       checked 
-        ? 'Passes will require device security verification prior to viewing.' 
-        : 'Passes can now be viewed without device verification.'
+        ? 'Passes will require secure device confirmation prior to viewing.' 
+        : 'Passes can now be viewed without device confirmation.'
     );
   };
 
@@ -148,7 +148,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
               Device security
             </h3>
             <p className="text-xs text-zinc-600 leading-relaxed">
-              Protect access on this device using your phone or computer's secure sign-in.
+              Use your fingerprint, face, screen lock or device PIN for quick, passwordless access.
             </p>
           </div>
         </div>
@@ -164,24 +164,25 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
             /* State 2: Unsupported */
             <div>
               <p className="text-xs font-medium text-zinc-700">
-                Secure unlock isn't available on this browser.
+                Secure sign-in isn't available on this browser.
               </p>
             </div>
           ) : !isConfigured ? (
             /* State 3: Available but not set up */
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold text-zinc-900">Available on this device</p>
-                <p className="text-[11px] text-zinc-500 mt-0.5">Use your device's biometric or PIN sign-in for fast access.</p>
+                <p className="text-xs font-semibold text-zinc-900">Secure sign-in is available</p>
+                <p className="text-[11px] text-zinc-500 mt-0.5">Use your fingerprint, face, screen lock or device PIN.</p>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setModalAction('register');
                   setModalOpen(true);
                 }}
                 className="px-3.5 py-2 bg-[#9A7326] hover:bg-[#7D5B18] text-white text-xs font-medium rounded-xl transition-colors shrink-0 cursor-pointer"
               >
-                Set up secure unlock
+                Set up secure sign-in
               </button>
             </div>
           ) : (
@@ -189,10 +190,11 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                <p className="text-xs font-semibold text-zinc-900">Secure unlock is on</p>
+                <p className="text-xs font-semibold text-zinc-900">Secure sign-in is on</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => {
                     setModalAction('test');
                     setModalOpen(true);
@@ -202,6 +204,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                   Test unlock
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setModalAction('register');
                     setModalOpen(true);
@@ -240,6 +243,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                       </p>
                     </div>
                     <button
+                      type="button"
                       onClick={() => setConfirmRevokeItem(pk)}
                       className="text-xs text-zinc-400 hover:text-rose-600 px-2 py-1 rounded transition-colors cursor-pointer"
                     >
@@ -257,13 +261,14 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
           <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between">
             <div className="space-y-0.5 max-w-[80%]">
               <p className="text-xs font-medium text-zinc-900">
-                Require secure unlock before showing child pass
+                Require secure confirmation before showing pass
               </p>
               <p className="text-[11px] text-zinc-500 leading-relaxed">
                 Confirm your identity using this device before opening passes.
               </p>
             </div>
             <button
+              type="button"
               onClick={() => togglePassUnlock(!passUnlockEnabled)}
               className="focus:outline-none cursor-pointer"
               aria-label="Toggle secure unlock for pass"
@@ -295,6 +300,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => setConfirmRevokeItem(null)}
                 disabled={Boolean(revokingId)}
                 className="px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 rounded-xl transition-colors cursor-pointer"
@@ -302,6 +308,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirmRevoke}
                 disabled={Boolean(revokingId)}
                 className="px-3.5 py-2 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
@@ -325,7 +332,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSuccess={modalAction === 'register' ? handleRegisterSuccess : handleTestSuccess}
-        actionName={modalAction === 'register' ? 'Registering secure device key' : 'Testing secure unlock'}
+        actionName={modalAction === 'register' ? 'Registering secure device' : 'Testing secure unlock'}
         isRegistration={modalAction === 'register'}
       />
     </div>

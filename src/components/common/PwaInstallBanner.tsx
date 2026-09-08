@@ -162,7 +162,7 @@ export const PwaInstallBanner: React.FC = () => {
                 Install Koinonia Children & Teens
               </h3>
               <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                Add Koinonia Children & Teens to this device.
+                Open it directly from your home screen and receive important event updates.
               </p>
               <div className="flex items-center gap-2 mt-3">
                 <button

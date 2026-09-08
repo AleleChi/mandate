@@ -319,6 +319,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           />
 
           <button
+            type="button"
             onClick={() => setSimMobileMenuOpen(!simMobileMenuOpen)}
             data-component-version="landing-header-menu-button-v2"
             aria-label="Open menu"
@@ -668,9 +669,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         structuredData={structuredData}
       />
       {/* 1. Header (Stitch Light Header) */}
-      <header className="sticky top-0 z-40 w-full bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1]" data-component-version="landing-header-v2-responsive-menu">
+      <header className="sticky top-0 z-40 w-full bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#EAE8E1] relative" data-component-version="landing-header-v2-responsive-menu">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between relative">
-          {/* Koinonia Wordmark on the left */}
+          {/* Brand */}
           <BrandLogo
             context="landing"
             data-component-version="landing-header-logo-image-v2-full-brand"
@@ -688,35 +689,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             className="group"
           />
 
-          {/* Navigation */}
-          <nav className="hidden lg:flex items-center space-x-8 text-xs font-semibold tracking-wider text-[#6B7280] uppercase">
-            <button onClick={() => scrollToSection('about')} className="hover:text-[#18181B] transition-colors">
-              About
-            </button>
-            <button onClick={() => scrollToSection('process')} className="hover:text-[#18181B] transition-colors">
-              The Process
-            </button>
-            <button onClick={() => scrollToSection('safety')} className="hover:text-[#18181B] transition-colors">
-              Safety
-            </button>
-            <button onClick={() => scrollToSection('moments')} className="hover:text-[#18181B] transition-colors">
-              Past Moments
-            </button>
-            <button onClick={() => scrollToSection('footer')} className="hover:text-[#18181B] transition-colors">
-              FAQs
-            </button>
+          {/* Nav Links - Hidden on Mobile */}
+          <nav className="hidden md:flex items-center space-x-8 text-sm font-medium text-[#6B7280]">
+            <button onClick={() => scrollToSection('about')} className="hover:text-[#18181B] transition-colors cursor-pointer">About</button>
+            <button onClick={() => scrollToSection('process')} className="hover:text-[#18181B] transition-colors cursor-pointer">The Process</button>
+            <button onClick={() => scrollToSection('safety')} className="hover:text-[#18181B] transition-colors cursor-pointer">Safety</button>
+            <button onClick={() => scrollToSection('moments')} className="hover:text-[#18181B] transition-colors cursor-pointer">Past Moments</button>
+            <button onClick={() => scrollToSection('footer')} className="hover:text-[#18181B] transition-colors cursor-pointer">Contact</button>
           </nav>
 
-          {/* Sign In & Parent Access Buttons - Visible on md and up */}
-          <div className="hidden md:flex items-center space-x-3">
+          {/* CTAs - Hidden on Mobile */}
+          <div className="hidden md:flex items-center space-x-4">
             <button
-              onClick={() => onNavigate('/parent/sign-in')}
-              className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer"
+              onClick={() => onNavigate('/volunteer/sign-in')}
+              className="text-[#6B7280] hover:text-[#18181B] text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-[#FAF6EB] transition-all cursor-pointer"
             >
-              Sign In
+              Volunteer Sign In
             </button>
             <button
-              onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+              onClick={() => onNavigate('/parent/sign-in')}
+              className="text-[#6B7280] hover:text-[#18181B] text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-[#FAF6EB] transition-all cursor-pointer"
+            >
+              Parent Sign In
+            </button>
+            <button
+              onClick={() => onNavigate('/parent/create-account')}
               className="bg-[#C59B27] hover:bg-[#B89047] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all cursor-pointer"
             >
               Register Your Child
@@ -726,9 +723,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* Hamburger Menu Button - Hidden on md and up */}
           <div className="flex md:hidden items-center">
             <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              type="button"
+              id="btn-landing-mobile-menu"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMobileMenuOpen(!mobileMenuOpen);
+              }}
               data-component-version="landing-header-menu-button-v2"
-              aria-label="Open menu"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
               className="p-2 rounded-xl text-[#6B7280] hover:text-[#18181B] hover:bg-[#FAF6EB] transition-all cursor-pointer focus:outline-none"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -736,53 +738,67 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
 
+        {/* Backdrop for tapping outside to close menu */}
+        {mobileMenuOpen && (
+          <div
+            className="fixed inset-0 top-20 bg-black/30 backdrop-blur-xs z-40 md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
         {/* Mobile Dropdown Menu Panel */}
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
-              className="md:hidden border-t border-[#EAE8E1] bg-[#FAF9F6] shadow-lg overflow-hidden absolute top-20 left-0 right-0 z-45"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              className="md:hidden border-t border-[#EAE8E1] bg-[#FAF9F6] shadow-xl overflow-hidden absolute top-full left-0 right-0 z-50"
               data-component-version="landing-header-mobile-menu-v2"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="px-4 py-6 space-y-4 flex flex-col">
                 {/* Navigation links inside dropdown */}
                 <div className="grid grid-cols-2 gap-3 pb-4 border-b border-[#EAE8E1] text-[11px] font-semibold tracking-wider text-[#6B7280] uppercase">
                   <button
+                    type="button"
                     onClick={() => {
                       scrollToSection('about');
                       setMobileMenuOpen(false);
                     }}
-                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    className="text-left py-2 hover:text-[#18181B] transition-colors cursor-pointer"
                   >
                     About
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       scrollToSection('process');
                       setMobileMenuOpen(false);
                     }}
-                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    className="text-left py-2 hover:text-[#18181B] transition-colors cursor-pointer"
                   >
                     The Process
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       scrollToSection('safety');
                       setMobileMenuOpen(false);
                     }}
-                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    className="text-left py-2 hover:text-[#18181B] transition-colors cursor-pointer"
                   >
                     Safety
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       scrollToSection('moments');
                       setMobileMenuOpen(false);
                     }}
-                    className="text-left py-2 hover:text-[#18181B] transition-colors"
+                    className="text-left py-2 hover:text-[#18181B] transition-colors cursor-pointer"
                   >
                     Past Moments
                   </button>
@@ -791,6 +807,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 {/* Auth actions: primary Parent sign in, secondary Volunteer sign in */}
                 <div className="flex flex-col space-y-3 pt-2">
                   <button
+                    type="button"
                     onClick={() => {
                       onNavigate('/parent/sign-in');
                       setMobileMenuOpen(false);
@@ -801,6 +818,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     <ArrowRight className="w-4 h-4 text-white/90 group-hover:translate-x-0.5 transition-transform shrink-0" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       onNavigate('/volunteer/sign-in');
                       setMobileMenuOpen(false);

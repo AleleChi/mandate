@@ -1,44 +1,31 @@
-const CACHE_NAME = 'koinonia-app-shell-v4';
-const STATIC_ASSETS = [
+const CACHE_NAME = 'koinonia-app-shell-v5';
+const CORE_ASSETS = [
   '/',
-  '/index.html',
-  'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap'
+  '/index.html'
 ];
 
-const isDevOrPreview = typeof self !== 'undefined' && (
-  self.location.hostname === 'localhost' || 
-  self.location.hostname === '127.0.0.1' ||
-  self.location.hostname.includes('run.app') ||
-  self.location.hostname.includes('google.com')
-);
-
 self.addEventListener('install', (event) => {
-  if (isDevOrPreview) {
-    self.skipWaiting();
-    return;
-  }
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Safe, individual pre-caching so external or transient misses never abort SW installation
+      for (const asset of CORE_ASSETS) {
+        try {
+          await cache.add(asset);
+        } catch (err) {
+          console.warn('[SW] Non-fatal pre-cache miss:', asset, err);
+        }
+      }
     })
   );
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  if (isDevOrPreview) {
-    event.waitUntil(
-      caches.keys().then((keys) =>
-        Promise.all(keys.map((key) => caches.delete(key)))
-      ).then(() => self.clients.claim())
-    );
-    return;
-  }
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith("koinonia-") && key !== CACHE_NAME)
+          .filter((key) => key.startsWith("koinonia-") && key !== CACHE_NAME && key !== "koinonia-alert-states-v1")
           .map((key) => caches.delete(key))
       )
     ).then(() => self.clients.claim())
@@ -46,9 +33,6 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (isDevOrPreview) {
-    return;
-  }
   const url = new URL(event.request.url);
 
   // CRITICAL SECURITY RULE: Do NOT cache any API routes

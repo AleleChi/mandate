@@ -6,7 +6,7 @@ import './index.css';
 
 // Register service worker for offline / caching capability
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  const registerSW = () => {
     navigator.serviceWorker.register('/sw.js')
       .then((reg) => {
         console.log('ServiceWorker registration successful with scope: ', reg.scope);
@@ -14,7 +14,13 @@ if ('serviceWorker' in navigator) {
       .catch((err) => {
         console.log('ServiceWorker registration failed: ', err);
       });
-  });
+  };
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    registerSW();
+  } else {
+    window.addEventListener('load', registerSW);
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

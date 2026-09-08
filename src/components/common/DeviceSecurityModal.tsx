@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Fingerprint, Lock, ShieldAlert, X, ShieldCheck, Loader2 } from 'lucide-react';
 import { Button } from './Button';
-import { api, ParentApiError } from '../../services/api';
+import { api } from '../../services/api';
 import { isWebAuthnSupported, base64URLToBuffer, bufferToBase64URL } from '../../utils/passkey';
 
 interface DeviceSecurityModalProps {
@@ -11,7 +12,7 @@ interface DeviceSecurityModalProps {
   onSuccess: (credentialId?: string) => void;
   actionName: string;
   isRegistration?: boolean; // If registering a new device passkey
-  emailForLogin?: string; // If logging in via passkey
+  emailForLogin?: string; // If logging in via passkey (optional)
   challengeKey?: string; // For login verify
   loginOptions?: any; // For login verify
 }
@@ -38,17 +39,27 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
       if (ua.includes('iPad')) return 'iPad';
       if (ua.includes('Macintosh')) return 'MacBook';
       if (ua.includes('Windows')) return 'Windows PC';
-      if (ua.includes('Android')) return 'Android Device';
+      if (ua.includes('Android')) return 'Android phone';
       return 'Personal Device';
     }
     return 'This Device';
   });
 
+  // Body scroll locking and restoration
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
       if (!isWebAuthnSupported()) {
         setMode('error');
-        setErrorMessage('Secure device unlock is not supported on this browser.');
+        setErrorMessage("Secure sign-in isn't available on this browser.");
       } else {
         setMode('prompt');
         setPassword('');
@@ -64,22 +75,22 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
     setVerifying(true);
     setErrorMessage('');
 
-    // Prepare a subtle 800ms animation for premium experience
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    // Prepare a subtle 500ms smooth transition
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     try {
       if (!isWebAuthnSupported()) {
-        throw new Error('Secure device unlock is not supported on this browser.');
+        throw new Error("Secure sign-in isn't available on this browser.");
       }
 
       if (isRegistration) {
         if (!window.navigator?.credentials?.create) {
-          throw new Error('Secure device unlock registration is not supported on this browser.');
+          throw new Error("Secure sign-in isn't available on this browser.");
         }
 
         const optionsRes = await api.auth.passkeys.registerOptions(window.location.hostname);
         if (!optionsRes.success || !optionsRes.options) {
-          throw new Error(optionsRes.error || 'Failed to prepare device registration.');
+          throw new Error(optionsRes.error || "We couldn't prepare device setup.");
         }
 
         const opts = optionsRes.options;
@@ -101,7 +112,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
         const credential = await window.navigator.credentials.create(formattedOpts) as any;
         if (!credential) {
-          throw new Error('No credential details returned from the device.');
+          throw new Error("No credential details returned from this device.");
         }
 
         let pubKey = 'encoded-public-key-placeholder';
@@ -130,36 +141,36 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
         );
 
         if (regRes.success) {
-          // Set a marker in local storage so other components know a passkey is registered
           localStorage.setItem('koinonia_passkey_registered', 'true');
           setMode('success');
-          setTimeout(() => {
-            onSuccess(credential.id);
-            onClose();
-          }, 1500);
         } else {
-          throw new Error(regRes.error || 'Registration failed on server');
+          throw new Error(regRes.error || "We couldn't set up secure sign-in on this device.");
         }
 
-      } else if (emailForLogin && challengeKey) {
-        if (!window.navigator?.credentials?.get || !loginOptions) {
-          throw new Error('Secure device authentication is not supported or configuration is missing.');
+      } else if (challengeKey && loginOptions) {
+        if (!window.navigator?.credentials?.get) {
+          throw new Error("Secure sign-in isn't available on this browser.");
         }
 
-        const formattedOpts = {
+        const formattedOpts: any = {
           publicKey: {
             ...loginOptions,
             challenge: base64URLToBuffer(loginOptions.challenge),
-            allowCredentials: (loginOptions.allowCredentials || []).map((c: any) => ({
-              type: c.type,
-              id: base64URLToBuffer(c.id)
-            }))
           }
         };
 
+        if (loginOptions.allowCredentials && loginOptions.allowCredentials.length > 0) {
+          formattedOpts.publicKey.allowCredentials = loginOptions.allowCredentials.map((c: any) => ({
+            type: c.type,
+            id: base64URLToBuffer(c.id)
+          }));
+        } else {
+          delete formattedOpts.publicKey.allowCredentials;
+        }
+
         const assertion = await window.navigator.credentials.get(formattedOpts) as any;
         if (!assertion) {
-          throw new Error('Device verification was not completed.');
+          throw new Error("Device sign-in was not completed.");
         }
 
         const loginRes = await api.auth.passkeys.loginVerify(
@@ -172,20 +183,20 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           setTimeout(() => {
             onSuccess(assertion.id);
             onClose();
-          }, 1500);
+          }, 1200);
         } else {
-          throw new Error(loginRes.error || 'Device verification failed on server');
+          throw new Error(loginRes.error || "We couldn't verify this device.");
         }
 
       } else {
         // Action verification
         if (!window.navigator?.credentials?.get) {
-          throw new Error('Device verification is not supported on this browser.');
+          throw new Error("Secure sign-in isn't available on this browser.");
         }
 
         const optRes = await api.auth.passkeys.getList();
         if (!optRes.success || !optRes.passkeys || optRes.passkeys.length === 0) {
-          throw new Error('No registered device keys found on this account. Please register your device first.');
+          throw new Error("No registered device found. Please set up secure sign-in first.");
         }
 
         const randomChallenge = new Uint8Array(32);
@@ -206,7 +217,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
         const assertion = await window.navigator.credentials.get(formattedOpts) as any;
         if (!assertion) {
-          throw new Error('Device verification was not completed.');
+          throw new Error("Device verification was not completed.");
         }
 
         const verifyRes = await api.auth.passkeys.verifyAction({ id: assertion.id }, actionName);
@@ -215,9 +226,9 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           setTimeout(() => {
             onSuccess(assertion.id);
             onClose();
-          }, 1500);
+          }, 1200);
         } else {
-          throw new Error(verifyRes.error || 'Action verification failed on server');
+          throw new Error(verifyRes.error || "Verification failed on server.");
         }
       }
     } catch (err: any) {
@@ -227,13 +238,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
       const isCancel = err?.name === 'NotAllowedError' || err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('abort');
       
       if (isCancel) {
-        setErrorMessage(isRegistration ? 'Setup was cancelled.' : 'Verification was cancelled.');
+        setErrorMessage(isRegistration ? 'Setup was cancelled.' : 'Sign-in was cancelled.');
       } else {
         const isUnsupported = err?.name === 'SecurityError' || err?.message?.toLowerCase().includes('not supported') || !isWebAuthnSupported();
         if (isUnsupported) {
-          setErrorMessage("Secure unlock isn't available on this browser.");
+          setErrorMessage("Secure sign-in isn't available on this browser.");
         } else {
-          setErrorMessage(err?.message || 'Device verification could not be completed.');
+          setErrorMessage(isRegistration ? "We couldn't set up secure sign-in on this device." : "We couldn't sign in with this device.");
         }
       }
     } finally {
@@ -252,7 +263,6 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
     setPasswordError('');
 
     try {
-      // Sign-in again to verify password
       const meRes = await api.auth.getMe().catch(() => null);
       if (meRes && meRes.user?.email) {
         const checkRes = await api.auth.signIn({
@@ -268,25 +278,22 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
         } else {
           setPasswordError('Incorrect password. Please try again.');
         }
-      } else {
-        // Fallback for login scenario
-        if (emailForLogin) {
-          const checkRes = await api.auth.signIn({
-            email: emailForLogin,
-            password: password
-          });
-          if (checkRes.success || checkRes.token) {
-            setMode('success');
-            setTimeout(() => {
-              onSuccess('password_verified');
-              onClose();
-            }, 1000);
-          } else {
-            setPasswordError('Incorrect password. Please try again.');
-          }
+      } else if (emailForLogin) {
+        const checkRes = await api.auth.signIn({
+          email: emailForLogin,
+          password: password
+        });
+        if (checkRes.success || checkRes.token) {
+          setMode('success');
+          setTimeout(() => {
+            onSuccess('password_verified');
+            onClose();
+          }, 1000);
         } else {
-          setPasswordError('Incorrect password or session expired.');
+          setPasswordError('Incorrect password. Please try again.');
         }
+      } else {
+        setPasswordError('Incorrect password or session expired.');
       }
     } catch (err: any) {
       setPasswordError('Verification failed. Please check your credentials.');
@@ -297,27 +304,34 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  // Render via React Portal to document.body to guarantee current-viewport positioning
+  return createPortal(
     <AnimatePresence>
       <div 
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans"
-        data-component-version="sensitive-action-passkey-confirm-v2"
+        data-component-version="sensitive-action-passkey-confirm-v3"
+        role="dialog"
+        aria-modal="true"
+        onClick={onClose}
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
+          initial={{ opacity: 0, scale: 0.95, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
-          className="bg-[#FCFAF7] border border-[#EAE8E1] rounded-3xl max-w-sm w-full overflow-hidden shadow-xl font-sans"
+          exit={{ opacity: 0, scale: 0.95, y: 12 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="bg-white border border-[#EAE8E1] rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl font-sans"
+          onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-5 border-b border-[#FAF8F4]">
-            <h3 className="text-sm font-semibold text-zinc-800">
-              {isRegistration ? 'Set up secure unlock' : 'Device security'}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#FAF8F4]">
+            <h3 className="text-sm font-semibold text-zinc-900">
+              {isRegistration ? 'Set up secure sign-in' : 'Device sign-in'}
             </h3>
             <button 
+              type="button"
               onClick={onClose}
-              className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer focus:outline-none"
+              className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer focus:outline-none"
+              aria-label="Close"
             >
               <X className="w-4 h-4" />
             </button>
@@ -327,47 +341,55 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           <div className="p-6 flex flex-col items-center text-center font-sans">
             {mode === 'prompt' && (
               <>
-                <div className="p-4 bg-amber-500/5 text-[#C59B27] rounded-full mb-4 animate-pulse">
-                  <Fingerprint className="w-12 h-12 stroke-[1.5]" />
+                <div className="p-4 bg-amber-500/10 text-[#C59B27] rounded-full mb-4">
+                  <Fingerprint className="w-10 h-10 stroke-[1.75]" />
                 </div>
-                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
-                  {isRegistration ? 'Set up on this device' : 'Verification required'}
+                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Set up secure sign-in' : 'Sign in with your device'}
                 </h4>
-                <p className="text-xs text-zinc-500 mb-6 leading-relaxed max-w-xs">
+                <p className="text-xs text-zinc-500 mb-5 leading-relaxed max-w-xs">
                   {isRegistration 
-                    ? 'Protect your account using your device’s screen lock, fingerprint, or face recognition.'
-                    : `Confirm your identity to proceed with: "${actionName}".`}
+                    ? 'Use your fingerprint, face, screen lock or device PIN to sign in more quickly on this device.'
+                    : 'Use your fingerprint, face, screen lock or device PIN.'}
                 </p>
 
                 {isRegistration && (
-                  <div className="w-full mb-4">
-                    <label className="block text-[10px] uppercase tracking-wider font-semibold text-zinc-400 text-left mb-1">
-                      Device label
+                  <div className="w-full mb-5 text-left">
+                    <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                      Device name
                     </label>
                     <input
                       type="text"
                       value={deviceName}
                       onChange={(e) => setDeviceName(e.target.value)}
-                      placeholder="My Phone"
-                      className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE8E1] rounded-xl focus:border-[#C59B27] focus:outline-none text-zinc-700"
+                      placeholder="e.g. Android phone"
+                      className="w-full px-3.5 py-2.5 text-xs bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl focus:border-[#C59B27] focus:outline-none text-zinc-900 font-medium"
                     />
                   </div>
                 )}
 
                 <div className="w-full space-y-2.5">
                   <Button
+                    type="button"
                     onClick={handleDeviceVerification}
-                    className="w-full bg-[#C59B27] hover:bg-[#A37E1C] text-white py-2.5 rounded-xl shadow-xs flex items-center justify-center space-x-2 text-xs font-semibold"
+                    className="w-full bg-[#C59B27] hover:bg-[#A37E1C] text-white py-2.5 rounded-xl shadow-xs flex items-center justify-center space-x-2 text-xs font-semibold cursor-pointer"
                   >
                     <Fingerprint className="w-4 h-4" />
-                    <span>{isRegistration ? 'Set up secure unlock' : 'Verify on this device'}</span>
+                    <span>{isRegistration ? 'Set up' : 'Sign in with your device'}</span>
                   </Button>
 
                   <button
-                    onClick={() => setMode('password')}
-                    className="w-full py-2 text-xs font-medium text-[#C59B27] hover:text-[#A37E1C] transition-colors focus:outline-none cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      if (isRegistration) {
+                        onClose();
+                      } else {
+                        setMode('password');
+                      }
+                    }}
+                    className="w-full py-2 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors focus:outline-none cursor-pointer"
                   >
-                    Use account password instead
+                    {isRegistration ? 'Cancel' : 'Use password instead'}
                   </button>
                 </div>
               </>
@@ -375,11 +397,11 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'simulating' && (
               <>
-                <div className="p-4 bg-zinc-100 rounded-full mb-4 flex items-center justify-center">
+                <div className="p-4 bg-[#FAF6EB] rounded-full mb-4 flex items-center justify-center">
                   <Loader2 className="w-10 h-10 text-[#C59B27] animate-spin" />
                 </div>
-                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
-                  {isRegistration ? 'Setting up secure unlock...' : 'Verifying on this device...'}
+                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Setting up secure sign-in…' : 'Signing in with your device…'}
                 </h4>
                 <p className="text-xs text-zinc-500 leading-relaxed max-w-xs">
                   Follow the prompt on your device to continue.
@@ -392,15 +414,15 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                 <div className="p-3 bg-zinc-100 text-zinc-500 rounded-full mb-4 w-fit mx-auto">
                   <Lock className="w-6 h-6 stroke-[1.5]" />
                 </div>
-                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5 text-center">
-                  Account verification
+                <h4 className="text-base font-semibold text-zinc-900 mb-1.5 text-center">
+                  Account password
                 </h4>
                 <p className="text-xs text-zinc-500 leading-relaxed text-center mb-5">
-                  Please confirm with your account password to authorize: "{actionName}".
+                  Enter your password to sign in.
                 </p>
 
                 <div className="mb-4">
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold text-zinc-400 mb-1">
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
                     Password
                   </label>
                   <input
@@ -411,13 +433,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                       setPasswordError('');
                     }}
                     placeholder="Enter account password"
-                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE8E1] rounded-xl focus:border-[#C59B27] focus:outline-none text-zinc-700"
+                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE8E1] rounded-xl focus:border-[#C59B27] focus:outline-none text-zinc-900"
                     disabled={verifying}
                     autoFocus
                   />
                   {passwordError && (
-                    <p className="text-[10px] text-red-500 mt-1 flex items-center space-x-1 font-medium">
-                      <ShieldAlert className="w-3 h-3 flex-shrink-0" />
+                    <p className="text-[11px] text-red-600 mt-1 flex items-center space-x-1 font-medium">
+                      <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>{passwordError}</span>
                     </p>
                   )}
@@ -427,7 +449,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setMode('prompt')}
-                    className="flex-1 py-2.5 border border-[#EAE8E1] text-zinc-500 hover:bg-zinc-50 rounded-xl text-xs font-semibold transition-colors focus:outline-none cursor-pointer text-center"
+                    className="flex-1 py-2.5 border border-[#EAE8E1] text-zinc-600 hover:bg-zinc-50 rounded-xl text-xs font-semibold transition-colors focus:outline-none cursor-pointer text-center"
                     disabled={verifying}
                   >
                     Back
@@ -437,7 +459,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                     className="flex-1 bg-[#C59B27] hover:bg-[#A37E1C] text-white py-2.5 rounded-xl text-xs font-semibold shadow-xs flex items-center justify-center space-x-1.5"
                     disabled={verifying}
                   >
-                    {verifying && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {verifying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     <span>Confirm</span>
                   </Button>
                 </div>
@@ -446,43 +468,63 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'success' && (
               <>
-                <div className="p-4 bg-emerald-500/5 text-emerald-600 rounded-full mb-4">
-                  <ShieldCheck className="w-12 h-12 stroke-[1.5]" />
+                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-full mb-4">
+                  <ShieldCheck className="w-10 h-10 stroke-[1.75]" />
                 </div>
-                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
-                  {isRegistration ? 'Secure unlock active' : 'Verification successful'}
+                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Secure sign-in is ready' : 'Signed in securely'}
                 </h4>
-                <p className="text-xs text-emerald-600/90 leading-relaxed max-w-xs">
+                <p className="text-xs text-zinc-600 leading-relaxed max-w-xs mb-5">
                   {isRegistration 
-                    ? 'Your device is now set up for secure unlock.' 
-                    : 'Device verification confirmed.'}
+                    ? 'You can now use this device to sign in without entering your password.' 
+                    : 'Your identity has been verified.'}
                 </p>
+                {isRegistration && (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      onSuccess();
+                      onClose();
+                    }}
+                    className="w-full bg-[#18181B] hover:bg-zinc-800 text-white py-2.5 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Done
+                  </Button>
+                )}
               </>
             )}
 
             {mode === 'error' && (
               <>
-                <div className="p-4 bg-red-500/5 text-red-500 rounded-full mb-4">
-                  <ShieldAlert className="w-12 h-12 stroke-[1.5]" />
+                <div className="p-4 bg-red-50 text-red-600 rounded-full mb-4">
+                  <ShieldAlert className="w-10 h-10 stroke-[1.75]" />
                 </div>
-                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
-                  {isRegistration ? 'Setup not completed' : 'Verification failed'}
+                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? "We couldn't set up secure sign-in on this device." : "We couldn't sign in with this device."}
                 </h4>
-                <p className="text-xs text-red-500 mb-5 leading-relaxed max-w-xs">
-                  {errorMessage}
+                <p className="text-xs text-zinc-600 mb-5 leading-relaxed max-w-xs">
+                  {errorMessage || (isRegistration ? "We couldn't set up secure sign-in on this device." : "We couldn't sign in with this device.")}
                 </p>
                 <div className="w-full space-y-2">
                   {isWebAuthnSupported() && (
                     <Button
+                      type="button"
                       onClick={() => setMode('prompt')}
-                      className="w-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 py-2.5 rounded-xl text-xs font-semibold shadow-xs"
+                      className="w-full bg-[#C59B27] hover:bg-[#A37E1C] text-white py-2.5 rounded-xl text-xs font-semibold cursor-pointer"
                     >
-                      {isRegistration ? 'Try setup again' : 'Try again'}
+                      Try again
                     </Button>
                   )}
                   <button
-                    onClick={() => setMode('password')}
-                    className="w-full py-2 text-xs font-medium text-[#C59B27] hover:text-[#A37E1C] transition-colors focus:outline-none cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      if (isRegistration) {
+                        onClose();
+                      } else {
+                        setMode('password');
+                      }
+                    }}
+                    className="w-full py-2 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors focus:outline-none cursor-pointer"
                   >
                     Use password instead
                   </button>
@@ -492,6 +534,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           </div>
         </motion.div>
       </div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };

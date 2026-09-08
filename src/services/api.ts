@@ -238,11 +238,11 @@ export const api = {
           body: JSON.stringify({ credential, deviceName })
         });
       },
-      async loginOptions(email: string, rpId?: string) {
+      async loginOptions(email?: string, rpId?: string) {
         const targetRpId = rpId || (typeof window !== 'undefined' ? window.location.hostname : undefined);
         return api.request<any>('/api/auth/passkeys/login/options', {
           method: 'POST',
-          body: JSON.stringify({ email, rpId: targetRpId })
+          body: JSON.stringify({ email: email ? email.trim().toLowerCase() : undefined, rpId: targetRpId })
         });
       },
       async loginVerify(credential: any, challengeKey: string) {

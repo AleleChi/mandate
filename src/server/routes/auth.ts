@@ -742,7 +742,8 @@ router.post('/passkeys/register/options', authMiddleware, async (req: Authentica
         authenticatorSelection: {
           authenticatorAttachment: 'platform',
           userVerification: 'required',
-          residentKey: 'preferred'
+          residentKey: 'required',
+          requireResidentKey: true
         },
         attestation: 'none'
       }
@@ -804,14 +805,7 @@ router.post('/passkeys/login/options', async (req, res) => {
       });
     }
 
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required' });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await queryOne('SELECT id, role FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
-
+    const { email } = req.body || {};
     const challenge = crypto.randomBytes(32).toString('base64url');
     const challengeKey = `login-${crypto.randomUUID()}`;
     challengesStore.set(challengeKey, {
@@ -820,13 +814,17 @@ router.post('/passkeys/login/options', async (req, res) => {
     });
 
     const allowCredentials = [];
-    if (user) {
-      const pks = await query('SELECT credential_id as "id" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL', [user.id]);
-      for (const pk of pks) {
-        allowCredentials.push({
-          type: 'public-key',
-          id: pk.id
-        });
+    if (email && typeof email === 'string' && email.trim()) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const user = await queryOne('SELECT id, role FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
+      if (user) {
+        const pks = await query('SELECT credential_id as "id" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL', [user.id]);
+        for (const pk of pks) {
+          allowCredentials.push({
+            type: 'public-key',
+            id: pk.id
+          });
+        }
       }
     }
 
@@ -881,6 +879,7 @@ router.post('/passkeys/login/verify', async (req, res) => {
     }
 
     const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [user.id]);
+    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [user.id]);
     const token = generateToken(user.id);
 
     const now = new Date().toISOString();
@@ -890,6 +889,7 @@ router.post('/passkeys/login/verify', async (req, res) => {
       success: true,
       user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
       profile,
+      volunteerProfile,
       token
     });
   } catch (err) {

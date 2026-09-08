@@ -6,7 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { validateEmailSyntax } from '../utils/validation';
 import { Button } from '../components/common/Button';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
-import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
+import { isWebAuthnSupported, base64URLToBuffer } from '../utils/passkey';
 
 interface SignInViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -31,52 +31,81 @@ export const SignInView: React.FC<SignInViewProps> = ({
 
   // Passkey Authentication States
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const [passkeyModalOpen, setPasskeyModalOpen] = useState(false);
-  const [passkeyOptions, setPasskeyOptions] = useState<any>(null);
-  const [passkeyChallengeKey, setPasskeyChallengeKey] = useState('');
 
   const handlePasskeySignIn = async () => {
-    const emailErr = validateEmail(email);
-    setEmailError(emailErr);
-    if (emailErr || !email.trim()) {
-      setError('Please enter your email address to sign in with your device key.');
+    setError(null);
+    if (!isWebAuthnSupported()) {
+      setError("Secure sign-in isn't available on this browser.");
       return;
     }
 
-    setError(null);
     setPasskeyLoading(true);
     try {
-      const cleanEmail = email.trim().toLowerCase();
+      // 1. Fetch challenge/options from server without requiring an email (supports discoverable credentials)
+      const cleanEmail = email.trim() ? email.trim().toLowerCase() : undefined;
       const res = await api.auth.passkeys.loginOptions(cleanEmail);
-      if (res.success && res.options) {
-        if (!res.options.allowCredentials || res.options.allowCredentials.length === 0) {
-          setError('No secure device key is registered for this account.');
-          return;
+      if (!res.success || !res.options) {
+        setError(res?.error || "We couldn't prepare device sign-in.");
+        return;
+      }
+
+      // 2. Format WebAuthn get options
+      const formattedOpts: any = {
+        publicKey: {
+          ...res.options,
+          challenge: base64URLToBuffer(res.options.challenge),
         }
-        setPasskeyOptions(res.options);
-        setPasskeyChallengeKey(res.challengeKey);
-        setPasskeyModalOpen(true);
+      };
+
+      if (res.options.allowCredentials && res.options.allowCredentials.length > 0) {
+        formattedOpts.publicKey.allowCredentials = res.options.allowCredentials.map((c: any) => ({
+          type: c.type,
+          id: base64URLToBuffer(c.id)
+        }));
       } else {
-        setError('Could not prepare device verification options.');
+        delete formattedOpts.publicKey.allowCredentials;
+      }
+
+      // 3. Trigger OS passkey/biometric prompt directly
+      const assertion = await window.navigator.credentials.get(formattedOpts) as any;
+      if (!assertion) {
+        return;
+      }
+
+      // 4. Verify assertion with backend
+      const loginRes = await api.auth.passkeys.loginVerify(
+        { id: assertion.id },
+        res.challengeKey
+      );
+
+      if (loginRes.success && loginRes.user) {
+        if (onSetParentEmail && loginRes.user.email) {
+          onSetParentEmail(loginRes.user.email);
+        }
+        showSuccess('Welcome back', 'Signed in securely with your device.');
+        if (onSignInSuccess) {
+          onSignInSuccess(loginRes.user, loginRes.profile || loginRes.volunteerProfile);
+        }
+
+        if (loginRes.user.role === 'volunteer') {
+          onNavigate('/volunteer/event' as AppRoute);
+        } else if (loginRes.user.role === 'admin') {
+          onNavigate('/admin/overview' as AppRoute);
+        } else {
+          onNavigate('/parent/home' as AppRoute);
+        }
+      } else {
+        setError(loginRes.error || "We couldn't sign in with this device. Please try again or use your password.");
       }
     } catch (err: any) {
-      setError('No secure device key found or device verification failed.');
+      console.error('Passwordless sign in error:', err);
+      const isCancel = err?.name === 'NotAllowedError' || err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('abort');
+      if (isCancel) {
+        return;
+      }
+      setError("We couldn't sign in with this device. Please try again or use your password.");
     } finally {
       setPasskeyLoading(false);
-    }
-  };
-
-  const handlePasskeySuccess = async (credentialId?: string) => {
-    try {
-      const meRes = await api.auth.getMe();
-      if (onSetParentEmail) onSetParentEmail(email.trim().toLowerCase());
-      showSuccess('Welcome back', 'Signed in securely using your device key.');
-      if (onSignInSuccess) {
-        onSignInSuccess(meRes.user, meRes.profile);
-      }
-      onNavigate('/parent/home');
-    } catch (err) {
-      setError('Failed to load profile after device verification.');
     }
   };
 
@@ -351,28 +380,33 @@ export const SignInView: React.FC<SignInViewProps> = ({
           <div className="flex-grow border-t border-[#EAE8E1]"></div>
         </div>
 
-        <Button
-          type="button"
-          onClick={handlePasskeySignIn}
-          disabled={loading || passkeyLoading}
-          variant="outline"
-          fullWidth
-          size="lg"
-          data-component-version="passkey-native-auth-prompt-v2"
-          className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] flex items-center justify-center space-x-1.5"
-        >
-          {passkeyLoading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin rounded-full h-4 w-4 border-2 border-[#C59B27] border-t-transparent"></span>
-              <span>Preparing...</span>
-            </span>
-          ) : (
-            <span className="flex items-center justify-center gap-1.5">
-              <Fingerprint className="w-4 h-4 text-[#C59B27]" />
-              <span>Sign in with secure device key</span>
-            </span>
-          )}
-        </Button>
+        <div className="space-y-1 text-center">
+          <Button
+            type="button"
+            onClick={handlePasskeySignIn}
+            disabled={loading || passkeyLoading}
+            variant="outline"
+            fullWidth
+            size="lg"
+            data-component-version="passkey-native-auth-prompt-v2"
+            className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] flex items-center justify-center space-x-1.5"
+          >
+            {passkeyLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin rounded-full h-4 w-4 border-2 border-[#C59B27] border-t-transparent"></span>
+                <span>Signing in...</span>
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-1.5">
+                <Fingerprint className="w-4 h-4 text-[#C59B27]" />
+                <span>Sign in with your device</span>
+              </span>
+            )}
+          </Button>
+          <p className="text-[11px] text-[#71717A]">
+            Use your fingerprint, face, screen lock or device PIN.
+          </p>
+        </div>
       </form>
 
       {/* Create Account Link */}
@@ -386,16 +420,6 @@ export const SignInView: React.FC<SignInViewProps> = ({
           Create parent account
         </button>
       </div>
-
-      <DeviceSecurityModal
-        isOpen={passkeyModalOpen}
-        onClose={() => setPasskeyModalOpen(false)}
-        onSuccess={handlePasskeySuccess}
-        actionName="Sign in with device key"
-        emailForLogin={email}
-        challengeKey={passkeyChallengeKey}
-        loginOptions={passkeyOptions}
-      />
     </AuthScreenShell>
   );
 };
