@@ -82,9 +82,12 @@ const formatChildNameAndRef = (rawName?: string) => {
 };
 
 const cleanAgeGroup = (group?: string | null) => {
-  if (!group) return 'Unassigned';
-  const cleaned = group.replace(/\s*\(\s*review\s*needed\s*\)/gi, '').trim();
+  if (!group) return '';
+  let cleaned = group.replace(/\s*\([^)]*review[^)]*\)/gi, '').trim();
+  cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
   if (cleaned.toLowerCase() === 'under 4') return 'Under 4s';
+  if (cleaned.toLowerCase() === '4-7' || cleaned.toLowerCase() === '4 - 7') return '4–7s';
+  if (cleaned.toLowerCase() === '8-12' || cleaned.toLowerCase() === '8 - 12') return '8–12s';
   return cleaned;
 };
 
@@ -437,6 +440,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [childProfileData, setChildProfileData] = useState<any | null>(null);
   const [childProfileLoading, setChildProfileLoading] = useState(false);
+  const [childProfileError, setChildProfileError] = useState<string | null>(null);
   const [activeDirectoryFilter, setActiveDirectoryFilter] = useState<string>('all');
   const [directoryChildren, setDirectoryChildren] = useState<any[]>([]);
   const [directoryError, setDirectoryError] = useState<boolean>(false);
@@ -1435,19 +1439,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     const fetchChildProfile = async () => {
       if (!selectedChildId) {
         setChildProfileData(null);
+        setChildProfileError(null);
         return;
       }
       setChildProfileLoading(true);
+      setChildProfileError(null);
       try {
         const res = await api.volunteer.getChildProfile(selectedChildId);
-        if (res && res.success) {
+        if (res && res.success && res.child) {
           setChildProfileData(res);
         } else {
-          showError('Load Failed', 'Failed to retrieve child profile details.');
+          setChildProfileError('This child is no longer available.');
         }
       } catch (err: any) {
-        const apiErr = extractApiError(err);
-        showError('Load Error', apiErr.message || 'Error fetching child profile.');
+        setChildProfileError('This child is no longer available.');
       } finally {
         setChildProfileLoading(false);
       }
@@ -4612,425 +4617,352 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         {cleanRoute === '/volunteer/children' && (
           selectedChildId ? (
             /* ==================== CHILD PROFILE VIEW ==================== */
-            childProfileLoading || !childProfileData ? (
+            childProfileLoading ? (
               <ModuleLoadingState title="Loading child details..." />
-            ) : (
-              <div className="space-y-4 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v2-refined">
-                
-                {/* Back to children directory */}
+            ) : childProfileError || !childProfileData ? (
+              <div className="bg-white border border-zinc-200/80 rounded-2xl p-8 text-center max-w-md mx-auto space-y-4 my-6 shadow-xs" data-component-version="volunteer-child-unavailable-state">
+                <User className="h-10 w-10 text-zinc-300 mx-auto" />
+                <div className="space-y-1">
+                  <h3 className="text-sm font-sans font-semibold text-zinc-800">This child is no longer available.</h3>
+                  <p className="text-xs font-sans text-zinc-500">This registration may have been updated or removed.</p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setSelectedChildId(null)}
-                  className="inline-flex items-center space-x-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 transition-colors py-0.5 cursor-pointer"
+                  onClick={() => {
+                    setSelectedChildId(null);
+                    setChildProfileError(null);
+                    fetchChildrenDirectory(directoryPage, activeDirectoryFilter, searchQuery);
+                  }}
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-sans font-medium rounded-xl transition-all cursor-pointer shadow-xs"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span>Back to children list</span>
+                  Return to Children
                 </button>
+              </div>
+            ) : (
+              <div className="space-y-3.5 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v3-refined">
+                
+                {/* Back to children directory */}
+                <div className="flex items-center justify-between pb-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedChildId(null)}
+                    className="inline-flex items-center space-x-1.5 text-xs font-sans font-medium text-zinc-600 hover:text-zinc-900 transition-colors py-1 cursor-pointer"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span>Back to children</span>
+                  </button>
+                </div>
 
-                {/* Child Identity Section */}
-                <div className="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-xs text-center flex flex-col items-center space-y-3.5" data-component-version="volunteer-child-profile-identity-v2">
-                  {/* Photo with soft accent */}
-                  <div className="relative">
-                    <div className="w-24 h-24 rounded-2xl border border-amber-500/25 p-1 bg-white shadow-xs inline-block overflow-hidden relative">
-                      {childProfileData.child.photoUrl ? (
-                        <img
-                          src={childProfileData.child.photoUrl}
-                          alt={childProfileData.child.fullName || childProfileData.child.name}
-                          className="w-full h-full object-cover rounded-xl"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-zinc-50 flex items-center justify-center rounded-xl">
-                          <User className="h-10 w-10 text-zinc-300" />
-                        </div>
-                      )}
+                {/* Main Profile Card */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-xs overflow-hidden divide-y divide-zinc-100">
+                  
+                  {/* Header / Identity Section */}
+                  <div className="p-5 text-center flex flex-col items-center">
+                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200/80 shrink-0 flex items-center justify-center">
+                      <SafeImage
+                        src={childProfileData.child.photoUrl}
+                        alt={childProfileData.child.fullName || childProfileData.child.name}
+                        className="w-full h-full object-cover"
+                        fallbackComponent={
+                          <span className="font-sans font-bold text-lg text-zinc-500">
+                            {(childProfileData.child.fullName || childProfileData.child.name || 'C').charAt(0).toUpperCase()}
+                          </span>
+                        }
+                      />
                     </div>
-                    {/* Overlapping status badge below photo */}
-                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 shadow-xs whitespace-nowrap z-10">
+
+                    <h2 className="text-xl font-serif font-bold text-zinc-900 mt-3 tracking-tight">
+                      {childProfileData.child.fullName || childProfileData.child.name}
+                    </h2>
+
+                    <p className="text-xs font-sans text-zinc-600 font-medium mt-0.5">
+                      {formatChildAge(childProfileData.child.age)} · {cleanAgeGroup(childProfileData.child.ageGroup || childProfileData.child.classGroup)}
+                    </p>
+
+                    {(childProfileData.child.needsAgeReview || /review/i.test(childProfileData.child.ageGroup || '')) && (
+                      <p className="text-[11px] font-sans text-amber-700 font-medium mt-1">
+                        Age needs confirmation
+                      </p>
+                    )}
+
+                    <div className="mt-2">
                       {childProfileData.child.status === 'inside' && (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200/70 rounded-full text-[10px] font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          <span>Inside</span>
+                        <span className="text-xs font-sans font-semibold text-emerald-700">
+                          Inside
                         </span>
                       )}
                       {childProfileData.child.status === 'not_arrived' && (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-zinc-100 text-zinc-600 border border-zinc-200/70 rounded-full text-[10px] font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
-                          <span>Not arrived</span>
+                        <span className="text-xs font-sans font-medium text-zinc-500">
+                          Not arrived
                         </span>
                       )}
                       {childProfileData.child.status === 'picked_up' && (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-zinc-100 text-zinc-700 border border-zinc-200/70 rounded-full text-[10px] font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
-                          <span>Picked up</span>
+                        <span className="text-xs font-sans font-medium text-zinc-600">
+                          Picked up
                         </span>
                       )}
                       {childProfileData.child.status === 'needs_attention' && (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-rose-50 text-rose-800 border border-rose-200/70 rounded-full text-[10px] font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                          <span>Needs attention</span>
+                        <span className="text-xs font-sans font-semibold text-amber-700">
+                          Needs attention
                         </span>
+                      )}
+                    </div>
+
+                    {/* Primary Action Button */}
+                    <div className="w-full mt-4 pt-1">
+                      {childProfileData.child.status === 'inside' ? (
+                        <button
+                          onClick={() => handlePreparePickup(childProfileData.child.id)}
+                          disabled={pickupLoading}
+                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] text-white text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span>{pickupLoading ? 'Processing...' : 'Open pickup'}</span>
+                        </button>
+                      ) : childProfileData.child.status === 'not_arrived' ? (
+                        <button
+                          onClick={() => onNavigate('/volunteer/scan')}
+                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] text-white text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                        >
+                          <QrCode className="h-4 w-4" />
+                          <span>Check in</span>
+                        </button>
+                      ) : (
+                        <div className="text-center py-1 text-xs font-sans text-zinc-500">
+                          Child is picked up
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSafetyAlertModal({
+                          id: childProfileData.child.id,
+                          fullName: childProfileData.child.fullName || childProfileData.child.name,
+                          ageGroup: childProfileData.child.ageGroup,
+                          status: childProfileData.child.status,
+                          photoUrl: childProfileData.child.photoUrl
+                        })}
+                        className="w-full mt-2 py-1.5 text-zinc-500 hover:text-zinc-800 text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+                      >
+                        <Bell className="h-3.5 w-3.5 text-zinc-400" />
+                        <span>Ask for help</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 1. Current status section */}
+                  <div className="p-4 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Current status</h3>
+                    <div className="text-xs font-sans text-zinc-600 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-500">Attendance</span>
+                        <span className="font-medium text-zinc-900">
+                          {childProfileData.child.status === 'inside'
+                            ? 'Inside'
+                            : childProfileData.child.status === 'picked_up'
+                            ? 'Picked up'
+                            : 'Not arrived'}
+                        </span>
+                      </div>
+                      {childProfileData.child.checkedInAt && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Checked in</span>
+                          <span className="font-medium text-zinc-800">
+                            {new Date(childProfileData.child.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {childProfileData.todayActivity?.checkedInBy?.fullName ? ` · by ${childProfileData.todayActivity.checkedInBy.fullName}` : ''}
+                          </span>
+                        </div>
+                      )}
+                      {childProfileData.child.pickedUpAt && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Picked up</span>
+                          <span className="font-medium text-zinc-800">
+                            {new Date(childProfileData.child.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {childProfileData.todayActivity?.pickedUpBy?.fullName ? ` · by ${childProfileData.todayActivity.pickedUpBy.fullName}` : ''}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Identity Detail */}
-                  <div className="pt-1">
-                    <h2 className="text-lg font-serif font-bold text-zinc-900 leading-tight">
-                      {childProfileData.child.fullName || childProfileData.child.name}
-                    </h2>
-                    <div className="flex items-center justify-center space-x-2 mt-1.5">
-                      <span className="px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-md text-[11px] font-medium">
-                        {childProfileData.child.age !== undefined && childProfileData.child.age !== null ? (childProfileData.child.age === 0 ? 'Under 1 yr' : `${childProfileData.child.age} yrs`) : 'Age unknown'}
-                      </span>
-                      {childProfileData.child.classGroup && (
-                        <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/60 rounded-md text-[11px] font-medium">
-                          {childProfileData.child.classGroup}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Quick Facts Row */}
-                  <div className="grid grid-cols-3 gap-1 border-t border-zinc-100 pt-3 w-full" data-component-version="volunteer-child-profile-facts-v2">
-                    <div className="flex flex-col items-center text-center px-1">
-                      <User className="h-3.5 w-3.5 text-zinc-400 mb-1" />
-                      <span className="text-[10px] text-zinc-400 font-medium">Gender</span>
-                      <span className="text-xs font-semibold text-zinc-800 mt-0.5 truncate max-w-full">
-                        {childProfileData.child.gender || 'Not provided'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center text-center border-x border-zinc-100 px-1">
-                      <Users className="h-3.5 w-3.5 text-zinc-400 mb-1" />
-                      <span className="text-[10px] text-zinc-400 font-medium">Parent</span>
-                      <span className="text-xs font-semibold text-zinc-800 mt-0.5 truncate max-w-full">
-                        {childProfileData.parent.fullName || childProfileData.parent.name || 'Not provided'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center text-center px-1">
-                      <Phone className="h-3.5 w-3.5 text-zinc-400 mb-1" />
-                      <span className="text-[10px] text-zinc-400 font-medium">Contact</span>
-                      <span className="text-xs font-mono font-medium text-zinc-800 mt-0.5 truncate max-w-full">
-                        {childProfileData.parent.phone || 'Not provided'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Primary Action Buttons */}
-                <div className="space-y-2.5" data-component-version="volunteer-child-profile-actions-v2">
-                  <button
-                    onClick={() => handlePreparePickup(childProfileData.child.id)}
-                    disabled={childProfileData.child.status !== 'inside' || pickupLoading}
-                    className={`w-full py-3 rounded-xl text-xs font-medium transition-all flex items-center justify-center space-x-2 ${
-                      childProfileData.child.status === 'inside'
-                        ? 'bg-[#A47E1F] hover:bg-[#8e6c17] text-white cursor-pointer shadow-xs active:scale-[0.99]'
-                        : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed'
-                    }`}
-                  >
-                    <LogOut className="h-4 w-4" />
-                    <span>{pickupLoading ? 'Processing...' : 'Start pickup'}</span>
-                  </button>
-
-                  <button
-                    onClick={() => onNavigate('/volunteer/scan')}
-                    className="w-full py-2.5 bg-white hover:bg-zinc-50 text-zinc-800 font-medium text-xs rounded-xl transition-all border border-zinc-200/80 shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
-                  >
-                    <QrCode className="h-4 w-4 text-amber-700" />
-                    <span>Scan another pass</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSafetyAlertModal({
-                      id: childProfileData.child.id,
-                      fullName: childProfileData.child.fullName || childProfileData.child.name,
-                      ageGroup: childProfileData.child.ageGroup,
-                      status: childProfileData.child.status,
-                      photoUrl: childProfileData.child.photoUrl
-                    })}
-                    data-component-version="volunteer-alert-auto-linked-child-v1"
-                    className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium text-xs rounded-xl transition-all border border-rose-200 flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
-                  >
-                    <Bell className="h-4 w-4 text-rose-600" />
-                    <span>Request help for this child</span>
-                  </button>
-                </div>
-
-                {/* Today Status Card */}
-                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-today-v2">
-                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Today</h3>
-                  
-                  <div className="space-y-2.5 text-xs">
-                    {/* Entry Row */}
-                    <div className="flex items-center justify-between py-1.5 border-b border-zinc-100">
-                      <div className="flex items-center space-x-2">
-                        <LogIn className="h-4 w-4 text-emerald-600" />
-                        <span className="text-zinc-500 font-medium">Entry</span>
-                      </div>
-                      <span className="font-semibold text-zinc-800">
-                        {childProfileData.child.checkedInAt ? (
-                          `Checked in at ${new Date(childProfileData.child.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                        ) : (
-                          'Not checked in yet'
-                        )}
-                      </span>
-                    </div>
-
-                    {/* Pickup Row */}
-                    <div className="flex items-center justify-between py-1">
-                      <div className="flex items-center space-x-2">
-                        <LogOut className="h-4 w-4 text-amber-700" />
-                        <span className="text-zinc-500 font-medium">Pickup</span>
-                      </div>
-                      <span className="font-semibold text-zinc-800">
-                        {childProfileData.child.pickedUpAt ? (
-                          `Picked up at ${new Date(childProfileData.child.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                        ) : (
-                          'Not picked up yet'
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Care Notes Card */}
-                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-care-notes-v2">
-                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Care notes</h3>
-                  
-                  <div className="space-y-2 text-xs">
-                    {childProfileData.child.medicalNote ? (
-                      <div className="p-3 bg-rose-50/70 border border-rose-200/70 rounded-xl flex items-start space-x-2.5">
-                        <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[10px] text-rose-700 font-bold uppercase tracking-wide leading-none">Medical Note</p>
-                          <p className="text-xs font-medium text-rose-900 mt-1">{childProfileData.child.medicalNote}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-2 text-xs text-zinc-400 py-1">
-                        <Check className="h-3.5 w-3.5 text-zinc-300" />
-                        <span>No medical note added</span>
-                      </div>
-                    )}
-
-                    {childProfileData.child.allergies ? (
-                      <div className="p-3 bg-amber-50/70 border border-amber-200/70 rounded-xl flex items-start space-x-2.5">
-                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wide leading-none">Allergy</p>
-                          <p className="text-xs font-medium text-amber-900 mt-1">{childProfileData.child.allergies}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-2 text-xs text-zinc-400 py-1 border-t border-zinc-100">
-                        <Check className="h-3.5 w-3.5 text-zinc-300" />
-                        <span>No allergy added</span>
-                      </div>
-                    )}
-
-                    {childProfileData.child.extraSupport ? (
-                      <div className="p-3 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-start space-x-2.5">
-                        <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[10px] text-blue-700 font-bold uppercase tracking-wide leading-none">Extra Support</p>
-                          <p className="text-xs font-medium text-blue-900 mt-1">{childProfileData.child.extraSupport}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-2 text-xs text-zinc-400 py-1 border-t border-zinc-100">
-                        <Check className="h-3.5 w-3.5 text-zinc-300" />
-                        <span>No extra support added</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Parent Card */}
-                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-parent-v2">
-                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Parent</h3>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-200/60 shrink-0 flex items-center justify-center">
-                        {childProfileData.parent.photoUrl ? (
-                          <img
-                            src={childProfileData.parent.photoUrl}
-                            alt={childProfileData.parent.fullName || childProfileData.parent.name}
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <User className="h-5 w-5 text-zinc-300" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">
-                          {childProfileData.parent.fullName || childProfileData.parent.name || 'Parent details not provided'}
-                        </h4>
-                        <p className="text-[10px] text-amber-700 mt-0.5 font-medium">
-                          {childProfileData.parent.relationship || 'Guardian'}
-                        </p>
-                        <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                          {childProfileData.parent.phone}
-                        </p>
-                      </div>
-                    </div>
-
-                    {childProfileData.parent.phone && (
-                      <div className="flex items-center space-x-1.5 shrink-0">
-                        <a
-                          href={`tel:${childProfileData.parent.phone}`}
-                          className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
-                          title="Call parent"
-                        >
-                          <Phone className="h-3.5 w-3.5" />
-                        </a>
-                        <a
-                          href={`https://wa.me/${childProfileData.parent.phone.replace(/[^0-9]/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg transition-colors"
-                          title="WhatsApp parent"
-                        >
-                          <MessageCircle className="h-3.5 w-3.5" />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Pickup Person Card */}
-                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-pickup-person-v2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Pickup person</h3>
-                    {childProfileData.pickupPeople?.[0] && (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-medium bg-amber-50 text-amber-800 border border-amber-200/60 uppercase tracking-wider shrink-0">
-                        {childProfileData.pickupPeople[0].label || 'Alternative'}
-                      </span>
-                    )}
-                  </div>
-
-                  {childProfileData.pickupPeople?.[0] ? (
+                  {/* 2. Parent / guardian section */}
+                  <div className="p-4 space-y-2.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Parent / guardian</h3>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3 min-w-0">
-                        <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-200/60 shrink-0 flex items-center justify-center">
-                          {childProfileData.pickupPeople[0].photoUrl ? (
-                            <img
-                              src={childProfileData.pickupPeople[0].photoUrl}
-                              alt={childProfileData.pickupPeople[0].fullName || childProfileData.pickupPeople[0].name}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <User className="h-5 w-5 text-zinc-300" />
-                          )}
+                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200/80 shrink-0 flex items-center justify-center">
+                          <SafeImage
+                            src={childProfileData.parent?.photoUrl}
+                            alt={childProfileData.parent?.fullName}
+                            className="w-full h-full object-cover"
+                            fallbackComponent={
+                              <span className="font-sans font-medium text-xs text-zinc-500">
+                                {(childProfileData.parent?.fullName || 'P').charAt(0).toUpperCase()}
+                              </span>
+                            }
+                          />
                         </div>
                         <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">
-                            {childProfileData.pickupPeople[0].fullName || childProfileData.pickupPeople[0].name}
+                          <h4 className="text-xs font-sans font-semibold text-zinc-900 truncate">
+                            {childProfileData.parent?.fullName || 'Parent'}
                           </h4>
-                          <p className="text-[10px] text-zinc-500 mt-0.5 font-medium">
-                            {childProfileData.pickupPeople[0].relationship || 'Authorized Pickup'}
-                          </p>
-                          <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                            {childProfileData.pickupPeople[0].phone}
+                          <p className="text-xs font-sans text-zinc-500 font-mono">
+                            {childProfileData.parent?.phone || 'No phone number'}
                           </p>
                         </div>
                       </div>
 
-                      {childProfileData.pickupPeople[0].phone && (
-                        <div className="flex items-center space-x-1.5 shrink-0">
+                      {childProfileData.parent?.phone && (
+                        <div className="flex items-center space-x-1.5 shrink-0 pl-2">
                           <a
-                            href={`tel:${childProfileData.pickupPeople[0].phone}`}
+                            href={`tel:${childProfileData.parent.phone}`}
                             className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
-                            title="Call pickup person"
+                            title="Call parent"
                           >
                             <Phone className="h-3.5 w-3.5" />
+                          </a>
+                          <a
+                            href={`https://wa.me/${childProfileData.parent.phone.replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg transition-colors"
+                            title="WhatsApp parent"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
                           </a>
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <p className="text-xs text-zinc-400 italic py-2 bg-zinc-50/50 border border-zinc-100 rounded-xl text-center">
-                      No pickup person has been added.
+                  </div>
+
+                  {/* 3. Approved pickup section */}
+                  <div className="p-4 space-y-2.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Approved pickup</h3>
+                    {childProfileData.pickupPeople?.[0] ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200/80 shrink-0 flex items-center justify-center">
+                            <SafeImage
+                              src={childProfileData.pickupPeople[0].photoUrl}
+                              alt={childProfileData.pickupPeople[0].fullName}
+                              className="w-full h-full object-cover"
+                              fallbackComponent={
+                                <span className="font-sans font-medium text-xs text-zinc-500">
+                                  {(childProfileData.pickupPeople[0].fullName || 'P').charAt(0).toUpperCase()}
+                                </span>
+                              }
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-sans font-semibold text-zinc-900 truncate">
+                              {childProfileData.pickupPeople[0].fullName}
+                            </h4>
+                            <p className="text-[11px] font-sans text-emerald-700 font-medium">
+                              ID confirmed · {childProfileData.pickupPeople[0].relationship || 'Authorized'}
+                            </p>
+                            {childProfileData.pickupPeople[0].phone && (
+                              <p className="text-xs font-sans text-zinc-500 font-mono">
+                                {childProfileData.pickupPeople[0].phone}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {childProfileData.pickupPeople[0].phone && (
+                          <div className="flex items-center space-x-1.5 shrink-0 pl-2">
+                            <a
+                              href={`tel:${childProfileData.pickupPeople[0].phone}`}
+                              className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
+                              title="Call pickup person"
+                            >
+                              <Phone className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs font-sans text-zinc-500 py-1">
+                        No separate pickup person has been added. Primary collection is with the parent/guardian.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 4. Care information section */}
+                  <div className="p-4 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Care information</h3>
+                    {childProfileData.child.medicalNote || childProfileData.child.allergies || childProfileData.child.extraSupport ? (
+                      <div className="space-y-2 text-xs font-sans">
+                        {childProfileData.child.medicalNote && (
+                          <div className="p-3 bg-amber-50/50 border border-amber-200/60 rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider block">Medical note</span>
+                            <p className="text-xs text-zinc-800 leading-relaxed">{childProfileData.child.medicalNote}</p>
+                          </div>
+                        )}
+                        {childProfileData.child.allergies && (
+                          <div className="p-3 bg-amber-50/50 border border-amber-200/60 rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider block">Allergies</span>
+                            <p className="text-xs text-zinc-800 leading-relaxed">{childProfileData.child.allergies}</p>
+                          </div>
+                        )}
+                        {childProfileData.child.extraSupport && (
+                          <div className="p-3 bg-zinc-50 border border-zinc-200/60 rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-zinc-700 uppercase tracking-wider block">Support notes</span>
+                            <p className="text-xs text-zinc-800 leading-relaxed">{childProfileData.child.extraSupport}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs font-sans text-zinc-500 py-1">
+                        No care notes have been added.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 5. Duty / room location section */}
+                  <div className="p-4 space-y-1.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Duty / room location</h3>
+                    <p className="text-xs font-sans text-zinc-700">
+                      {childProfileData.child.dutyLocation || childProfileData.child.classGroup
+                        ? `${cleanAgeGroup(childProfileData.child.classGroup || childProfileData.child.dutyLocation)} room`
+                        : 'Assigned to General Children section'}
                     </p>
-                  )}
-                </div>
-
-                {/* Event Details Card */}
-                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-event-details-v2">
-                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Event details</h3>
-                  
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Session</p>
-                      <h4 className="font-semibold text-zinc-800 mt-1">{childProfileData.event?.section || 'Children & Teens'}</h4>
-                    </div>
-                    <div>
-                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Event</p>
-                      <h4 className="font-semibold text-zinc-800 mt-1">{childProfileData.event?.name || 'The General Assembly'}</h4>
-                    </div>
-                    <div className="pt-2 border-t border-zinc-100">
-                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Date</p>
-                      <h4 className="font-semibold text-zinc-800 mt-1">{childProfileData.event?.dateLabel || '18–22 November 2026'}</h4>
-                    </div>
-                    <div className="pt-2 border-t border-zinc-100">
-                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Time</p>
-                      <h4 className="font-semibold text-amber-700 mt-1 font-mono">{childProfileData.event?.timeLabel || '9:00 AM – 7:00 PM'}</h4>
-                    </div>
                   </div>
-                </div>
 
-                {/* Today’s Activity Card */}
-                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-activity-v2">
-                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Today’s activity</h3>
-                  
-                  <div className="relative pl-4 border-l border-zinc-200 space-y-4 text-xs text-zinc-600">
-                    {/* Check-in Activity */}
-                    <div className="relative">
-                      <span className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-4 ring-white"></span>
-                      <div className="space-y-0.5 text-left">
-                        <h4 className="font-semibold text-zinc-800">
-                          {childProfileData.todayActivity?.checkedInAt ? (
-                            `Checked in at ${new Date(childProfileData.todayActivity.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                          ) : (
-                            'Pending event check-in'
+                  {/* 6. Recent activity section */}
+                  <div className="p-4 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Recent activity</h3>
+                    <div className="text-xs font-sans text-zinc-600 space-y-2">
+                      <div className="flex items-start space-x-2.5">
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.checkedInAt ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                        <div>
+                          <p className="font-medium text-zinc-800">
+                            {childProfileData.todayActivity?.checkedInAt
+                              ? `Checked in at ${new Date(childProfileData.todayActivity.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                              : 'Not checked in yet'}
+                          </p>
+                          {childProfileData.todayActivity?.checkedInBy?.fullName && (
+                            <p className="text-[11px] text-zinc-500">By {childProfileData.todayActivity.checkedInBy.fullName}</p>
                           )}
-                        </h4>
-                        <p className="text-[10px] text-zinc-400">
-                          {childProfileData.todayActivity?.checkedInBy ? (
-                            `By ${childProfileData.todayActivity.checkedInBy.fullName}`
-                          ) : (
-                            'Waiting at Gate check-in point'
-                          )}
-                        </p>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Pickup Activity */}
-                    <div className="relative">
-                      <span className={`absolute -left-[21px] top-1.5 w-2 h-2 rounded-full ring-4 ring-white ${childProfileData.todayActivity?.pickedUpAt ? 'bg-amber-500' : 'bg-zinc-300'}`}></span>
-                      <div className="space-y-0.5 text-left">
-                        <h4 className="font-semibold text-zinc-800">
-                          {childProfileData.todayActivity?.pickedUpAt ? (
-                            `Picked up at ${new Date(childProfileData.todayActivity.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                          ) : (
-                            'Pickup waiting'
+                      <div className="flex items-start space-x-2.5">
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.pickedUpAt ? 'bg-zinc-700' : 'bg-zinc-300'}`} />
+                        <div>
+                          <p className="font-medium text-zinc-800">
+                            {childProfileData.todayActivity?.pickedUpAt
+                              ? `Picked up at ${new Date(childProfileData.todayActivity.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                              : 'Pending pickup'}
+                          </p>
+                          {childProfileData.todayActivity?.pickedUpBy?.fullName && (
+                            <p className="text-[11px] text-zinc-500">Released by {childProfileData.todayActivity.pickedUpBy.fullName}</p>
                           )}
-                        </h4>
-                        <p className="text-[10px] text-zinc-400">
-                          {childProfileData.todayActivity?.pickedUpAt ? (
-                            `Released by ${childProfileData.todayActivity.pickedUpBy?.fullName || 'Event Worker'} to ${childProfileData.todayActivity.pickupPerson?.fullName || 'Parent'}`
-                          ) : (
-                            'Must match authorization card'
-                          )}
-                        </p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
+                </div>
               </div>
             )
           ) : (
@@ -5073,7 +5005,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Filter Chips */}
-              <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5" data-component-version="volunteer-children-filters-v2-refined">
+              <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5" data-component-version="volunteer-children-filters-v3-clean">
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'inside', label: 'Inside' },
@@ -5085,7 +5017,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       key={chip.id}
                       onClick={() => setActiveDirectoryFilter(chip.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
                         isActive 
                           ? 'bg-zinc-900 text-white shadow-xs' 
                           : 'bg-white border border-zinc-200/80 text-zinc-600 hover:bg-zinc-50'
@@ -5098,138 +5030,170 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Metrics Strip */}
-              <div className="bg-white border border-zinc-200/70 rounded-2xl p-3.5 shadow-xs" data-component-version="volunteer-children-metrics-v2-refined">
+              <div className="bg-white border border-zinc-200/80 rounded-xl p-3 shadow-2xs" data-component-version="volunteer-children-metrics-v3-clean">
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div className="flex flex-col justify-between">
-                    <span className="text-base font-serif font-bold text-zinc-900 leading-none">
+                    <span className="text-base font-sans font-bold text-zinc-900 leading-none">
                       {stats.expected || 0}
                     </span>
-                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
                       Expected
                     </span>
                   </div>
                   <div className="flex flex-col justify-between border-l border-zinc-100">
-                    <span className="text-base font-serif font-bold text-emerald-700 leading-none">
+                    <span className="text-base font-sans font-bold text-emerald-700 leading-none">
                       {stats.checkedIn || 0}
                     </span>
-                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
                       Inside
                     </span>
                   </div>
                   <div className="flex flex-col justify-between border-l border-zinc-100">
-                    <span className="text-base font-serif font-bold text-zinc-600 leading-none">
+                    <span className="text-base font-sans font-bold text-zinc-600 leading-none">
                       {stats.pickedUp || 0}
                     </span>
-                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
                       Picked Up
                     </span>
                   </div>
                   <div className="flex flex-col justify-between border-l border-zinc-100">
-                    <span className="text-base font-serif font-bold text-amber-700 leading-none">
+                    <span className="text-base font-sans font-bold text-amber-700 leading-none">
                       {stats.attention || 0}
                     </span>
-                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
                       Attention
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Child List Cards */}
-              <div className="space-y-2.5" data-component-version="volunteer-children-list-v2-refined">
+              {/* Child Directory List */}
+              <div data-component-version="volunteer-children-directory-v3">
                 {searching ? (
                   <ListSkeleton items={4} />
                 ) : directoryError ? (
-                  <div className="bg-white border border-zinc-200/80 rounded-2xl p-8 text-center text-rose-600">
-                    <p className="text-xs font-medium">We could not load children right now. Please check connection and try again.</p>
+                  <div className="bg-white border border-zinc-200/80 rounded-xl p-8 text-center text-rose-600">
+                    <p className="text-xs font-sans font-medium">We could not load children right now. Please check connection and try again.</p>
                   </div>
                 ) : directoryChildren.length > 0 ? (
-                  directoryChildren.map((child) => {
-                    const isInside = child.entryStatus === 'checked_in' || child.entryStatus === 'inside';
-                    const isPickedUp = child.entryStatus === 'picked_up' || child.entryStatus === 'checked_out';
-                    const isAttention = child.hasMedicalNotes || child.needsExtraSupport || child.entryStatus === 'under_review';
-                    
-                    let statusLabel = 'Not arrived';
-                    let statusBadgeClass = 'bg-zinc-100 text-zinc-600 border border-zinc-200/60';
-                    let statusDotClass = 'bg-zinc-400';
-                    
-                    if (isInside) {
-                      statusLabel = 'Inside';
-                      statusBadgeClass = 'bg-emerald-50 text-emerald-800 border border-emerald-200/60';
-                      statusDotClass = 'bg-emerald-500';
-                    } else if (isPickedUp) {
-                      statusLabel = 'Picked up';
-                      statusBadgeClass = 'bg-zinc-100 text-zinc-700 border border-zinc-200/60';
-                      statusDotClass = 'bg-zinc-400';
-                    } else if (isAttention) {
-                      statusLabel = 'Needs attention';
-                      statusBadgeClass = 'bg-rose-50 text-rose-800 border border-rose-200/60';
-                      statusDotClass = 'bg-rose-500';
-                    } else {
-                      statusLabel = 'Not arrived';
-                      statusBadgeClass = 'bg-zinc-50 text-zinc-500 border border-zinc-200/50';
-                      statusDotClass = 'bg-zinc-300';
-                    }
+                  <div className="bg-white border border-zinc-200/80 rounded-xl divide-y divide-zinc-100 shadow-2xs overflow-hidden">
+                    {directoryChildren.map((child) => {
+                      const isInside = child.entryStatus === 'checked_in' || child.entryStatus === 'inside';
+                      const isPickedUp = child.entryStatus === 'picked_up' || child.entryStatus === 'checked_out';
+                      const isAttention = child.entryStatus === 'under_review';
+                      
+                      let statusLabel = 'Not arrived';
+                      let statusColor = 'text-zinc-400';
+                      
+                      if (isInside) {
+                        statusLabel = 'Inside';
+                        statusColor = 'text-emerald-700';
+                      } else if (isPickedUp) {
+                        statusLabel = 'Picked up';
+                        statusColor = 'text-zinc-500';
+                      } else if (isAttention) {
+                        statusLabel = 'Needs attention';
+                        statusColor = 'text-amber-700';
+                      } else {
+                        statusLabel = 'Not arrived';
+                        statusColor = 'text-zinc-400';
+                      }
 
-                    // Format age details if present
-                    const ageText = child.age !== undefined && child.age !== null ? (child.age === 0 ? 'Under 1 yr' : `${child.age} yrs`) : 'Age unknown';
-                    const ageGroupText = child.ageGroup ? ` • ${child.ageGroup}` : '';
+                      const ageText = formatChildAge(child.age);
+                      const cleanedGroup = cleanAgeGroup(child.ageGroup);
+                      const needsAgeReview = child.needsAgeReview || /review/i.test(child.ageGroup || '');
+                      
+                      const childInitials = child.childName
+                        ? child.childName
+                            .split(' ')
+                            .map((p: string) => p[0])
+                            .filter(Boolean)
+                            .slice(0, 2)
+                            .join('')
+                            .toUpperCase()
+                        : 'C';
 
-                    return (
-                      <div
-                        key={child.childId}
-                        onClick={() => setSelectedChildId(child.childId)}
-                        className="bg-white border border-zinc-200/80 hover:border-amber-600/40 rounded-2xl p-3.5 flex items-center justify-between transition-all duration-150 cursor-pointer shadow-xs active:scale-[0.99] group"
-                      >
-                        {/* Left Side: Photo & Identity */}
-                        <div className="flex items-center space-x-3 min-w-0 flex-1 pr-2">
-                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-200/60 shrink-0 flex items-center justify-center">
-                            {child.photoUrl ? (
-                              <img
-                                src={child.photoUrl}
-                                alt={child.childName}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <User className="h-5 w-5 text-zinc-300" />
-                            )}
+                      const careNote = child.hasMedicalNotes
+                        ? 'Medical note'
+                        : child.needsExtraSupport
+                        ? 'Care information'
+                        : null;
+
+                      const contact = child.parentPhone || (child.parentName ? `Parent: ${child.parentName}` : null);
+
+                      return (
+                        <div
+                          key={child.childId}
+                          onClick={() => setSelectedChildId(child.childId)}
+                          className="p-3.5 sm:px-4 flex items-center justify-between gap-3 hover:bg-zinc-50/70 transition-colors cursor-pointer group"
+                        >
+                          {/* Left Side: Photo & Details */}
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
+                            <div className="w-11 h-11 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200/70 shrink-0 flex items-center justify-center">
+                              {child.photoUrl ? (
+                                <SafeImage
+                                  src={child.photoUrl}
+                                  alt={child.childName}
+                                  className="w-full h-full object-cover"
+                                  containerClassName="w-full h-full"
+                                  fallbackComponent={
+                                    <span className="font-sans text-xs font-semibold text-zinc-600">
+                                      {childInitials}
+                                    </span>
+                                  }
+                                />
+                              ) : (
+                                <span className="font-sans text-xs font-semibold text-zinc-600">
+                                  {childInitials}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex items-center space-x-1.5 flex-wrap">
+                                <span className="font-sans text-sm font-semibold text-zinc-900 truncate leading-tight group-hover:text-amber-800 transition-colors">
+                                  {child.childName}
+                                </span>
+                                {needsAgeReview && (
+                                  <span className="font-sans text-[11px] font-medium text-amber-700 shrink-0">
+                                    · Age needs confirmation
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="font-sans text-xs text-zinc-500 font-medium leading-tight">
+                                {ageText}{cleanedGroup ? ` · ${cleanedGroup}` : ''}
+                              </p>
+
+                              {contact && (
+                                <p className="font-sans text-xs text-zinc-400 truncate leading-tight">
+                                  {contact}
+                                </p>
+                              )}
+
+                              {careNote && (
+                                <p className="font-sans text-[11px] font-medium text-amber-800/90 pt-0.5 leading-tight">
+                                  {careNote}
+                                </p>
+                              )}
+                            </div>
                           </div>
 
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex items-center space-x-2">
-                              <h3 className="text-sm font-serif font-bold text-zinc-900 truncate leading-tight group-hover:text-amber-800 transition-colors">
-                                {child.childName}
-                              </h3>
-                              <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${statusBadgeClass}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`}></span>
-                                <span>{statusLabel}</span>
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-zinc-500 font-medium">
-                              {ageText}{ageGroupText}
-                            </p>
-                            <p className="text-[11px] text-zinc-400 truncate">
-                              {child.parentPhone ? `Phone: ${child.parentPhone}` : `Parent: ${child.parentName || 'Guardian'}`}
-                            </p>
-                            {child.hasMedicalNotes && (
-                              <div className="flex items-center space-x-1 pt-0.5 text-rose-700">
-                                <AlertTriangle className="h-3 w-3 shrink-0" />
-                                <span className="text-[11px] font-medium leading-tight">Medical note attached</span>
-                              </div>
-                            )}
+                          {/* Right Side: Plain Status & Arrow */}
+                          <div className="flex items-center space-x-2 shrink-0">
+                            <span className={`font-sans text-xs font-medium ${statusColor}`}>
+                              {statusLabel}
+                            </span>
+                            <ChevronRight className="h-4 w-4 text-zinc-300 group-hover:text-amber-700 transition-colors" />
                           </div>
                         </div>
-
-                        {/* Right Side Arrow */}
-                        <ChevronRight className="h-4 w-4 text-zinc-300 group-hover:text-amber-700 transition-colors shrink-0" />
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="bg-white border border-zinc-200/80 rounded-2xl p-8 text-center text-zinc-400">
+                  <div className="bg-white border border-zinc-200/80 rounded-xl p-8 text-center text-zinc-400 shadow-2xs">
                     <User className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
-                    <p className="text-xs font-medium text-zinc-600">No child matches your search.</p>
+                    <p className="text-xs font-sans font-medium text-zinc-600">No child matches your search.</p>
                     {searchQuery && (
                       <button
                         type="button"
@@ -5238,7 +5202,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setDirectoryPage(1);
                           fetchChildrenDirectory(1, activeDirectoryFilter, '');
                         }}
-                        className="mt-2 text-xs font-medium text-amber-700 hover:text-amber-800 underline cursor-pointer"
+                        className="mt-2 text-xs font-sans font-medium text-amber-700 hover:text-amber-800 underline cursor-pointer"
                       >
                         Clear search
                       </button>
@@ -5249,7 +5213,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Pagination controls */}
               {directoryPagination.totalPages > 1 && (
-                <div className="flex items-center justify-between pt-1 px-1 text-xs text-zinc-500" data-component-version="volunteer-children-pagination-v1">
+                <div className="flex items-center justify-between pt-1 px-1 text-xs font-sans text-zinc-500" data-component-version="volunteer-children-pagination-v2-clean">
                   <span>
                     Page {directoryPagination.page} of {directoryPagination.totalPages}
                     <span className="text-zinc-400 ml-1">({directoryPagination.total} children)</span>

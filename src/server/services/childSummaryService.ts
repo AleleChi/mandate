@@ -31,6 +31,7 @@ export async function getChildSummaryStats(eventId: string = 'event-ga-2026'): P
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status != 'removed'
     `, [eventId]),
 
     queryOne(`

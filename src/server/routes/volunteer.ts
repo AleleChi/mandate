@@ -89,30 +89,66 @@ function rankSearchResults(results: any[], queryStr: string) {
 
 async function getEventStats() {
   const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
-  const demoFilter = !enableDemoData ? "AND child_id NOT IN (SELECT id FROM children WHERE full_name LIKE 'Test %')" : "";
+  const demoFilter = !enableDemoData ? "AND e.child_id NOT IN (SELECT id FROM children WHERE full_name LIKE 'Test %')" : "";
 
+  // 1. Expected: All eligible active children registered for this event
   const expectedQuery = await queryOne(`
-    SELECT COUNT(*) as count FROM child_event_entries 
-    WHERE status IN ('pass_ready', 'checked_in', 'inside', 'picked_up')
-    ${demoFilter}
-  `);
-  const checkedInQuery = await queryOne(`
-    SELECT COUNT(*) as count FROM child_event_entries 
-    WHERE status IN ('checked_in', 'inside')
-    ${demoFilter}
-  `);
-  const pickedUpQuery = await queryOne(`
-    SELECT COUNT(*) as count FROM child_event_entries 
-    WHERE status IN ('picked_up', 'checked_out')
-    ${demoFilter}
-  `);
-  
-  // Calculate active attention items
-  const attentionQuery = await queryOne(`
     SELECT COUNT(*) as count 
-    FROM child_attention_items 
-    WHERE status IN ('open', 'in_review', 'escalated') AND event_id = ?
-    ${demoFilter}
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    JOIN parent_profiles p ON p.id = c.parent_profile_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+      AND e.status != 'removed'
+      ${demoFilter}
+  `, [REAL_EVENT_ID]);
+
+  // 2. Checked in / Inside
+  const checkedInQuery = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    JOIN parent_profiles p ON p.id = c.parent_profile_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+      AND e.status != 'removed'
+      AND e.status IN ('checked_in', 'inside')
+      ${demoFilter}
+  `, [REAL_EVENT_ID]);
+
+  // 3. Picked up / Checked out
+  const pickedUpQuery = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    JOIN parent_profiles p ON p.id = c.parent_profile_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+      AND e.status != 'removed'
+      AND e.status IN ('picked_up', 'checked_out')
+      ${demoFilter}
+  `, [REAL_EVENT_ID]);
+  
+  // 4. Attention items for active eligible children in this event only
+  const attentionQuery = await queryOne(`
+    SELECT COUNT(DISTINCT cai.id) as count 
+    FROM child_attention_items cai
+    JOIN children c ON c.id = cai.child_id
+    JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = cai.event_id
+    JOIN parent_profiles p ON p.id = c.parent_profile_id
+    WHERE cai.status IN ('open', 'in_review', 'escalated') 
+      AND cai.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+      AND e.status != 'removed'
+      ${demoFilter}
   `, [REAL_EVENT_ID]);
 
   return {
@@ -1795,7 +1831,13 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
              c.age_group as child_age_group
       FROM child_attention_items cai
       JOIN children c ON cai.child_id = c.id
+      JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = cai.event_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE cai.event_id = ? AND cai.status IN ('open', 'in_review', 'escalated')
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND e.status != 'removed'
       ${demoFilter}
       ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
       LIMIT 10
@@ -1994,7 +2036,13 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       return res.json([]);
     }
 
-    const whereClauses: string[] = [];
+    const whereClauses: string[] = [
+      'e.event_id = ?',
+      '(e.is_deleted = 0 OR e.is_deleted IS NULL)',
+      '(c.is_deleted = 0 OR c.is_deleted IS NULL)',
+      '(p.is_deleted = 0 OR p.is_deleted IS NULL)',
+      "e.status != 'removed'"
+    ];
     const params: any[] = [REAL_EVENT_ID];
 
     for (const token of tokens) {
@@ -2009,9 +2057,9 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       SELECT c.id as child_id, c.full_name as child_name, c.date_of_birth, c.gender, c.calculated_age, c.age_group, c.photo_file_id as child_photo_id,
              p.full_name as parent_name, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
              e.id as entry_id, e.status as entry_status, e.school_class, e.school_name, e.has_medical_notes, e.medical_notes, e.needs_extra_support, e.support_notes
-      FROM children c
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON c.parent_profile_id = p.id
-      LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
       WHERE ${whereClauseSql}
       LIMIT 150
     `, params);
@@ -3117,8 +3165,18 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
     const limit = Math.min(100, Math.max(1, parseInt((req.query.limit || '25').toString(), 10) || 25));
     const offset = (page - 1) * limit;
 
-    let whereClause = ' WHERE 1=1';
+    const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
+
+    let whereClause = ` WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+      AND e.status != 'removed'`;
     const whereParams: any[] = [REAL_EVENT_ID];
+
+    if (!enableDemoData) {
+      whereClause += " AND c.full_name NOT LIKE 'Test %'";
+    }
 
     if (q) {
       whereClause += ` AND (c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ?)`;
@@ -3131,9 +3189,9 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
     } else if (status === 'picked_up') {
       whereClause += ` AND e.status IN ('picked_up', 'checked_out')`;
     } else if (status === 'not_arrived') {
-      whereClause += ` AND (e.status IS NULL OR e.status NOT IN ('checked_in', 'inside', 'picked_up', 'checked_out'))`;
+      whereClause += ` AND e.status NOT IN ('checked_in', 'inside', 'picked_up', 'checked_out')`;
     } else if (status === 'attention') {
-      whereClause += ` AND (e.needs_extra_support = 1 OR e.has_medical_notes = 1 OR e.status = 'under_review')`;
+      whereClause += ` AND (e.needs_extra_support = 1 OR e.has_medical_notes = 1 OR e.status = 'under_review' OR c.needs_age_review = 1)`;
     }
 
     if (ageGroup && ageGroup.toLowerCase() !== 'all') {
@@ -3143,11 +3201,11 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
 
     // 1. Total matching count query for pagination
     const countSql = `
-      SELECT COUNT(DISTINCT c.id) as total
-      FROM children c
+      SELECT COUNT(DISTINCT e.id) as total
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON c.parent_profile_id = p.id
-      LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
-      ${whereClause.replace(' WHERE 1=1', ' WHERE 1=1')}
+      ${whereClause}
     `;
     const countRow = await queryOne(countSql, whereParams);
     const total = parseInt(countRow?.total || '0', 10);
@@ -3155,13 +3213,13 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
 
     // 2. Paginated rows query
     const dataSql = `
-      SELECT c.id as child_id, c.full_name as child_name, c.date_of_birth, c.gender, c.calculated_age, c.age_group, c.photo_file_id as child_photo_id,
+      SELECT c.id as child_id, c.full_name as child_name, c.date_of_birth, c.gender, c.calculated_age, c.age_group, c.needs_age_review, c.photo_file_id as child_photo_id,
              p.full_name as parent_name, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
              e.id as entry_id, e.status as entry_status, e.school_class, e.school_name, e.has_medical_notes, e.medical_notes, e.needs_extra_support, e.support_notes
-      FROM children c
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON c.parent_profile_id = p.id
-      LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
-      ${whereClause.replace(' WHERE 1=1', ' WHERE 1=1')}
+      ${whereClause}
       ORDER BY c.full_name ASC
       LIMIT ? OFFSET ?
     `;
@@ -3225,6 +3283,7 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
         medicalNotes: r.medical_notes,
         needsExtraSupport: r.needs_extra_support === 1,
         supportNotes: r.support_notes,
+        needsAgeReview: r.needs_age_review === 1,
         passReference,
         pickup
       });
@@ -3265,38 +3324,42 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
 
     const { childId } = req.params;
 
-    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
-    if (!child) {
-      return res.status(404).json({ error: 'Child not found' });
+    const entry = await queryOne(`
+      SELECT e.*, c.id as canonical_child_id, c.full_name as child_name, c.date_of_birth, c.gender, c.calculated_age, c.age_group, c.needs_age_review,
+             c.photo_file_id as child_photo_id, c.relationship_to_child,
+             p.id as parent_id, p.full_name as parent_name, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
+             p.photo_file_id as parent_photo_id
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON c.parent_profile_id = p.id
+      WHERE (c.id = ? OR e.id = ?) AND e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND e.status != 'removed'
+    `, [childId, childId, REAL_EVENT_ID]);
+
+    if (!entry) {
+      return res.status(404).json({ error: 'This child is no longer available.' });
     }
 
-    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
-    if (!parent) {
-      return res.status(404).json({ error: 'Parent profile not found' });
-    }
-
-    // Get child event entry
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
-
-    const childPhotoUrl = await resolvePhotoUrl(child.photo_file_id);
-    const parentPhotoUrl = parent ? await resolvePhotoUrl(parent.photo_file_id) : '';
+    const childPhotoUrl = await resolvePhotoUrl(entry.child_photo_id);
+    const parentPhotoUrl = entry.parent_photo_id ? await resolvePhotoUrl(entry.parent_photo_id) : '';
 
     // Get pickup people
     const pickupPeople: any[] = [];
-    const entryId = entry ? entry.id : null;
+    const entryId = entry.id;
 
     // Map entryStatus to user-friendly UI values matching the spec: "inside" | "not_arrived" | "picked_up" | "needs_attention"
     let statusLabel: 'inside' | 'not_arrived' | 'picked_up' | 'needs_attention' = 'not_arrived';
-    if (entry) {
-      if (entry.needs_extra_support === 1 || entry.has_medical_notes === 1 || entry.status === 'under_review') {
-        statusLabel = 'needs_attention';
-      } else if (entry.status === 'checked_in' || entry.status === 'inside') {
-        statusLabel = 'inside';
-      } else if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-        statusLabel = 'picked_up';
-      } else {
-        statusLabel = 'not_arrived';
-      }
+    if (entry.needs_extra_support === 1 || entry.has_medical_notes === 1 || entry.status === 'under_review') {
+      statusLabel = 'needs_attention';
+    } else if (entry.status === 'checked_in' || entry.status === 'inside') {
+      statusLabel = 'inside';
+    } else if (entry.status === 'picked_up' || entry.status === 'checked_out') {
+      statusLabel = 'picked_up';
+    } else {
+      statusLabel = 'not_arrived';
     }
 
     if (entryId) {
@@ -3308,6 +3371,7 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
           fullName: r.full_name,
           relationship: r.relationship_to_child,
           phone: r.phone_number,
+          whatsapp: r.whatsapp_number,
           photoUrl: photoUrl,
           isPrimary: r.pickup_type === 'primary',
           label: r.pickup_type === 'primary' ? 'Primary' : 'Alternative'
@@ -3317,7 +3381,7 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
 
     // Resolve checked in by / picked up by names
     let checkedInByDetail = null;
-    if (entry && entry.checked_in_by) {
+    if (entry.checked_in_by) {
       const volunteer = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ? OR id = ?', [entry.checked_in_by, entry.checked_in_by]);
       checkedInByDetail = {
         id: entry.checked_in_by,
@@ -3326,14 +3390,14 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
     }
 
     const todayActivity = {
-      checkedInAt: entry ? entry.checked_in_at : null,
+      checkedInAt: entry.checked_in_at,
       checkedInBy: checkedInByDetail,
-      pickedUpAt: entry ? entry.picked_up_at : null,
+      pickedUpAt: entry.picked_up_at,
       pickedUpBy: null as any,
       pickupPerson: null as any
     };
 
-    if (entry && entry.picked_up_by) {
+    if (entry.picked_up_by) {
       const volunteer = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ? OR id = ?', [entry.picked_up_by, entry.picked_up_by]);
       todayActivity.pickedUpBy = {
         id: entry.picked_up_by,
@@ -3341,7 +3405,7 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
       };
     }
 
-    if (entry && entry.pickup_person_id) {
+    if (entry.pickup_person_id) {
       const pickupRow = await queryOne('SELECT full_name, relationship_to_child FROM pickup_people WHERE id = ?', [entry.pickup_person_id]);
       if (pickupRow) {
         todayActivity.pickupPerson = {
@@ -3351,39 +3415,51 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
         };
       } else {
         todayActivity.pickupPerson = {
-          id: parent.id,
-          fullName: parent.full_name,
+          id: entry.parent_id,
+          fullName: entry.parent_name,
           relationship: 'Parent'
         };
       }
     }
+
+    // Location info if recorded in attendance
+    const lastAttendance = await queryOne(`
+      SELECT gate_location FROM attendance_records 
+      WHERE child_event_entry_id = ? 
+      ORDER BY action_time DESC LIMIT 1
+    `, [entry.id]);
 
     const event = await queryOne('SELECT * FROM events WHERE id = ?', [REAL_EVENT_ID]);
 
     res.json({
       success: true,
       child: {
-        id: child.id,
-        fullName: child.full_name,
-        firstName: child.full_name.split(' ')[0],
-        age: child.calculated_age || 0,
-        gender: child.gender,
-        classGroup: entry ? (entry.school_class || child.age_group) : child.age_group,
+        id: entry.canonical_child_id,
+        entryId: entry.id,
+        fullName: entry.child_name,
+        firstName: entry.child_name.split(' ')[0],
+        age: entry.calculated_age || 0,
+        ageGroup: entry.age_group,
+        needsAgeReview: entry.needs_age_review === 1,
+        gender: entry.gender,
+        classGroup: entry.school_class || entry.age_group,
+        dutyLocation: entry.school_class || lastAttendance?.gate_location || null,
         photoUrl: childPhotoUrl,
         status: statusLabel,
-        checkedInAt: entry ? entry.checked_in_at : null,
+        checkedInAt: entry.checked_in_at,
         checkedInBy: checkedInByDetail,
-        pickedUpAt: entry ? entry.picked_up_at : null,
+        pickedUpAt: entry.picked_up_at,
         pickedUpBy: todayActivity.pickedUpBy,
-        medicalNote: entry ? entry.medical_notes : null,
+        medicalNote: entry.has_medical_notes === 1 ? entry.medical_notes : null,
         allergies: null,
-        extraSupport: entry ? entry.support_notes : null
+        extraSupport: entry.needs_extra_support === 1 ? entry.support_notes : null
       },
       parent: {
-        id: parent.id,
-        fullName: parent.full_name,
-        relationship: 'Mother',
-        phone: parent.phone_number,
+        id: entry.parent_id,
+        fullName: entry.parent_name,
+        relationship: entry.relationship_to_child || 'Parent / Guardian',
+        phone: entry.parent_phone,
+        whatsapp: entry.parent_whatsapp,
         photoUrl: parentPhotoUrl
       },
       pickupPeople: pickupPeople,
@@ -3745,6 +3821,9 @@ async function syncAttentionItems(eventId: string) {
       JOIN children ON child_event_entries.child_id = children.id
       JOIN pickup_people ON pickup_people.child_event_entry_id = child_event_entries.id
       WHERE child_event_entries.event_id = ?
+        AND (child_event_entries.is_deleted = 0 OR child_event_entries.is_deleted IS NULL)
+        AND (children.is_deleted = 0 OR children.is_deleted IS NULL)
+        AND child_event_entries.status != 'removed'
         AND child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
         AND (pickup_people.photo_file_id IS NULL OR pickup_people.photo_file_id = '')
         ${demoFilter}
@@ -3783,6 +3862,9 @@ async function syncAttentionItems(eventId: string) {
       FROM child_event_entries
       JOIN children ON child_event_entries.child_id = children.id
       WHERE child_event_entries.event_id = ?
+        AND (child_event_entries.is_deleted = 0 OR child_event_entries.is_deleted IS NULL)
+        AND (children.is_deleted = 0 OR children.is_deleted IS NULL)
+        AND child_event_entries.status != 'removed'
         AND child_event_entries.status IN ('under_review', 'pass_ready', 'checked_in', 'inside')
         AND child_event_entries.has_medical_notes = 1
         AND child_event_entries.medical_notes IS NOT NULL
@@ -3823,6 +3905,9 @@ async function syncAttentionItems(eventId: string) {
       FROM child_event_entries
       JOIN children ON child_event_entries.child_id = children.id
       WHERE child_event_entries.event_id = ?
+        AND (child_event_entries.is_deleted = 0 OR child_event_entries.is_deleted IS NULL)
+        AND (children.is_deleted = 0 OR children.is_deleted IS NULL)
+        AND child_event_entries.status != 'removed'
         AND children.needs_age_review = 1
         ${demoFilter}
     `, [eventId]);
@@ -3859,6 +3944,9 @@ async function syncAttentionItems(eventId: string) {
       FROM child_event_entries
       JOIN children ON child_event_entries.child_id = children.id
       WHERE child_event_entries.event_id = ?
+        AND (child_event_entries.is_deleted = 0 OR child_event_entries.is_deleted IS NULL)
+        AND (children.is_deleted = 0 OR children.is_deleted IS NULL)
+        AND child_event_entries.status != 'removed'
         AND child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
         AND (children.photo_file_id IS NULL OR children.photo_file_id = '')
         ${demoFilter}
@@ -3953,8 +4041,12 @@ router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest,
              parent.phone_number as parent_phone
       FROM child_attention_items cai
       JOIN children c ON cai.child_id = c.id
+      JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = cai.event_id
       LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
       WHERE cai.event_id = ? AND cai.status IN ('open', 'in_review', 'escalated')
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status != 'removed'
       ${demoFilter}
       ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
     `, [REAL_EVENT_ID]);
@@ -3984,8 +4076,12 @@ router.get('/attention-items/:itemId', authMiddleware, async (req: Authenticated
              parent.phone_number as parent_phone
       FROM child_attention_items cai
       JOIN children c ON cai.child_id = c.id
+      JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = cai.event_id
       LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
       WHERE cai.id = ? AND cai.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status != 'removed'
     `, [itemId, REAL_EVENT_ID]);
 
     if (!item) {
