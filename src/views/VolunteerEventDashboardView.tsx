@@ -98,6 +98,79 @@ const formatChildAge = (age?: number | null) => {
   return `${age} years`;
 };
 
+const formatAlertTimestamp = (dateString?: string | null): string => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 0) return 'Just now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 45) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  
+  const day = date.getDate();
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${day} ${month}, ${time}`;
+};
+
+const formatAlertCategory = (category?: string | null): string => {
+  if (!category) return 'Care concern';
+  const cat = category.toLowerCase();
+  if (cat === 'safeguarding' || cat === 'security_concern') return 'Safeguarding';
+  if (cat === 'child_care') return 'Child care';
+  if (cat === 'medical_support') return 'Medical support';
+  if (cat === 'pass_issue') return 'Pass issue';
+  if (cat === 'pickup_issue') return 'Pickup issue';
+  if (cat === 'location_support') return 'Location support';
+  return category
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const formatAlertPriority = (severity?: string | null): { label: string | null; colorClass: string } => {
+  const sev = (severity || '').toLowerCase();
+  if (sev === 'urgent') {
+    return { label: 'Urgent', colorClass: 'text-rose-700 font-semibold' };
+  }
+  if (sev === 'warning' || sev === 'important') {
+    return { label: 'High priority', colorClass: 'text-amber-800 font-medium' };
+  }
+  if (sev === 'routine' || sev === 'normal' || sev === 'low') {
+    return { label: null, colorClass: 'text-zinc-500' };
+  }
+  return { label: null, colorClass: 'text-zinc-500' };
+};
+
+const formatAlertStatus = (
+  alert: any,
+  volunteerUserId?: string,
+  volunteerName?: string
+): { label: string; colorClass: string } => {
+  if (alert.status === 'resolved') {
+    return { label: 'Resolved', colorClass: 'text-zinc-500' };
+  }
+  if (alert.status === 'acknowledged') {
+    const vId = volunteerUserId || '';
+    const vName = (volunteerName || '').toLowerCase().trim();
+    const ackByName = (alert.acknowledged_by_name || '').toLowerCase().trim();
+    const isMine = (vId && (alert.acknowledged_by === vId || alert.acknowledged_by_user_id === vId)) ||
+      (vName && ackByName && vName === ackByName);
+    return {
+      label: isMine ? "You're handling this" : 'Being handled',
+      colorClass: 'text-amber-800'
+    };
+  }
+  return { label: 'Open', colorClass: 'text-zinc-600' };
+};
+
 const resolveChildPhotoUrl = (photoRef?: string | null): string => {
   if (!photoRef || !photoRef.trim()) return '';
   const trimmed = photoRef.trim();
@@ -229,14 +302,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const formatTimeAgo = (isoString: string) => {
     try {
-      const diffMs = Date.now() - new Date(isoString).getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}h ago`;
-      const diffDays = Math.floor(diffHours / 24);
-      return `${diffDays}d ago`;
+      return formatAlertTimestamp(isoString) || 'Recent';
     } catch (_) {
       return 'Recent';
     }
@@ -7069,57 +7135,73 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
       {cleanRoute === '/volunteer/team-alerts' && (
         /* ==================== 6. VOLUNTEER TEAM SAFETY ALERTS VIEW ==================== */
-        <div className="min-h-screen bg-[#FAF9F6] text-[#18181B] pb-24" data-component-version="volunteer-team-alerts-ivory-v1">
+        <div className="min-h-screen bg-[#FAF9F6] text-zinc-900 pb-24" data-component-version="volunteer-team-alerts-v2-calm">
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-[#F5F3EC] to-[#EAE8E1] border-b border-[#EAE8E1] px-4 py-6 sm:px-6">
-            <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="bg-white border-b border-zinc-200/80 px-4 py-4 sm:px-6">
+            <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
               <div>
-                <h1 className="font-serif text-2xl font-bold tracking-tight text-gray-900">
-                  Team Safety Desk
+                <h1 className="font-sans text-lg font-semibold tracking-tight text-zinc-900">
+                  Your safety alerts
                 </h1>
-                <p className="text-xs text-zinc-500 font-medium mt-1">
-                  Active Room: <strong className="text-zinc-800">{volunteerProfile?.assignedArea || 'General Assembly'}</strong> &bull; Team: <strong className="text-[#C59B27]">{volunteerProfile?.assignedTeam || 'General Volunteer'}</strong>
+                <p className="text-xs font-sans text-zinc-500 font-medium mt-0.5">
+                  {volunteerProfile?.assignedArea || 'General Area'} · {volunteerProfile?.assignedTeam || 'General Volunteer'}
                 </p>
               </div>
-              <button
-                onClick={() => fetchTeamSafetyAlerts()}
-                disabled={loadingTeamAlerts}
-                className="self-start sm:self-center bg-white hover:bg-zinc-50 text-xs font-semibold px-4 py-2 border border-[#EAE8E1] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingTeamAlerts ? 'animate-spin' : ''}`} />
-                <span>Refresh Queue</span>
-              </button>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenSafetyAlertModal()}
+                  className="bg-[#A47E1F] hover:bg-[#8e6c17] text-white text-xs font-sans font-medium px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs flex items-center space-x-1.5 active:scale-[0.99]"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Report a concern</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fetchTeamSafetyAlerts()}
+                  disabled={loadingTeamAlerts}
+                  title="Refresh alerts"
+                  className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingTeamAlerts ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="max-w-4xl mx-auto px-4 mt-6 space-y-6">
-            {/* Filter Tabs */}
-            <div className="flex bg-[#F1EFE9] p-1 rounded-xl">
+          <div className="max-w-2xl mx-auto px-4 mt-4 space-y-4">
+            {/* Filter Tabs - Restrained Segmented Control */}
+            <div className="flex bg-zinc-200/60 p-1 rounded-lg">
               <button
+                type="button"
                 onClick={() => setTeamAlertsTab('team')}
-                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                   teamAlertsTab === 'team'
-                    ? 'bg-white text-[#C59B27] shadow-sm'
+                    ? 'bg-white text-zinc-900 shadow-2xs'
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
-                My Team Alerts
+                For my team
               </button>
               <button
+                type="button"
                 onClick={() => setTeamAlertsTab('all')}
-                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                   teamAlertsTab === 'all'
-                    ? 'bg-white text-[#C59B27] shadow-sm'
+                    ? 'bg-white text-zinc-900 shadow-2xs'
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
-                All Open
+                All open
               </button>
               <button
+                type="button"
                 onClick={() => setTeamAlertsTab('resolved')}
-                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                   teamAlertsTab === 'resolved'
-                    ? 'bg-white text-[#C59B27] shadow-sm'
+                    ? 'bg-white text-zinc-900 shadow-2xs'
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
@@ -7162,166 +7244,170 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               });
 
               if (filteredAlerts.length === 0) {
+                const isResolvedTab = teamAlertsTab === 'resolved';
                 return (
-                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center shadow-xs space-y-3">
-                    <div className="w-10 h-10 bg-[#C59B27]/5 text-[#C59B27] rounded-full flex items-center justify-center mx-auto border border-[#C59B27]/10">
-                      <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <h3 className="font-serif font-bold text-sm text-gray-900">All Clear</h3>
-                    <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
-                      No safety alerts reported in this category. Continue active monitoring of your station.
+                  <div className="py-16 text-center space-y-1.5">
+                    <ShieldCheck className="w-6 h-6 text-zinc-400 mx-auto" />
+                    <h3 className="font-sans font-semibold text-sm text-zinc-900">
+                      {isResolvedTab ? 'No resolved concerns' : 'No open concerns'}
+                    </h3>
+                    <p className="font-sans text-xs text-zinc-500 max-w-xs mx-auto">
+                      {isResolvedTab 
+                        ? 'No resolved concerns yet.' 
+                        : 'There are no unresolved safety concerns for your team.'}
                     </p>
                   </div>
                 );
               }
 
+              const myUserId = volunteerProfile?.user_id || volunteerProfile?.userId || volunteerProfile?.user?.id;
+              const myName = volunteerProfile?.full_name || volunteerProfile?.fullName;
+
               return (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {filteredAlerts.map(alert => {
                     const isUrgent = alert.severity === 'urgent';
-                    const isImportant = alert.severity === 'important';
                     const isAck = alert.status === 'acknowledged';
+                    const priorityInfo = formatAlertPriority(alert.severity);
+                    const statusInfo = formatAlertStatus(alert, myUserId, myName);
 
                     return (
                       <div
                         key={alert.id}
-                        className={`bg-white border rounded-2xl p-4 shadow-xs relative overflow-hidden transition-all ${
+                        className={`bg-white border rounded-xl p-4 transition-all shadow-2xs space-y-3 ${
                           alert.status === 'resolved'
-                            ? 'border-zinc-200 opacity-70'
+                            ? 'border-zinc-200/70 bg-zinc-50/40 opacity-90'
                             : isUrgent
-                            ? 'border-red-200 bg-red-50/5'
-                            : 'border-[#EAE8E1]'
+                            ? 'border-rose-200 bg-rose-50/10 border-l-4 border-l-rose-500'
+                            : 'border-zinc-200/80'
                         }`}
                       >
-                        {/* Status bar marker */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-                          alert.status === 'resolved'
-                            ? 'bg-zinc-300'
-                            : isUrgent
-                            ? 'bg-rose-500 animate-pulse'
-                            : isImportant
-                            ? 'bg-amber-500'
-                            : 'bg-[#C59B27]'
-                        }`} />
-
-                        <div className="pl-1 space-y-3">
-                          {/* Alert Badge Info Row */}
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`px-2 py-0.5 text-[8px] font-bold font-mono tracking-wider rounded-md uppercase ${
-                                isUrgent
-                                  ? 'bg-red-100 text-red-800'
-                                  : isImportant
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-zinc-100 text-zinc-800'
-                              }`}>
-                                {alert.severity} priority
-                              </span>
-                              <span className={`px-2 py-0.5 text-[8px] font-bold font-mono tracking-wider rounded-md uppercase ${
-                                alert.status === 'open'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                  : isAck
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
-                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                              }`}>
-                                {alert.status === 'open' ? 'Waiting' : alert.status === 'acknowledged' ? 'Claimed' : 'Resolved'}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5" />
-                              {(() => {
-                                const diffMs = Date.now() - new Date(alert.created_at).getTime();
-                                const diffMins = Math.floor(diffMs / 60000);
-                                if (diffMins < 1) return 'Just now';
-                                if (diffMins === 1) return '1 min ago';
-                                return `${diffMins}m ago`;
-                              })()}
-                            </span>
-                          </div>
-
-                          {/* Content */}
+                        {/* Header Row: Category, Status/Priority, and Time */}
+                        <div className="flex items-start justify-between gap-2">
                           <div>
-                            <h3 className="font-serif font-bold text-sm text-gray-900">
-                              {alert.category ? alert.category.toUpperCase().replace(/_/g, ' ') : 'CARE REQUEST'}
+                            <h3 className="font-sans font-semibold text-sm text-zinc-900">
+                              {formatAlertCategory(alert.category)}
                             </h3>
-                            <p className="text-xs text-zinc-500 mt-0.5">
-                              Raised by <strong className="text-zinc-800">{alert.raised_by_name || 'Volunteer'}</strong>
-                              {alert.location_label && <span> at <strong className="text-zinc-800">{alert.location_label}</strong></span>}
-                              {alert.child_name && <span> regarding child <strong className="text-zinc-800">{alert.child_name}</strong></span>}
+                            <p className="text-xs font-sans text-zinc-500 mt-0.5 flex items-center space-x-1.5 flex-wrap">
+                              {priorityInfo.label && (
+                                <span className={priorityInfo.colorClass}>{priorityInfo.label}</span>
+                              )}
+                              {priorityInfo.label && <span>·</span>}
+                              <span className={statusInfo.colorClass}>{statusInfo.label}</span>
                             </p>
                           </div>
 
-                          {alert.message && (
-                            <p className="text-xs italic bg-[#FAF9F6] border border-[#EAE8E1]/40 rounded-xl p-3 leading-relaxed text-zinc-600">
-                              "{alert.message}"
-                            </p>
-                          )}
+                          <span className="text-[11px] font-sans text-zinc-400 shrink-0 whitespace-nowrap">
+                            {formatAlertTimestamp(alert.created_at)}
+                          </span>
+                        </div>
 
-                          {alert.parent_name && alert.status !== 'resolved' && (
-                            <div className="text-[10px] bg-[#C59B27]/5 border border-[#C59B27]/10 rounded-xl px-3 py-1.5 text-[#C59B27] font-semibold w-fit">
-                              Parent: {alert.parent_name} ({alert.parent_phone || 'No phone'})
-                            </div>
-                          )}
-
-                          {alert.status === 'resolved' && alert.resolution_note && (
-                            <div className="text-xs bg-emerald-50/20 border border-emerald-100 text-emerald-900 p-3 rounded-xl space-y-1">
-                              <p className="font-bold flex items-center gap-1 text-[11px]">
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                Settlement Note:
-                              </p>
-                              <p className="text-[11px] text-zinc-600">{alert.resolution_note}</p>
-                              {alert.resolved_by_name && (
-                                <p className="text-[9px] text-zinc-400">Resolved by {alert.resolved_by_name}</p>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Action Panel for Active Alerts */}
-                          {alert.status !== 'resolved' && (
-                            <div className="flex flex-wrap gap-2.5 pt-1.5 border-t border-[#EAE8E1]/40">
-                              {!isAck && (
-                                <button
-                                  onClick={() => handleAcknowledgeTeamAlert(alert.id)}
-                                  disabled={teamActionInProgress !== null}
-                                  className="text-xs bg-[#C59B27] hover:bg-[#b58c22] text-white px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
-                                >
-                                  {teamActionInProgress === alert.id ? (
-                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <UserCheck className="w-3.5 h-3.5" />
-                                  )}
-                                  <span>Acknowledge</span>
-                                </button>
-                              )}
-
-                              {isAck && (
-                                <button
-                                  onClick={() => { resumeAudioContext(); setResolvingTeamAlert(alert); }}
-                                  disabled={teamActionInProgress !== null}
-                                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Resolve Issue</span>
-                                </button>
-                              )}
-
-                              {!isUrgent && (
-                                <button
-                                  onClick={() => handleEscalateTeamAlert(alert.id)}
-                                  disabled={teamActionInProgress !== null}
-                                  className="text-[10px] text-red-700 border border-red-100 hover:bg-red-50 bg-white px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                >
-                                  {teamActionInProgress === `escalate-${alert.id}` ? (
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <AlertTriangle className="w-3 h-3" />
-                                  )}
-                                  <span>Escalate to Admin</span>
-                                </button>
-                              )}
-                            </div>
+                        {/* Reporter & Location */}
+                        <div className="text-xs font-sans text-zinc-500 leading-tight space-y-0.5">
+                          <p>
+                            Reported by <span className="font-medium text-zinc-800">{alert.raised_by_name || 'Volunteer'}</span>
+                          </p>
+                          {alert.location_label && (
+                            <p className="text-zinc-600">{alert.location_label}</p>
                           )}
                         </div>
+
+                        {/* Description - Plain text, no quotation card styling */}
+                        {alert.message && (
+                          <p className="text-xs font-sans text-zinc-700 leading-relaxed">
+                            {alert.message}
+                          </p>
+                        )}
+
+                        {/* Child Context if relevant */}
+                        {alert.child_name && (
+                          <p className="text-xs font-sans text-zinc-600">
+                            <span className="text-zinc-400">Regarding: </span>
+                            <span className="font-medium text-zinc-800">{alert.child_name}</span>
+                          </p>
+                        )}
+
+                        {/* Parent Contact if relevant */}
+                        {alert.parent_name && alert.status !== 'resolved' && (
+                          <div className="flex items-center justify-between text-xs font-sans text-zinc-600 pt-0.5">
+                            <div>
+                              <span className="text-zinc-400">Parent: </span>
+                              <span className="font-medium text-zinc-800">{alert.parent_name}</span>
+                              {alert.parent_phone && (
+                                <span className="text-zinc-500 font-mono ml-1.5">{alert.parent_phone}</span>
+                              )}
+                            </div>
+                            {alert.parent_phone && (
+                              <a
+                                href={`tel:${alert.parent_phone}`}
+                                className="text-xs text-[#A47E1F] hover:text-[#8e6c17] font-medium transition-colors cursor-pointer"
+                              >
+                                Call parent
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Resolution section for resolved alerts */}
+                        {alert.status === 'resolved' && (
+                          <div className="pt-2 border-t border-zinc-100 space-y-1 text-xs font-sans">
+                            <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Resolution</p>
+                            {alert.resolution_note && (
+                              <p className="text-xs text-zinc-700 leading-relaxed">{alert.resolution_note}</p>
+                            )}
+                            <p className="text-[11px] text-zinc-400">
+                              {alert.resolved_by_name ? `Resolved by ${alert.resolved_by_name}` : 'Resolved'}
+                              {alert.resolved_at ? ` · ${formatAlertTimestamp(alert.resolved_at)}` : ''}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Actions for active alerts */}
+                        {alert.status !== 'resolved' && (
+                          <div className="flex items-center gap-2 pt-2 border-t border-zinc-100 flex-wrap">
+                            {!isAck ? (
+                              <button
+                                type="button"
+                                onClick={() => handleAcknowledgeTeamAlert(alert.id)}
+                                disabled={teamActionInProgress !== null}
+                                className="text-xs font-sans font-medium bg-[#A47E1F] hover:bg-[#8e6c17] text-white px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
+                              >
+                                {teamActionInProgress === alert.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                )}
+                                <span>Handle concern</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => { resumeAudioContext(); setResolvingTeamAlert(alert); }}
+                                disabled={teamActionInProgress !== null}
+                                className="text-xs font-sans font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Resolve concern</span>
+                              </button>
+                            )}
+
+                            {!isUrgent && (
+                              <button
+                                type="button"
+                                onClick={() => handleEscalateTeamAlert(alert.id)}
+                                disabled={teamActionInProgress !== null}
+                                className="text-xs font-sans font-medium text-zinc-600 hover:text-rose-700 hover:bg-rose-50/60 border border-zinc-200/80 px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                              >
+                                {teamActionInProgress === `escalate-${alert.id}` ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <AlertTriangle className="w-3 h-3" />
+                                )}
+                                <span>Ask coordinator for help</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -7339,55 +7425,54 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             onClick={() => setResolvingTeamAlert(null)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
           />
-          <div className="relative bg-white border border-[#EAE8E1] rounded-[24px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
-            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
-              <h4 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
+          <div className="relative bg-white border border-zinc-200/80 rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
+              <h4 className="font-sans font-semibold text-base text-zinc-900 flex items-center gap-2">
                 <Check className="w-5 h-5 text-emerald-600" />
-                Resolve Care Request
+                Resolve concern
               </h4>
             </div>
 
-            <form onSubmit={handleResolveTeamAlertSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1 bg-[#FAF9F6] border border-[#EAE8E1]/60 p-3.5 rounded-xl text-zinc-600">
-                <p>Concern: <strong>{resolvingTeamAlert.category ? resolvingTeamAlert.category.toUpperCase().replace(/_/g, ' ') : 'CARE REQUEST'}</strong></p>
-                <p>Location: <strong>{resolvingTeamAlert.location_label || 'Not specified'}</strong></p>
-                {resolvingTeamAlert.child_name && <p>Child: <strong>{resolvingTeamAlert.child_name}</strong></p>}
+            <form onSubmit={handleResolveTeamAlertSubmit} className="space-y-4 text-xs font-sans">
+              <div className="space-y-1 bg-zinc-50 border border-zinc-200/60 p-3 rounded-xl text-zinc-600">
+                <p>Concern: <strong className="text-zinc-800">{formatAlertCategory(resolvingTeamAlert.category)}</strong></p>
+                {resolvingTeamAlert.location_label && <p>Location: <strong className="text-zinc-800">{resolvingTeamAlert.location_label}</strong></p>}
+                {resolvingTeamAlert.child_name && <p>Child: <strong className="text-zinc-800">{resolvingTeamAlert.child_name}</strong></p>}
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-700 block">Resolution Action Notes</label>
+                <label className="text-xs font-semibold text-zinc-700 block">Resolution note</label>
                 <textarea
                   value={teamResolutionNote}
                   onChange={(e) => setTeamResolutionNote(e.target.value)}
-                  placeholder="Explain how this situation was settled (e.g. parent has been contacted and child is settled, Care Lead escorted child to rest zone)..."
-                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] hover:border-zinc-300 focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none min-h-[90px] resize-none transition-all placeholder:text-zinc-400 text-gray-900"
+                  placeholder="Describe what was done to resolve this concern (e.g. parent contacted and child settled)..."
+                  className="w-full bg-zinc-50 border border-zinc-200 hover:border-zinc-300 focus:border-[#A47E1F] focus:ring-1 focus:ring-[#A47E1F] rounded-xl p-3 text-xs outline-none min-h-[90px] resize-none transition-all placeholder:text-zinc-400 text-zinc-900"
                   required
                 />
               </div>
 
-              <div className="flex justify-end gap-3.5 pt-2">
-                <Button
+              <div className="flex justify-end gap-2.5 pt-1">
+                <button
                   type="button"
-                  variant="outline"
                   onClick={() => setResolvingTeamAlert(null)}
-                  className="text-xs px-4 py-2 border-[#EAE8E1] cursor-pointer"
+                  className="px-3.5 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
-                </Button>
-                <Button
+                </button>
+                <button
                   type="submit"
                   disabled={teamActionInProgress !== null}
-                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 cursor-pointer"
+                  className="px-4 py-2 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 >
                   {teamActionInProgress === `resolve-${resolvingTeamAlert.id}` ? (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1.5">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                       Resolving...
                     </span>
                   ) : (
-                    'Resolve'
+                    'Resolve concern'
                   )}
-                </Button>
+                </button>
               </div>
             </form>
           </div>
@@ -7471,7 +7556,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           >
             <ShieldAlert className={`h-5 w-5 ${cleanRoute === '/volunteer/team-alerts' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
             <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/team-alerts' ? 'font-semibold' : 'font-medium'}`}>
-              Desk
+              Safety
             </span>
           </button>
         )}
