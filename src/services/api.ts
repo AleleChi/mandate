@@ -477,12 +477,26 @@ export const api = {
     async getPickupHome() {
       return api.request<any>('/api/volunteer/pickup-home');
     },
-    async getChildren(params: { q?: string; status?: string; limit?: number }) {
+    async getChildren(params: { q?: string; search?: string; status?: string; limit?: number; page?: number; ageGroup?: string; location?: string }) {
       const queryParams = new URLSearchParams();
       if (params.q) queryParams.append('q', params.q);
+      if (params.search) queryParams.append('search', params.search);
       if (params.status) queryParams.append('status', params.status);
       if (params.limit) queryParams.append('limit', params.limit.toString());
-      return api.request<any[]>(`/api/volunteer/children?${queryParams.toString()}`);
+      if (params.page) queryParams.append('page', params.page.toString());
+      if (params.ageGroup) queryParams.append('ageGroup', params.ageGroup);
+      if (params.location) queryParams.append('location', params.location);
+      return api.request<{
+        items: any[];
+        pagination: {
+          page: number;
+          limit: number;
+          total: number;
+          totalPages: number;
+          hasNext: boolean;
+          hasPrevious: boolean;
+        };
+      }>(`/api/volunteer/children?${queryParams.toString()}`);
     },
     async getChildProfile(childId: string) {
       return api.request<any>(`/api/volunteer/children/${childId}`);

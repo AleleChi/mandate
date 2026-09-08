@@ -412,6 +412,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [activeDirectoryFilter, setActiveDirectoryFilter] = useState<string>('all');
   const [directoryChildren, setDirectoryChildren] = useState<any[]>([]);
   const [directoryError, setDirectoryError] = useState<boolean>(false);
+  const [directoryPage, setDirectoryPage] = useState<number>(1);
+  const [directoryPagination, setDirectoryPagination] = useState<{
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrevious: boolean;
+  }>({
+    page: 1,
+    limit: 25,
+    total: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrevious: false
+  });
 
   // Safety alert states
   const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
@@ -1353,16 +1369,36 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   }, [cleanRoute]);
 
-  // Fetch directory children list based on search query and status filter
-  const fetchChildrenDirectory = async () => {
+  // Fetch directory children list based on search query, status filter, and pagination
+  const fetchChildrenDirectory = async (pageToFetch = directoryPage, filterToUse = activeDirectoryFilter, searchToUse = searchQuery) => {
     setSearching(true);
     setDirectoryError(false);
     try {
-      const results = await api.volunteer.getChildren({
-        q: searchQuery.trim(),
-        status: activeDirectoryFilter
+      const res = await api.volunteer.getChildren({
+        q: searchToUse.trim(),
+        status: filterToUse,
+        page: pageToFetch,
+        limit: 25
       });
-      setDirectoryChildren(results || []);
+      if (res && res.items) {
+        setDirectoryChildren(res.items);
+        if (res.pagination) {
+          setDirectoryPagination(res.pagination);
+          setDirectoryPage(res.pagination.page);
+        }
+      } else if (Array.isArray(res)) {
+        setDirectoryChildren(res);
+        setDirectoryPagination({
+          page: 1,
+          limit: res.length,
+          total: res.length,
+          totalPages: 1,
+          hasNext: false,
+          hasPrevious: false
+        });
+      } else {
+        setDirectoryChildren([]);
+      }
     } catch (err: any) {
       console.error('Failed to fetch children directory:', err);
       setDirectoryError(true);
@@ -1371,11 +1407,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
+  // Trigger search on route change or filter change, resetting to page 1
   useEffect(() => {
     if (cleanRoute === '/volunteer/children' || cleanRoute === '/volunteer/reports') {
-      fetchChildrenDirectory();
+      setDirectoryPage(1);
+      fetchChildrenDirectory(1, activeDirectoryFilter, searchQuery);
     }
   }, [cleanRoute, activeDirectoryFilter]);
+
+  // Debounce search query changes specifically on the children view
+  useEffect(() => {
+    if (cleanRoute !== '/volunteer/children') return;
+    const timer = setTimeout(() => {
+      setDirectoryPage(1);
+      fetchChildrenDirectory(1, activeDirectoryFilter, searchQuery);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Load detailed child profile
   useEffect(() => {
@@ -2290,7 +2338,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           {/* Center: Page Title (omitted on home for a lightweight, calm header) */}
           <div className="text-center">
             {cleanRoute !== '/volunteer/event' && (
-              <span className="font-serif font-medium text-sm text-[#18181B] tracking-wide">
+              <span className="font-semibold text-sm text-zinc-900 tracking-tight">
                 {(() => {
                   if (cleanRoute === '/volunteer/scan') {
                     if (checkedInSuccessChild) return 'Check-in confirmed';
@@ -2300,7 +2348,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   if (cleanRoute === '/volunteer/pickup') return 'Pickup';
                   if (cleanRoute === '/volunteer/children') return selectedChildId ? 'Child profile' : 'Children';
                   if (cleanRoute === '/volunteer/reports') return 'Summary';
-                  if (cleanRoute === '/volunteer/team-alerts') return 'Alerts';
+                  if (cleanRoute === '/volunteer/team-alerts') return 'Safety';
                   if (cleanRoute === '/volunteer/profile') return 'Profile';
                   return '';
                 })()}
@@ -4559,49 +4607,59 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             childProfileLoading || !childProfileData ? (
               <ModuleLoadingState title="Loading child details..." />
             ) : (
-              <div className="space-y-6 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v1-stitch">
+              <div className="space-y-4 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v2-refined">
                 
+                {/* Back to children directory */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedChildId(null)}
+                  className="inline-flex items-center space-x-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 transition-colors py-0.5 cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span>Back to children list</span>
+                </button>
+
                 {/* Child Identity Section */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs text-center flex flex-col items-center space-y-4" data-component-version="volunteer-child-profile-identity-v1-stitch">
-                  {/* Photo with soft gold border */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-xs text-center flex flex-col items-center space-y-3.5" data-component-version="volunteer-child-profile-identity-v2">
+                  {/* Photo with soft accent */}
                   <div className="relative">
-                    <div className="w-28 h-28 rounded-3xl border-2 border-[#C59B27]/40 p-1 bg-white shadow-xs inline-block overflow-hidden relative">
+                    <div className="w-24 h-24 rounded-2xl border border-amber-500/25 p-1 bg-white shadow-xs inline-block overflow-hidden relative">
                       {childProfileData.child.photoUrl ? (
                         <img
                           src={childProfileData.child.photoUrl}
                           alt={childProfileData.child.fullName || childProfileData.child.name}
-                          className="w-full h-full object-cover rounded-2xl"
+                          className="w-full h-full object-cover rounded-xl"
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-full h-full bg-[#FAF9F5] flex items-center justify-center rounded-2xl">
-                          <User className="h-12 w-12 text-[#C59B27]/30" />
+                        <div className="w-full h-full bg-zinc-50 flex items-center justify-center rounded-xl">
+                          <User className="h-10 w-10 text-zinc-300" />
                         </div>
                       )}
                     </div>
                     {/* Overlapping status badge below photo */}
                     <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 shadow-xs whitespace-nowrap z-10">
                       {childProfileData.child.status === 'inside' && (
-                        <span className="inline-flex items-center space-x-1 px-3 py-1 bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9] rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#4CAF50]"></span>
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200/70 rounded-full text-[10px] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                           <span>Inside</span>
                         </span>
                       )}
                       {childProfileData.child.status === 'not_arrived' && (
-                        <span className="inline-flex items-center space-x-1 px-3 py-1 bg-[#F5F5F5] text-[#616161] border border-[#E0E0E0] rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#9E9E9E]"></span>
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-zinc-100 text-zinc-600 border border-zinc-200/70 rounded-full text-[10px] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
                           <span>Not arrived</span>
                         </span>
                       )}
                       {childProfileData.child.status === 'picked_up' && (
-                        <span className="inline-flex items-center space-x-1 px-3 py-1 bg-[#FFF8E1] text-[#F57F17] border border-[#FFE082] rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#FFC107]"></span>
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-zinc-100 text-zinc-700 border border-zinc-200/70 rounded-full text-[10px] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
                           <span>Picked up</span>
                         </span>
                       )}
                       {childProfileData.child.status === 'needs_attention' && (
-                        <span className="inline-flex items-center space-x-1 px-3 py-1 bg-[#FFEBEE] text-[#C62828] border border-[#FFCDD2] rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#F44336]"></span>
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-rose-50 text-rose-800 border border-rose-200/70 rounded-full text-[10px] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                           <span>Needs attention</span>
                         </span>
                       )}
@@ -4609,16 +4667,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Identity Detail */}
-                  <div className="pt-2">
-                    <h2 className="text-xl font-serif font-bold text-gray-950 leading-tight">
+                  <div className="pt-1">
+                    <h2 className="text-lg font-serif font-bold text-zinc-900 leading-tight">
                       {childProfileData.child.fullName || childProfileData.child.name}
                     </h2>
-                    <div className="flex items-center justify-center space-x-2 mt-2">
-                      <span className="px-2.5 py-1 bg-[#FAF9F5] border border-[#EAE8E1] text-gray-700 rounded-lg text-[10px] font-bold uppercase tracking-wide">
-                        {childProfileData.child.age !== undefined && childProfileData.child.age !== null ? (childProfileData.child.age === 0 ? 'Under 1 year old' : `${childProfileData.child.age} years old`) : 'Age unknown'}
+                    <div className="flex items-center justify-center space-x-2 mt-1.5">
+                      <span className="px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-md text-[11px] font-medium">
+                        {childProfileData.child.age !== undefined && childProfileData.child.age !== null ? (childProfileData.child.age === 0 ? 'Under 1 yr' : `${childProfileData.child.age} yrs`) : 'Age unknown'}
                       </span>
                       {childProfileData.child.classGroup && (
-                        <span className="px-2.5 py-1 bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 rounded-lg text-[10px] font-bold uppercase tracking-wide">
+                        <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/60 rounded-md text-[11px] font-medium">
                           {childProfileData.child.classGroup}
                         </span>
                       )}
@@ -4626,25 +4684,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Quick Facts Row */}
-                  <div className="grid grid-cols-3 gap-1 border-t border-b border-[#FAF9F5] py-4 w-full" data-component-version="volunteer-child-profile-facts-v1-stitch">
+                  <div className="grid grid-cols-3 gap-1 border-t border-zinc-100 pt-3 w-full" data-component-version="volunteer-child-profile-facts-v2">
                     <div className="flex flex-col items-center text-center px-1">
-                      <User className="h-4 w-4 text-[#C59B27]/60 mb-1" />
-                      <span className="text-[10px] text-gray-400 font-medium">Gender</span>
-                      <span className="text-xs font-bold text-gray-800 mt-1 truncate max-w-full">
+                      <User className="h-3.5 w-3.5 text-zinc-400 mb-1" />
+                      <span className="text-[10px] text-zinc-400 font-medium">Gender</span>
+                      <span className="text-xs font-semibold text-zinc-800 mt-0.5 truncate max-w-full">
                         {childProfileData.child.gender || 'Not provided'}
                       </span>
                     </div>
-                    <div className="flex flex-col items-center text-center border-x border-gray-100 px-1">
-                      <Users className="h-4 w-4 text-[#C59B27]/60 mb-1" />
-                      <span className="text-[10px] text-gray-400 font-medium">Parent</span>
-                      <span className="text-xs font-bold text-gray-800 mt-1 truncate max-w-full">
+                    <div className="flex flex-col items-center text-center border-x border-zinc-100 px-1">
+                      <Users className="h-3.5 w-3.5 text-zinc-400 mb-1" />
+                      <span className="text-[10px] text-zinc-400 font-medium">Parent</span>
+                      <span className="text-xs font-semibold text-zinc-800 mt-0.5 truncate max-w-full">
                         {childProfileData.parent.fullName || childProfileData.parent.name || 'Not provided'}
                       </span>
                     </div>
                     <div className="flex flex-col items-center text-center px-1">
-                      <Phone className="h-4 w-4 text-[#C59B27]/60 mb-1" />
-                      <span className="text-[10px] text-gray-400 font-medium">Contact</span>
-                      <span className="text-xs font-mono font-bold text-gray-800 mt-1 truncate max-w-full">
+                      <Phone className="h-3.5 w-3.5 text-zinc-400 mb-1" />
+                      <span className="text-[10px] text-zinc-400 font-medium">Contact</span>
+                      <span className="text-xs font-mono font-medium text-zinc-800 mt-0.5 truncate max-w-full">
                         {childProfileData.parent.phone || 'Not provided'}
                       </span>
                     </div>
@@ -4652,14 +4710,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Primary Action Buttons */}
-                <div className="space-y-3" data-component-version="volunteer-child-profile-actions-v1-stitch">
+                <div className="space-y-2.5" data-component-version="volunteer-child-profile-actions-v2">
                   <button
                     onClick={() => handlePreparePickup(childProfileData.child.id)}
                     disabled={childProfileData.child.status !== 'inside' || pickupLoading}
-                    className={`w-full py-3.5 rounded-2xl text-xs font-bold uppercase transition-all flex items-center justify-center space-x-2 ${
+                    className={`w-full py-3 rounded-xl text-xs font-medium transition-all flex items-center justify-center space-x-2 ${
                       childProfileData.child.status === 'inside'
-                        ? 'bg-[#C59B27] hover:bg-[#A47E1F] text-white cursor-pointer hover:shadow-xs active:scale-[0.99]'
-                        : 'bg-[#F5F4F0] text-gray-400 border border-gray-150 cursor-not-allowed'
+                        ? 'bg-[#A47E1F] hover:bg-[#8e6c17] text-white cursor-pointer shadow-xs active:scale-[0.99]'
+                        : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed'
                     }`}
                   >
                     <LogOut className="h-4 w-4" />
@@ -4668,9 +4726,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   <button
                     onClick={() => onNavigate('/volunteer/scan')}
-                    className="w-full py-3 bg-white hover:bg-[#FAF9F5] text-gray-700 font-bold text-xs tracking-wider rounded-2xl transition-all border border-[#EAE8E1] uppercase flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                    className="w-full py-2.5 bg-white hover:bg-zinc-50 text-zinc-800 font-medium text-xs rounded-xl transition-all border border-zinc-200/80 shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
                   >
-                    <QrCode className="h-4 w-4 text-[#C59B27]" />
+                    <QrCode className="h-4 w-4 text-amber-700" />
                     <span>Scan another pass</span>
                   </button>
 
@@ -4684,25 +4742,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       photoUrl: childProfileData.child.photoUrl
                     })}
                     data-component-version="volunteer-alert-auto-linked-child-v1"
-                    className="w-full py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs tracking-wider rounded-2xl transition-all border border-rose-200 uppercase flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                    className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium text-xs rounded-xl transition-all border border-rose-200 flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
                   >
-                    <Bell className="h-4 w-4 animate-pulse text-rose-600" />
+                    <Bell className="h-4 w-4 text-rose-600" />
                     <span>Request help for this child</span>
                   </button>
                 </div>
 
                 {/* Today Status Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 space-y-4" data-component-version="volunteer-child-profile-today-v1-stitch">
-                  <h3 className="text-xs font-serif font-bold text-gray-950 uppercase tracking-wide">Today</h3>
+                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-today-v2">
+                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Today</h3>
                   
-                  <div className="space-y-3 text-xs">
+                  <div className="space-y-2.5 text-xs">
                     {/* Entry Row */}
-                    <div className="flex items-center justify-between py-2 border-b border-gray-50">
-                      <div className="flex items-center space-x-2.5">
+                    <div className="flex items-center justify-between py-1.5 border-b border-zinc-100">
+                      <div className="flex items-center space-x-2">
                         <LogIn className="h-4 w-4 text-emerald-600" />
-                        <span className="text-gray-500 font-medium">Entry</span>
+                        <span className="text-zinc-500 font-medium">Entry</span>
                       </div>
-                      <span className="font-bold text-gray-800">
+                      <span className="font-semibold text-zinc-800">
                         {childProfileData.child.checkedInAt ? (
                           `Checked in at ${new Date(childProfileData.child.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                         ) : (
@@ -4713,11 +4771,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                     {/* Pickup Row */}
                     <div className="flex items-center justify-between py-1">
-                      <div className="flex items-center space-x-2.5">
-                        <LogOut className="h-4 w-4 text-[#C59B27]" />
-                        <span className="text-gray-500 font-medium">Pickup</span>
+                      <div className="flex items-center space-x-2">
+                        <LogOut className="h-4 w-4 text-amber-700" />
+                        <span className="text-zinc-500 font-medium">Pickup</span>
                       </div>
-                      <span className="font-bold text-gray-800">
+                      <span className="font-semibold text-zinc-800">
                         {childProfileData.child.pickedUpAt ? (
                           `Picked up at ${new Date(childProfileData.child.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                         ) : (
@@ -4729,51 +4787,51 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Care Notes Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 space-y-4" data-component-version="volunteer-child-profile-care-notes-v1-stitch">
-                  <h3 className="text-xs font-serif font-bold text-gray-950 uppercase tracking-wide">Care notes</h3>
+                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-care-notes-v2">
+                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Care notes</h3>
                   
-                  <div className="space-y-2.5">
+                  <div className="space-y-2 text-xs">
                     {childProfileData.child.medicalNote ? (
-                      <div className="p-3 bg-red-50/50 border border-red-100 rounded-2xl flex items-start space-x-2.5">
-                        <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                      <div className="p-3 bg-rose-50/70 border border-rose-200/70 rounded-xl flex items-start space-x-2.5">
+                        <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-[10px] text-red-500 font-bold uppercase leading-none">Medical Note</p>
-                          <p className="text-xs font-semibold text-red-800 mt-1">{childProfileData.child.medicalNote}</p>
+                          <p className="text-[10px] text-rose-700 font-bold uppercase tracking-wide leading-none">Medical Note</p>
+                          <p className="text-xs font-medium text-rose-900 mt-1">{childProfileData.child.medicalNote}</p>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center space-x-2.5 text-xs text-gray-400 py-1 px-1">
-                        <Check className="h-4 w-4 text-gray-300" />
+                      <div className="flex items-center space-x-2 text-xs text-zinc-400 py-1">
+                        <Check className="h-3.5 w-3.5 text-zinc-300" />
                         <span>No medical note added</span>
                       </div>
                     )}
 
                     {childProfileData.child.allergies ? (
-                      <div className="p-3 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-start space-x-2.5">
-                        <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+                      <div className="p-3 bg-amber-50/70 border border-amber-200/70 rounded-xl flex items-start space-x-2.5">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-[10px] text-orange-500 font-bold uppercase leading-none">Allergy</p>
-                          <p className="text-xs font-semibold text-orange-800 mt-1">{childProfileData.child.allergies}</p>
+                          <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wide leading-none">Allergy</p>
+                          <p className="text-xs font-medium text-amber-900 mt-1">{childProfileData.child.allergies}</p>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center space-x-2.5 text-xs text-gray-400 py-1 px-1 border-t border-gray-50">
-                        <Check className="h-4 w-4 text-gray-300" />
+                      <div className="flex items-center space-x-2 text-xs text-zinc-400 py-1 border-t border-zinc-100">
+                        <Check className="h-3.5 w-3.5 text-zinc-300" />
                         <span>No allergy added</span>
                       </div>
                     )}
 
                     {childProfileData.child.extraSupport ? (
-                      <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-2xl flex items-start space-x-2.5">
-                        <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                      <div className="p-3 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-start space-x-2.5">
+                        <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-[10px] text-blue-500 font-bold uppercase leading-none">Extra Support</p>
-                          <p className="text-xs font-semibold text-blue-800 mt-1">{childProfileData.child.extraSupport}</p>
+                          <p className="text-[10px] text-blue-700 font-bold uppercase tracking-wide leading-none">Extra Support</p>
+                          <p className="text-xs font-medium text-blue-900 mt-1">{childProfileData.child.extraSupport}</p>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center space-x-2.5 text-xs text-gray-400 py-1 px-1 border-t border-gray-50">
-                        <Check className="h-4 w-4 text-gray-300" />
+                      <div className="flex items-center space-x-2 text-xs text-zinc-400 py-1 border-t border-zinc-100">
+                        <Check className="h-3.5 w-3.5 text-zinc-300" />
                         <span>No extra support added</span>
                       </div>
                     )}
@@ -4781,12 +4839,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Parent Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 space-y-4" data-component-version="volunteer-child-profile-parent-v1-stitch">
-                  <h3 className="text-xs font-serif font-bold text-gray-950 uppercase tracking-wide">Parent</h3>
+                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-parent-v2">
+                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Parent</h3>
                   
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3.5 min-w-0">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-200/60 shrink-0 flex items-center justify-center">
                         {childProfileData.parent.photoUrl ? (
                           <img
                             src={childProfileData.parent.photoUrl}
@@ -4795,17 +4853,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <User className="h-6 w-6 text-gray-300" />
+                          <User className="h-5 w-5 text-zinc-300" />
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-gray-900 truncate leading-tight">
+                        <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">
                           {childProfileData.parent.fullName || childProfileData.parent.name || 'Parent details not provided'}
                         </h4>
-                        <p className="text-[10px] text-[#C59B27] mt-0.5 font-semibold">
+                        <p className="text-[10px] text-amber-700 mt-0.5 font-medium">
                           {childProfileData.parent.relationship || 'Guardian'}
                         </p>
-                        <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                        <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
                           {childProfileData.parent.phone}
                         </p>
                       </div>
@@ -4815,19 +4873,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <div className="flex items-center space-x-1.5 shrink-0">
                         <a
                           href={`tel:${childProfileData.parent.phone}`}
-                          className="p-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-150 text-gray-600 rounded-xl transition-all shadow-xs"
+                          className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
                           title="Call parent"
                         >
-                          <Phone className="h-4 w-4" />
+                          <Phone className="h-3.5 w-3.5" />
                         </a>
                         <a
                           href={`https://wa.me/${childProfileData.parent.phone.replace(/[^0-9]/g, '')}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="p-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-150 text-emerald-600 rounded-xl transition-all shadow-xs"
+                          className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg transition-colors"
                           title="WhatsApp parent"
                         >
-                          <MessageCircle className="h-4 w-4" />
+                          <MessageCircle className="h-3.5 w-3.5" />
                         </a>
                       </div>
                     )}
@@ -4835,11 +4893,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Pickup Person Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 space-y-4" data-component-version="volunteer-child-profile-pickup-person-v1-stitch">
+                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-pickup-person-v2">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-serif font-bold text-gray-950 uppercase tracking-wide">Pickup person</h3>
+                    <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Pickup person</h3>
                     {childProfileData.pickupPeople?.[0] && (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 uppercase tracking-wider shrink-0">
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-medium bg-amber-50 text-amber-800 border border-amber-200/60 uppercase tracking-wider shrink-0">
                         {childProfileData.pickupPeople[0].label || 'Alternative'}
                       </span>
                     )}
@@ -4847,8 +4905,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {childProfileData.pickupPeople?.[0] ? (
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3.5 min-w-0">
-                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-200/60 shrink-0 flex items-center justify-center">
                           {childProfileData.pickupPeople[0].photoUrl ? (
                             <img
                               src={childProfileData.pickupPeople[0].photoUrl}
@@ -4857,17 +4915,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               referrerPolicy="no-referrer"
                             />
                           ) : (
-                            <User className="h-6 w-6 text-gray-300" />
+                            <User className="h-5 w-5 text-zinc-300" />
                           )}
                         </div>
                         <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-gray-900 truncate leading-tight">
+                          <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">
                             {childProfileData.pickupPeople[0].fullName || childProfileData.pickupPeople[0].name}
                           </h4>
-                          <p className="text-[10px] text-gray-500 mt-0.5 font-semibold">
+                          <p className="text-[10px] text-zinc-500 mt-0.5 font-medium">
                             {childProfileData.pickupPeople[0].relationship || 'Authorized Pickup'}
                           </p>
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                          <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
                             {childProfileData.pickupPeople[0].phone}
                           </p>
                         </div>
@@ -4877,62 +4935,62 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <div className="flex items-center space-x-1.5 shrink-0">
                           <a
                             href={`tel:${childProfileData.pickupPeople[0].phone}`}
-                            className="p-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-150 text-gray-600 rounded-xl transition-all shadow-xs"
+                            className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
                             title="Call pickup person"
                           >
-                            <Phone className="h-4 w-4" />
+                            <Phone className="h-3.5 w-3.5" />
                           </a>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-400 italic py-2 bg-gray-50/50 border border-gray-100 rounded-2xl text-center">
+                    <p className="text-xs text-zinc-400 italic py-2 bg-zinc-50/50 border border-zinc-100 rounded-xl text-center">
                       No pickup person has been added.
                     </p>
                   )}
                 </div>
 
                 {/* Event Details Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 space-y-4" data-component-version="volunteer-child-profile-event-details-v1-stitch">
-                  <h3 className="text-xs font-serif font-bold text-gray-950 uppercase tracking-wide">Event details</h3>
+                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-event-details-v2">
+                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Event details</h3>
                   
-                  <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase leading-none">Session</p>
-                      <h4 className="font-bold text-gray-800 mt-1">{childProfileData.event?.section || 'Children and Teens'}</h4>
+                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Session</p>
+                      <h4 className="font-semibold text-zinc-800 mt-1">{childProfileData.event?.section || 'Children & Teens'}</h4>
                     </div>
                     <div>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase leading-none">Event</p>
-                      <h4 className="font-bold text-gray-800 mt-1">{childProfileData.event?.name || 'The General Assembly'}</h4>
+                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Event</p>
+                      <h4 className="font-semibold text-zinc-800 mt-1">{childProfileData.event?.name || 'The General Assembly'}</h4>
                     </div>
-                    <div className="pt-2 border-t border-gray-50">
-                      <p className="text-[9px] text-gray-400 font-bold uppercase leading-none">Date</p>
-                      <h4 className="font-bold text-gray-800 mt-1">{childProfileData.event?.dateLabel || '18th to 22nd November 2026'}</h4>
+                    <div className="pt-2 border-t border-zinc-100">
+                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Date</p>
+                      <h4 className="font-semibold text-zinc-800 mt-1">{childProfileData.event?.dateLabel || '18–22 November 2026'}</h4>
                     </div>
-                    <div className="pt-2 border-t border-gray-50">
-                      <p className="text-[9px] text-gray-400 font-bold uppercase leading-none">Time</p>
-                      <h4 className="font-bold text-[#C59B27] mt-1 font-mono">{childProfileData.event?.timeLabel || '9:00 AM to 7:00 PM'}</h4>
+                    <div className="pt-2 border-t border-zinc-100">
+                      <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider leading-none">Time</p>
+                      <h4 className="font-semibold text-amber-700 mt-1 font-mono">{childProfileData.event?.timeLabel || '9:00 AM – 7:00 PM'}</h4>
                     </div>
                   </div>
                 </div>
 
                 {/* Today’s Activity Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 space-y-4" data-component-version="volunteer-child-profile-activity-v1-stitch">
-                  <h3 className="text-xs font-serif font-bold text-gray-950 uppercase tracking-wide">Today’s activity</h3>
+                <div className="bg-white border border-zinc-200/70 rounded-2xl p-4 space-y-3" data-component-version="volunteer-child-profile-activity-v2">
+                  <h3 className="text-xs font-serif font-bold text-zinc-900 uppercase tracking-wider">Today’s activity</h3>
                   
-                  <div className="relative pl-5 border-l border-gray-150 space-y-5 text-xs text-gray-600">
+                  <div className="relative pl-4 border-l border-zinc-200 space-y-4 text-xs text-zinc-600">
                     {/* Check-in Activity */}
                     <div className="relative">
-                      <span className="absolute -left-[25.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white shadow-xs"></span>
+                      <span className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-4 ring-white"></span>
                       <div className="space-y-0.5 text-left">
-                        <h4 className="font-bold text-gray-800">
+                        <h4 className="font-semibold text-zinc-800">
                           {childProfileData.todayActivity?.checkedInAt ? (
                             `Checked in at ${new Date(childProfileData.todayActivity.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                           ) : (
                             'Pending event check-in'
                           )}
                         </h4>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="text-[10px] text-zinc-400">
                           {childProfileData.todayActivity?.checkedInBy ? (
                             `By ${childProfileData.todayActivity.checkedInBy.fullName}`
                           ) : (
@@ -4944,16 +5002,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                     {/* Pickup Activity */}
                     <div className="relative">
-                      <span className={`absolute -left-[25.5px] top-1.5 w-2.5 h-2.5 rounded-full border border-white shadow-xs ${childProfileData.todayActivity?.pickedUpAt ? 'bg-amber-500' : 'bg-gray-200'}`}></span>
+                      <span className={`absolute -left-[21px] top-1.5 w-2 h-2 rounded-full ring-4 ring-white ${childProfileData.todayActivity?.pickedUpAt ? 'bg-amber-500' : 'bg-zinc-300'}`}></span>
                       <div className="space-y-0.5 text-left">
-                        <h4 className="font-bold text-gray-800">
+                        <h4 className="font-semibold text-zinc-800">
                           {childProfileData.todayActivity?.pickedUpAt ? (
                             `Picked up at ${new Date(childProfileData.todayActivity.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                           ) : (
                             'Pickup waiting'
                           )}
                         </h4>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="text-[10px] text-zinc-400">
                           {childProfileData.todayActivity?.pickedUpAt ? (
                             `Released by ${childProfileData.todayActivity.pickedUpBy?.fullName || 'Event Worker'} to ${childProfileData.todayActivity.pickupPerson?.fullName || 'Parent'}`
                           ) : (
@@ -4969,33 +5027,45 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             )
           ) : (
             /* ==================== DIRECTORY VIEW ==================== */
-            <div className="space-y-6 max-w-md mx-auto" data-view-version="volunteer-children-v1-stitch">
+            <div className="space-y-4 max-w-md mx-auto" data-view-version="volunteer-children-v2-refined">
               
               {/* Search Field */}
-              <div className="relative" data-component-version="volunteer-children-search-v1-stitch">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <form onSubmit={(e) => { e.preventDefault(); fetchChildrenDirectory(); }} className="w-full">
+              <div className="relative" data-component-version="volunteer-children-search-v2-refined">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                <form 
+                  onSubmit={(e) => { 
+                    e.preventDefault(); 
+                    setDirectoryPage(1);
+                    fetchChildrenDirectory(1, activeDirectoryFilter, searchQuery); 
+                  }} 
+                  className="w-full"
+                >
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Find child by name or parent phone"
-                    className="w-full bg-[#F5F4F0] border-none rounded-2xl pl-12 pr-10 py-4 text-sm font-medium outline-none text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-[#C59B27] transition-all"
+                    placeholder="Find child by name or parent phone..."
+                    className="w-full bg-white border border-zinc-200/80 rounded-xl pl-10 pr-9 py-2.5 text-xs font-medium text-zinc-900 placeholder:text-zinc-400 shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500/15 focus:border-amber-600/50 transition-all"
                   />
                   {searchQuery && (
                     <button
                       type="button"
-                      onClick={() => { setSearchQuery(''); setTimeout(fetchChildrenDirectory, 0); }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
+                      onClick={() => { 
+                        setSearchQuery(''); 
+                        setDirectoryPage(1);
+                        fetchChildrenDirectory(1, activeDirectoryFilter, ''); 
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 rounded-md hover:bg-zinc-100 transition-colors"
+                      title="Clear search"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </form>
               </div>
 
               {/* Filter Chips */}
-              <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1" data-component-version="volunteer-children-filters-v1-stitch">
+              <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5" data-component-version="volunteer-children-filters-v2-refined">
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'inside', label: 'Inside' },
@@ -5007,10 +5077,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       key={chip.id}
                       onClick={() => setActiveDirectoryFilter(chip.id)}
-                      className={`px-5 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-250 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
                         isActive 
-                          ? 'bg-[#C59B27] text-white shadow-xs' 
-                          : 'bg-white border border-[#EAE8E1] text-gray-500 hover:bg-gray-50'
+                          ? 'bg-zinc-900 text-white shadow-xs' 
+                          : 'bg-white border border-zinc-200/80 text-zinc-600 hover:bg-zinc-50'
                       }`}
                     >
                       {chip.label}
@@ -5020,37 +5090,37 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Metrics Strip */}
-              <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-3xl p-5" data-component-version="volunteer-children-metrics-v1-stitch">
+              <div className="bg-white border border-zinc-200/70 rounded-2xl p-3.5 shadow-xs" data-component-version="volunteer-children-metrics-v2-refined">
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div className="flex flex-col justify-between">
-                    <span className="text-lg font-serif font-bold text-gray-950 leading-none">
+                    <span className="text-base font-serif font-bold text-zinc-900 leading-none">
                       {stats.expected || 0}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-medium mt-1.5 uppercase tracking-wide">
+                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
                       Expected
                     </span>
                   </div>
-                  <div className="flex flex-col justify-between border-l border-gray-150">
-                    <span className="text-lg font-serif font-bold text-[#2A7545] leading-none">
+                  <div className="flex flex-col justify-between border-l border-zinc-100">
+                    <span className="text-base font-serif font-bold text-emerald-700 leading-none">
                       {stats.checkedIn || 0}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-medium mt-1.5 uppercase tracking-wide">
+                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
                       Inside
                     </span>
                   </div>
-                  <div className="flex flex-col justify-between border-l border-gray-150">
-                    <span className="text-lg font-serif font-bold text-gray-600 leading-none">
+                  <div className="flex flex-col justify-between border-l border-zinc-100">
+                    <span className="text-base font-serif font-bold text-zinc-600 leading-none">
                       {stats.pickedUp || 0}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-medium mt-1.5 uppercase tracking-wide">
+                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
                       Picked Up
                     </span>
                   </div>
-                  <div className="flex flex-col justify-between border-l border-gray-150">
-                    <span className="text-lg font-serif font-bold text-[#C59B27] leading-none">
+                  <div className="flex flex-col justify-between border-l border-zinc-100">
+                    <span className="text-base font-serif font-bold text-amber-700 leading-none">
                       {stats.attention || 0}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-medium mt-1.5 uppercase tracking-wide">
+                    <span className="text-[10px] text-zinc-400 font-medium mt-1.5 uppercase tracking-wider">
                       Attention
                     </span>
                   </div>
@@ -5058,12 +5128,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Child List Cards */}
-              <div className="space-y-3.5" data-component-version="volunteer-children-list-v1-stitch">
+              <div className="space-y-2.5" data-component-version="volunteer-children-list-v2-refined">
                 {searching ? (
                   <ListSkeleton items={4} />
                 ) : directoryError ? (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-10 text-center text-red-500">
-                    <p className="text-xs font-semibold">We could not load children right now. Please try again.</p>
+                  <div className="bg-white border border-zinc-200/80 rounded-2xl p-8 text-center text-rose-600">
+                    <p className="text-xs font-medium">We could not load children right now. Please check connection and try again.</p>
                   </div>
                 ) : directoryChildren.length > 0 ? (
                   directoryChildren.map((child) => {
@@ -5071,42 +5141,41 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     const isPickedUp = child.entryStatus === 'picked_up' || child.entryStatus === 'checked_out';
                     const isAttention = child.hasMedicalNotes || child.needsExtraSupport || child.entryStatus === 'under_review';
                     
-                    // Determine status details
                     let statusLabel = 'Not arrived';
-                    let badgeClass = 'bg-gray-100 text-gray-500 border border-gray-250';
-                    let sideStripeClass = 'border-r-4 border-r-gray-300';
+                    let statusBadgeClass = 'bg-zinc-100 text-zinc-600 border border-zinc-200/60';
+                    let statusDotClass = 'bg-zinc-400';
                     
                     if (isInside) {
                       statusLabel = 'Inside';
-                      badgeClass = 'bg-emerald-50 text-[#2A7545] border border-emerald-100/50';
-                      sideStripeClass = 'border-r-4 border-r-emerald-500';
+                      statusBadgeClass = 'bg-emerald-50 text-emerald-800 border border-emerald-200/60';
+                      statusDotClass = 'bg-emerald-500';
                     } else if (isPickedUp) {
                       statusLabel = 'Picked up';
-                      badgeClass = 'bg-[#F2F1EC] text-gray-500 border border-[#E4E2DC]';
-                      sideStripeClass = 'border-r-4 border-r-gray-200';
+                      statusBadgeClass = 'bg-zinc-100 text-zinc-700 border border-zinc-200/60';
+                      statusDotClass = 'bg-zinc-400';
                     } else if (isAttention) {
                       statusLabel = 'Needs attention';
-                      badgeClass = 'bg-orange-50 text-orange-700 border border-orange-100';
-                      sideStripeClass = 'border-r-4 border-r-orange-400';
+                      statusBadgeClass = 'bg-rose-50 text-rose-800 border border-rose-200/60';
+                      statusDotClass = 'bg-rose-500';
                     } else {
                       statusLabel = 'Not arrived';
-                      badgeClass = 'bg-gray-50 text-gray-400 border border-gray-150';
-                      sideStripeClass = 'border-r-4 border-r-amber-300';
+                      statusBadgeClass = 'bg-zinc-50 text-zinc-500 border border-zinc-200/50';
+                      statusDotClass = 'bg-zinc-300';
                     }
 
                     // Format age details if present
-                    const ageText = child.age !== undefined && child.age !== null ? (child.age === 0 ? 'Under 1 year old' : `${child.age} ${child.age === 1 ? 'year' : 'years'} old`) : 'Age unknown';
+                    const ageText = child.age !== undefined && child.age !== null ? (child.age === 0 ? 'Under 1 yr' : `${child.age} yrs`) : 'Age unknown';
                     const ageGroupText = child.ageGroup ? ` • ${child.ageGroup}` : '';
 
                     return (
                       <div
                         key={child.childId}
                         onClick={() => setSelectedChildId(child.childId)}
-                        className={`bg-white border border-[#EAE8E1] hover:border-[#C59B27]/40 rounded-3xl p-4 flex items-center justify-between transition-all duration-200 cursor-pointer shadow-xs active:scale-[0.99] group overflow-hidden ${sideStripeClass}`}
+                        className="bg-white border border-zinc-200/80 hover:border-amber-600/40 rounded-2xl p-3.5 flex items-center justify-between transition-all duration-150 cursor-pointer shadow-xs active:scale-[0.99] group"
                       >
                         {/* Left Side: Photo & Identity */}
-                        <div className="flex items-center space-x-3.5 min-w-0 flex-1 pr-3">
-                          <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
+                        <div className="flex items-center space-x-3 min-w-0 flex-1 pr-2">
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-200/60 shrink-0 flex items-center justify-center">
                             {child.photoUrl ? (
                               <img
                                 src={child.photoUrl}
@@ -5115,52 +5184,103 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <div className="w-full h-full bg-gray-50 flex items-center justify-center">
-                                <User className="h-6 w-6 text-gray-300" />
-                              </div>
+                              <User className="h-5 w-5 text-zinc-300" />
                             )}
                           </div>
 
                           <div className="min-w-0 flex-1 space-y-0.5">
                             <div className="flex items-center space-x-2">
-                              <h3 className="text-sm font-serif font-bold text-gray-900 truncate leading-tight group-hover:text-[#C59B27] transition-colors">
+                              <h3 className="text-sm font-serif font-bold text-zinc-900 truncate leading-tight group-hover:text-amber-800 transition-colors">
                                 {child.childName}
                               </h3>
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${badgeClass}`}>
-                                {statusLabel}
+                              <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${statusBadgeClass}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`}></span>
+                                <span>{statusLabel}</span>
                               </span>
                             </div>
-                            <p className="text-[11px] text-gray-400 font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
+                            <p className="text-[11px] text-zinc-500 font-medium">
                               {ageText}{ageGroupText}
                             </p>
-                            <p className="text-[11px] text-gray-500 font-medium leading-tight truncate">
+                            <p className="text-[11px] text-zinc-400 truncate">
                               {child.parentPhone ? `Phone: ${child.parentPhone}` : `Parent: ${child.parentName || 'Guardian'}`}
                             </p>
                             {child.hasMedicalNotes && (
-                              <p className="text-[11px] font-semibold text-orange-600 leading-tight pt-0.5">
-                                Medical note attached
-                              </p>
+                              <div className="flex items-center space-x-1 pt-0.5 text-rose-700">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                <span className="text-[11px] font-medium leading-tight">Medical note attached</span>
+                              </div>
                             )}
                           </div>
                         </div>
 
                         {/* Right Side Arrow */}
-                        <ChevronRight className="h-4.5 w-4.5 text-gray-300 group-hover:text-[#C59B27] transition-colors shrink-0" />
+                        <ChevronRight className="h-4 w-4 text-zinc-300 group-hover:text-amber-700 transition-colors shrink-0" />
                       </div>
                     );
                   })
                 ) : (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-10 text-center text-gray-400">
-                    <User className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                    <p className="text-xs font-semibold">No child matched your search.</p>
+                  <div className="bg-white border border-zinc-200/80 rounded-2xl p-8 text-center text-zinc-400">
+                    <User className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
+                    <p className="text-xs font-medium text-zinc-600">No child matches your search.</p>
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setDirectoryPage(1);
+                          fetchChildrenDirectory(1, activeDirectoryFilter, '');
+                        }}
+                        className="mt-2 text-xs font-medium text-amber-700 hover:text-amber-800 underline cursor-pointer"
+                      >
+                        Clear search
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
 
+              {/* Pagination controls */}
+              {directoryPagination.totalPages > 1 && (
+                <div className="flex items-center justify-between pt-1 px-1 text-xs text-zinc-500" data-component-version="volunteer-children-pagination-v1">
+                  <span>
+                    Page {directoryPagination.page} of {directoryPagination.totalPages}
+                    <span className="text-zinc-400 ml-1">({directoryPagination.total} children)</span>
+                  </span>
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      disabled={!directoryPagination.hasPrevious}
+                      onClick={() => {
+                        const prev = directoryPagination.page - 1;
+                        setDirectoryPage(prev);
+                        fetchChildrenDirectory(prev, activeDirectoryFilter, searchQuery);
+                      }}
+                      className="px-2.5 py-1 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      <span>Prev</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!directoryPagination.hasNext}
+                      onClick={() => {
+                        const next = directoryPagination.page + 1;
+                        setDirectoryPage(next);
+                        fetchChildrenDirectory(next, activeDirectoryFilter, searchQuery);
+                      }}
+                      className="px-2.5 py-1 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Helper Note */}
-              <div className="text-center pt-2 pb-6" data-component-version="volunteer-children-helper-v1-stitch">
-                <p className="text-xs italic text-gray-400 font-medium">
-                  Use search if a parent cannot open the pass.
+              <div className="text-center pt-2 pb-6" data-component-version="volunteer-children-helper-v2-refined">
+                <p className="text-xs text-zinc-400 font-normal">
+                  Use search if a parent cannot open the child pass.
                 </p>
               </div>
 

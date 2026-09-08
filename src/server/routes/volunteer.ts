@@ -3109,69 +3109,102 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
     }
 
     const status = (req.query.status || 'all').toString().toLowerCase();
-    const q = (req.query.q || '').toString().trim();
-    const limit = parseInt((req.query.limit || '50').toString(), 10) || 50;
+    const q = (req.query.q || req.query.search || '').toString().trim();
+    const ageGroup = (req.query.ageGroup || req.query.age_group || '').toString().trim();
+    const page = Math.max(1, parseInt((req.query.page || '1').toString(), 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit || '25').toString(), 10) || 25));
+    const offset = (page - 1) * limit;
 
-    let sql = `
+    let whereClause = ' WHERE 1=1';
+    const whereParams: any[] = [REAL_EVENT_ID];
+
+    if (q) {
+      whereClause += ` AND (c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ?)`;
+      const likeParam = `%${q}%`;
+      whereParams.push(likeParam, likeParam, likeParam);
+    }
+
+    if (status === 'inside') {
+      whereClause += ` AND e.status IN ('checked_in', 'inside')`;
+    } else if (status === 'picked_up') {
+      whereClause += ` AND e.status IN ('picked_up', 'checked_out')`;
+    } else if (status === 'not_arrived') {
+      whereClause += ` AND (e.status IS NULL OR e.status NOT IN ('checked_in', 'inside', 'picked_up', 'checked_out'))`;
+    } else if (status === 'attention') {
+      whereClause += ` AND (e.needs_extra_support = 1 OR e.has_medical_notes = 1 OR e.status = 'under_review')`;
+    }
+
+    if (ageGroup && ageGroup.toLowerCase() !== 'all') {
+      whereClause += ` AND LOWER(c.age_group) = LOWER(?)`;
+      whereParams.push(ageGroup);
+    }
+
+    // 1. Total matching count query for pagination
+    const countSql = `
+      SELECT COUNT(DISTINCT c.id) as total
+      FROM children c
+      JOIN parent_profiles p ON c.parent_profile_id = p.id
+      LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
+      ${whereClause.replace(' WHERE 1=1', ' WHERE 1=1')}
+    `;
+    const countRow = await queryOne(countSql, whereParams);
+    const total = parseInt(countRow?.total || '0', 10);
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    // 2. Paginated rows query
+    const dataSql = `
       SELECT c.id as child_id, c.full_name as child_name, c.date_of_birth, c.gender, c.calculated_age, c.age_group, c.photo_file_id as child_photo_id,
              p.full_name as parent_name, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
              e.id as entry_id, e.status as entry_status, e.school_class, e.school_name, e.has_medical_notes, e.medical_notes, e.needs_extra_support, e.support_notes
       FROM children c
       JOIN parent_profiles p ON c.parent_profile_id = p.id
       LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
-      WHERE 1=1
+      ${whereClause.replace(' WHERE 1=1', ' WHERE 1=1')}
+      ORDER BY c.full_name ASC
+      LIMIT ? OFFSET ?
     `;
-    const params: any[] = [REAL_EVENT_ID];
+    const dataParams = [...whereParams, limit, offset];
+    const rows = await query(dataSql, dataParams);
 
-    if (q) {
-      sql += ` AND (c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ?)`;
-      const likeParam = `%${q}%`;
-      params.push(likeParam, likeParam, likeParam);
-    }
+    // 3. Batch fetch pickup people and event passes for the current page slice to avoid N+1 queries
+    const entryIds = rows.map((r: any) => r.entry_id).filter(Boolean);
+    const pickupMap = new Map<string, any>();
+    const passMap = new Map<string, string>();
 
-    if (status === 'inside') {
-      sql += ` AND e.status IN ('checked_in', 'inside')`;
-    } else if (status === 'picked_up') {
-      sql += ` AND e.status IN ('picked_up', 'checked_out')`;
-    } else if (status === 'not_arrived') {
-      sql += ` AND (e.status IS NULL OR e.status NOT IN ('checked_in', 'inside', 'picked_up', 'checked_out'))`;
-    } else if (status === 'attention') {
-      sql += ` AND (e.needs_extra_support = 1 OR e.has_medical_notes = 1 OR e.status = 'under_review')`;
-    }
-
-    sql += ` ORDER BY c.full_name ASC LIMIT ?`;
-    params.push(limit);
-
-    const rows = await query(sql, params);
-
-    const results = [];
-    for (const r of rows) {
-      const childPhotoUrl = await resolvePhotoUrl(r.child_photo_id);
-      
-      let pickup = null;
-      if (r.entry_id) {
-        const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [r.entry_id]);
-        if (pickupRow) {
+    if (entryIds.length > 0) {
+      const placeholders = entryIds.map(() => '?').join(',');
+      const pickupRows = await query(
+        `SELECT * FROM pickup_people WHERE child_event_entry_id IN (${placeholders})`,
+        entryIds
+      );
+      for (const pickupRow of pickupRows) {
+        if (!pickupMap.has(pickupRow.child_event_entry_id)) {
           const pickupPhotoUrl = await resolvePhotoUrl(pickupRow.photo_file_id);
-          pickup = {
+          pickupMap.set(pickupRow.child_event_entry_id, {
             id: pickupRow.id,
             fullName: pickupRow.full_name,
             relationship: pickupRow.relationship_to_child,
             phone: pickupRow.phone_number,
             whatsapp: pickupRow.whatsapp_number,
             photoUrl: pickupPhotoUrl
-          };
+          });
         }
       }
 
-      // Get associated pass reference
-      let passReference = null;
-      if (r.entry_id) {
-        const passRow = await queryOne('SELECT pass_reference FROM event_passes WHERE child_event_entry_id = ?', [r.entry_id]);
-        if (passRow) {
-          passReference = passRow.pass_reference;
-        }
+      const passRows = await query(
+        `SELECT child_event_entry_id, pass_reference FROM event_passes WHERE child_event_entry_id IN (${placeholders})`,
+        entryIds
+      );
+      for (const passRow of passRows) {
+        passMap.set(passRow.child_event_entry_id, passRow.pass_reference);
       }
+    }
+
+    const results = [];
+    for (const r of rows) {
+      const childPhotoUrl = await resolvePhotoUrl(r.child_photo_id);
+      const pickup = r.entry_id ? (pickupMap.get(r.entry_id) || null) : null;
+      const passReference = r.entry_id ? (passMap.get(r.entry_id) || null) : null;
 
       results.push({
         childId: r.child_id,
@@ -3195,7 +3228,17 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
       });
     }
 
-    res.json(results);
+    res.json({
+      items: results,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1
+      }
+    });
   } catch (err) {
     console.error('Fetch children error:', err);
     res.status(500).json({ error: 'Internal server error fetching children list' });
