@@ -19,7 +19,16 @@ export function getDb() {
   if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
     isPostgres = true;
     try {
-      pgPool = new Pool({ connectionString: dbUrl });
+      pgPool = new Pool({
+        connectionString: dbUrl,
+        ssl: (dbUrl.includes('neon.tech') || dbUrl.includes('sslmode')) ? { rejectUnauthorized: false } : undefined,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000
+      });
+      pgPool.on('error', (err: any) => {
+        console.error('[pgPool] Unexpected error on idle client:', err?.message || err);
+      });
       if (process.env.SKIP_DB_SCHEMA_INIT !== 'true') {
         pgInitPromise = initPostgresSchema(pgPool).catch((e) => {
           console.error('Error during initPostgresSchema:', e);
@@ -93,8 +102,17 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<T
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
     const pgSql = convertPlaceholders(sql);
-    const res = await pgPool.query(pgSql, params);
-    return res.rows;
+    try {
+      const res = await pgPool.query(pgSql, params);
+      return res.rows;
+    } catch (err: any) {
+      if (err?.message?.includes('Connection terminated') || err?.message?.includes('connection closed')) {
+        console.warn('[db.query] Transient connection termination, retrying once...');
+        const retryRes = await pgPool.query(pgSql, params);
+        return retryRes.rows;
+      }
+      throw err;
+    }
   } else if (sqliteDb) {
     const stmt = sqliteDb.prepare(sql);
     return stmt.all(...params) as T[];
@@ -112,8 +130,17 @@ export async function execute(sql: string, params: any[] = []): Promise<{ change
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
     const pgSql = convertPlaceholders(sql);
-    const res = await pgPool.query(pgSql, params);
-    return { changes: res.rowCount || 0 };
+    try {
+      const res = await pgPool.query(pgSql, params);
+      return { changes: res.rowCount || 0 };
+    } catch (err: any) {
+      if (err?.message?.includes('Connection terminated') || err?.message?.includes('connection closed')) {
+        console.warn('[db.execute] Transient connection termination, retrying once...');
+        const retryRes = await pgPool.query(pgSql, params);
+        return { changes: retryRes.rowCount || 0 };
+      }
+      throw err;
+    }
   } else if (sqliteDb) {
     const stmt = sqliteDb.prepare(sql);
     const info = stmt.run(...params);

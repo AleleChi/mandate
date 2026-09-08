@@ -45,7 +45,12 @@ export function buildChildSafetyIncidentReport(
 
   const sections: ReportSection[] = [];
 
-  if (selectedSections.length === 0 || selectedSections.includes('Executive Summary') || selectedSections.includes('Safety overview')) {
+  if (selectedSections.length === 0 || 
+      selectedSections.includes('Executive Summary') || 
+      selectedSections.includes('Executive summary') ||
+      selectedSections.includes('Safety overview') ||
+      selectedSections.includes('Care & safety') ||
+      selectedSections.includes('Care & safety summary')) {
     const timingText = medianAck !== null && medianAck !== undefined
       ? `Recorded alert acknowledgment latency averaged a median of ${medianAck.toFixed(1)} seconds.`
       : 'Alert response timing was not recorded or no alerts were triggered.';

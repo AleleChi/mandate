@@ -670,7 +670,7 @@ export async function compileReportSnapshot(
         eda.temporarily_unavailable_at,
         eda.expected_return_at,
         eda.note,
-        COALESCE(eda.location_id, eda.assigned_location_id) as location_id,
+        eda.assigned_location_id as location_id,
         vp.id as volunteer_profile_id,
         vp.full_name as volunteer_name,
         vp.status as volunteer_status,

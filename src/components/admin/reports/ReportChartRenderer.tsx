@@ -38,7 +38,10 @@ const getCohortColor = (label: string, fallbackColor: string): string => {
 export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart }) => {
   const { kind, title, subtitle, labels, series, caption, accessibleSummary, emptyState } = chart;
 
-  if (!labels || labels.length === 0 || !series || series.length === 0) {
+  const allValues = (series || []).flatMap(s => s.values || []);
+  const hasValues = allValues.length > 0 && allValues.some(v => typeof v === 'number' && v > 0);
+
+  if (!labels || labels.length === 0 || !series || series.length === 0 || !hasValues) {
     return (
       <div className="bg-[#FAF9F6] border border-stone-200/80 rounded-xl p-6 text-center text-xs text-stone-500 my-4">
         <p className="font-medium text-stone-700 mb-1">{title}</p>

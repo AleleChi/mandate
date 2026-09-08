@@ -57,7 +57,9 @@ export function buildVolunteerTeamReport(
   const execIncluded = selectedSections.length === 0 || 
     selectedSections.includes('Executive Summary') || 
     selectedSections.includes('Executive summary') ||
-    selectedSections.includes('Volunteer summary');
+    selectedSections.includes('Volunteer summary') ||
+    selectedSections.includes('Volunteer coverage') ||
+    selectedSections.includes('Volunteer & team coverage');
 
   if (execIncluded) {
     const ratioSummary = vol.ratioText !== 'Not available' 

@@ -742,27 +742,38 @@ function drawChartSpec(
   height: number,
   chart: ReportChartSpec
 ) {
-  // Title text (Plus Jakarta Sans equivalent: Helvetica Bold)
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(39, 39, 42);
-  doc.text(chart.title.toUpperCase(), x, y - 2);
+  try {
+    // Title text (Plus Jakarta Sans equivalent: Helvetica Bold)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(39, 39, 42);
+    doc.text((chart.title || 'Chart').toUpperCase(), x, y - 2);
 
-  if (chart.kind === 'line' || chart.kind === 'timeline') {
-    drawLineChartSpec(doc, x, y, width, height, chart);
-  } else if (chart.kind === 'horizontalBar' || chart.kind === 'progress') {
-    drawHorizontalBarChartSpec(doc, x, y, width, height, chart);
-  } else if (chart.kind === 'donut') {
-    drawDonutChartSpec(doc, x, y, width, height, chart);
-  } else {
-    drawBarChartSpec(doc, x, y, width, height, chart);
-  }
+    if (chart.kind === 'line' || chart.kind === 'timeline') {
+      drawLineChartSpec(doc, x, y, width, height, chart);
+    } else if (chart.kind === 'horizontalBar' || chart.kind === 'progress') {
+      drawHorizontalBarChartSpec(doc, x, y, width, height, chart);
+    } else if (chart.kind === 'donut') {
+      drawDonutChartSpec(doc, x, y, width, height, chart);
+    } else {
+      drawBarChartSpec(doc, x, y, width, height, chart);
+    }
 
-  if (chart.caption) {
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
+    if (chart.caption) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(113, 113, 122);
+      doc.text(chart.caption, x, y + height + 6);
+    }
+  } catch (chartErr) {
+    console.error(`[PDF Renderer] Failed to draw chart "${chart.id || chart.title}":`, chartErr);
+    doc.setDrawColor(228, 228, 231);
+    doc.setFillColor(250, 250, 249);
+    doc.roundedRect(x, y, width, height, 2, 2, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
     doc.setTextColor(113, 113, 122);
-    doc.text(chart.caption, x, y + height + 6);
+    doc.text(chart.emptyState || 'No visualization data available for this metric.', x + 8, y + height / 2);
   }
 }
 

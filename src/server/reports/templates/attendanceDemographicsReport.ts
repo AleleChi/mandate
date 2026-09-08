@@ -73,7 +73,8 @@ export function buildAttendanceDemographicsReport(
   const summaryIncluded = selectedSections.length === 0 ||
     selectedSections.includes('Executive Summary') ||
     selectedSections.includes('Leadership overview') ||
-    selectedSections.includes('Executive summary');
+    selectedSections.includes('Executive summary') ||
+    selectedSections.includes('Attendance & movement');
 
   if (summaryIncluded) {
     const arrivalNarrative = analytics.attendance.peakCheckInHour && analytics.attendance.peakCheckInHour !== 'Information not available'
@@ -95,7 +96,9 @@ export function buildAttendanceDemographicsReport(
   const demographicsIncluded = selectedSections.length === 0 ||
     selectedSections.includes('Operational Metrics') ||
     selectedSections.includes('Cohort age distribution and attendance') ||
-    selectedSections.includes('Age groups');
+    selectedSections.includes('Age groups') ||
+    selectedSections.includes('Attendance & movement') ||
+    selectedSections.includes('Participation profile');
 
   if (demographicsIncluded) {
     const cohortDisplayMap: { [key: string]: string } = {

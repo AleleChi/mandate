@@ -147,7 +147,16 @@ async function formatReportJob(job: any) {
   let errorMessage: string | null = null;
   if (job.error_code || job.error_message) {
     const rawErr = String(job.error_code || job.error_message);
-    if (rawErr.toLowerCase().includes('sql') || rawErr.toLowerCase().includes('database') || rawErr.includes('/')) {
+    const isSensitive = 
+      rawErr.toLowerCase().includes('sql') || 
+      rawErr.toLowerCase().includes('database') || 
+      rawErr.toLowerCase().includes('column') || 
+      rawErr.toLowerCase().includes('relation') || 
+      rawErr.toLowerCase().includes('table') || 
+      rawErr.toLowerCase().includes('syntax') || 
+      rawErr.includes('/') || 
+      rawErr.includes('\\');
+    if (isSensitive) {
       errorMessage = 'Report compilation encountered an issue. Please try again.';
     } else {
       errorMessage = rawErr;
@@ -698,10 +707,20 @@ router.post('/:reportId/regenerate', async (req: AuthenticatedRequest, res: Resp
     }
 
     const now = new Date().toISOString();
-    await execute(`
-      UPDATE report_jobs SET status = 'queued', started_at = NULL, completed_at = NULL, attempt_count = 0, error_code = NULL, updated_at = ?
-      WHERE id = ?
-    `, [now, req.params.reportId]);
+    const shouldClearSnapshot = existingJob.status === 'failed';
+    if (shouldClearSnapshot) {
+      await execute(`
+        UPDATE report_jobs 
+        SET status = 'queued', snapshot_id = NULL, started_at = NULL, completed_at = NULL, attempt_count = 0, error_code = NULL, updated_at = ?
+        WHERE id = ?
+      `, [now, req.params.reportId]);
+    } else {
+      await execute(`
+        UPDATE report_jobs 
+        SET status = 'queued', started_at = NULL, completed_at = NULL, attempt_count = 0, error_code = NULL, updated_at = ?
+        WHERE id = ?
+      `, [now, req.params.reportId]);
+    }
 
     await execute(`
       INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
