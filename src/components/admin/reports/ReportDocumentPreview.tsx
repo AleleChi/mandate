@@ -20,7 +20,7 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
   return (
     <div className="max-w-[840px] mx-auto bg-white text-stone-900 font-sans shadow-md border border-stone-200 rounded-xl p-8 sm:p-12 space-y-8 my-4 print:shadow-none print:border-none print:p-0">
       {/* Cover/Document Header (Priority 5: Restrained clean hierarchy) */}
-      <div className="border-b-2 border-[#C59B27] pb-6 space-y-3">
+      <div className="border-b border-[#C59B27]/40 pb-6 space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1 flex-1">
             <div className="space-y-0.5">

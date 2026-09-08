@@ -6,6 +6,7 @@ const colors = {
   gold: [197, 155, 39],       // #C59B27
   deepGold: [140, 109, 35],   // #8C6D23
   brass: [163, 125, 30],      // #A37D1E
+  softGold: [214, 188, 118],  // #D6BC76 - refined, softer faded Koinonia gold for quiet dividers
   emerald: [22, 131, 93],     // #16835D
   green: [22, 131, 93],       // Alias for emerald
   amber: [208, 138, 29],      // #D08A1D
@@ -76,11 +77,6 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFillColor(colors.lightIvory[0], colors.lightIvory[1], colors.lightIvory[2]);
   doc.rect(0, 0, 210, 297, 'F');
 
-  // Refined Subtle Gold Line Accent
-  doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.setLineWidth(0.75);
-  doc.line(marginX, 25, marginX + contentWidth, 25);
-
   // Koinonia Branding Header (Top Right Logo with Bounded Natural Aspect Ratio)
   let logoWidth = 30;
   let logoHeight = 12;
@@ -137,7 +133,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   // Left Title Header
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
   doc.setFont('times', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(14.5);
   doc.text('KOINONIA CHILDREN & TEENS', marginX, 14);
 
   doc.setFont('helvetica', 'normal');
@@ -145,24 +141,33 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
   doc.text('Official Event Report', marginX, 18.5);
 
-  // Report Title
-  currentY = 27;
+  // Report Title (with generous, uncluttered breathing room below organisation branding)
+  currentY = 28.5;
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
   doc.setFont('times', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(14.5);
   const titleText = model.reportTitle.toUpperCase();
   const titleLines = doc.splitTextToSize(titleText, contentWidth);
   doc.text(titleLines, marginX, currentY);
-  currentY += titleLines.length * 6 + 1.5;
+  currentY += titleLines.length * 5.8;
 
+  // Short Report Description / Intro Area
   if (model.reportDescription) {
+    currentY += 2.5;
     doc.setFont('times', 'italic');
     doc.setFontSize(8.5);
     doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
     const descLines = doc.splitTextToSize(model.reportDescription, contentWidth);
     doc.text(descLines, marginX, currentY);
-    currentY += descLines.length * 3.8 + 2;
+    currentY += descLines.length * 4.0;
   }
+
+  // Refined Horizontal Divider: thin, soft/faded Koinonia gold tone, positioned cleanly BELOW the title & subtitle
+  currentY += 4.0;
+  doc.setDrawColor(colors.softGold[0], colors.softGold[1], colors.softGold[2]);
+  doc.setLineWidth(0.28);
+  doc.line(marginX, currentY, marginX + contentWidth, currentY);
+  currentY += 4.5;
 
   // Section A: Metadata Box (Event name, Event date, Generated date/time, Data cutoff)
   doc.setLineWidth(0.22);
