@@ -5500,254 +5500,208 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       )}
 
       {cleanRoute === '/volunteer/reports' && (
-        /* ==================== 4. EVENT REPORTS VIEW ==================== */
-        <div data-view-version="volunteer-reports-v3-stitch-layout-fixed" className="max-w-md mx-auto w-full space-y-6 pb-20 px-4 animate-fade-in">
+        /* ==================== 4. EVENT SUMMARY VIEW ==================== */
+        <div data-view-version="volunteer-summary-refined-v4" className="max-w-md mx-auto w-full space-y-5 pb-24 px-4 animate-fade-in">
           {/* Main title & Subtitle */}
-          <div className="space-y-1">
-            <h2 className="text-3xl font-extrabold text-neutral-900 tracking-tight font-serif">Reports</h2>
-            <p className="text-xs text-gray-500 font-medium">The General Assembly Children and Teens</p>
+          <div className="space-y-0.5">
+            <h1 className="text-2xl font-serif font-bold text-zinc-900 tracking-tight">Summary</h1>
+            <p className="text-xs font-sans text-zinc-500">The General Assembly Children and Teens</p>
           </div>
 
           {reportsLoading && !reportsData ? (
-            <ModuleLoadingState title="Preparing report data..." />
+            <ModuleLoadingState title="Preparing summary..." />
           ) : (
             <>
-              {/* Today Summary Grid */}
               {(() => {
                 const medicalPendingCount = reportsData?.needsAttention?.filter((item: any) => item.issueType === 'Medical alert' || item.issueType === 'Medical note pending')?.length || 0;
                 const missingPhotoCount = reportsData?.needsAttention?.filter((item: any) => item.issueType === 'Missing pickup photo')?.length || 0;
                 const manualReviewCount = reportsData?.needsAttention?.filter((item: any) => item.issueType === 'Needs age group review' || item.issueType === 'Manual review required')?.length || 0;
-                const totalAttention = medicalPendingCount + missingPhotoCount + manualReviewCount;
+                const totalAttention = reportsData?.needsAttention?.length || (medicalPendingCount + missingPhotoCount + manualReviewCount);
 
                 return (
-                  <div className="space-y-6">
+                  <div className="space-y-5">
                     {/* Today Stats */}
-                    <div data-component-version="volunteer-reports-today-v3-stitch-layout-fixed" className="space-y-4">
-                      <h3 className="text-xl font-bold text-neutral-900 font-serif">Today</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* Expected Card */}
-                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs flex flex-col justify-between h-28">
-                          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Expected</span>
-                          <span className="text-4xl font-bold font-serif text-neutral-900 leading-none">
-                            {stats.expected || 0}
-                          </span>
-                        </div>
-                        
-                        {/* Checked In Card */}
-                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs flex flex-col justify-between h-28">
-                          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Checked in</span>
-                          <span className="text-4xl font-bold font-serif text-neutral-900 leading-none">
-                            {stats.checkedIn || 0}
-                          </span>
-                        </div>
-                        
-                        {/* Picked Up Card */}
-                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs flex flex-col justify-between h-28">
-                          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Picked up</span>
-                          <span className="text-4xl font-bold font-serif text-neutral-900 leading-none">
-                            {stats.pickedUp || 0}
-                          </span>
-                        </div>
-                        
-                        {/* Inside Card with Warm Gold Accent */}
-                        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-5 shadow-xs flex flex-col justify-between h-28">
-                          <span className="text-[11px] font-bold text-[#C59B27] uppercase tracking-wider block">Inside</span>
-                          <span className="text-4xl font-bold font-serif text-[#C59B27] leading-none">
-                            {Math.max(0, (stats.checkedIn || 0) - (stats.pickedUp || 0))}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Needs Attention Card */}
-                    <div data-component-version="volunteer-reports-attention-v3-stitch-layout-fixed" className="space-y-4">
-                      <div className="flex items-center space-x-2">
-                        <h3 className="text-xl font-bold text-neutral-900 font-serif">Needs attention</h3>
-                        {totalAttention > 0 && (
-                          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F97316] px-1.5 text-[11px] font-bold text-white leading-none">
-                            {totalAttention}
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs">
-                        {totalAttention > 0 ? (
-                          <div className="space-y-4">
-                            {medicalPendingCount > 0 && (
-                              <div className="flex items-center justify-between py-1 border-b border-[#F4F3EF] last:border-0 last:pb-0 first:pt-0">
-                                <div className="flex items-center space-x-3 text-gray-700">
-                                  <Heart className="h-4 w-4 text-[#C59B27]" />
-                                  <span className="text-xs font-medium">Medical note pending</span>
-                                </div>
-                                <span className="text-xs font-bold text-gray-500">({medicalPendingCount})</span>
-                              </div>
-                            )}
-
-                            {missingPhotoCount > 0 && (
-                              <div className="flex items-center justify-between py-1 border-b border-[#F4F3EF] last:border-0 last:pb-0 first:pt-0">
-                                <div className="flex items-center space-x-3 text-gray-700">
-                                  <Camera className="h-4 w-4 text-[#C59B27]" />
-                                  <span className="text-xs font-medium">Missing pickup photo</span>
-                                </div>
-                                <span className="text-xs font-bold text-gray-500">({missingPhotoCount})</span>
-                              </div>
-                            )}
-
-                            {manualReviewCount > 0 && (
-                              <div className="flex items-center justify-between py-1 last:border-0 last:pb-0">
-                                <div className="flex items-center space-x-3 text-gray-700">
-                                  <UserCheck className="h-4 w-4 text-[#C59B27]" />
-                                  <span className="text-xs font-medium">Manual review required</span>
-                                </div>
-                                <span className="text-xs font-bold text-gray-500">({manualReviewCount})</span>
-                              </div>
-                            )}
+                    <div className="space-y-2">
+                      <h2 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Today</h2>
+                      <div className="bg-white border border-zinc-200/80 rounded-2xl p-3.5 sm:p-4 shadow-2xs">
+                        <div className="grid grid-cols-4 divide-x divide-zinc-100 text-center">
+                          <div className="px-1 first:pl-0">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Expected</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">{stats.expected || 0}</span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-gray-500 text-center py-2 font-medium">No attention items right now.</p>
-                        )}
+                          <div className="px-1">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Checked in</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">{stats.checkedIn || 0}</span>
+                          </div>
+                          <div className="px-1">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Picked up</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">{stats.pickedUp || 0}</span>
+                          </div>
+                          <div className="px-1 last:pr-0">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Inside</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">
+                              {Math.max(0, (stats.checkedIn || 0) - (stats.pickedUp || 0))}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Age Groups Distribution */}
-                    <div data-component-version="volunteer-reports-age-groups-v3-stitch-layout-fixed" className="space-y-4">
-                      <h3 className="text-xl font-bold text-neutral-900 font-serif">Age groups</h3>
-                      <div className="space-y-4">
-                        {(() => {
-                          const ageGroupCards = [
-                            { key: 'ages_1_3', name: 'Ages 1–3', matchKeys: ['creche', '1-3', 'toddler'], boys: 0, girls: 0, inside: 0 },
-                            { key: 'ages_4_6', name: 'Ages 4–6', matchKeys: ['preschool', '4-6', '4-8'], boys: 0, girls: 0, inside: 0 },
-                            { key: 'ages_7_9', name: 'Ages 7–9', matchKeys: ['7-9'], boys: 0, girls: 0, inside: 0 },
-                            { key: 'ages_10_12', name: 'Ages 10–12', matchKeys: ['teens', '10-12', 'teen'], boys: 0, girls: 0, inside: 0 },
-                          ];
+                    {/* Needs Attention Navigation Item */}
+                    {totalAttention > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAttentionModal(true)}
+                        className="w-full text-left bg-white border border-amber-200/80 rounded-2xl p-4 shadow-2xs hover:bg-amber-50/20 active:bg-amber-50/40 transition-colors cursor-pointer group flex items-center justify-between gap-3"
+                        id="btn-volunteer-summary-attention-row"
+                      >
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-sans font-semibold text-xs text-zinc-900">Needs attention</span>
+                            <span className="font-sans font-semibold text-xs text-amber-800">{totalAttention}</span>
+                          </div>
+                          <p className="font-sans text-xs text-zinc-500 truncate">
+                            {totalAttention === 1 ? '1 child needs their details checked' : `${totalAttention} children need their details checked`}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-zinc-400 shrink-0 group-hover:text-zinc-600 transition-colors" />
+                      </button>
+                    ) : (
+                      <div className="bg-white border border-zinc-200/80 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="font-sans font-semibold text-xs text-zinc-900 block">Needs attention</span>
+                          <p className="font-sans text-xs text-zinc-400">All child details are up to date</p>
+                        </div>
+                        <span className="font-sans text-xs text-zinc-400">0</span>
+                      </div>
+                    )}
 
-                          // 1. Populate from reportsData.ageGroups for inside counts
-                          if (reportsData?.ageGroups) {
-                            reportsData.ageGroups.forEach((group: any) => {
-                              const groupName = (group.ageGroup || '').toLowerCase();
-                              const matchedCard = ageGroupCards.find(card => 
-                                card.matchKeys.some(key => groupName.includes(key))
-                              );
-                              if (matchedCard) {
-                                matchedCard.inside += Math.max(0, group.checkedIn - group.pickedUp);
+                    {/* Age Groups Section */}
+                    <div className="space-y-2">
+                      <h2 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Age groups</h2>
+                      {(() => {
+                        const ageGroupCards = [
+                          { key: 'ages_1_3', name: 'Ages 1–3', matchKeys: ['creche', '1-3', 'toddler'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_4_6', name: 'Ages 4–6', matchKeys: ['preschool', '4-6', '4-8'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_7_9', name: 'Ages 7–9', matchKeys: ['7-9'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_10_12', name: 'Ages 10–12', matchKeys: ['teens', '10-12', 'teen'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                        ];
+
+                        // 1. Populate from reportsData.ageGroups for inside and expected counts
+                        if (reportsData?.ageGroups) {
+                          reportsData.ageGroups.forEach((group: any) => {
+                            const groupName = (group.ageGroup || '').toLowerCase();
+                            const matchedCard = ageGroupCards.find(card => 
+                              card.matchKeys.some(key => groupName.includes(key))
+                            );
+                            if (matchedCard) {
+                              matchedCard.expected += Number(group.expected || 0);
+                              matchedCard.inside += Math.max(0, Number(group.checkedIn || 0) - Number(group.pickedUp || 0));
+                            }
+                          });
+                        }
+
+                        // 2. Populate from directoryChildren to get precise live boys, girls, inside counts
+                        if (directoryChildren && directoryChildren.length > 0) {
+                          ageGroupCards.forEach(card => {
+                            card.boys = 0;
+                            card.girls = 0;
+                            card.inside = 0;
+                            card.expected = 0;
+                          });
+
+                          directoryChildren.forEach((child: any) => {
+                            const childAgeGroup = (child.ageGroup || child.age_group || '').toLowerCase();
+                            const matchedCard = ageGroupCards.find(card => 
+                              card.matchKeys.some(key => childAgeGroup.includes(key))
+                            );
+                            if (matchedCard) {
+                              matchedCard.expected++;
+                              const isInside = child.status === 'checked_in' || child.status === 'inside' || child.attendanceStatus === 'checked_in' || child.attendanceStatus === 'inside';
+                              const genderStr = (child.gender || '').toLowerCase();
+                              const isBoy = genderStr.startsWith('b') || genderStr === 'male' || genderStr === 'm';
+                              const isGirl = genderStr.startsWith('g') || genderStr === 'female' || genderStr === 'f';
+                              
+                              if (isInside) {
+                                matchedCard.inside++;
+                                if (isBoy) matchedCard.boys++;
+                                if (isGirl) matchedCard.girls++;
                               }
-                            });
-                          }
+                            }
+                          });
+                        }
 
-                          // 2. Populate from directoryChildren to get precise boys, girls, inside counts
-                          if (directoryChildren && directoryChildren.length > 0) {
-                            // Reset counts first before using detailed children logic so we don't double count
-                            ageGroupCards.forEach(card => {
-                              card.boys = 0;
-                              card.girls = 0;
-                              card.inside = 0;
-                            });
-
-                            directoryChildren.forEach((child: any) => {
-                              const childAgeGroup = (child.ageGroup || child.age_group || '').toLowerCase();
-                              const matchedCard = ageGroupCards.find(card => 
-                                card.matchKeys.some(key => childAgeGroup.includes(key))
-                              );
-                              if (matchedCard) {
-                                const isInside = child.status === 'checked_in' || child.status === 'inside' || child.attendanceStatus === 'checked_in' || child.attendanceStatus === 'inside';
-                                const genderStr = (child.gender || '').toLowerCase();
-                                const isBoy = genderStr.startsWith('b') || genderStr === 'male' || genderStr === 'm';
-                                const isGirl = genderStr.startsWith('g') || genderStr === 'female' || genderStr === 'f';
-                                
-                                if (isInside) {
-                                  matchedCard.inside++;
-                                  if (isBoy) matchedCard.boys++;
-                                  if (isGirl) matchedCard.girls++;
-                                }
-                              }
-                            });
-                          }
-
-                          return ageGroupCards.map((group) => (
-                            <div key={group.key} className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs space-y-3">
-                              <h4 className="text-sm font-bold text-neutral-900 font-serif">{group.name}</h4>
-                              <div className="grid grid-cols-3 gap-2 text-xs">
-                                <div className="space-y-1">
-                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Boys</span>
-                                  <span className="font-semibold text-neutral-900 text-sm block">{group.boys}</span>
+                        return (
+                          <div className="bg-white border border-zinc-200/80 rounded-2xl divide-y divide-zinc-100 overflow-hidden shadow-2xs">
+                            {ageGroupCards.map((group) => (
+                              <div key={group.key} className="p-4 space-y-2.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h3 className="font-sans font-semibold text-sm text-zinc-900 leading-snug">{group.name}</h3>
+                                  {group.expected > 0 && (
+                                    <span className="font-sans text-xs text-zinc-500 shrink-0">
+                                      Inside {group.inside} of {group.expected}
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="space-y-1 border-l border-[#F4F3EF] pl-3">
-                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Girls</span>
-                                  <span className="font-semibold text-neutral-900 text-sm block">{group.girls}</span>
-                                </div>
-                                <div className="space-y-1 border-l border-[#F4F3EF] pl-3">
-                                  <span className="text-[10px] font-bold text-[#C59B27] uppercase tracking-wider block">Inside</span>
-                                  <span className="font-extrabold text-[#C59B27] text-sm block">{group.inside}</span>
+
+                                {group.expected > 0 && (
+                                  <div className="h-1.5 w-full bg-zinc-100 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-zinc-800 rounded-full transition-all duration-300"
+                                      style={{ width: `${Math.min(100, Math.round((group.inside / Math.max(1, group.expected)) * 100))}%` }}
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-3 gap-2 sm:gap-3 text-left pt-0.5">
+                                  <div>
+                                    <span className="block font-sans text-xs text-zinc-500">Boys</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 mt-0.5">{group.boys}</span>
+                                  </div>
+                                  <div>
+                                    <span className="block font-sans text-xs text-zinc-500">Girls</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 mt-0.5">{group.girls}</span>
+                                  </div>
+                                  <div>
+                                    <span className="block font-sans text-xs text-zinc-500">Inside</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 mt-0.5">{group.inside}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-
-                    {/* Entry Summary Section */}
-                    <div data-component-version="volunteer-reports-entry-v3-stitch-layout-fixed" className="space-y-4">
-                      <h3 className="text-xl font-bold text-neutral-900 font-serif">Entry</h3>
-                      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs space-y-3.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-gray-600">Checked in</span>
-                          <span className="font-bold text-neutral-900 text-sm">{stats.checkedIn || 0}</span>
-                        </div>
-                        <div className="h-px bg-[#F4F3EF]"></div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-gray-600">Not arrived</span>
-                          <span className="font-bold text-neutral-900 text-sm">
-                            {Math.max(0, (stats.expected || 0) - (stats.checkedIn || 0))}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Pickup Summary Section */}
-                    <div data-component-version="volunteer-reports-pickup-v3-stitch-layout-fixed" className="space-y-4">
-                      <h3 className="text-xl font-bold text-neutral-900 font-serif">Pickup</h3>
-                      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-xs space-y-3.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-gray-600">Picked up</span>
-                          <span className="font-bold text-neutral-900 text-sm">{stats.pickedUp || 0}</span>
-                        </div>
-                        <div className="h-px bg-[#F4F3EF]"></div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-gray-600">Still inside</span>
-                          <span className="font-bold text-neutral-900 text-sm">
-                            {Math.max(0, (stats.checkedIn || 0) - (stats.pickedUp || 0))}
-                          </span>
-                        </div>
-                      </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Action Buttons Section */}
-                    <div data-component-version="volunteer-reports-actions-v3-stitch-layout-fixed" className="flex flex-col space-y-3 pt-2">
+                    <div className="flex flex-col space-y-2.5 pt-1">
                       <button
+                        type="button"
                         onClick={() => {
                           setActiveDirectoryFilter('inside');
                           onNavigate('/volunteer/children');
                         }}
-                        className="w-full py-3 bg-[#C59B27] hover:bg-[#A47E1F] active:scale-98 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2 shadow-xs"
-                        id="btn-volunteer-reports-view-inside"
+                        className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                        id="btn-volunteer-summary-view-inside"
                       >
                         <span>View children inside</span>
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
-                          setActiveDirectoryFilter('attention');
+                          setActiveDirectoryFilter('all');
                           onNavigate('/volunteer/children');
                         }}
-                        className="w-full py-3 bg-white hover:bg-gray-50 border border-[#EAE8E1] text-gray-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2"
-                        id="btn-volunteer-reports-view-attention"
+                        className="w-full py-3 bg-white hover:bg-zinc-50 border border-zinc-200/80 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center"
+                        id="btn-volunteer-summary-view-all"
                       >
-                        <span>View needs attention</span>
+                        <span>View all children</span>
                       </button>
                     </div>
 
                     {/* Footer Note */}
-                    <p className="text-center text-[11px] text-gray-400 italic pt-2">
+                    <p className="text-center font-sans text-xs text-zinc-400 pt-1">
                       Final report will be available after the event.
                     </p>
                   </div>
@@ -5760,19 +5714,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
       {/* Attention Details Modal */}
       {showAttentionModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl border border-[#EAE8E1]">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h3 className="text-lg font-serif font-bold text-neutral-900">Needs Attention List</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 max-h-[85vh] overflow-y-auto shadow-xl border border-zinc-200">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div>
+                <h3 className="font-sans font-semibold text-base text-zinc-900">Needs attention</h3>
+                <p className="font-sans text-xs text-zinc-500 mt-0.5">
+                  {reportsData?.needsAttention?.length === 1 ? '1 child needs details checked' : `${reportsData?.needsAttention?.length || 0} children need details checked`}
+                </p>
+              </div>
               <button 
                 onClick={() => setShowAttentionModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {reportsData?.needsAttention && reportsData.needsAttention.length > 0 ? (
                 reportsData.needsAttention.map((item: any, idx: number) => {
                   const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
@@ -5785,13 +5744,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       : `/api/media/files/${childPhoto}`
                   ) : '';
 
+                  const rawIssue = item.issueType || item.issue_type || '';
+                  let friendlyIssue = rawIssue;
+                  if (rawIssue === 'Manual review required' || rawIssue === 'Needs age group review') {
+                    friendlyIssue = 'Age needs confirmation';
+                  } else if (rawIssue === 'Missing pickup photo') {
+                    friendlyIssue = 'Missing pickup photo';
+                  } else if (rawIssue === 'Medical alert' || rawIssue === 'Medical note pending') {
+                    friendlyIssue = 'Medical note pending';
+                  }
+
                   return (
-                    <div key={item.id || idx} className="p-4 bg-amber-50/30 border border-amber-100 rounded-2xl flex items-center justify-between gap-4 text-xs">
+                    <div key={item.id || idx} className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
                       <div className="flex items-center space-x-3 min-w-0 flex-1">
-                        {/* Photo area */}
                         <div 
-                          className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs"
-                          data-component-version="volunteer-attention-child-photo-v2"
+                          className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200 shrink-0 flex items-center justify-center text-zinc-600 font-sans font-semibold text-xs"
+                          data-component-version="volunteer-attention-child-photo-v3"
                         >
                           {resolvedPhotoUrl ? (
                             <SafeImage
@@ -5799,21 +5767,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               alt={cleaned.name}
                               className="w-full h-full object-cover"
                               fallbackComponent={
-                                <span className="font-serif font-bold text-xs">
+                                <span className="font-sans font-semibold text-xs">
                                   {cleaned.name.charAt(0).toUpperCase()}
                                 </span>
                               }
                             />
                           ) : (
-                            <span className="font-serif font-bold text-xs">
+                            <span className="font-sans font-semibold text-xs">
                               {cleaned.name.charAt(0).toUpperCase()}
                             </span>
                           )}
                         </div>
 
                         <div className="space-y-0.5 min-w-0 flex-1">
-                          <h4 className="font-bold text-neutral-800 text-sm truncate">{cleaned.name}</h4>
-                          <p className="text-xs text-amber-700 font-medium truncate">{item.issueType || item.issue_type}</p>
+                          <h4 className="font-sans font-semibold text-zinc-900 text-xs truncate">{cleaned.name}</h4>
+                          <p className="font-sans text-[11px] text-zinc-500 truncate">{friendlyIssue}</p>
                         </div>
                       </div>
                       <button
@@ -5821,16 +5789,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setShowAttentionModal(false);
                           handleResolveAction(item);
                         }}
-                        className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer shrink-0"
                       >
-                        {item.actionText || item.action_text || 'RESOLVE'}
+                        Review
                       </button>
                     </div>
                   );
                 })
               ) : (
-                <div className="py-8 text-center text-gray-400 text-xs">
-                  No active alerts or needs attention items.
+                <div className="py-6 text-center text-zinc-400 font-sans text-xs">
+                  No children currently need attention.
                 </div>
               )}
             </div>
@@ -7540,7 +7508,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         >
           <BarChart3 className={`h-5 w-5 ${cleanRoute === '/volunteer/reports' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
           <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/reports' ? 'font-semibold' : 'font-medium'}`}>
-            Reports
+            Summary
           </span>
         </button>
 
