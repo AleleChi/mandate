@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Info, AlertTriangle, RefreshCw } from 'lucide-react';
+import { api } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
 
 interface EventLocation {
@@ -43,18 +44,13 @@ export function EventLocationSelector({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(buildApiUrl('/api/duty/locations'));
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setLocations(data.items || []);
-          } else {
-            setError(data.error || 'Failed to fetch location list');
-          }
+        const data = await api.request<{ success: boolean; items: EventLocation[] }>('/api/duty/locations');
+        if (data && data.success) {
+          setLocations(data.items || []);
         } else {
-          setError('Could not retrieve event locations');
+          setError('Failed to fetch location list');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching locations:', err);
         setError('Network error fetching locations');
       } finally {

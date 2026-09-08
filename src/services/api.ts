@@ -400,7 +400,7 @@ export const api = {
       });
     },
     async getEventHome() {
-      return api.request<{ event: any; stats: { expected: number; checkedIn: number; pickedUp: number; attention: number }; attentionItems: any[] }>('/api/volunteer/event-home');
+      return api.request<{ event: any; stats: { expected: number; checkedIn: number; pickedUp: number; attention: number }; attentionItems: any[]; dutyLocation?: any }>('/api/volunteer/event-home');
     },
     async updateProfile(profile: any) {
       if (profile instanceof FormData) {

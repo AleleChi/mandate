@@ -8,7 +8,7 @@ import { validateEmailAddress, validatePhoneNumber, validateName } from '../util
 import { uploadMedia } from '../services/media/cloudinary';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
-import { resolveAlertRecipients } from './duty';
+import { resolveAlertRecipients, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl } from '../utils/urlHelper';
 
 const router = Router();
@@ -1820,11 +1820,13 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
     });
 
     const stats = await getEventStats();
+    const dutyLocation = req.user?.id ? await resolveUserDutyLocation(req.user.id, REAL_EVENT_ID) : null;
 
     res.json({
       event,
       stats,
-      attentionItems: attentionItems
+      attentionItems: attentionItems,
+      dutyLocation
     });
   } catch (err) {
     console.error('Event home error:', err);

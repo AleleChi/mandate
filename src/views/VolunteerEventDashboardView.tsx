@@ -565,14 +565,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const fetchCurrentDutyLocation = async () => {
     try {
-      const res = await fetch(buildApiUrl('/api/duty/current-location'));
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && (data.presence || data.location)) {
-          setCurrentDutyLocation(data.presence || data.location);
-        } else {
-          setCurrentDutyLocation(null);
-        }
+      const data = await api.request<any>('/api/duty/current-location');
+      if (data && data.success && (data.presence || data.location)) {
+        setCurrentDutyLocation(data.presence || data.location);
+      } else {
+        setCurrentDutyLocation(null);
       }
     } catch (err) {
       console.error('Error fetching current duty location:', err);
@@ -581,12 +578,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const fetchAvailableLocations = async () => {
     try {
-      const res = await fetch(buildApiUrl('/api/duty/locations'));
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setAvailableLocations(data.items || []);
-        }
+      const data = await api.request<any>('/api/duty/locations');
+      if (data && data.success) {
+        setAvailableLocations(data.items || []);
       }
     } catch (err) {
       console.error('Error fetching locations:', err);
@@ -653,32 +647,32 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setPresenceActionLoading(true);
     setLocationScannerError(null);
     try {
-      let res = await fetch(buildApiUrl('/api/event-duty/location-access/verify'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token })
-      });
-      if (!res.ok) {
-        res = await fetch(buildApiUrl('/api/duty/location-code/verify'), {
+      let data: any;
+      try {
+        data = await api.request<any>('/api/duty/location-code/verify', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code: token })
         });
+      } catch (firstErr) {
+        data = await api.request<any>('/api/duty/location-access/verify', {
+          method: 'POST',
+          body: JSON.stringify({ token: token })
+        });
       }
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (data && data.success) {
         stopLocationQRScanning();
         setScannedLocationData(data);
         setScannedTokenStr(data.token || token);
       } else {
-        const errorMsg = data.message || data.error || 'Invalid or disabled QR location code.';
+        const errorMsg = data?.message || data?.error || 'Invalid or disabled QR location code.';
         showError('Verification Failed', errorMsg);
         setLocationScannerError(errorMsg);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error verifying location QR:', err);
-      showError('Error', 'Failed to connect to verification server.');
-      setLocationScannerError('Network error verifying QR code.');
+      const errorMsg = err?.message || 'Invalid or disabled QR location code.';
+      showError('Verification Failed', errorMsg);
+      setLocationScannerError(errorMsg);
     } finally {
       setPresenceActionLoading(false);
     }
@@ -688,35 +682,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (!scannedTokenStr && !scannedLocationData?.location?.id) return;
     setPresenceActionLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/duty/current-location'), {
+      const data = await api.request<any>('/api/duty/current-location', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scannedToken: scannedTokenStr,
           locationId: scannedLocationData?.location?.id,
           source: 'scanned'
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.presence) {
-          showSuccess('Arrival Confirmed', `Duty location set to: ${data.presence.name}`);
-          setCurrentDutyLocation({
-            id: data.presence.locationId,
-            name: data.presence.name,
-            type: data.presence.type,
-            instructions: data.presence.instructions
-          });
-          setScannedLocationData(null);
-          setScannedTokenStr(null);
-          setShowLocationQRModal(false);
-        } else {
-          showError('Action Failed', data.error || 'Could not register presence.');
-        }
+      if (data && data.success && data.presence) {
+        showSuccess('Arrival Confirmed', `Duty location set to: ${data.presence.name}`);
+        setCurrentDutyLocation(data.presence);
+        setScannedLocationData(null);
+        setScannedTokenStr(null);
+        setShowLocationQRModal(false);
       } else {
-        showError('Server Error', 'Failed to record arrival at location.');
+        showError('Action Failed', data?.error || 'Could not register presence.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error confirming arrival:', err);
       showError('Error', 'Failed to register duty location arrival.');
     } finally {
@@ -728,23 +711,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (!locId) return;
     setPresenceActionLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/duty/current-location'), {
+      const data = await api.request<any>('/api/duty/current-location', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locationId: locId })
+        body: JSON.stringify({ locationId: locId, source: 'selected' })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && (data.presence || data.location)) {
-          const loc = data.presence || data.location;
-          showSuccess('Presence Changed', `Duty location set to: ${loc.name}`);
-          setCurrentDutyLocation(loc);
-          setShowLocationSelectModal(false);
-        } else {
-          showError('Action Failed', data.error || 'Could not change location.');
-        }
+      if (data && data.success && (data.presence || data.location)) {
+        const loc = data.presence || data.location;
+        showSuccess('Location Selected', `Duty location set to: ${loc.name}`);
+        setCurrentDutyLocation(loc);
+        setShowLocationSelectModal(false);
+      } else {
+        showError('Action Failed', data?.error || 'Could not change location.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       showError('Error', 'Failed to register duty location.');
     } finally {
@@ -753,18 +732,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   const handleLeaveLocation = async () => {
-    if (!confirm('Are you sure you want to leave your current location? You will no longer receive location-specific response priority alerts.')) return;
+    if (!confirm('Are you sure you want to leave your current location?')) return;
     setPresenceActionLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/duty/current-location'), {
+      const data = await api.request<any>('/api/duty/current-location', {
         method: 'DELETE'
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          showSuccess('Duty Location Cleared', 'You are no longer registered at any active location.');
-          setCurrentDutyLocation(null);
-        }
+      if (data && data.success) {
+        showSuccess('Duty Location Cleared', 'You are no longer registered at any active location.');
+        setCurrentDutyLocation(null);
       }
     } catch (err) {
       console.error(err);
@@ -1183,6 +1159,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         if (res.stats) setStats(res.stats);
         if (res.event) setEventDetails(res.event);
         if (res.attentionItems) setAttentionItems(res.attentionItems);
+        if (res.dutyLocation) setCurrentDutyLocation(res.dutyLocation);
       }
     } catch (err: any) {
       console.error('Failed to fetch volunteer dashboard stats:', err);
@@ -2731,37 +2708,37 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent pointer-events-none" />
                 <div className="relative z-10 space-y-1">
-                  <span className="text-[11px] font-semibold text-[#D4AF37] uppercase tracking-wider block">
+                  <span className="text-[11px] font-sans font-semibold text-[#D4AF37] uppercase tracking-wider block">
                     {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children & Teens'}
                   </span>
-                  <h2 className="text-xl sm:text-2xl font-serif font-semibold text-white leading-tight drop-shadow-xs">
+                  <h2 className="text-xl sm:text-2xl font-serif font-bold text-white leading-tight drop-shadow-xs">
                     {eventDetails?.title || 'The General Assembly'}
                   </h2>
                 </div>
               </div>
 
               <div className="p-4 sm:p-5 space-y-3 bg-white">
-                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 font-normal">
-                  <div className="flex items-center space-x-2.5">
-                    <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
+                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 font-sans">
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
                     <span>
                       {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
-                      <span className="mx-2 text-zinc-300">•</span>
+                      <span className="mx-2 text-zinc-300">·</span>
                       {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
                         ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
                         : '9:00 AM – 7:00 PM'}
                     </span>
                   </div>
-                  <div className="flex items-center space-x-2.5">
-                    <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
                     <span className="truncate text-zinc-700">
                       {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F3EF] text-xs">
-                  <span className="text-zinc-500 font-normal">
+                <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F3EF] text-xs font-sans">
+                  <span className="text-zinc-500">
                     Serving with <span className="text-zinc-800 font-medium">{teamName || 'General Team'}</span>
                   </span>
                   <button 
@@ -2778,65 +2755,68 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             {/* 3. My Duty Location Card */}
             <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
-              <div className="flex items-center space-x-2">
-                <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                <h2 className="text-sm font-serif font-bold text-[#18181B]">Your duty location</h2>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                  <h2 className="text-sm font-sans font-semibold text-[#18181B]">Your duty location</h2>
+                </div>
+                {currentDutyLocation && !currentDutyLocation.isAssignedByAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchAvailableLocations();
+                      setShowLocationSelectModal(true);
+                    }}
+                    className="text-xs text-[#C59B27] hover:text-[#A47E1F] font-sans font-medium transition-colors cursor-pointer"
+                  >
+                    Change location
+                  </button>
+                )}
               </div>
 
               {currentDutyLocation ? (
                 /* Assigned/Confirmed Duty Location State */
-                <div className="space-y-3">
-                  <div className="p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1">
-                    <div className="text-base font-serif font-bold text-[#18181B]">
-                      {currentDutyLocation.name}
-                    </div>
-                    <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-2">
-                      {currentDutyLocation.zone && <span>Zone: {currentDutyLocation.zone}</span>}
-                      {currentDutyLocation.room_number && <span>• Room {currentDutyLocation.room_number}</span>}
-                      {currentDutyLocation.location_type && <span>• {currentDutyLocation.location_type}</span>}
-                    </div>
-                    {currentDutyLocation.guideline && (
-                      <p className="text-xs text-zinc-600 italic pt-1">
-                        {currentDutyLocation.guideline}
-                      </p>
-                    )}
+                <div className="space-y-1">
+                  <div className="text-base font-serif font-bold text-[#18181B]">
+                    {currentDutyLocation.name}
                   </div>
-
-                  <div className="flex items-center space-x-2 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowSetLocationSheet(true)}
-                      className="flex-1 py-2 px-3 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-[#18181B] font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-[#C59B27]" />
-                      <span>Change location</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleLeaveLocation}
-                      className="py-2 px-3.5 bg-zinc-50 border border-zinc-200 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 text-zinc-600 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
-                      title="Leave current location"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Leave</span>
-                    </button>
+                  {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey || currentDutyLocation.location_type || currentDutyLocation.type) && (
+                    <div className="text-xs text-zinc-600 font-sans">
+                      {[
+                        currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
+                        currentDutyLocation.team || currentDutyLocation.teamKey,
+                        !currentDutyLocation.ageGroup && !currentDutyLocation.ageGroupKey && !currentDutyLocation.team && !currentDutyLocation.teamKey ? (currentDutyLocation.type || currentDutyLocation.location_type) : null
+                      ].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                  <div className="text-xs text-zinc-500 font-sans pt-0.5">
+                    {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
                   </div>
+                  {currentDutyLocation.instructions && (
+                    <p className="text-xs text-zinc-600 font-sans pt-1 leading-relaxed">
+                      {currentDutyLocation.instructions}
+                    </p>
+                  )}
                 </div>
               ) : (
-                /* Unconfirmed Location State (Quiet, helpful, no alert badge) */
+                /* Unassigned Location State */
                 <div className="space-y-3">
-                  <p className="text-xs text-zinc-600 leading-relaxed">
-                    Your location has not been assigned yet. We'll show it here once your coordinator confirms it.
+                  <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                    Your location has not been assigned yet.
+                    <br className="hidden sm:inline" /> We'll show it here once it is confirmed.
                   </p>
 
-                  <div className="pt-0.5 flex flex-col sm:flex-row gap-2">
+                  <div className="pt-0.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowSetLocationSheet(true)}
-                      className="w-full sm:flex-1 py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                      onClick={() => {
+                        fetchAvailableLocations();
+                        setShowLocationSelectModal(true);
+                      }}
+                      className="py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
                     >
-                      <MapPin className="w-4 h-4" />
-                      <span>Select your location</span>
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Choose location</span>
                     </button>
                     <button
                       type="button"
@@ -2844,9 +2824,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setShowLocationQRModal(true);
                         startLocationQRScanning();
                       }}
-                      className="w-full sm:w-auto py-2.5 px-4 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                      className="py-2.5 px-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
                     >
-                      <QrCode className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <QrCode className="w-3.5 h-3.5 text-zinc-500" />
                       <span>Scan location QR</span>
                     </button>
                   </div>
@@ -7552,46 +7532,71 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
           <div 
             onClick={() => setShowLocationSelectModal(false)}
-            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" 
           />
-          <div className="relative bg-[#FAF9F5] border border-[#EAE8E1] rounded-[24px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
-            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
-              <h4 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-[#C59B27]" />
-                Select Duty Location
-              </h4>
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
+              <h3 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#C59B27]" />
+                <span>Choose your duty location</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowLocationSelectModal(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="overflow-y-auto max-h-[50vh] pr-1 py-1 space-y-2">
+            <div className="overflow-y-auto max-h-[55vh] pr-1 py-1 space-y-2.5">
               {availableLocations.length === 0 ? (
-                <div className="p-4 text-center text-xs text-zinc-500 italic">
-                  No active managed locations configured yet.
+                <div className="p-6 text-center text-xs text-zinc-500 font-sans">
+                  No active locations found for this event.
                 </div>
               ) : (
                 availableLocations.map((loc) => {
-                  const isSelected = selectedLocationPresenceId === loc.id;
+                  const isCurrent = currentDutyLocation?.locationId === loc.id || currentDutyLocation?.id === loc.id;
+                  const subtitle = [
+                    loc.ageGroup || loc.ageGroupKey,
+                    loc.team || loc.teamKey,
+                    !loc.ageGroup && !loc.ageGroupKey && !loc.team && !loc.teamKey ? (loc.type || loc.location_type) : null
+                  ].filter(Boolean).join(' · ');
+
                   return (
                     <button
                       key={loc.id}
                       type="button"
-                      onClick={() => setSelectedLocationPresenceId(loc.id)}
-                      className={`w-full p-3 text-left rounded-xl border text-xs transition-all flex flex-col justify-between items-start gap-1 cursor-pointer ${
-                        isSelected 
-                          ? 'bg-[#C59B27]/5 border-[#C59B27] ring-1 ring-[#C59B27]' 
-                          : 'bg-white border-zinc-200 hover:border-zinc-300'
+                      disabled={presenceActionLoading}
+                      onClick={() => handleSelectManualLocation(loc.id)}
+                      className={`w-full p-4 text-left rounded-2xl border transition-all flex flex-col items-start gap-1 cursor-pointer group ${
+                        isCurrent
+                          ? 'bg-[#FAF6EB] border-[#C59B27] ring-1 ring-[#C59B27]'
+                          : 'bg-white border-[#EAE8E1] hover:border-[#C59B27] hover:bg-[#FAF9F5]'
                       }`}
                     >
                       <div className="flex justify-between items-center w-full">
-                        <span className="font-bold text-zinc-950 text-sm">{loc.name}</span>
-                        {loc.room_number && (
-                          <span className="text-[10px] font-mono text-zinc-500">Room {loc.room_number}</span>
+                        <span className="font-semibold text-zinc-900 text-sm font-sans group-hover:text-[#C59B27] transition-colors">
+                          {loc.name}
+                        </span>
+                        {isCurrent ? (
+                          <span className="text-[11px] font-sans font-medium text-[#C59B27] bg-white px-2 py-0.5 rounded-full border border-[#C59B27]/30">
+                            Current
+                          </span>
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
                         )}
                       </div>
-                      {(loc.zone || loc.guideline) && (
-                        <div className="text-[11px] text-zinc-600 mt-0.5 space-y-0.5">
-                          {loc.zone && <div>Zone: <strong className="text-zinc-700">{loc.zone}</strong></div>}
-                          {loc.guideline && <div className="italic text-zinc-500 line-clamp-1">{loc.guideline}</div>}
-                        </div>
+                      {subtitle && (
+                        <span className="text-xs text-zinc-500 font-sans">
+                          {subtitle}
+                        </span>
+                      )}
+                      {loc.instructions && (
+                        <p className="text-xs text-zinc-500 font-sans line-clamp-2 mt-0.5 leading-relaxed">
+                          {loc.instructions}
+                        </p>
                       )}
                     </button>
                   );
@@ -7599,24 +7604,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
-            <div className="flex justify-end gap-3.5 pt-2 border-t border-zinc-100">
+            <div className="pt-2 border-t border-[#F4F3EF]">
               <button
                 type="button"
                 onClick={() => setShowLocationSelectModal(false)}
-                className="text-xs px-4 py-2 border border-zinc-200 hover:bg-zinc-50 rounded-xl cursor-pointer font-bold text-zinc-750"
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                disabled={presenceActionLoading || !selectedLocationPresenceId}
-                onClick={() => handleSelectManualLocation(selectedLocationPresenceId)}
-                className="text-xs bg-[#C59B27] hover:bg-[#A47E1F] text-white px-4 py-2 rounded-xl cursor-pointer font-bold disabled:opacity-50 transition-all flex items-center gap-1.5"
-              >
-                {presenceActionLoading ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : null}
-                <span>Confirm Presence</span>
               </button>
             </div>
           </div>
@@ -7856,19 +7850,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           <div className="relative bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 z-10 animate-slide-up border border-[#EAE8E1]">
             <div className="w-12 h-1.5 bg-zinc-200 rounded-full mx-auto sm:hidden -mt-1 mb-2" />
             
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
               <div>
-                <h3 className="text-lg font-serif font-bold text-[#18181B]">
-                  Set your duty location
+                <h3 className="text-base font-serif font-bold text-[#18181B]">
+                  Choose duty location
                 </h3>
-                <p className="text-xs text-[#71717A] mt-0.5">
-                  Scan the label at your location or choose from the areas assigned to you.
+                <p className="text-xs text-[#71717A] font-sans mt-0.5">
+                  Scan the location code or choose from your event locations.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowSetLocationSheet(false)}
                 className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -7888,8 +7883,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div className="space-y-0.5 min-w-0 flex-1">
-                  <span className="font-bold text-sm text-[#18181B] block">Scan location QR</span>
-                  <span className="text-xs text-[#71717A] block">Use the location label displayed at the venue.</span>
+                  <span className="font-semibold text-sm text-[#18181B] font-sans block">Scan location QR</span>
+                  <span className="text-xs text-[#71717A] font-sans block">Use the code displayed at your location.</span>
                 </div>
                 <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-[#C59B27] shrink-0 self-center" />
               </button>
@@ -7907,8 +7902,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <MapPin className="w-5 h-5" />
                 </div>
                 <div className="space-y-0.5 min-w-0 flex-1">
-                  <span className="font-bold text-sm text-[#18181B] block">Choose an assigned area</span>
-                  <span className="text-xs text-[#71717A] block">Select from your available Event Duty locations.</span>
+                  <span className="font-semibold text-sm text-[#18181B] font-sans block">Choose location</span>
+                  <span className="text-xs text-[#71717A] font-sans block">Select from available event locations.</span>
                 </div>
                 <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-[#C59B27] shrink-0 self-center" />
               </button>
@@ -7918,7 +7913,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <button
                 type="button"
                 onClick={() => setShowSetLocationSheet(false)}
-                className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 text-[#18181B] font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
               >
                 Cancel
               </button>
@@ -7932,62 +7927,72 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
           <div 
             onClick={() => setShowEventDetailsModal(false)} 
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity" 
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" 
           />
-          <div className="relative bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 z-10 border border-[#EAE8E1] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <h3 className="text-lg font-serif font-bold text-[#18181B]">
-                Event Details
+          <div className="relative bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-6 z-10 border border-[#EAE8E1] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
+              <h3 className="text-lg font-serif font-semibold text-[#18181B]">
+                Event details
               </h3>
               <button
                 type="button"
                 onClick={() => setShowEventDetailsModal(false)}
-                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                className="p-1.5 hover:bg-zinc-100 rounded-xl text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs text-[#18181B]">
-              <div>
-                <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Event Title</span>
-                <span className="text-base font-serif font-bold text-[#18181B]">{eventDetails?.title || 'The General Assembly'}</span>
+            <div className="space-y-5">
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#18181B] leading-tight">
+                  {eventDetails?.title || 'The General Assembly'}
+                </h2>
+                <p className="text-sm font-sans font-medium text-[#C59B27]">
+                  {eventDetails?.section_name 
+                    ? eventDetails.section_name.replace(' Ministry', '') 
+                    : 'Children & Teens'}
+                </p>
               </div>
 
-              <div>
-                <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Ministry / Department</span>
-                <span className="font-semibold text-[#C59B27]">{eventDetails?.section_name || 'Children and Teens Ministry'}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Date Range</span>
-                  <span className="font-medium">{formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}</span>
+              <div className="flex items-start space-x-3 text-zinc-700 font-sans text-sm">
+                <Calendar className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-medium text-[#18181B]">
+                    {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
+                      ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
+                      : '9:00 AM – 7:00 PM'}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Daily Hours</span>
-                  <span className="font-medium">{eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}</span>
+              </div>
+
+              <div className="flex items-start space-x-3 text-zinc-700 font-sans text-sm">
+                <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
+                <div className="text-[#18181B] font-medium leading-relaxed">
+                  {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
                 </div>
               </div>
 
-              <div>
-                <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Venue / Location</span>
-                <span className="font-medium">{eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}</span>
+              <div className="text-xs text-zinc-500 font-sans pt-1">
+                Serving with <span className="text-zinc-800 font-medium">{teamName || 'General Team'}</span>
               </div>
 
               {eventDetails?.description && (
-                <div>
-                  <span className="text-[10px] text-[#71717A] font-bold uppercase tracking-wider block">Overview</span>
-                  <p className="text-zinc-600 leading-relaxed mt-0.5">{eventDetails.description}</p>
+                <div className="pt-2 border-t border-[#F4F3EF] text-xs text-zinc-600 font-sans leading-relaxed">
+                  {eventDetails.description}
                 </div>
               )}
             </div>
 
-            <div className="pt-2 border-t border-[#EAE8E1]">
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={() => setShowEventDetailsModal(false)}
-                className="w-full py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-xl cursor-pointer text-center"
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
               >
                 Close
               </button>

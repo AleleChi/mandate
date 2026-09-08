@@ -2320,16 +2320,109 @@ adminDutyRouter.get('/events/:eventId/response-coverage', async (req: Authentica
 // PHASE 6: VOLUNTEER & DUTY LOCATIONS ENDPOINTS
 // ==============================================
 
-// 1. Get active event locations
+// Helper to resolve duty location for a user (Admin assignment priority, then presence session)
+export async function resolveUserDutyLocation(userId: string, eventId: string = REAL_EVENT_ID) {
+  try {
+    // 1. Check Admin assignment first: Admin assignment containing a location takes precedence
+    const assignment = await queryOne(`
+      SELECT a.id as assignment_id, a.responsibility_key, a.team_key as assignment_team, a.assigned_location_id, a.status as assignment_status,
+             el.id as location_id, el.name, el.location_type, el.instructions, el.age_group_key, el.team_key as location_team,
+             el.short_name, el.description
+      FROM event_duty_assignments a
+      JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled' AND el.is_active = 1 AND el.archived_at IS NULL
+      ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
+      LIMIT 1
+    `, [userId, eventId]);
+
+    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [eventId]);
+    const locMap = new Map<string, any>();
+    for (const loc of allLocations) {
+      locMap.set(loc.id, loc);
+    }
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    if (assignment) {
+      return {
+        id: assignment.assignment_id,
+        locationId: assignment.location_id,
+        name: assignment.name,
+        type: assignment.location_type,
+        ageGroup: assignment.age_group_key,
+        ageGroupKey: assignment.age_group_key,
+        team: assignment.location_team || assignment.assignment_team,
+        teamKey: assignment.location_team || assignment.assignment_team,
+        instructions: assignment.instructions,
+        description: assignment.description,
+        source: 'admin',
+        isAssignedByAdmin: true,
+        pathLabel: getFullPath(assignment.location_id)
+      };
+    }
+
+    // 2. If no Admin assignment with a location, check active volunteer presence (self-selection or QR scan)
+    const presence = await queryOne(`
+      SELECT p.*, el.id as loc_id, el.name, el.location_type, el.sort_order, el.instructions, el.age_group_key, el.team_key as location_team, el.description
+      FROM event_duty_location_presence p
+      JOIN event_locations el ON p.event_location_id = el.id
+      WHERE p.user_id = ? AND p.ended_at IS NULL AND p.event_id = ? AND el.is_active = 1 AND el.archived_at IS NULL
+      ORDER BY p.started_at DESC
+      LIMIT 1
+    `, [userId, eventId]);
+
+    if (presence) {
+      return {
+        id: presence.id,
+        locationId: presence.event_location_id,
+        name: presence.name,
+        type: presence.location_type,
+        ageGroup: presence.age_group_key,
+        ageGroupKey: presence.age_group_key,
+        team: presence.location_team,
+        teamKey: presence.location_team,
+        instructions: presence.instructions,
+        description: presence.description,
+        source: presence.source || 'selected',
+        isAssignedByAdmin: false,
+        startedAt: presence.started_at,
+        pathLabel: getFullPath(presence.event_location_id)
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.error('Error resolving user duty location:', err);
+    return null;
+  }
+}
+
+// 1. Get active event locations (scoped to current event, non-deleted, non-archived)
 dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '100');
     const search = (req.query.search as string || '').trim().toLowerCase();
     const type = req.query.type as string || '';
+    const eventId = (req.query.eventId as string) || REAL_EVENT_ID;
 
-    let queryStr = 'SELECT * FROM event_locations WHERE event_id = ? AND is_active = 1';
-    const params: any[] = [REAL_EVENT_ID];
+    let queryStr = 'SELECT * FROM event_locations WHERE event_id = ? AND is_active = 1 AND archived_at IS NULL';
+    const params: any[] = [eventId];
 
     if (type) {
       queryStr += ' AND location_type = ?';
@@ -2373,7 +2466,9 @@ dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) =>
         description: loc.description,
         instructions: loc.instructions,
         capacity: loc.capacity,
+        ageGroup: loc.age_group_key,
         ageGroupKey: loc.age_group_key,
+        team: loc.team_key,
         teamKey: loc.team_key,
         emergencyLabel: loc.emergency_label,
         sortOrder: loc.sort_order,
@@ -2386,6 +2481,8 @@ dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) =>
       items = items.filter(item =>
         item.name.toLowerCase().includes(search) ||
         (item.shortName && item.shortName.toLowerCase().includes(search)) ||
+        (item.ageGroup && item.ageGroup.toLowerCase().includes(search)) ||
+        (item.team && item.team.toLowerCase().includes(search)) ||
         item.pathLabel.toLowerCase().includes(search) ||
         item.type.toLowerCase().includes(search)
       );
@@ -2421,60 +2518,18 @@ dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-// 2. Get current active duty location presence
+// 2. Get current active duty location presence (Admin assignment takes precedence)
 dutyRouter.get('/current-location', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const presence = await queryOne(`
-      SELECT p.*, el.name, el.location_type, el.sort_order, el.instructions
-      FROM event_duty_location_presence p
-      JOIN event_locations el ON p.event_location_id = el.id
-      WHERE p.user_id = ? AND p.ended_at IS NULL AND p.event_id = ?
-    `, [userId, REAL_EVENT_ID]);
-
-    if (!presence) {
-      return res.json({ success: true, presence: null });
-    }
-
-    // Build path label
-    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
-    const locMap = new Map<string, any>();
-    for (const loc of allLocations) {
-      locMap.set(loc.id, loc);
-    }
-
-    const getFullPath = (locId: string): string => {
-      const pathParts: string[] = [];
-      let currentId: string | null = locId;
-      const visited = new Set<string>();
-      while (currentId) {
-        if (visited.has(currentId)) break;
-        visited.add(currentId);
-        const current = locMap.get(currentId);
-        if (current) {
-          pathParts.unshift(current.name);
-          currentId = current.parent_location_id;
-        } else {
-          break;
-        }
-      }
-      return pathParts.join(' › ');
-    };
+    const dutyLocation = await resolveUserDutyLocation(userId, REAL_EVENT_ID);
 
     return res.json({
       success: true,
-      presence: {
-        id: presence.id,
-        locationId: presence.event_location_id,
-        name: presence.name,
-        type: presence.location_type,
-        instructions: presence.instructions,
-        source: presence.source,
-        startedAt: presence.started_at,
-        pathLabel: getFullPath(presence.event_location_id)
-      }
+      presence: dutyLocation,
+      location: dutyLocation
     });
   } catch (err: any) {
     console.error('Error fetching current duty location:', err);
@@ -2506,8 +2561,8 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       return res.status(400).json({ success: false, error: 'Location ID or scanned token is required.' });
     }
 
-    // Verify location is active and belongs to REAL_EVENT_ID
-    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1', [resolvedLocationId, REAL_EVENT_ID]);
+    // Verify location is active, belongs to REAL_EVENT_ID, and not archived
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [resolvedLocationId, REAL_EVENT_ID]);
     if (!loc) {
       return res.status(400).json({ success: false, error: 'The selected location is invalid or no longer active.' });
     }
@@ -2525,6 +2580,13 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       ) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?)
     `, [presenceId, REAL_EVENT_ID, userId, resolvedLocationId, resolvedSource, now, now]);
 
+    // Update assignment assigned_location_id if active assignment exists without location
+    await execute(`
+      UPDATE event_duty_assignments
+      SET assigned_location_id = ?, updated_at = ?
+      WHERE user_id = ? AND event_id = ? AND status != 'cancelled' AND (assigned_location_id IS NULL OR assigned_location_id = '')
+    `, [resolvedLocationId, now, userId, REAL_EVENT_ID]);
+
     // Broadcast SSE change for admin/team view sync
     broadcastSSEEvent('duty_presence_changed', { eventId: REAL_EVENT_ID, userId, locationId: resolvedLocationId });
 
@@ -2535,9 +2597,15 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
         locationId: resolvedLocationId,
         name: loc.name,
         type: loc.location_type,
+        ageGroup: loc.age_group_key,
+        ageGroupKey: loc.age_group_key,
+        team: loc.team_key,
+        teamKey: loc.team_key,
         instructions: loc.instructions,
+        description: loc.description,
         source: resolvedSource,
-        startedAt: now
+        startedAt: now,
+        isAssignedByAdmin: false
       }
     });
   } catch (err: any) {
