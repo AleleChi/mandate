@@ -86,20 +86,23 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         )}
       </div>
 
-      {/* KPI Band (Prompt Section 16 & 37) */}
+      {/* KPI Band (Executive Rounded Card Grid) */}
       {model.kpis && model.kpis.length > 0 && (
         <div id="section-kpis" data-report-section="kpis" className="scroll-mt-6">
-          <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {model.kpis.map((kpi, idx) => (
-              <div key={idx} className="p-3.5 space-y-1 bg-white">
-                <span className="text-[11px] font-semibold text-stone-600 block tracking-wide">
+              <div 
+                key={idx} 
+                className="bg-[#FAF9F6] border border-stone-200/90 rounded-xl p-3.5 space-y-1 relative overflow-hidden border-t-2 border-t-[#C59B27] shadow-2xs hover:shadow-xs transition-shadow"
+              >
+                <span className="text-[10px] font-semibold text-stone-600 block tracking-wider uppercase">
                   {kpi.label}
                 </span>
-                <span className="text-xl font-bold text-stone-900 block tracking-tight tabular-nums">
+                <span className="text-xl sm:text-2xl font-bold text-stone-900 block tracking-tight tabular-nums">
                   {kpi.value}
                 </span>
                 {kpi.sublabel && (
-                  <span className="text-[10px] text-stone-400 block leading-tight">
+                  <span className="text-[10px] text-stone-500 block leading-tight font-medium">
                     {kpi.sublabel}
                   </span>
                 )}
@@ -125,16 +128,16 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         </div>
       )}
 
-      {/* Key Findings (Prompt Section 17) */}
+      {/* Key Observations */}
       {model.findings && model.findings.length > 0 && (
-        <div id="section-findings" data-report-section="findings" className="bg-stone-50/70 border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
-            Key findings
+        <div id="section-findings" data-report-section="findings" className="bg-stone-50/70 border border-stone-200/80 rounded-xl p-5 space-y-3 scroll-mt-6">
+          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200/80 pb-2">
+            Key observations
           </h2>
           <div className="space-y-2">
             {model.findings.map((f, idx) => (
               <div key={f.id || idx} className="text-xs text-stone-700 flex items-start gap-2">
-                <span className="text-[#C59B27] mt-0.5">•</span>
+                <span className="text-[#C59B27] mt-0.5 font-bold">•</span>
                 <span className="leading-relaxed">{f.observation}</span>
               </div>
             ))}
@@ -142,11 +145,11 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         </div>
       )}
 
-      {/* For Management Attention (Rendered only when items exist) */}
+      {/* Items Requiring Attention (Rendered only when items exist) */}
       {model.managementAttention && model.managementAttention.length > 0 && (
-        <div id="section-attention" data-report-section="attention" className="bg-white border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
-            For management attention
+        <div id="section-attention" data-report-section="attention" className="bg-white border border-stone-200/80 rounded-xl p-5 space-y-3 scroll-mt-6">
+          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200/80 pb-2">
+            Items requiring attention
           </h2>
           <div className="space-y-2">
             {model.managementAttention.map((item, idx) => (
@@ -159,11 +162,11 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         </div>
       )}
 
-      {/* Recommended Actions */}
+      {/* Action Points */}
       {model.recommendations && model.recommendations.length > 0 && (
-        <div id="section-recommendations" data-report-section="recommendations" className="bg-stone-50/80 border border-stone-200 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200 pb-2">
-            Follow-up actions
+        <div id="section-recommendations" data-report-section="recommendations" className="bg-stone-50/80 border border-stone-200/80 rounded-xl p-5 space-y-3 scroll-mt-6">
+          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200/80 pb-2">
+            Action points
           </h2>
           <div className="space-y-3">
             {model.recommendations.map((r, idx) => (
@@ -189,11 +192,11 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
         </div>
       )}
 
-      {/* Information Quality & Methodology */}
-      <div id="section-quality-methodology" data-report-section="quality-methodology" className="border-t border-stone-200 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-[11px] text-stone-600 scroll-mt-6">
+      {/* Operational Notes & Data Quality */}
+      <div id="section-quality-methodology" data-report-section="quality-methodology" className="border-t border-stone-200/80 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-[11px] text-stone-600 scroll-mt-6">
         <div className="space-y-2">
           <h3 className="font-serif font-semibold text-stone-900 uppercase text-[10px] tracking-wider">
-            Information quality
+            Operational notes &amp; data confidence
           </h3>
           <div className="flex items-center gap-2">
             <span className="font-semibold text-stone-800">Quality Status:</span>

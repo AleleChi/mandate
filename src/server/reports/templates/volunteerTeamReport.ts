@@ -53,25 +53,26 @@ export function buildVolunteerTeamReport(
 
   const sections: ReportSection[] = [];
 
-  // 1. Executive Summary Narrative
+  // 1. "What this report shows" Narrative
   const execIncluded = selectedSections.length === 0 || 
     selectedSections.includes('Executive Summary') || 
     selectedSections.includes('Executive summary') ||
+    selectedSections.includes('What this report shows') ||
     selectedSections.includes('Volunteer summary') ||
     selectedSections.includes('Volunteer coverage') ||
     selectedSections.includes('Volunteer & team coverage');
 
   if (execIncluded) {
     const ratioSummary = vol.ratioText !== 'Not available' 
-      ? `The overall supervision ratio averaged ${vol.ratioText} (${vol.ratioSublabel}).` 
-      : 'No active supervision ratio could be computed as check-in or duty records were not recorded.';
+      ? `On average, our supervision ratio was ${vol.ratioText} (${vol.ratioSublabel}).` 
+      : 'Supervision ratios were not calculated because no children or on-duty volunteers were recorded.';
     
     sections.push({
       id: 'vol-summary',
-      title: 'Volunteer workforce overview',
+      title: 'What this report shows',
       type: 'narrative',
       content: {
-        text: `Shows volunteer attendance, team assignments and coverage across event locations during "${analytics.eventTitle}". A total of ${totalAssigned} distinct volunteers are assigned to this event, with ${activeOnDuty} currently on duty (${attendanceRate.toFixed(0)}% turnout). ${ratioSummary} Designated event venues have ${staffedLocations} of ${totalLocations} rooms staffed.`
+        text: `This report gives ministry leadership a clear picture of volunteer staffing and room supervision for "${analytics.eventTitle}". It shows how many volunteers were assigned, who arrived on duty, how our teams are deployed, and whether all children's activity rooms are properly covered.\n\nA total of ${totalAssigned} volunteers were scheduled for this event, with ${activeOnDuty} currently on duty (${attendanceRate.toFixed(0)}% turnout). ${ratioSummary} Designated event rooms have ${staffedLocations} of ${totalLocations} rooms covered with active volunteers.`
       }
     });
   }
@@ -86,7 +87,7 @@ export function buildVolunteerTeamReport(
     sections.push({
       id: 'vol-team-deployment-chart',
       title: 'Volunteer team deployment',
-      description: 'Assigned versus on-duty staffing across ministry teams.',
+      description: 'Scheduled versus on-duty volunteers across ministry teams.',
       type: 'chart',
       content: {
         charts: [
@@ -94,17 +95,17 @@ export function buildVolunteerTeamReport(
             id: 'chart-vol-team-deployment',
             kind: 'horizontalBar' as const,
             title: 'Team Deployment Comparison',
-            subtitle: 'Assigned volunteers vs on-duty volunteers per team',
+            subtitle: 'Scheduled volunteers vs on-duty volunteers per team',
             labels: teamLabels,
             series: [
-              { id: 's-assigned', label: 'Assigned', values: assignedVals },
+              { id: 's-assigned', label: 'Scheduled', values: assignedVals },
               { id: 's-onduty', label: 'On duty', values: onDutyVals }
             ],
             unit: 'count',
             valueFormat: 'integer',
-            caption: 'Comparison of scheduled team members versus active duty verification.',
-            accessibleSummary: 'Horizontal bar chart showing assigned and on-duty volunteers across teams.',
-            emptyState: 'No recorded team distribution is available for this event.'
+            caption: 'Comparison of scheduled team members against active duty verification.',
+            accessibleSummary: 'Horizontal bar chart showing scheduled and on-duty volunteers across teams.',
+            emptyState: 'No volunteer team assignments recorded yet.'
           }
         ]
       }
@@ -113,7 +114,7 @@ export function buildVolunteerTeamReport(
     sections.push({
       id: 'vol-team-deployment-chart-empty',
       title: 'Volunteer team deployment',
-      description: 'Assigned versus on-duty staffing across ministry teams.',
+      description: 'Scheduled versus on-duty volunteers across ministry teams.',
       type: 'chart',
       content: {
         charts: [
@@ -121,18 +122,18 @@ export function buildVolunteerTeamReport(
             id: 'chart-vol-team-deployment-empty',
             kind: 'horizontalBar' as const,
             title: 'Team Deployment Comparison',
-            subtitle: 'Assigned volunteers vs on-duty volunteers per team',
+            subtitle: 'Scheduled volunteers vs on-duty volunteers per team',
             labels: [],
             series: [],
             caption: 'No team distribution recorded.',
-            emptyState: 'No recorded team distribution is available for this event.'
+            emptyState: 'No volunteer movement recorded yet.'
           }
         ]
       }
     });
   }
 
-  // 3. Chart B: Room Staffing Coverage
+  // 3. Chart B: Room Staffing Coverage (Grouped Horizontal Bar)
   if (loads.length > 0) {
     const locLabels = loads.map(l => l.locationLabel);
     const volCounts = loads.map(l => l.volunteerCount);
@@ -140,16 +141,16 @@ export function buildVolunteerTeamReport(
 
     sections.push({
       id: 'vol-room-coverage-chart',
-      title: 'Venue room staffing',
-      description: 'Supervisory coverage and children present across event locations.',
+      title: 'Room staffing and supervision',
+      description: 'Volunteers on duty and children present across activity rooms.',
       type: 'chart',
       content: {
         charts: [
           {
             id: 'chart-vol-room-coverage',
             kind: 'horizontalBar' as const,
-            title: 'Staffing by Event Location',
-            subtitle: 'On-duty volunteers and children present per venue room',
+            title: 'Staffing by Event Room',
+            subtitle: 'Volunteers on duty and children present per room',
             labels: locLabels,
             series: [
               { id: 's-vols', label: 'Volunteers on duty', values: volCounts },
@@ -166,35 +167,33 @@ export function buildVolunteerTeamReport(
     });
   }
 
-  // 4. Chart C: Volunteer Duty Status Composition (if statuses exist)
-  const dutyStatus = vol.dutyStatusComposition || [];
-  if (dutyStatus.length > 0) {
-    sections.push({
-      id: 'vol-status-composition-chart',
-      title: 'Volunteer duty status breakdown',
-      description: 'Current operational duty status of assigned volunteers.',
-      type: 'chart',
-      content: {
-        charts: [
-          {
-            id: 'chart-vol-status-composition',
-            kind: 'horizontalBar' as const,
-            title: 'Duty Status Composition',
-            subtitle: 'On duty, scheduled, on break, and unavailable members',
-            labels: dutyStatus.map(d => d.status),
-            series: [
-              { id: 's-status-count', label: 'Volunteers', values: dutyStatus.map(d => d.count) }
-            ],
-            unit: 'count',
-            valueFormat: 'integer',
-            caption: 'Snapshot of active workforce duty states.',
-            accessibleSummary: 'Chart showing breakdown of volunteers by operational duty status.',
-            emptyState: 'No volunteer duty status logs available.'
-          }
-        ]
-      }
-    });
-  }
+  // 4. Chart C: Volunteer Duty Status Composition (Donut Visual)
+  const notOnDuty = Math.max(0, totalAssigned - activeOnDuty);
+  sections.push({
+    id: 'vol-status-composition-chart',
+    title: 'Volunteer duty status distribution',
+    description: 'Breakdown of scheduled volunteers currently on duty versus not arrived.',
+    type: 'chart',
+    content: {
+      charts: [
+        {
+          id: 'chart-vol-status-composition',
+          kind: 'donut' as const,
+          title: 'Volunteer Duty Status',
+          subtitle: 'Active on duty versus scheduled but not checked in',
+          labels: ['Volunteers on duty', 'Scheduled but not on duty'],
+          series: [
+            { id: 's-duty-status', label: 'Volunteers', values: [activeOnDuty, notOnDuty] }
+          ],
+          unit: 'count',
+          valueFormat: 'integer',
+          caption: `${activeOnDuty} volunteers on duty, ${notOnDuty} scheduled but not arrived.`,
+          accessibleSummary: 'Donut chart showing volunteers on duty versus not on duty.',
+          emptyState: 'No volunteer duty status logs available.'
+        }
+      ]
+    }
+  });
 
   // 5. Room Staffing Breakdown Table
   if (loads.length > 0) {
@@ -203,7 +202,7 @@ export function buildVolunteerTeamReport(
       title: 'Room staffing breakdown',
       type: 'table',
       content: {
-        headers: ['Room', 'Volunteers', 'Children', 'Ratio', 'Status'],
+        headers: ['Room', 'Volunteers on duty', 'Children present', 'Supervision ratio', 'Coverage status'],
         rows: loads.map(l => {
           let ratioVal = 'Not available';
           if (l.volunteerCount > 0 && l.childrenCount > 0) {
@@ -215,9 +214,9 @@ export function buildVolunteerTeamReport(
             ratioVal = 'Unstaffed';
           }
 
-          let status = 'Staffed';
+          let status = 'Covered';
           if (l.volunteerCount === 0) status = 'Staffing gap';
-          else if (l.childrenCount > 0 && l.volunteerCount > 0 && (l.childrenCount / l.volunteerCount) > 15) status = 'High ratio';
+          else if (l.childrenCount > 0 && l.volunteerCount > 0 && (l.childrenCount / l.volunteerCount) > 15) status = 'High child load';
 
           return [
             l.locationLabel,
@@ -232,13 +231,13 @@ export function buildVolunteerTeamReport(
     });
   }
 
-  // 6. Findings
+  // 6. Key Observations
   const findings: ReportFinding[] = [
     {
       id: 'vol-finding-1',
-      title: 'Volunteer deployment',
+      title: 'Volunteer turnout',
       observation: totalAssigned > 0 
-        ? `${activeOnDuty} volunteers checked in on duty out of ${totalAssigned} assigned team members (${attendanceRate.toFixed(0)}% turnout).`
+        ? `${activeOnDuty} volunteers checked in on duty out of ${totalAssigned} scheduled team members (${attendanceRate.toFixed(0)}% turnout).`
         : 'No volunteer staff are currently assigned to this event.',
       severity: totalAssigned > 0 ? 'info' : 'warning'
     }
@@ -247,20 +246,20 @@ export function buildVolunteerTeamReport(
   if (unstaffedRoomsCount > 0) {
     findings.push({
       id: 'vol-finding-2',
-      title: 'Room staffing gaps',
+      title: 'Rooms needing coverage',
       observation: `${unstaffedRoomsCount} room(s) recorded no on-duty volunteers during the event.`,
       severity: 'warning'
     });
   }
 
-  // 7. Follow-up Actions
+  // 7. Action Points
   const recommendations: ReportRecommendation[] = [];
   if (unstaffedRoomsCount > 0) {
     recommendations.push({
       id: 'vol-rec-1',
-      action: 'Reassign floating volunteers to ensure at least one supervisor is present in each active room.',
+      action: 'Assign floating volunteers to ensure at least one supervisor is present in each active room.',
       evidence: `${unstaffedRoomsCount} room(s) recorded 0 assigned volunteers.`,
-      rationale: 'Satisfies mandatory child supervision coverage standards.',
+      rationale: 'Ensures safe supervision standards for all children.',
       priority: 'high',
       responsibility: 'Volunteer Coordinator'
     });
@@ -278,9 +277,9 @@ export function buildVolunteerTeamReport(
   if (recommendations.length === 0) {
     recommendations.push({
       id: 'vol-rec-none',
-      action: 'Maintain existing room coverage and coordinate scheduled break rotations.',
-      evidence: 'All active venue locations have assigned supervisory coverage.',
-      rationale: 'Supervisory coverage met operational targets.',
+      action: 'Maintain current room coverage and coordinate scheduled rest breaks.',
+      evidence: 'All active venue rooms have assigned volunteer coverage.',
+      rationale: 'Room supervision meets ministry standards.',
       priority: 'low',
       responsibility: 'Volunteer Coordinator'
     });
@@ -317,14 +316,14 @@ export function buildVolunteerTeamReport(
     dataQuality: {
       score: analytics.dataQuality.dataConfidenceScore,
       status: analytics.dataQuality.overallConfidence,
-      notes: 'Volunteer metrics reflect validated duty roster records linked to approved volunteer profiles.'
+      notes: 'Volunteer metrics reflect duty roster records linked to approved volunteer profiles.'
     },
     methodology: [
       'Verification of distinct volunteer attendance against assigned duty rosters.',
-      'Exclusion of unapproved, removed, or orphaned assignment records.'
+      'Supervision ratios are computed as children present divided by volunteers on duty in each room.'
     ],
     limitations: [
-      'Supervision ratios represent snapshot room counts and may vary with supervisor movement.'
+      'Supervision ratios represent room counts at the cutoff time and may change with room movement.'
     ]
   };
 }

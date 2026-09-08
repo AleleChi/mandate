@@ -15,10 +15,13 @@ export function buildChildSafetyIncidentReport(
   const totalEscalated = analytics.escalations.escalatedAlertsCount || 0;
   const maxTier = analytics.escalations.maxEscalationLevelReached || 0;
   const medianAck = analytics.alerts.medianAcknowledgementTimeSeconds;
+  const careTotal = analytics.registrations?.totalCareCount || 0;
+  const medCount = analytics.registrations?.medicalNotesCount || 0;
+  const supCount = analytics.registrations?.extraSupportCount || 0;
 
   const kpis: ReportKPI[] = [
     {
-      label: 'Safety alarms',
+      label: 'Safety notices',
       value: String(totalAlerts),
       sublabel: `${resolvedAlerts} resolved`,
       color: 'charcoal'
@@ -27,18 +30,30 @@ export function buildChildSafetyIncidentReport(
       label: 'Open concerns',
       value: String(openAlerts + inProgressAlerts),
       sublabel: `${openAlerts} open, ${inProgressAlerts} in progress`,
-      color: openAlerts + inProgressAlerts > 0 ? 'charcoal' : 'charcoal'
+      color: 'charcoal'
     },
     {
-      label: 'Median reaction',
-      value: medianAck !== null && medianAck !== undefined ? `${medianAck.toFixed(1)}s` : 'Unavailable',
-      sublabel: 'Alert acknowledgment interval',
+      label: 'Care records',
+      value: String(careTotal),
+      sublabel: 'Special care noted',
+      color: 'charcoal'
+    },
+    {
+      label: 'Dietary & medical',
+      value: String(medCount),
+      sublabel: 'Kitchen/allergy awareness',
+      color: 'charcoal'
+    },
+    {
+      label: 'Support requests',
+      value: String(supCount),
+      sublabel: 'Assigned helpers',
       color: 'charcoal'
     },
     {
       label: 'Escalations',
       value: String(totalEscalated),
-      sublabel: maxTier > 0 ? `Max Tier ${maxTier}` : 'No escalations',
+      sublabel: maxTier > 0 ? `Max Tier ${maxTier}` : 'None recorded',
       color: 'charcoal'
     }
   ];
@@ -48,19 +63,20 @@ export function buildChildSafetyIncidentReport(
   if (selectedSections.length === 0 || 
       selectedSections.includes('Executive Summary') || 
       selectedSections.includes('Executive summary') ||
+      selectedSections.includes('What this report shows') ||
       selectedSections.includes('Safety overview') ||
       selectedSections.includes('Care & safety') ||
       selectedSections.includes('Care & safety summary')) {
     const timingText = medianAck !== null && medianAck !== undefined
-      ? `Recorded alert acknowledgment latency averaged a median of ${medianAck.toFixed(1)} seconds.`
-      : 'Alert response timing was not recorded or no alerts were triggered.';
+      ? `On average, our team acknowledged safety notifications in a median of ${medianAck.toFixed(0)} seconds.`
+      : 'No response timing was recorded or no alerts were triggered.';
 
     sections.push({
       id: 'safety-overview',
-      title: 'Safeguarding overview',
+      title: 'What this report shows',
       type: 'narrative',
       content: {
-        text: `This restricted report details safety response records and escalation status for "${analytics.eventTitle}". All child identity references, medical details, and incident records are processed under strict safeguarding and privacy controls. During the event, a total of ${totalAlerts} safety alert(s) were raised, of which ${resolvedAlerts} were resolved and ${openAlerts + inProgressAlerts} remain active. ${timingText} A total of ${totalEscalated} alert(s) required escalation${maxTier > 0 ? `, reaching Tier ${maxTier}` : ''}.`
+        text: `This safeguarding report summarizes care notices, medical alerts, and safety items recorded for "${analytics.eventTitle}". All child identity references, medical details, and incident records are processed with strict confidentiality to protect children and families.\n\nDuring the event, a total of ${totalAlerts} safety notices were logged, of which ${resolvedAlerts} were resolved and ${openAlerts + inProgressAlerts} remain active. ${timingText} A total of ${totalEscalated} item(s) were escalated to senior coordinators.`
       }
     });
   }
@@ -71,16 +87,17 @@ export function buildChildSafetyIncidentReport(
     if (alertRecords.length > 0) {
       sections.push({
         id: 'incident-timeline-table',
-        title: 'Incident response log',
+        title: 'Safety and care response log',
         type: 'table',
         content: {
-          headers: ['Category', 'Escalation tier', 'Status', 'Response latency'],
+          headers: ['Category', 'Escalation tier', 'Status', 'Response status'],
           rows: alertRecords.map((al: any) => [
-            al.category || al.alertType || 'General care concern',
+            al.category || al.alertType || 'General care notice',
             al.escalation_level ? `Tier ${al.escalation_level}` : 'Standard',
             al.status || 'Logged',
             al.acknowledged_at ? 'Acknowledged' : 'Pending'
-          ])
+          ]),
+          caption: 'Anonymized response records captured during the event.'
         }
       });
     }
@@ -89,42 +106,39 @@ export function buildChildSafetyIncidentReport(
   // Care & Safety Visualizations
   const careCharts = [];
 
-  // Chart 1: Care awareness indicators (aggregated non-identifying)
-  const medCount = analytics.registrations?.medicalNotesCount || 0;
-  const supCount = analytics.registrations?.extraSupportCount || 0;
-  const careTotal = analytics.registrations?.totalCareCount || 0;
+  // Chart 1: Donut Chart - Alert resolution status
+  if (totalAlerts > 0) {
+    careCharts.push({
+      id: 'chart-alert-status',
+      kind: 'donut' as const,
+      title: 'Safety Notices by Status',
+      subtitle: 'Resolved versus active safeguarding concerns',
+      labels: ['Resolved', 'In progress', 'Open'],
+      series: [{
+        id: 's-alert-status',
+        label: 'Notices',
+        values: [resolvedAlerts, inProgressAlerts, openAlerts]
+      }],
+      caption: `${resolvedAlerts} of ${totalAlerts} safety matters closed.`,
+      accessibleSummary: 'Donut chart of safety notices by status.'
+    });
+  }
+
+  // Chart 2: Care awareness indicators (aggregated non-identifying)
   if (careTotal > 0 || medCount > 0 || supCount > 0) {
     careCharts.push({
       id: 'chart-care-indicators',
       kind: 'horizontalBar' as const,
-      title: 'Care & support flags by category',
-      subtitle: 'Aggregated non-identifying care indicators',
-      labels: ['Dietary & allergy awareness', 'Medical notices', 'Additional support assigned'],
+      title: 'Care & Support Notices by Category',
+      subtitle: 'Aggregated care indicators submitted by parents',
+      labels: ['Dietary & allergy awareness', 'Medical notices', 'Additional support requested'],
       series: [{
         id: 's-care-flags',
         label: 'Children',
         values: [careTotal, medCount, supCount]
       }],
-      caption: 'Aggregated care indicators requiring administrative coordination.',
+      caption: 'Aggregated care indicators requiring coordinator attention.',
       accessibleSummary: 'Horizontal bar chart showing care flags across categories.'
-    });
-  }
-
-  // Chart 2: Alert resolution status
-  if (totalAlerts > 0) {
-    careCharts.push({
-      id: 'chart-alert-status',
-      kind: 'horizontalBar' as const,
-      title: 'Safety alerts by resolution status',
-      subtitle: 'Resolved vs active safeguarding concerns',
-      labels: ['Resolved', 'Active / In progress'],
-      series: [{
-        id: 's-alert-status',
-        label: 'Alerts',
-        values: [resolvedAlerts, openAlerts + inProgressAlerts]
-      }],
-      caption: `${resolvedAlerts} of ${totalAlerts} safety matters closed.`,
-      accessibleSummary: 'Horizontal bar chart of safety alerts by status.'
     });
   }
 
@@ -134,38 +148,38 @@ export function buildChildSafetyIncidentReport(
   if (sevKeys.length > 0 && sevKeys.some(k => sevMap[k] > 0)) {
     careCharts.push({
       id: 'chart-alert-severity',
-      kind: 'horizontalBar' as const,
-      title: 'Safety concerns by severity',
-      subtitle: 'Distribution of recorded alerts by urgency tier',
+      kind: 'bar' as const,
+      title: 'Safety Concerns by Urgency',
+      subtitle: 'Distribution of recorded items by urgency level',
       labels: sevKeys.map(k => k.charAt(0).toUpperCase() + k.slice(1)),
       series: [{
         id: 's-alert-sev',
         label: 'Concerns',
         values: sevKeys.map(k => sevMap[k])
       }],
-      caption: 'Severity classification of logged safeguarding matters.',
-      accessibleSummary: 'Horizontal bar chart of safety concerns by severity.'
+      caption: 'Urgency classification of logged safeguarding matters.',
+      accessibleSummary: 'Bar chart of safety concerns by urgency.'
     });
   }
 
   if (careCharts.length > 0) {
     sections.push({
       id: 'care-safety-charts',
-      title: 'Care & safety visual analysis',
+      title: 'Care and safety visual summary',
       type: 'chart',
       content: { charts: careCharts }
     });
   } else {
     sections.push({
       id: 'care-safety-charts-empty',
-      title: 'Care & safety visual analysis',
+      title: 'Care and safety visual summary',
       type: 'chart',
       content: {
         charts: [{
           id: 'chart-care-safety-empty',
           kind: 'horizontalBar' as const,
           title: 'Care & safety summary',
-          subtitle: 'Operational incident and care indicator overview',
+          subtitle: 'Care indicator overview',
           labels: [],
           series: [],
           emptyState: 'No safety incidents or emergency alarms were recorded for this event.'
@@ -185,8 +199,8 @@ export function buildChildSafetyIncidentReport(
   } else {
     findings.push({
       id: 'safe-finding-resolution',
-      title: 'Alert resolution',
-      observation: `${resolvedAlerts} of ${totalAlerts} raised alerts were successfully addressed and closed.`,
+      title: 'Notice resolution',
+      observation: `${resolvedAlerts} of ${totalAlerts} logged safety notices were successfully addressed and resolved.`,
       severity: openAlerts > 0 ? 'warning' : 'info'
     });
   }
@@ -194,8 +208,8 @@ export function buildChildSafetyIncidentReport(
   if (totalEscalated > 0) {
     findings.push({
       id: 'safe-finding-escalation',
-      title: 'Escalations triggered',
-      observation: `${totalEscalated} alert(s) required tiered supervisor escalation, reaching maximum Tier ${maxTier}.`,
+      title: 'Escalations required',
+      observation: `${totalEscalated} notice(s) required coordinator escalation, reaching maximum Tier ${maxTier}.`,
       severity: 'warning'
     });
   }
@@ -204,9 +218,9 @@ export function buildChildSafetyIncidentReport(
   if (openAlerts + inProgressAlerts > 0) {
     recommendations.push({
       id: 'safe-rec-open',
-      action: 'Follow up on all unresolved care concerns with the Safeguarding Lead.',
-      evidence: `${openAlerts + inProgressAlerts} safety alert(s) remain open or in progress.`,
-      rationale: 'All raised concerns must have completed documented sign-off.',
+      action: 'Follow up on all unresolved care concerns with the Safeguarding Lead before event close.',
+      evidence: `${openAlerts + inProgressAlerts} safety notice(s) remain open or in progress.`,
+      rationale: 'All open concerns must be followed up and documented.',
       priority: 'high',
       responsibility: 'Safeguarding Lead'
     });
@@ -214,7 +228,7 @@ export function buildChildSafetyIncidentReport(
   if (recommendations.length === 0) {
     recommendations.push({
       id: 'safe-rec-none',
-      action: 'No immediate follow-up identified from the available event data.',
+      action: 'No immediate follow-up required from the available event data.',
       evidence: 'No unresolved safety concerns recorded in event logs.',
       rationale: 'All safety protocols satisfied.',
       priority: 'low',
@@ -225,9 +239,9 @@ export function buildChildSafetyIncidentReport(
   return {
     reportId,
     templateKey: 'child-safety-incident-report-v1',
-    templateVersion: 1,
-    reportTitle: 'Child Safety and Incident Report',
-    reportDescription: 'Review of raised safety alerts, resolution timelines, and follow-up completion status.',
+    templateVersion: 2,
+    reportTitle: 'Child Care and Safety Report',
+    reportDescription: 'Review of care notices, medical alerts, and safety follow-up for the event.',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
@@ -253,13 +267,13 @@ export function buildChildSafetyIncidentReport(
     dataQuality: {
       score: analytics.dataQuality.dataConfidenceScore,
       status: analytics.dataQuality.overallConfidence,
-      notes: 'Anonymized alert metrics audited against server logs. Safeguarding data minimization active.'
+      notes: 'Anonymized alert metrics audited against server logs. Safeguarding confidentiality active.'
     },
     methodology: [
-      'Incident timestamps compiled from verified database alert entries.'
+      'Safety notice timestamps are compiled from verified event log entries.'
     ],
     limitations: [
-      'Specific child names and identity details are withheld in compliance with child protection guidelines.'
+      'Specific child names and medical details are withheld to protect children and families.'
     ]
   };
 }

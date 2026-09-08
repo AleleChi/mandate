@@ -66,7 +66,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.text(model.reportTitle.toUpperCase(), marginX, 19);
 
     doc.setDrawColor(228, 228, 231);
-    doc.setLineWidth(0.2);
+    doc.setLineWidth(0.18);
     doc.line(marginX, 21, marginX + contentWidth, 21);
   }
 
@@ -76,9 +76,9 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFillColor(colors.lightIvory[0], colors.lightIvory[1], colors.lightIvory[2]);
   doc.rect(0, 0, 210, 297, 'F');
 
-  // Restrained Gold Line Accent
+  // Refined Subtle Gold Line Accent
   doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.setLineWidth(1.5);
+  doc.setLineWidth(0.75);
   doc.line(marginX, 25, marginX + contentWidth, 25);
 
   // Koinonia Branding Header (Top Right Logo with Bounded Natural Aspect Ratio)
@@ -134,7 +134,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.text('KOINONIA', marginX + contentWidth - 25, 15);
   }
 
-  // Left Title Header (Priority 5: Restrained clean hierarchy)
+  // Left Title Header
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
   doc.setFont('times', 'bold');
   doc.setFontSize(15);
@@ -149,11 +149,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   currentY = 27;
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
   doc.setFont('times', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   const titleText = model.reportTitle.toUpperCase();
   const titleLines = doc.splitTextToSize(titleText, contentWidth);
   doc.text(titleLines, marginX, currentY);
-  currentY += titleLines.length * 6.5 + 1.5;
+  currentY += titleLines.length * 6 + 1.5;
 
   if (model.reportDescription) {
     doc.setFont('times', 'italic');
@@ -161,15 +161,14 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
     const descLines = doc.splitTextToSize(model.reportDescription, contentWidth);
     doc.text(descLines, marginX, currentY);
-    currentY += descLines.length * 4 + 2;
+    currentY += descLines.length * 3.8 + 2;
   }
 
-  // Metadata Box (Event name, Event date, Generated date/time, Data cutoff)
-  doc.setLineWidth(0.3);
+  // Section A: Metadata Box (Event name, Event date, Generated date/time, Data cutoff)
+  doc.setLineWidth(0.22);
   doc.setDrawColor(228, 228, 231);
-  doc.setFillColor(248, 248, 248);
-  doc.rect(marginX, currentY, contentWidth, 14, 'F');
-  doc.rect(marginX, currentY, contentWidth, 14, 'S');
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(marginX, currentY, contentWidth, 14, 1.5, 1.5, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
@@ -193,135 +192,56 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFont('helvetica', 'normal');
   doc.text(formatHumanDate(model.informationConfirmedUpTo, true), marginX + 122, currentY + 10);
 
-  currentY += 18;
+  currentY += 19;
 
-  // Render Clean Restrained KPI Band (Prompt Section 16 & 37)
+  // Section B: Headline Metrics / KPI Cards Grid
   if (model.kpis && model.kpis.length > 0) {
-    const bandH = 20;
-    drawKPIBand(doc, marginX, currentY, contentWidth, bandH, model.kpis);
-    currentY += bandH + 7;
+    currentY = drawKPIBand(doc, marginX, currentY, contentWidth, model.kpis);
   }
 
-  // Render First Section (Executive Summary Narrative)
+  // Section C: "What this report shows" (First narrative section)
   const firstNarrativeSec = model.sections.find(s => s.type === 'narrative');
   if (firstNarrativeSec) {
-    doc.setFont('times', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text(firstNarrativeSec.title.toUpperCase(), marginX, currentY);
-
-    doc.setLineWidth(0.3);
-    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-
-    currentY += 6;
+    ensureHeight(25);
+    currentY = drawSectionHeading(doc, firstNarrativeSec.title || 'What this report shows', marginX, currentY, contentWidth);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(8.2);
     doc.setTextColor(39, 39, 42);
     const textLines = doc.splitTextToSize(firstNarrativeSec.content.text || '', contentWidth);
+    ensureHeight(textLines.length * 3.8);
     doc.text(textLines, marginX, currentY);
     currentY += textLines.length * 3.8 + 6;
   }
 
-  // Render Key Findings (Prompt Section 17 - Deterministic from numbers)
-  const findingsList = (model.findings || []).map(f => f.observation).filter(Boolean);
-  if (findingsList.length > 0) {
-    doc.setFont('times', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text('KEY FINDINGS', marginX, currentY);
-
-    doc.setLineWidth(0.3);
-    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-    currentY += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(39, 39, 42);
-    findingsList.forEach((kf) => {
-      const kfLines = doc.splitTextToSize(`•  ${kf}`, contentWidth - 4);
-      doc.text(kfLines, marginX + 2, currentY);
-      currentY += kfLines.length * 3.6 + 1;
-    });
-    currentY += 5;
-  }
-
-  // Render For Management Attention (Prompt Section 18 - Real conditions only)
-  const attentionList = model.managementAttention || [];
-  doc.setFont('times', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-  doc.text('FOR MANAGEMENT ATTENTION', marginX, currentY);
-
-  doc.setLineWidth(0.3);
-  doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-  currentY += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  if (attentionList.length === 0) {
-    doc.setTextColor(113, 113, 122);
-    doc.text('No items require management attention.', marginX + 2, currentY);
-    currentY += 6;
-  } else {
-    doc.setTextColor(39, 39, 42);
-    attentionList.forEach((item) => {
-      const itemLines = doc.splitTextToSize(`•  ${item}`, contentWidth - 4);
-      doc.text(itemLines, marginX + 2, currentY);
-      currentY += itemLines.length * 3.6 + 1;
-    });
-    currentY += 6;
-  }
-
   // =========================================================================
-  // REMAINING SECTIONS, CHARTS, TABLES & FINDINGS (Dynamic Flow)
+  // SECTION D: MAIN DATA SECTIONS (Charts, Tables, and Detail Sections)
   // =========================================================================
   const remainingSections = model.sections.filter(s => s !== firstNarrativeSec);
 
   for (const sec of remainingSections) {
     if (sec.type === 'narrative') {
       ensureHeight(25);
-      doc.setFont('times', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-      doc.text(sec.title, marginX, currentY);
-
-      doc.setLineWidth(0.3);
-      doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-      doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-
-      currentY += 7;
+      currentY = drawSectionHeading(doc, sec.title, marginX, currentY, contentWidth);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8.2);
       doc.setTextColor(39, 39, 42);
       const paragraphs = doc.splitTextToSize(sec.content.text || '', contentWidth);
-      ensureHeight(paragraphs.length * 4.2);
+      ensureHeight(paragraphs.length * 4);
       doc.text(paragraphs, marginX, currentY);
-      currentY += paragraphs.length * 4.2 + 6;
+      currentY += paragraphs.length * 4 + 6;
 
     } else if (sec.type === 'table') {
       ensureHeight(35);
-      doc.setFont('times', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-      doc.text(sec.title, marginX, currentY);
-
-      doc.setLineWidth(0.3);
-      doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-      doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-
-      currentY += 7;
+      currentY = drawSectionHeading(doc, sec.title, marginX, currentY, contentWidth);
 
       const { headers, rows, caption } = sec.content;
       currentY = drawTable(doc, marginX, currentY, contentWidth, headers || [], rows || []);
 
       if (caption) {
         doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7.5);
+        doc.setFontSize(7.2);
         doc.setTextColor(113, 113, 122);
         doc.text(caption, marginX, currentY + 3);
         currentY += 6;
@@ -358,28 +278,19 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
       if (chartSpecs.length > 0) {
         ensureHeight(55);
-        doc.setFont('times', 'bold');
-        doc.setFontSize(12);
-        doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-        doc.text(sec.title, marginX, currentY);
-
-        doc.setLineWidth(0.3);
-        doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-        doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-
-        currentY += 8;
+        currentY = drawSectionHeading(doc, sec.title, marginX, currentY, contentWidth);
 
         if (chartSpecs.length === 2) {
-          const chartW = 78;
-          const chartH = 42;
+          const chartW = 81;
+          const chartH = 44;
           ensureHeight(chartH + 8);
           drawChartSpec(doc, marginX, currentY, chartW, chartH, chartSpecs[0]);
-          drawChartSpec(doc, marginX + chartW + 14, currentY, chartW, chartH, chartSpecs[1]);
+          drawChartSpec(doc, marginX + chartW + 8, currentY, chartW, chartH, chartSpecs[1]);
           currentY += chartH + 12;
         } else {
           for (const chartSpec of chartSpecs) {
             const chartW = contentWidth;
-            const chartH = 45;
+            const chartH = chartSpec.kind === 'donut' ? 44 : 46;
             ensureHeight(chartH + 8);
             drawChartSpec(doc, marginX, currentY, chartW, chartH, chartSpec);
             currentY += chartH + 12;
@@ -389,16 +300,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
     } else if (sec.type === 'callout') {
       ensureHeight(30);
-      doc.setFont('times', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-      doc.text(sec.title, marginX, currentY);
-
-      doc.setLineWidth(0.3);
-      doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-      doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-
-      currentY += 7;
+      currentY = drawSectionHeading(doc, sec.title, marginX, currentY, contentWidth);
 
       const { theme, title, points } = sec.content;
       const calloutBg = theme === 'success' ? [240, 253, 244] : [254, 242, 242];
@@ -407,12 +309,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
       doc.setFillColor(calloutBg[0], calloutBg[1], calloutBg[2]);
       doc.setDrawColor(calloutBorder[0], calloutBorder[1], calloutBorder[2]);
-      doc.setLineWidth(0.3);
+      doc.setLineWidth(0.25);
 
       const boxH = 8 + ((points?.length || 1) * 4.5);
       ensureHeight(boxH);
-      doc.rect(marginX, currentY, contentWidth, boxH, 'F');
-      doc.rect(marginX, currentY, contentWidth, boxH, 'S');
+      doc.roundedRect(marginX, currentY, contentWidth, boxH, 1.5, 1.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
@@ -433,29 +334,21 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   }
 
   // =========================================================================
-  // KEY FINDINGS & RECOMMENDED ACTIONS
+  // SECTION E: KEY OBSERVATIONS (Plain English, Deterministic)
   // =========================================================================
   if (model.findings && model.findings.length > 0) {
-    ensureHeight(45);
-    doc.setFont('times', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text('KEY FINDINGS', marginX, currentY);
-
-    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.setLineWidth(0.3);
-    doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-    currentY += 7;
+    ensureHeight(40);
+    currentY = drawSectionHeading(doc, 'Key observations', marginX, currentY, contentWidth);
 
     model.findings.forEach((finding) => {
-      ensureHeight(22);
+      ensureHeight(20);
 
       const hasBadge = Boolean(finding.severity && finding.severity !== 'info');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-      const titleLines = doc.splitTextToSize(finding.title, hasBadge ? contentWidth - 28 : contentWidth);
-      doc.text(titleLines, marginX, currentY);
+      const titleLines = doc.splitTextToSize(`•  ${finding.title}`, hasBadge ? contentWidth - 30 : contentWidth);
+      doc.text(titleLines, marginX + 2, currentY);
 
       if (hasBadge) {
         let badgeColor = colors.grey;
@@ -463,46 +356,40 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
         else if (finding.severity === 'warning' || finding.severity === 'attention' || finding.severity === 'follow-up required') badgeColor = colors.amber;
 
         doc.setFillColor(badgeColor[0], badgeColor[1], badgeColor[2]);
-        doc.rect(marginX + contentWidth - 26, currentY - 3, 26, 4.5, 'F');
+        doc.roundedRect(marginX + contentWidth - 28, currentY - 3, 26, 4.2, 1, 1, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
+        doc.setFontSize(6);
         doc.setTextColor(255, 255, 255);
-        doc.text(String(finding.severity).toUpperCase(), marginX + contentWidth - 13, currentY + 0.2, { align: 'center' });
+        doc.text(String(finding.severity).toUpperCase(), marginX + contentWidth - 15, currentY + 0.1, { align: 'center' });
       }
 
-      currentY += Math.max(titleLines.length * 4.2, 4.5) + 1;
+      currentY += Math.max(titleLines.length * 3.8, 4.2) + 1;
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(82, 82, 91);
-      const obsLines = doc.splitTextToSize(finding.observation, contentWidth);
-      doc.text(obsLines, marginX, currentY);
-      currentY += obsLines.length * 4 + 3;
+      doc.setTextColor(71, 71, 78);
+      const obsLines = doc.splitTextToSize(finding.observation, contentWidth - 6);
+      doc.text(obsLines, marginX + 5, currentY);
+      currentY += obsLines.length * 3.8 + 3;
     });
     currentY += 3;
   }
 
+  // =========================================================================
+  // SECTION F: ACTION POINTS / FOLLOW-UP (Only when supported by real data)
+  // =========================================================================
   if (model.recommendations && model.recommendations.length > 0) {
-    ensureHeight(45);
-    doc.setFont('times', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text('FOLLOW-UP ACTIONS', marginX, currentY);
-
-    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.setLineWidth(0.3);
-    doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-    currentY += 7;
+    ensureHeight(40);
+    currentY = drawSectionHeading(doc, 'Action points', marginX, currentY, contentWidth);
 
     model.recommendations.forEach((rec) => {
-      ensureHeight(24);
+      ensureHeight(22);
 
-      // Wrap action to leave 28mm for priority badge
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setTextColor(colors.brass[0], colors.brass[1], colors.brass[2]);
-      const actionLines = doc.splitTextToSize(rec.action, contentWidth - 28);
-      doc.text(actionLines, marginX, currentY);
+      const actionLines = doc.splitTextToSize(`•  ${rec.action}`, contentWidth - 28);
+      doc.text(actionLines, marginX + 2, currentY);
 
       // Priority badge
       let pColor = colors.grey;
@@ -510,106 +397,81 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
       else if (rec.priority === 'medium') pColor = colors.amber;
 
       doc.setFillColor(pColor[0], pColor[1], pColor[2]);
-      doc.rect(marginX + contentWidth - 24, currentY - 3, 24, 4.5, 'F');
+      doc.roundedRect(marginX + contentWidth - 25, currentY - 3, 23, 4.2, 1, 1, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
+      doc.setFontSize(6);
       doc.setTextColor(255, 255, 255);
-      doc.text(`${rec.priority.toUpperCase()} PRIORITY`, marginX + contentWidth - 12, currentY + 0.2, { align: 'center' });
+      doc.text(`${rec.priority.toUpperCase()}`, marginX + contentWidth - 13.5, currentY + 0.1, { align: 'center' });
 
-      currentY += Math.max(actionLines.length * 4.2, 4.5) + 1;
+      currentY += Math.max(actionLines.length * 3.8, 4.2) + 1;
 
-      if (rec.evidence) {
+      if (rec.rationale) {
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
+        doc.setFontSize(7.8);
         doc.setTextColor(82, 82, 91);
-        const evidenceLines = doc.splitTextToSize(`Evidence: ${rec.evidence}`, contentWidth);
-        doc.text(evidenceLines, marginX, currentY);
-        currentY += evidenceLines.length * 4;
+        const rationaleLines = doc.splitTextToSize(rec.rationale, contentWidth - 6);
+        doc.text(rationaleLines, marginX + 5, currentY);
+        currentY += rationaleLines.length * 3.6 + 1;
       }
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(82, 82, 91);
-      const rationaleLines = doc.splitTextToSize(`Rationale: ${rec.rationale}`, contentWidth);
-      doc.text(rationaleLines, marginX, currentY);
-      currentY += rationaleLines.length * 4;
 
       if (rec.responsibility) {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(63, 63, 70);
-        doc.text(`Assigned Role: ${rec.responsibility}`, marginX, currentY);
-        currentY += 4.5;
+        doc.setFontSize(7.2);
+        doc.setTextColor(113, 113, 122);
+        doc.text(`Assigned to: ${rec.responsibility}`, marginX + 5, currentY);
+        currentY += 4;
       }
-      currentY += 3;
+      currentY += 2;
     });
     currentY += 3;
   }
 
   // =========================================================================
-  // METHODOLOGY, LIMITATIONS & APPENDIX
+  // SECTION G: NOTES & DATA VERIFICATION (Short and Non-Technical)
   // =========================================================================
-  ensureHeight(35);
-  doc.setFont('times', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-  doc.text('METHODOLOGY AND DATA PROTECTION', marginX, currentY);
-
-  doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.setLineWidth(0.3);
-  doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-  currentY += 7;
+  ensureHeight(30);
+  currentY = drawSectionHeading(doc, 'Notes and data verification', marginX, currentY, contentWidth);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.8);
   doc.setTextColor(113, 113, 122);
 
+  const notesList: string[] = [];
+  if (model.limitations && model.limitations.length > 0) {
+    notesList.push(...model.limitations);
+  }
   if (model.methodology && model.methodology.length > 0) {
-    model.methodology.forEach((meth, i) => {
-      const wrapped = doc.splitTextToSize(`Method ${i + 1}: ${meth}`, contentWidth);
-      ensureHeight(wrapped.length * 4);
-      doc.text(wrapped, marginX, currentY);
-      currentY += wrapped.length * 4 + 1;
-    });
-    currentY += 2;
+    notesList.push(...model.methodology);
   }
 
-  if (model.limitations && model.limitations.length > 0) {
-    model.limitations.forEach((lim, i) => {
-      const wrapped = doc.splitTextToSize(`Note ${i + 1}: ${lim}`, contentWidth);
-      ensureHeight(wrapped.length * 4);
-      doc.text(wrapped, marginX, currentY);
-      currentY += wrapped.length * 4 + 1;
+  if (notesList.length > 0) {
+    notesList.forEach((item) => {
+      const wrapped = doc.splitTextToSize(`•  ${item}`, contentWidth - 4);
+      ensureHeight(wrapped.length * 3.6);
+      doc.text(wrapped, marginX + 2, currentY);
+      currentY += wrapped.length * 3.6 + 1.5;
     });
-    currentY += 4;
+    currentY += 3;
+  } else {
+    doc.text('Figures reflect confirmed check-in and attendance records up to the data cutoff time.', marginX + 2, currentY);
+    currentY += 6;
   }
 
   if (model.appendix && model.appendix.length > 0) {
     model.appendix.forEach((app) => {
       ensureHeight(40);
-      doc.setFont('times', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-      doc.text(`APPENDIX: ${app.title.toUpperCase()}`, marginX, currentY);
-
-      doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-      doc.setLineWidth(0.3);
-      doc.line(marginX, currentY + 2, marginX + contentWidth, currentY + 2);
-      currentY += 7;
-
+      currentY = drawSectionHeading(doc, `APPENDIX: ${app.title.toUpperCase()}`, marginX, currentY, contentWidth);
       currentY = drawTable(doc, marginX, currentY, contentWidth, app.headers, app.rows);
       currentY += 8;
     });
   }
 
   // =========================================================================
-  // POST-PASS: ADD FOOTERS WITH ACCURATE DYNAMIC PAGE NUMBERS (Section 39)
+  // POST-PASS: ADD FOOTERS WITH ACCURATE DYNAMIC PAGE NUMBERS
   // =========================================================================
   const totalPagesCount = doc.getNumberOfPages();
   for (let pageIdx = 1; pageIdx <= totalPagesCount; pageIdx++) {
     doc.setPage(pageIdx);
-    
-    // Skip on page 1 for cover elegance
     if (pageIdx === 1) continue;
 
     doc.setFont('helvetica', 'normal');
@@ -619,7 +481,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     const eventName = model.eventContext?.eventTitle || 'The General Assembly';
     doc.text(`Koinonia Children & Teens  ·  ${eventName}`, marginX, 287);
     doc.text(`Page ${pageIdx} of ${totalPagesCount}`, marginX + (contentWidth / 2) - 8, 287);
-    doc.text('Internal management report', marginX + contentWidth - 36, 287);
+    doc.text('Official management report', marginX + contentWidth - 36, 287);
   }
 
   return {
@@ -628,49 +490,81 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   };
 }
 
-// Draw clean unified KPI band with dividers across content width (Section 16 & 37)
-function drawKPIBand(doc: jsPDF, x: number, y: number, w: number, h: number, kpis: ReportKPI[]) {
-  // Clean restrained white band with subtle neutral border
-  doc.setFillColor(255, 255, 255);
-  doc.rect(x, y, w, h, 'F');
-  doc.setDrawColor(228, 228, 231);
-  doc.setLineWidth(0.3);
-  doc.rect(x, y, w, h, 'S');
+// Draw Section Heading with soft faded neutral divider line and balanced spacing
+function drawSectionHeading(
+  doc: jsPDF,
+  title: string,
+  x: number,
+  y: number,
+  w: number
+): number {
+  doc.setFont('times', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
+  doc.text(title.toUpperCase(), x, y);
 
+  // Soft, faded, elegant neutral divider line
+  const lineY = y + 2.5;
+  doc.setDrawColor(228, 228, 231); // #E4E4E7 - soft, lighter, faded
+  doc.setLineWidth(0.18);
+  doc.line(x, lineY, x + w, lineY);
+
+  // Return comfortable next Y with balanced breathing room
+  return lineY + 5.5;
+}
+
+// Draw Executive KPI Cards Grid (Spacious, rounded cards with room for labels and sublabels)
+function drawKPIBand(doc: jsPDF, x: number, y: number, w: number, kpis: ReportKPI[]): number {
   const count = kpis.length;
-  const colW = w / count;
+  if (count === 0) return y;
+
+  const isMultiRow = count > 4;
+  const colsPerRow = isMultiRow ? 3 : count;
+  const gapX = 3.5;
+  const gapY = 3.5;
+  const cardW = (w - (colsPerRow - 1) * gapX) / colsPerRow;
+  const cardH = 20.5;
 
   kpis.forEach((kpi, idx) => {
-    const colX = x + idx * colW;
+    const colIdx = isMultiRow ? (idx % colsPerRow) : idx;
+    const rowIdx = isMultiRow ? Math.floor(idx / colsPerRow) : 0;
+    const cardX = x + colIdx * (cardW + gapX);
+    const cardY = y + rowIdx * (cardH + gapY);
 
-    // Subtle vertical divider between items
-    if (idx > 0) {
-      doc.setDrawColor(228, 228, 231);
-      doc.setLineWidth(0.25);
-      doc.line(colX, y, colX, y + h);
-    }
+    // Clean white card background with soft neutral border
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(228, 228, 231);
+    doc.setLineWidth(0.22);
+    doc.roundedRect(cardX, cardY, cardW, cardH, 1.5, 1.5, 'FD');
 
-    // Label: uppercase, small, subtle grey (Plus Jakarta Sans / Helvetica)
+    // Subtle top accent line (0.8mm)
+    doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+    doc.rect(cardX + 2, cardY, cardW - 4, 0.7, 'F');
+
+    // Label: uppercase, subtle grey
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
+    doc.setFontSize(6.2);
     doc.setTextColor(113, 113, 122);
-    doc.text(kpi.label.toUpperCase(), colX + 3, y + 5.5);
+    doc.text(kpi.label.toUpperCase(), cardX + 3.5, cardY + 5.8);
 
-    // Value: bold, charcoal, clear tabular numerals (Helvetica bold)
+    // Value: bold, charcoal
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(24, 24, 27);
-    doc.text(String(kpi.value), colX + 3, y + 12.5);
+    doc.text(String(kpi.value), cardX + 3.5, cardY + 12.5);
 
     // Sublabel: quiet secondary
     if (kpi.sublabel) {
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5.5);
-      doc.setTextColor(161, 161, 170);
-      const sub = doc.splitTextToSize(kpi.sublabel, colW - 5);
-      doc.text(sub[0] || '', colX + 3, y + 17);
+      doc.setFontSize(5.8);
+      doc.setTextColor(113, 113, 122);
+      const subLines = doc.splitTextToSize(kpi.sublabel, cardW - 7);
+      doc.text(subLines[0] || '', cardX + 3.5, cardY + 17);
     }
   });
+
+  const numRows = isMultiRow ? Math.ceil(count / colsPerRow) : 1;
+  return y + (numRows * cardH) + ((numRows - 1) * gapY) + 7;
 }
 
 // Beautiful Dynamic Table with Autowrapped Row cells
@@ -864,12 +758,11 @@ function drawBarChartSpec(
   const series = chart.series || [];
   const primarySeries = series[0]?.values || [];
 
-  doc.setDrawColor(161, 161, 170);
-  doc.setLineWidth(0.25);
-  doc.line(x, y, x, y + height);
-  doc.line(x, y + height, x + width, y + height);
-
   if (labels.length === 0 || primarySeries.length === 0) {
+    doc.setDrawColor(161, 161, 170);
+    doc.setLineWidth(0.25);
+    doc.line(x, y, x, y + height);
+    doc.line(x, y + height, x + width, y + height);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(161, 161, 170);
@@ -877,33 +770,117 @@ function drawBarChartSpec(
     return;
   }
 
-  const allVals = series.flatMap(s => s.values);
+  const isMultiSeries = series.length > 1;
+  const allVals = series.flatMap(s => s.values || []);
   const maxValue = Math.max(...allVals, 1);
-  const barW = (width / labels.length) * 0.55;
-  const barGap = (width / labels.length) * 0.45;
 
-  const barColors = [colors.gold, colors.deepGold, colors.emerald, colors.amber, colors.red];
+  // Colors for series: Gold, Charcoal, Emerald, Amber, Deep Gold
+  const seriesColors = [
+    [colors.gold[0], colors.gold[1], colors.gold[2]],
+    [colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]],
+    [22, 131, 93],
+    [208, 138, 29],
+    [140, 109, 35]
+  ];
 
-  labels.forEach((label, index) => {
-    const val = primarySeries[index] || 0;
-    const barH = (val / maxValue) * (height - 4);
-    const barX = x + (index * (barW + barGap)) + (barGap / 2);
-    const barY = y + height - barH;
+  // If multi-series, render legend at top
+  let chartTopY = y;
+  let chartAvailableH = height;
 
-    const bColor = barColors[index % barColors.length];
-    doc.setFillColor(bColor[0], bColor[1], bColor[2]);
-    doc.rect(barX, barY, barW, barH, 'F');
+  if (isMultiSeries) {
+    chartTopY = y + 6;
+    chartAvailableH = height - 6;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
-    doc.setTextColor(24, 24, 27);
-    doc.text(String(val), barX + (barW / 2), barY - 1.5, { align: 'center' });
+    let legX = x + 2;
+    series.forEach((s, sIdx) => {
+      const col = seriesColors[sIdx % seriesColors.length];
+      doc.setFillColor(col[0], col[1], col[2]);
+      doc.rect(legX, y, 2.5, 2.5, 'F');
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(5.5);
-    doc.setTextColor(113, 113, 122);
-    doc.text(label, barX + (barW / 2), y + height + 3, { align: 'center' });
-  });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.8);
+      doc.setTextColor(82, 82, 91);
+      doc.text(s.label || `Series ${sIdx + 1}`, legX + 3.5, y + 2.2);
+      legX += 34;
+    });
+  }
+
+  // Base axes
+  doc.setDrawColor(212, 212, 216);
+  doc.setLineWidth(0.22);
+  doc.line(x, chartTopY, x, chartTopY + chartAvailableH);
+  doc.line(x, chartTopY + chartAvailableH, x + width, chartTopY + chartAvailableH);
+
+  // Background light grid lines
+  doc.setDrawColor(244, 244, 245);
+  doc.setLineWidth(0.18);
+  for (let g = 1; g <= 3; g++) {
+    const gridY = chartTopY + chartAvailableH - (g / 3) * chartAvailableH;
+    doc.line(x, gridY, x + width, gridY);
+  }
+
+  const groupSlotW = width / labels.length;
+
+  if (isMultiSeries) {
+    const numSeries = series.length;
+    const groupBarW = (groupSlotW * 0.72) / numSeries;
+    const groupPad = (groupSlotW * 0.28) / 2;
+
+    labels.forEach((label, labelIdx) => {
+      const groupStartX = x + (labelIdx * groupSlotW) + groupPad;
+
+      series.forEach((s, sIdx) => {
+        const val = s.values[labelIdx] || 0;
+        const bH = (val / maxValue) * (chartAvailableH - 4);
+        const bX = groupStartX + (sIdx * groupBarW);
+        const bY = chartTopY + chartAvailableH - bH;
+        const col = seriesColors[sIdx % seriesColors.length];
+
+        if (val > 0) {
+          doc.setFillColor(col[0], col[1], col[2]);
+          doc.rect(bX, bY, Math.max(groupBarW - 0.4, 0.8), bH, 'F');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(24, 24, 27);
+          doc.text(String(val), bX + (groupBarW / 2), bY - 1, { align: 'center' });
+        }
+      });
+
+      // Category label
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(113, 113, 122);
+      doc.text(label, groupStartX + (groupSlotW * 0.36), chartTopY + chartAvailableH + 3.2, { align: 'center' });
+    });
+  } else {
+    const barW = groupSlotW * 0.55;
+    const barGap = groupSlotW * 0.45;
+    const barColors = [colors.gold, colors.deepGold, colors.emerald, colors.amber, colors.charcoal];
+
+    labels.forEach((label, index) => {
+      const val = primarySeries[index] || 0;
+      const barH = (val / maxValue) * (chartAvailableH - 4);
+      const barX = x + (index * (barW + barGap)) + (barGap / 2);
+      const barY = chartTopY + chartAvailableH - barH;
+
+      const bColor = barColors[index % barColors.length];
+      if (val > 0) {
+        doc.setFillColor(bColor[0], bColor[1], bColor[2]);
+        doc.rect(barX, barY, barW, barH, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6);
+        doc.setTextColor(24, 24, 27);
+        doc.text(String(val), barX + (barW / 2), barY - 1.5, { align: 'center' });
+      }
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(113, 113, 122);
+      doc.text(label, barX + (barW / 2), chartTopY + chartAvailableH + 3.2, { align: 'center' });
+    });
+  }
 }
 
 function drawHorizontalBarChartSpec(
@@ -1018,35 +995,70 @@ function drawDonutChartSpec(
   }
 
   const total = primarySeries.reduce((a, b) => a + b, 0) || 1;
-  const rowH = (height - 4) / labels.length;
-  const donutColors = [colors.gold, colors.emerald, colors.amber, colors.deepGold, colors.red];
+  const donutColors = [
+    [22, 131, 93],                                    // Emerald
+    [colors.gold[0], colors.gold[1], colors.gold[2]], // Gold
+    [colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]], // Charcoal
+    [208, 138, 29],                                   // Amber
+    [194, 65, 59]                                     // Red
+  ];
+
+  // Top Visual: Segmented Proportion Bar
+  const barH = 5;
+  const barY = y;
+  doc.setFillColor(244, 244, 245);
+  doc.roundedRect(x, barY, width, barH, 1.2, 1.2, 'F');
+
+  let accumPct = 0;
+  labels.forEach((_, idx) => {
+    const val = primarySeries[idx] || 0;
+    if (val <= 0) return;
+    const segW = (val / total) * width;
+    const segX = x + (accumPct / 100) * width;
+    const col = donutColors[idx % donutColors.length];
+
+    doc.setFillColor(col[0], col[1], col[2]);
+    doc.rect(segX, barY, Math.max(segW, 1), barH, 'F');
+    accumPct += (val / total) * 100;
+  });
+
+  // Legend / Breakdown Rows Below Bar
+  const rowsStartY = barY + barH + 4;
+  const availableH = height - (barH + 4);
+  const rowH = availableH / Math.max(labels.length, 1);
 
   labels.forEach((label, idx) => {
     const val = primarySeries[idx] || 0;
     const pct = Math.round((val / total) * 100);
-    const rowY = y + (idx * rowH);
-    const color = donutColors[idx % donutColors.length];
+    const rowY = rowsStartY + (idx * rowH);
+    const col = donutColors[idx % donutColors.length];
 
     // Color indicator square
-    doc.setFillColor(color[0], color[1], color[2]);
-    doc.rect(x, rowY + 1, 3, 3, 'F');
+    doc.setFillColor(col[0], col[1], col[2]);
+    doc.roundedRect(x + 1, rowY + 1, 3, 3, 0.6, 0.6, 'F');
 
-    // Label
+    // Category Label
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
+    doc.setFontSize(6.8);
     doc.setTextColor(63, 63, 70);
-    doc.text(label, x + 5, rowY + 3.5);
+    doc.text(label, x + 7, rowY + 3.5);
 
     // Value and percentage
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
+    doc.setFontSize(7);
     doc.setTextColor(24, 24, 27);
-    doc.text(`${val} (${pct}%)`, x + width - 15, rowY + 3.5, { align: 'right' });
+    doc.text(`${val}  (${pct}%)`, x + width - 4, rowY + 3.5, { align: 'right' });
 
-    // Progress bar behind text
-    doc.setFillColor(244, 244, 245);
-    doc.rect(x + 50, rowY + 1, width - 70, 2.5, 'F');
-    doc.setFillColor(color[0], color[1], color[2]);
-    doc.rect(x + 50, rowY + 1, Math.max(((width - 70) * pct) / 100, 1), 2.5, 'F');
+    // Subtle inline track
+    const trackStartX = x + 58;
+    const trackW = width - 95;
+    if (trackW > 20) {
+      doc.setFillColor(244, 244, 245);
+      doc.roundedRect(trackStartX, rowY + 1.2, trackW, 2.2, 0.8, 0.8, 'F');
+      if (val > 0) {
+        doc.setFillColor(col[0], col[1], col[2]);
+        doc.roundedRect(trackStartX, rowY + 1.2, Math.max((trackW * pct) / 100, 1.2), 2.2, 0.8, 0.8, 'F');
+      }
+    }
   });
 }

@@ -24,21 +24,21 @@ export function buildRegistrationSelectionReport(
 
   const kpis: ReportKPI[] = [
     {
-      label: 'Registrations',
+      label: 'Applications received',
       value: String(reg.totalRegistrations),
-      sublabel: 'Total applications received',
+      sublabel: 'Total registrations',
       color: 'charcoal'
     },
     {
       label: 'Selected',
       value: String(reg.selectedTotal),
-      sublabel: 'Admitted participants',
+      sublabel: 'Invited to attend',
       color: 'charcoal'
     },
     {
-      label: 'Under review',
+      label: 'Waiting for review',
       value: String(reg.underReviewTotal),
-      sublabel: 'Pending review decisions',
+      sublabel: 'Awaiting decision',
       color: 'charcoal'
     },
     {
@@ -50,7 +50,7 @@ export function buildRegistrationSelectionReport(
     {
       label: 'Selection rate',
       value: `${reg.selectionRate.toFixed(0)}%`,
-      sublabel: 'Admitted of total demand',
+      sublabel: 'Of total applications',
       color: 'charcoal'
     }
   ];
@@ -59,71 +59,92 @@ export function buildRegistrationSelectionReport(
 
   sections.push({
     id: 'reg-demand-summary',
-    title: 'Registration demand & review outcomes',
+    title: 'What this report shows',
     type: 'narrative',
     content: {
-      text: `This report details the intake, review outcomes, and cohort distribution for "${analytics.eventTitle}". The programme received ${reg.totalRegistrations} applications. Following administrative review, ${reg.selectedTotal} children were selected (${reg.selectionRate.toFixed(0)}% selection rate), ${reg.underReviewTotal} remain under review, and ${reg.waitlistTotal} were placed on the waiting list.`
+      text: `This report outlines application demand, review decisions, and age group breakdown for "${analytics.eventTitle}". It shows how many families applied, who has been selected to attend, who is on the waiting list, and which applications are still awaiting review.\n\nThe ministry received ${reg.totalRegistrations} applications. Following administrative review, ${reg.selectedTotal} children were selected (${reg.selectionRate.toFixed(0)}% selection rate), ${reg.underReviewTotal} applications are waiting for review, and ${reg.waitlistTotal} children were placed on the waiting list.`
     }
   });
 
   sections.push({
     id: 'reg-table',
-    title: 'Application resolution breakdown',
+    title: 'Application review summary',
     type: 'table',
     content: {
-      headers: ['Outcome status', 'Applications', 'Proportion'],
+      headers: ['Review decision', 'Applications', 'Share of demand'],
       rows: [
         ['Selected', `${reg.selectedTotal}`, `${reg.totalRegistrations > 0 ? Math.round((reg.selectedTotal / reg.totalRegistrations) * 100) : 0}%`],
-        ['Awaiting review', `${reg.underReviewTotal}`, `${reg.totalRegistrations > 0 ? Math.round((reg.underReviewTotal / reg.totalRegistrations) * 100) : 0}%`],
+        ['Waiting for review', `${reg.underReviewTotal}`, `${reg.totalRegistrations > 0 ? Math.round((reg.underReviewTotal / reg.totalRegistrations) * 100) : 0}%`],
         ['Waiting list', `${reg.waitlistTotal}`, `${reg.totalRegistrations > 0 ? Math.round((reg.waitlistTotal / reg.totalRegistrations) * 100) : 0}%`],
         ['Not selected', `${reg.notSelectedTotal}`, `${reg.totalRegistrations > 0 ? Math.round((reg.notSelectedTotal / reg.totalRegistrations) * 100) : 0}%`]
       ]
     }
   });
 
-  const outcomeLabels = reg.registrationOutcomes.map(o => o.label);
-  const outcomeValues = reg.registrationOutcomes.map(o => o.count);
   const ageLabels = Object.keys(reg.registrationsByAgeGroup || {});
   const ageValues = Object.values(reg.registrationsByAgeGroup || {});
 
   const charts = [];
-  if (outcomeLabels.length > 0 && outcomeValues.some(v => v > 0)) {
-    charts.push({
-      id: 'chart-reg-outcomes',
-      kind: 'horizontalBar' as const,
-      title: 'Registration outcomes',
-      subtitle: 'Distribution of application decisions',
-      labels: outcomeLabels,
-      series: [{ id: 's-reg', label: 'Applications', values: outcomeValues }],
-      caption: 'Application outcomes across all submissions.',
-      accessibleSummary: 'Horizontal bar chart of application review outcomes.'
-    });
-  }
 
+  // Chart 1: Donut Chart - Review decisions distribution
+  charts.push({
+    id: 'chart-reg-outcomes',
+    kind: 'donut' as const,
+    title: 'Application Review Decisions',
+    subtitle: 'Selected, waiting for review, waiting list, and not selected',
+    labels: ['Selected', 'Waiting for review', 'Waiting list', 'Not selected'],
+    series: [{
+      id: 's-reg-decisions',
+      label: 'Applications',
+      values: [reg.selectedTotal, reg.underReviewTotal, reg.waitlistTotal, reg.notSelectedTotal]
+    }],
+    caption: 'Distribution of application decisions across all submissions.',
+    accessibleSummary: 'Donut chart showing breakdown of application decisions.'
+  });
+
+  // Chart 2: Horizontal Bar Chart - Demand by age group
   if (ageLabels.length > 0 && ageValues.some(v => v > 0)) {
     charts.push({
       id: 'chart-reg-age',
       kind: 'horizontalBar' as const,
-      title: 'Children by age group',
-      subtitle: 'Registered children across configured age cohorts',
+      title: 'Applications by Age Group',
+      subtitle: 'Total applications received across age cohorts',
       labels: ageLabels,
-      series: [{ id: 's-age', label: 'Registered', values: ageValues }],
-      caption: 'Registration demand across configured age groups.',
-      accessibleSummary: 'Horizontal bar chart of registered children by age group.'
+      series: [{ id: 's-age', label: 'Applications', values: ageValues }],
+      caption: 'Registration demand across configured age cohorts.',
+      accessibleSummary: 'Horizontal bar chart of applications by age group.'
+    });
+  }
+
+  // Chart 3: Bar Chart - Care & Support requests
+  if (reg.totalCareCount > 0 || reg.medicalNotesCount > 0 || reg.extraSupportCount > 0) {
+    charts.push({
+      id: 'chart-reg-care',
+      kind: 'bar' as const,
+      title: 'Care & Support Requests',
+      subtitle: 'Applications with dietary, medical, or support notices',
+      labels: ['Dietary awareness', 'Medical notices', 'Additional support'],
+      series: [{
+        id: 's-care-flags',
+        label: 'Children',
+        values: [reg.totalCareCount, reg.medicalNotesCount, reg.extraSupportCount]
+      }],
+      caption: 'Aggregated care notices submitted during registration.',
+      accessibleSummary: 'Bar chart showing care and support requests.'
     });
   }
 
   if (charts.length > 0) {
     sections.push({
       id: 'reg-visualizations',
-      title: 'Application & age cohort charts',
+      title: 'Registration and cohort breakdown',
       type: 'chart',
       content: { charts }
     });
   } else {
     sections.push({
       id: 'reg-visualizations-empty',
-      title: 'Application & age cohort charts',
+      title: 'Registration and cohort breakdown',
       type: 'chart',
       content: {
         charts: [{
@@ -151,7 +172,7 @@ export function buildRegistrationSelectionReport(
     .map((rec, i) => ({
       id: `reg-rec-${i + 1}`,
       action: rec,
-      evidence: 'Current intake records',
+      evidence: 'Current registration intake records',
       rationale: 'Administrative follow-up item identified.',
       priority: 'medium',
       responsibility: 'Registration Lead'
@@ -160,7 +181,7 @@ export function buildRegistrationSelectionReport(
   return {
     reportId,
     templateKey: 'registration-selection',
-    templateVersion: 1,
+    templateVersion: 2,
     reportTitle: `${analytics.eventTitle} — Registration & Selection Report`,
     reportDescription: 'Registration demand, review outcomes, age-group distribution and selection.',
     eventContext: {

@@ -58,18 +58,19 @@ export function buildEventExecutiveReport(
   // 2. Sections
   const sections: ReportSection[] = [];
 
-  // PAGE 1: Executive Summary
+  // PAGE 1: What this report shows
   const execSummaryIncluded = selectedSections.length === 0 || 
     selectedSections.includes('Executive summary') || 
-    selectedSections.includes('Executive Summary');
+    selectedSections.includes('Executive Summary') ||
+    selectedSections.includes('What this report shows');
 
   if (execSummaryIncluded) {
     sections.push({
       id: 'exec-summary',
-      title: 'Executive summary',
+      title: 'What this report shows',
       type: 'narrative',
       content: {
-        text: `This Management Report summarizes the operational performance, participation, attendance, volunteer deployment, and care management for "${analytics.eventTitle}". A total of ${regTotal} children registered, with ${selTotal} selected for attendance. On event day, ${checkedInTotal} children checked in, representing an attendance rate of ${attRate.toFixed(0)}% among selected participants. Supervised care was supported by ${volunteersOnDuty} volunteers on duty across designated venue rooms. All operations adhered to established data protection and safeguarding protocols.`
+        text: `This executive dashboard gives ministry leadership a complete operational summary of "${analytics.eventTitle}". It brings together application demand, attendance turnout, volunteer staffing, room supervision, and child care in a single leadership view.\n\nA total of ${regTotal} children registered, with ${selTotal} selected to attend. On event day, ${checkedInTotal} children arrived and checked in (${attRate.toFixed(0)}% attendance rate). Supervised care was supported by ${volunteersOnDuty} volunteers on duty across designated venue rooms. All operations adhered to established child safety and care protocols.`
       }
     });
   }
@@ -85,13 +86,13 @@ export function buildEventExecutiveReport(
     sections.push({
       id: 'reg-metrics-table',
       title: 'Registration & participation',
-      description: 'Overview of programme demand, review outcomes, and cohort distribution.',
+      description: 'Overview of programme demand, review decisions, and cohort distribution.',
       type: 'table',
       content: {
         headers: ['Registration status', 'Count', 'Share of demand'],
         rows: [
           ['Selected', `${reg.selectedTotal} children`, `${reg.totalRegistrations > 0 ? Math.round((reg.selectedTotal / reg.totalRegistrations) * 100) : 0}%`],
-          ['Awaiting review', `${reg.underReviewTotal} applications`, `${reg.totalRegistrations > 0 ? Math.round((reg.underReviewTotal / reg.totalRegistrations) * 100) : 0}%`],
+          ['Waiting for review', `${reg.underReviewTotal} applications`, `${reg.totalRegistrations > 0 ? Math.round((reg.underReviewTotal / reg.totalRegistrations) * 100) : 0}%`],
           ['Waiting list', `${reg.waitlistTotal} children`, `${reg.totalRegistrations > 0 ? Math.round((reg.waitlistTotal / reg.totalRegistrations) * 100) : 0}%`],
           ['Not selected', `${reg.notSelectedTotal} children`, `${reg.totalRegistrations > 0 ? Math.round((reg.notSelectedTotal / reg.totalRegistrations) * 100) : 0}%`],
           ['Total registrations', `${reg.totalRegistrations} applications`, '100%']
@@ -109,13 +110,13 @@ export function buildEventExecutiveReport(
     if (outcomeLabels.length > 0 && outcomeValues.some(v => v > 0)) {
       regCharts.push({
         id: 'chart-reg-outcomes',
-        kind: 'horizontalBar' as const,
+        kind: 'donut' as const,
         title: 'Registration outcomes',
         subtitle: 'Distribution of application decisions',
         labels: outcomeLabels,
         series: [{ id: 's-reg-out', label: 'Applications', values: outcomeValues }],
         caption: 'Authoritative outcome distribution from registration intake.',
-        accessibleSummary: 'Horizontal bar chart showing registration application decisions.'
+        accessibleSummary: 'Donut chart showing registration application decisions.'
       });
     }
 
@@ -157,42 +158,42 @@ export function buildEventExecutiveReport(
       content: {
         headers: ['Movement stage', 'Count', 'Rate'],
         rows: [
-          ['Expected (selected)', `${att.expectedTotal} children`, 'Base denominator'],
-          ['Checked in', `${att.checkedInTotal} children`, `${att.attendanceRate.toFixed(0)}% attendance rate`],
-          ['Currently inside', `${att.insideTotal} children`, `${att.checkedInTotal > 0 ? Math.round((att.insideTotal / att.checkedInTotal) * 100) : 0}% of checked-in`],
-          ['Picked up', `${att.releasedTotal} children`, `${att.checkedInTotal > 0 ? Math.round((att.releasedTotal / att.checkedInTotal) * 100) : 0}% of checked-in`],
-          ['Not arrived', `${att.notArrivedTotal} children`, `${att.expectedTotal > 0 ? Math.round((att.notArrivedTotal / att.expectedTotal) * 100) : 0}% of expected`]
+          ['Invited (selected)', `${att.expectedTotal} children`, 'Base denominator'],
+          ['Children checked in', `${att.checkedInTotal} children`, `${att.attendanceRate.toFixed(0)}% attendance rate`],
+          ['Children still inside', `${att.insideTotal} children`, `${att.checkedInTotal > 0 ? Math.round((att.insideTotal / att.checkedInTotal) * 100) : 0}% of checked in`],
+          ['Children picked up', `${att.releasedTotal} children`, `${att.checkedInTotal > 0 ? Math.round((att.releasedTotal / att.checkedInTotal) * 100) : 0}% of checked in`],
+          ['Did not arrive', `${att.notArrivedTotal} children`, `${att.expectedTotal > 0 ? Math.round((att.notArrivedTotal / att.expectedTotal) * 100) : 0}% of invited`]
         ]
       }
     });
 
     const attCharts = [];
 
-    // Flow chart
+    // Donut chart: Attendance status flow
     attCharts.push({
       id: 'chart-att-flow',
-      kind: 'horizontalBar' as const,
-      title: 'Attendance flow',
-      subtitle: 'Expected vs checked-in vs picked up',
-      labels: ['Expected', 'Checked in', 'Picked up'],
-      series: [{ id: 's-flow', label: 'Children', values: [att.expectedTotal, att.checkedInTotal, att.releasedTotal] }],
-      caption: 'Attendance movement stages recorded during the event.',
-      accessibleSummary: 'Horizontal bar chart showing expected, checked-in, and picked-up counts.'
+      kind: 'donut' as const,
+      title: 'Attendance status flow',
+      subtitle: 'Children inside, picked up, and not arrived',
+      labels: ['Children still inside', 'Children picked up', 'Did not arrive'],
+      series: [{ id: 's-flow', label: 'Children', values: [att.insideTotal, att.releasedTotal, att.notArrivedTotal] }],
+      caption: `${att.insideTotal} in activity rooms, ${att.releasedTotal} picked up, ${att.notArrivedTotal} did not arrive.`,
+      accessibleSummary: 'Donut chart showing inside, picked up, and not arrived counts.'
     });
 
-    // Attendance by age group
+    // Bar chart: Attendance by age group
     if (att.ageGroupAttendance && att.ageGroupAttendance.length > 0) {
       const ageLabels = att.ageGroupAttendance.map(a => a.ageGroup);
       const attendedVals = att.ageGroupAttendance.map(a => a.attended);
       attCharts.push({
         id: 'chart-att-age',
-        kind: 'horizontalBar' as const,
+        kind: 'bar' as const,
         title: 'Attendance by age group',
-        subtitle: 'Actual attendance across cohorts',
+        subtitle: 'Actual attendance across age cohorts',
         labels: ageLabels,
-        series: [{ id: 's-att-age', label: 'Attended', values: attendedVals }],
+        series: [{ id: 's-att-age', label: 'Checked in', values: attendedVals }],
         caption: 'Attendance turnout across configured age groups.',
-        accessibleSummary: 'Horizontal bar chart showing attendance by age cohort.'
+        accessibleSummary: 'Bar chart showing attendance by age cohort.'
       });
     }
 
@@ -201,8 +202,8 @@ export function buildEventExecutiveReport(
       attCharts.push({
         id: 'chart-att-hourly',
         kind: 'line' as const,
-        title: 'Check-in and pickup activity',
-        subtitle: 'Check-in entry volume over time',
+        title: 'Check-in activity over time',
+        subtitle: 'Check-in volume by hour',
         labels: att.checkInTimeSeries.map(t => t.hour),
         series: [{ id: 's-hourly', label: 'Check-ins', values: att.checkInTimeSeries.map(t => t.count) }],
         caption: 'Arrival timeline recorded at check-in desks.',
