@@ -3,7 +3,8 @@ import {
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
-  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2
+  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
+  HelpCircle
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -14,6 +15,7 @@ import { BrowserQRCodeReader } from '@zxing/browser';
 import { VolunteerProfileView } from './volunteer/VolunteerProfileView';
 import { DeviceReadinessView } from '../components/volunteer/DeviceReadinessView';
 import { SafeImage } from '../components/common/SafeImage';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 import { BrandLogo } from '../components/common/BrandLogo';
 import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
 import { playSound, resumeAudioContext } from '../utils/sound';
@@ -77,6 +79,32 @@ const formatChildNameAndRef = (rawName?: string) => {
     };
   }
   return { name: rawName, ref: '' };
+};
+
+const cleanAgeGroup = (group?: string | null) => {
+  if (!group) return 'Unassigned';
+  const cleaned = group.replace(/\s*\(\s*review\s*needed\s*\)/gi, '').trim();
+  if (cleaned.toLowerCase() === 'under 4') return 'Under 4s';
+  return cleaned;
+};
+
+const formatChildAge = (age?: number | null) => {
+  if (age === undefined || age === null) return 'Age not verified';
+  if (age === 0) return 'Under 1 year';
+  if (age === 1) return '1 year';
+  return `${age} years`;
+};
+
+const resolveChildPhotoUrl = (photoRef?: string | null): string => {
+  if (!photoRef || !photoRef.trim()) return '';
+  const trimmed = photoRef.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('blob:')) {
+    return resolveMediaUrl(trimmed);
+  }
+  if (!trimmed.includes('/')) {
+    return resolveMediaUrl(`/api/media/files/${trimmed}`);
+  }
+  return resolveMediaUrl(trimmed);
 };
 
 const VolunteerDetailedAlertProgress: React.FC<{ alertId: string }> = ({ alertId }) => {
@@ -1000,7 +1028,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
     
     if (safetyLinkOption === 'link' && !safetyChildContext) {
-      errors.push("Select a child to link, or switch to 'General alert'.");
+      errors.push("Select a child to link, or switch to 'General safety note'.");
     }
 
     // Category-specific validation (bypassed if urgent)
@@ -2997,7 +3025,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               {item.issue_type || item.issueType || 'Unresolved issue'}
                             </p>
                             <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
-                              {cleaned.name} {item.child_id ? `(ID: ${item.child_id})` : ''}
+                              {cleaned.name} {cleaned.ref ? `• #${cleaned.ref}` : (item.child_id ? `• #${String(item.child_id).slice(-4)}` : '')}
                             </p>
                           </div>
                         </div>
@@ -3059,7 +3087,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       
                       {item.ageGroup && (
                         <span className="text-[10px] font-medium text-zinc-500 bg-zinc-50 border border-zinc-200 px-2 py-0.5 rounded-full shrink-0">
-                          {item.ageGroup}
+                          {cleanAgeGroup(item.ageGroup)}
                         </span>
                       )}
                     </div>
@@ -5804,20 +5832,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       {showAttentionDetailModal && selectedAttentionItem && (
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in"
-          data-view-version="volunteer-attention-detail-v4-premium"
+          data-view-version="volunteer-attention-detail-v5-refined"
         >
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EAE8E1]">
             {/* Header */}
             <div 
               className="flex items-center justify-between pb-3 border-b border-gray-100"
-              data-component-version="volunteer-attention-detail-header-v4"
+              data-component-version="volunteer-attention-detail-header-v5"
             >
               <div className="space-y-0.5">
-                <h3 className="text-lg font-serif font-bold text-neutral-900 leading-tight">
-                  Needs Supportive Care Review
+                <h3 className="text-xl font-serif font-bold text-neutral-900 leading-tight">
+                  Review child details
                 </h3>
-                <p className="text-xs text-gray-500 leading-normal">
-                  Confirm the entry details to ensure the child's absolute comfort and safety.
+                <p className="text-xs font-sans text-neutral-500 leading-normal">
+                  Check the information below before continuing.
                 </p>
               </div>
               <button 
@@ -5826,7 +5854,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   setSelectedAttentionItem(null);
                   setAttentionError(null);
                 }}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition-colors cursor-pointer"
+                aria-label="Close"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -5835,8 +5864,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             {/* Inline Error Message */}
             {attentionError && (
               <div 
-                className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-1.5 animate-fade-in"
-                data-component-version="volunteer-attention-safe-error-v2"
+                className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-1.5 animate-fade-in font-sans"
+                data-component-version="volunteer-attention-safe-error-v3"
               >
                 <span className="shrink-0 font-medium">⚠️</span>
                 <span>{attentionError}</span>
@@ -5844,169 +5873,196 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             )}
 
             {/* Child Summary Block */}
-            <div 
-              className="bg-[#FAF9F6] border border-[#EAE8E1] p-4 rounded-2xl flex items-center gap-4"
-              data-component-version="volunteer-attention-modal-child-summary-v2"
-            >
-              {/* Photo or Fallback */}
-              <div 
-                className="w-16 h-16 rounded-2xl bg-[#FAF6EB] border border-[#E5D5AE]/60 overflow-hidden flex-shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-lg"
-                data-component-version="volunteer-attention-child-photo-v2"
-              >
-                {(() => {
-                  const childPhoto = selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId;
-                  const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
-                  const cleaned = formatChildNameAndRef(cName);
-                  
-                  const resolvedPhotoUrl = childPhoto ? (
-                    childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
-                      ? childPhoto 
-                      : `/api/media/files/${childPhoto}`
-                  ) : '';
+            {(() => {
+              const childPhoto = selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId;
+              const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+              const cleaned = formatChildNameAndRef(cName);
+              
+              const resolvedPhotoUrl = childPhoto ? (
+                childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                  ? childPhoto 
+                  : `/api/media/files/${childPhoto}`
+              ) : '';
 
-                  if (resolvedPhotoUrl) {
-                    return (
-                       <SafeImage 
+              const rawAge = selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? selectedAttentionItem.child_age : selectedAttentionItem.childAge;
+              let ageText = '';
+              if (rawAge !== undefined && rawAge !== null) {
+                if (rawAge === 0) {
+                  ageText = 'Under 1 year';
+                } else if (rawAge === 1) {
+                  ageText = '1 year';
+                } else {
+                  ageText = `${rawAge} years`;
+                }
+              }
+
+              const rawGroup = selectedAttentionItem.child_age_group || selectedAttentionItem.childAgeGroup || '';
+              const cleanGroup = rawGroup
+                .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                .trim();
+
+              const summaryParts: string[] = [];
+              if (ageText) summaryParts.push(ageText);
+              if (cleanGroup) summaryParts.push(cleanGroup);
+              const summaryLine = summaryParts.join(' · ') || 'Details pending';
+
+              return (
+                <div 
+                  className="bg-neutral-50/80 border border-neutral-200/80 p-3.5 rounded-2xl flex items-center gap-3.5"
+                  data-component-version="volunteer-attention-modal-child-summary-v3"
+                >
+                  {/* Photo or Fallback */}
+                  <div 
+                    className="w-14 h-14 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE]/60 overflow-hidden shrink-0 flex items-center justify-center text-[#9A7326] font-sans font-bold text-base"
+                    data-component-version="volunteer-attention-child-photo-v3"
+                  >
+                    {resolvedPhotoUrl ? (
+                      <SafeImage 
                         src={resolvedPhotoUrl} 
-                        alt={cleaned.name} 
+                        alt="" 
                         className="w-full h-full object-cover"
+                        containerClassName="w-full h-full flex items-center justify-center"
                         fallbackComponent={
-                          <span className="font-serif font-bold text-lg">
+                          <span className="font-sans font-bold text-base text-[#9A7326]">
                             {cleaned.name.charAt(0).toUpperCase()}
                           </span>
                         }
                       />
-                    );
-                  }
-                  return (
-                    <span className="font-serif font-bold text-lg">
-                      {cleaned.name.charAt(0).toUpperCase()}
-                    </span>
-                  );
-                })()}
-              </div>
-              
-              {/* Details */}
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <h4 
-                    className="text-base font-bold text-neutral-900 font-serif break-words whitespace-normal leading-tight"
-                    data-component-version="volunteer-attention-safe-child-display-v2"
-                  >
-                    {(() => {
-                      const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
-                      return formatChildNameAndRef(cName).name;
-                    })()}
-                  </h4>
-                  {(() => {
-                    const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
-                    const cleaned = formatChildNameAndRef(cName);
-                    if (cleaned.ref) {
-                      return (
+                    ) : (
+                      <span className="font-sans font-bold text-base text-[#9A7326]">
+                        {cleaned.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 
+                        className="text-sm font-semibold text-neutral-900 font-sans truncate leading-tight"
+                        data-component-version="volunteer-attention-safe-child-display-v3"
+                      >
+                        {cleaned.name}
+                      </h4>
+                      {cleaned.ref && (
                         <span 
-                          className="text-[10px] font-mono font-medium px-2 py-0.5 bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE]/30 rounded-md shrink-0"
-                          data-component-version="volunteer-attention-child-reference-v2"
+                          className="text-[10px] font-mono font-medium px-1.5 py-0.5 bg-white text-neutral-600 border border-neutral-200 rounded shrink-0"
+                          data-component-version="volunteer-attention-child-reference-v3"
                         >
                           Ref: {cleaned.ref}
                         </span>
-                      );
-                    }
-                    return null;
-                  })()}
+                      )}
+                    </div>
+                    <p className="text-xs text-neutral-600 font-sans mt-0.5" data-component-version="volunteer-child-age-display-v3">
+                      {summaryLine}
+                    </p>
+                    {selectedAttentionItem.parent_name && (
+                      <p className="text-[11px] text-neutral-500 font-sans mt-0.5 truncate">
+                        <span className="font-medium text-neutral-700">Parent:</span> {selectedAttentionItem.parent_name} {selectedAttentionItem.parent_phone ? `(${selectedAttentionItem.parent_phone})` : ''}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5" data-component-version="volunteer-child-age-display-v2-under-one">
-                  Age: {selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? (selectedAttentionItem.child_age === 0 ? 'Under 1 year old' : `${selectedAttentionItem.child_age} yrs`) : 'Not verified'} | Group: {selectedAttentionItem.child_age_group || 'Unassigned'}
-                </p>
-                {selectedAttentionItem.parent_name && (
-                  <p className="text-[11px] text-gray-600 mt-1">
-                    <span className="font-semibold text-gray-700">Parent:</span> {selectedAttentionItem.parent_name} ({selectedAttentionItem.parent_phone || 'N/A'})
+              );
+            })()}
+
+            {/* Attention Reason */}
+            {(() => {
+              const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+              const childDisplayName = formatChildNameAndRef(cName).name;
+              const rawAge = selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? selectedAttentionItem.child_age : selectedAttentionItem.childAge;
+              const t = (selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || '').toLowerCase();
+              
+              let attentionTitle = selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || 'Attention needed';
+              if (t === 'age_review' || t === 'age review needed' || t === 'age review required' || t.includes('age review') || t.includes('group verification')) {
+                attentionTitle = 'Age needs confirmation';
+              } else if (t === 'missing_pickup_photo' || t === 'missing pickup photo' || t.includes('pickup')) {
+                attentionTitle = 'Needs pickup verification';
+              } else if (t === 'medical_note' || t === 'medical note update' || t.includes('medical') || t.includes('care note')) {
+                attentionTitle = 'Care alert';
+              }
+
+              let attentionDescription = selectedAttentionItem.description || '';
+              if (t === 'age_review' || t === 'age review needed' || t === 'age review required' || t.includes('age review') || t.includes('group verification')) {
+                const agePhrase = (rawAge === 0 || rawAge === undefined || rawAge === null) ? 'under 1 year' : `${rawAge} years old`;
+                attentionDescription = `${childDisplayName} is ${agePhrase}. Please confirm that the assigned age group is correct.`;
+              } else if (t === 'missing_pickup_photo' || t === 'missing pickup photo' || t.includes('pickup')) {
+                attentionDescription = 'A pickup person photo has not been added yet. Please verify their physical ID or event pass, then add a brief note about who you confirmed.';
+              } else if (t === 'medical_note' || t === 'medical note update' || t.includes('medical') || t.includes('care note')) {
+                attentionDescription = 'A supportive care note is active for this child. Please read it to ensure all event-day preferences are handled safely.';
+              }
+
+              const isHighPriority = (selectedAttentionItem.priority || '').toLowerCase() === 'high' || (selectedAttentionItem.priority || '').toLowerCase() === 'urgent';
+
+              return (
+                <div 
+                  className="p-3.5 bg-amber-50/50 border border-amber-200/60 rounded-2xl space-y-1.5"
+                  data-component-version="volunteer-attention-reason-card-v5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 text-amber-900">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                      <span className="text-xs font-sans font-semibold text-amber-900">
+                        {attentionTitle}
+                      </span>
+                    </div>
+                    {/* NORMAL badge removed completely */}
+                    {isHighPriority && (
+                      <span className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300/60">
+                        High Priority
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-sans text-neutral-700 leading-relaxed">
+                    {attentionDescription}
                   </p>
-                )}
-              </div>
-            </div>
-
-            {/* Attention Reason Card */}
-            <div 
-              className="p-4 bg-[#FAF6EB] border border-[#E5D5AE]/50 rounded-2xl space-y-3"
-              data-component-version="volunteer-attention-reason-card-v4"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-[#9A7326]">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-[#C59B27]" />
-                  <span className="text-xs font-serif font-semibold tracking-wide text-[#9A7326]">
-                    {(() => {
-                      const t = selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || 'Attention Required';
-                      if (t.toLowerCase() === 'missing_pickup_photo' || t.toLowerCase() === 'missing pickup photo') {
-                        return 'Needs Pickup Verification';
-                      } else if (t.toLowerCase() === 'age_review' || t.toLowerCase() === 'age review needed') {
-                        return 'Group Verification Review';
-                      } else if (t.toLowerCase() === 'medical_note' || t.toLowerCase() === 'medical note update') {
-                        return 'Care Alert';
-                      }
-                      return t;
-                    })()}
-                  </span>
+                  {(selectedAttentionItem.type === 'medical_note' || selectedAttentionItem.title === 'Medical note update') && (
+                    <div className="text-[11px] font-sans text-amber-900 bg-amber-100/50 p-2 rounded-xl border border-amber-200/40 mt-1 flex items-start gap-1.5">
+                      <span className="shrink-0 text-amber-600">❤️</span>
+                      <span>Special guidelines are active to support the child's health and comfort.</span>
+                    </div>
+                  )}
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  (selectedAttentionItem.priority || '').toLowerCase() === 'high' 
-                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                    : 'bg-[#FAF9F6] text-gray-600 border border-[#EAE8E1]'
-                }`}>
-                  {selectedAttentionItem.priority ? selectedAttentionItem.priority.toUpperCase() : 'NORMAL'}
-                </span>
-              </div>
-              <p className="text-xs text-neutral-800 leading-relaxed font-medium">
-                {(() => {
-                  const d = selectedAttentionItem.description || '';
-                  const t = (selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || '').toLowerCase();
-                  if (t === 'missing_pickup_photo' || t === 'missing pickup photo') {
-                    return 'A pickup person photo has not been added yet. Please verify their physical ID or event pass, then add a brief note about who you confirmed. If you need coordination support, tap Escalate.';
-                  } else if (t === 'age_review' || t === 'age review needed') {
-                    return 'Please confirm the child’s correct group with the parent before proceeding to check-in.';
-                  } else if (t === 'medical_note' || t === 'medical note update' || t === 'medical_alerts' || t === 'care note') {
-                    return 'A supportive care note is active for this child. Please read it to ensure all event-day preferences are handled beautifully.';
-                  }
-                  return d || 'No additional details provided.';
-                })()}
-              </p>
-              {(selectedAttentionItem.type === 'medical_note' || selectedAttentionItem.title === 'Medical note update') && (
-                <div className="text-[11px] text-amber-900 font-medium bg-amber-50 p-2.5 rounded-xl border border-amber-200/40 mt-1 flex items-start gap-1.5">
-                  <span className="shrink-0 mt-0.5 text-[#C59B27]">❤️</span>
-                  <span>Special guidelines are active to support the child's health and comfort. Please follow these guidelines.</span>
-                </div>
-              )}
-            </div>
+              );
+            })()}
 
-            {/* Guidance Card */}
+            {/* What you can do */}
             <div 
-              className="p-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl text-xs text-gray-600 space-y-2"
-              data-component-version="volunteer-attention-guidance-card-v4"
+              className="space-y-1.5 text-xs text-neutral-600 font-sans pt-0.5"
+              data-component-version="volunteer-attention-guidance-v5"
             >
-              <p className="font-bold text-gray-800 font-serif">What you can do</p>
-              <p className="leading-relaxed">
-                Review this item, add a short event note, or ask a coordinator for help if the details need to be modified.
-              </p>
-              <ul className="list-disc list-inside space-y-1 text-gray-500 text-[11px] pl-1">
-                <li>Verify the physical ID or pass at the desk</li>
-                <li>Add a short note of your findings below</li>
-                <li>Escalate if details need coordinator changes</li>
+              <h5 className="font-semibold text-neutral-800 text-xs font-sans">What you can do</h5>
+              <ul className="space-y-1 text-xs text-neutral-500 font-sans pl-1">
+                <li className="flex items-center gap-2">
+                  <span className="text-neutral-400">•</span>
+                  <span>Confirm the child's details</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-neutral-400">•</span>
+                  <span>Add a note if something needs attention</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-neutral-400">•</span>
+                  <span>Ask for help if you are unsure</span>
+                </li>
               </ul>
             </div>
 
             {/* Note Form Section */}
             <div 
-              className="space-y-2"
-              data-component-version="volunteer-attention-resolution-form-v4"
+              className="space-y-1.5"
+              data-component-version="volunteer-attention-resolution-form-v5"
             >
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-gray-700 font-serif">
+                <label className="text-xs font-semibold text-neutral-700 font-sans">
                   Volunteer note <span className="text-red-500">*</span>
                 </label>
-                <span className="text-[10px] text-gray-400 font-mono">
+                <span className="text-[10px] text-neutral-400 font-mono">
                   {attentionNote.length}/200
                 </span>
               </div>
-              <p className="text-[11px] text-gray-500 leading-normal">
+              <p className="text-[11px] text-neutral-500 font-sans leading-normal">
                 Add a short note about what was checked or why this needs support.
               </p>
               <textarea
@@ -6015,7 +6071,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 value={attentionNote}
                 onChange={(e) => setAttentionNote(e.target.value)}
                 placeholder="Share your assessment, care actions, or pickup verification notes..."
-                className="w-full text-xs p-3 bg-white border border-[#EAE8E1] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:outline-none placeholder-gray-400 font-sans leading-relaxed transition-all shadow-2xs"
+                className="w-full text-xs p-3 bg-white border border-neutral-200 rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none placeholder-neutral-400 font-sans leading-relaxed transition-all shadow-2xs"
               />
             </div>
 
@@ -6024,27 +6080,35 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <button
                 type="button"
                 onClick={() => {
+                  const rawAge = selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? selectedAttentionItem.child_age : selectedAttentionItem.childAge;
+                  const rawGroup = selectedAttentionItem.child_age_group || selectedAttentionItem.childAgeGroup || '';
+                  const cleanGroup = rawGroup
+                    .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                    .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                    .trim();
+                  const derivedAgeGroup = rawAge === 0 ? 'Under 1 year' : (cleanGroup || rawGroup);
+
                   setShowAttentionDetailModal(false);
                   handleOpenSafetyAlertModal({
                     id: selectedAttentionItem.child_id || selectedAttentionItem.childId,
                     fullName: selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child',
-                    ageGroup: selectedAttentionItem.child_age_group || selectedAttentionItem.childAgeGroup,
+                    ageGroup: derivedAgeGroup,
                     status: selectedAttentionItem.status || 'needs attention',
                     photoUrl: selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId
                   });
                 }}
-                data-component-version="volunteer-alert-auto-linked-child-v1"
-                className="w-full py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs tracking-wider rounded-xl transition-all border border-rose-200 uppercase flex items-center justify-center space-x-2 cursor-pointer mt-3"
+                data-component-version="volunteer-alert-auto-linked-child-v2"
+                className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-sans font-semibold text-xs rounded-xl transition-colors border border-rose-200/80 flex items-center justify-center space-x-2 cursor-pointer mt-1"
               >
-                <Bell className="h-4 w-4 animate-pulse text-rose-600" />
-                <span>Request help for this child</span>
+                <Bell className="h-4 w-4 text-rose-600" />
+                <span>Ask for help for this child</span>
               </button>
             )}
 
             {/* Actions Row */}
             <div 
-              className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-[#EAE8E1]/60"
-              data-component-version="volunteer-attention-detail-footer-v4"
+              className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-neutral-100"
+              data-component-version="volunteer-attention-detail-footer-v5"
             >
               <button
                 onClick={() => {
@@ -6052,7 +6116,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   setSelectedAttentionItem(null);
                   setAttentionError(null);
                 }}
-                className="order-last sm:order-first px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center"
+                className="order-last sm:order-first px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center"
               >
                 Cancel
               </button>
@@ -6061,11 +6125,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <button
                 onClick={() => handleResolveItem('escalate')}
                 disabled={resolvingAttention}
-                className="px-4 py-2.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60 font-bold text-xs rounded-xl transition-all cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center gap-1.5"
-                data-component-version="volunteer-attention-escalate-action-v4"
+                className="px-4 py-2.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60 font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center gap-1.5"
+                data-component-version="volunteer-attention-escalate-action-v5"
               >
-                <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse text-amber-600" />
-                {resolvingAttention ? 'Saving...' : 'Escalate to admin'}
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                <span>{resolvingAttention ? 'Saving...' : 'Escalate to admin'}</span>
               </button>
 
               {/* Resolve/Review/Verify button */}
@@ -6080,13 +6144,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   }
                 }}
                 disabled={resolvingAttention}
-                className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-300 text-white font-bold text-xs rounded-xl transition-all cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center shadow-xs"
+                className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-neutral-300 text-white font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center shadow-xs"
                 data-component-version={
                   selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo'
-                    ? 'volunteer-attention-resolve-action-v4'
+                    ? 'volunteer-attention-resolve-action-v5'
                     : selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review'
-                    ? 'volunteer-attention-verify-action-v4'
-                    : 'volunteer-attention-review-action-v4'
+                    ? 'volunteer-attention-verify-action-v5'
+                    : 'volunteer-attention-review-action-v5'
                 }
               >
                 {resolvingAttention ? 'Saving...' : (
@@ -6104,20 +6168,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
           <div 
             className="bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]"
-            data-view-version="volunteer-admin-help-v8-production-reliable"
+            data-view-version="volunteer-admin-help-v9-production-refined"
           >
             {/* Header */}
-            <div className="bg-gradient-to-r from-rose-950 to-[#5C1D24] text-white px-6 py-5 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <Bell className="h-5 w-5 text-[#C59B27] animate-pulse" />
-                <div>
-                  <h3 className="text-lg font-serif font-bold tracking-tight">Request Admin Help</h3>
-                  <p className="text-[10px] font-mono text-rose-200 uppercase tracking-widest mt-0.5">Care Team Escalation</p>
-                </div>
+            <div className="bg-white text-neutral-900 px-6 py-5 border-b border-neutral-100 flex items-center justify-between shrink-0">
+              <div className="space-y-0.5">
+                <h3 className="text-xl font-serif font-bold text-neutral-900 tracking-tight">Ask for help</h3>
+                <p className="text-xs font-sans text-neutral-500">Tell us what you need help with.</p>
               </div>
               <button
+                type="button"
                 onClick={() => setIsSafetyModalOpen(false)}
-                className="text-white/70 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition-colors cursor-pointer"
+                aria-label="Close"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -6129,83 +6192,83 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               onSubmit={handleRaiseSafetyAlert}
               noValidate
               className="flex-1 flex flex-col min-h-0"
-              data-component-version="volunteer-help-form-v7-production"
+              data-component-version="volunteer-help-form-v8-production"
             >
-              <div className="p-6 overflow-y-auto space-y-5 text-gray-800 text-xs flex-1">
+              <div className="p-6 overflow-y-auto space-y-5 text-neutral-800 text-xs flex-1">
                 {/* Child Involved Section */}
-                <div className="space-y-3" data-component-version="volunteer-alert-child-selector-v1">
-                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Child involved</label>
+                <div className="space-y-2.5" data-component-version="volunteer-alert-child-selector-v2">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 block">Who is this about?</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => {
                         setSafetyLinkOption('general');
                       }}
-                      className={`py-2.5 rounded-2xl text-center border text-[11px] font-bold transition-all cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
                         safetyLinkOption === 'general'
-                          ? 'bg-rose-50 border-rose-200 text-rose-800'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'bg-amber-50/60 border-[#C59B27]/40 text-[#9A7326] font-semibold'
+                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 font-medium'
                       }`}
                     >
-                      General alert
+                      General concern
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setSafetyLinkOption('link');
                       }}
-                      className={`py-2.5 rounded-2xl text-center border text-[11px] font-bold transition-all cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
                         safetyLinkOption === 'link'
-                          ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'bg-amber-50/60 border-[#C59B27]/40 text-[#9A7326] font-semibold'
+                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 font-medium'
                       }`}
                     >
-                      Link a child
+                      Choose a child
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setSafetyLinkOption('unidentified');
                       }}
-                      className={`py-2.5 rounded-2xl text-center border text-[11px] font-bold transition-all cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
                         safetyLinkOption === 'unidentified'
-                          ? 'bg-amber-50 border-amber-200 text-amber-800'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'bg-amber-50/60 border-[#C59B27]/40 text-[#9A7326] font-semibold'
+                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 font-medium'
                       }`}
                     >
-                      Unidentified
+                      Child not identified
                     </button>
                   </div>
 
                   {safetyLinkOption === 'general' && (
-                    <p className="text-[10px] text-gray-500 italic mt-1 bg-gray-50 p-2.5 rounded-xl border border-gray-150">
+                    <p className="text-[11px] font-sans text-neutral-500 mt-1 bg-neutral-50 p-2.5 rounded-xl border border-neutral-200/60">
                       Use this when the request is not about a specific child.
                     </p>
                   )}
 
                   {safetyLinkOption === 'unidentified' && (
-                    <div className="space-y-3 mt-1 bg-amber-50/40 p-4 rounded-2xl border border-amber-200/50 animate-fade-in">
-                      <p className="text-[10px] text-amber-900 italic font-semibold">
+                    <div className="space-y-3 mt-1 bg-amber-50/30 p-3.5 rounded-2xl border border-amber-200/50 animate-fade-in">
+                      <p className="text-[11px] font-sans text-amber-900 font-medium">
                         Provide a brief description of the unidentified child for emergency triage:
                       </p>
                       <div className="space-y-2.5">
                         <div>
-                          <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Temporary Label or Descriptive Identifier <span className="text-amber-600">*</span></label>
+                          <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Temporary Label or Descriptive Identifier <span className="text-amber-600">*</span></label>
                           <input
                             type="text"
                             placeholder="e.g. lost boy in blue dinosaur t-shirt"
                             value={safetyUcName}
                             onChange={(e) => setSafetyUcName(e.target.value.substring(0, 50))}
-                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Approx. Age Group</label>
+                            <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Approx. Age Group</label>
                             <select
                               value={safetyUcAgeGroup}
                               onChange={(e) => setSafetyUcAgeGroup(e.target.value)}
-                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                              className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                             >
                               <option value="Toddler (1-2)">Toddler (1-2)</option>
                               <option value="Preschool (3-4)">Preschool (3-4)</option>
@@ -6216,11 +6279,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             </select>
                           </div>
                           <div>
-                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Approx. Gender</label>
+                            <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Approx. Gender</label>
                             <select
                               value={safetyUcGender}
                               onChange={(e) => setSafetyUcGender(e.target.value)}
-                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                              className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                             >
                               <option value="Female">Female</option>
                               <option value="Male">Male</option>
@@ -6229,13 +6292,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           </div>
                         </div>
                         <div>
-                          <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block mb-1">Further physical descriptions / clothing / behavior</label>
+                          <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Further physical descriptions / clothing / behavior</label>
                           <textarea
                             rows={2}
                             placeholder="e.g. curly brown hair, carrying a green backpack, currently calm near front door..."
                             value={safetyUcDescription}
                             onChange={(e) => setSafetyUcDescription(e.target.value.substring(0, 200))}
-                            className="w-full bg-white border border-gray-200 rounded-xl p-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none resize-none"
+                            className="w-full bg-white border border-neutral-200 rounded-xl p-3 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none resize-none"
                           />
                         </div>
                       </div>
@@ -6247,36 +6310,69 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       {safetyChildContext ? (
                         /* Selected Child Card */
                         <div 
-                          className="bg-neutral-50 border border-neutral-200 rounded-2xl p-3.5 flex items-center justify-between"
-                          data-component-version="volunteer-alert-selected-child-card-v1"
+                          className="bg-neutral-50 border border-neutral-200/80 rounded-2xl p-3.5 space-y-2"
+                          data-component-version="volunteer-alert-selected-child-card-v2"
                         >
-                          <div className="flex items-center space-x-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-gray-150 shrink-0 flex items-center justify-center">
-                              {safetyChildContext.photoUrl ? (
-                                <img
-                                  src={safetyChildContext.photoUrl}
-                                  alt={safetyChildContext.fullName}
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <User className="h-5 w-5 text-gray-400" />
-                              )}
+                          <span className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider block">
+                            About
+                          </span>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#9A7326] font-sans font-bold text-xs">
+                                {(() => {
+                                  const photo = safetyChildContext.photoUrl;
+                                  const resolvedUrl = photo ? (
+                                    photo.startsWith('http') || photo.startsWith('/') || photo.startsWith('data:')
+                                      ? photo
+                                      : `/api/media/files/${photo}`
+                                  ) : '';
+                                  const childInitial = safetyChildContext.fullName ? safetyChildContext.fullName.trim().charAt(0).toUpperCase() : '';
+
+                                  if (resolvedUrl) {
+                                    return (
+                                      <SafeImage
+                                        src={resolvedUrl}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        containerClassName="w-full h-full flex items-center justify-center"
+                                        fallbackComponent={
+                                          <span className="font-sans font-bold text-xs text-[#9A7326]">
+                                            {childInitial || <User className="h-4 w-4 text-gray-400" />}
+                                          </span>
+                                        }
+                                      />
+                                    );
+                                  }
+                                  return (
+                                    <span className="font-sans font-bold text-xs text-[#9A7326]">
+                                      {childInitial || <User className="h-4 w-4 text-gray-400" />}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="font-sans font-semibold text-neutral-900 text-xs truncate">
+                                  {safetyChildContext.fullName}
+                                </h4>
+                                <p className="text-[11px] text-neutral-500 font-sans mt-0.5">
+                                  {(() => {
+                                    const ag = (safetyChildContext.ageGroup || '')
+                                      .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                                      .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                                      .trim();
+                                    return ag || 'Child details attached';
+                                  })()}
+                                </p>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <h4 className="font-bold text-gray-950 text-xs truncate">{safetyChildContext.fullName}</h4>
-                              <p className="text-[10px] text-gray-500 font-medium">
-                                {safetyChildContext.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{safetyChildContext.status || 'not arrived'}</span>
-                              </p>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSafetyChildContext(null)}
+                              className="text-xs font-sans font-semibold text-[#A47E1F] hover:text-[#8B6B1A] bg-white hover:bg-[#FAF6EB] border border-neutral-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer shrink-0"
+                            >
+                              Change
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setSafetyChildContext(null)}
-                            className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer"
-                          >
-                            Change
-                          </button>
                         </div>
                       ) : (
                         /* Child Search & Result List */
@@ -6287,9 +6383,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               placeholder="Type child or parent name..."
                               value={safetySearchQuery}
                               onChange={(e) => handleSafetyChildSearch(e.target.value)}
-                              className="w-full bg-white border border-gray-250 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                              className="w-full bg-white border border-neutral-200 rounded-xl pl-9 pr-4 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
                             />
-                            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Search className="absolute left-3 top-3 h-4 w-4 text-neutral-400" />
                             {safetySearching && (
                               <div className="absolute right-3 top-3">
                                 <div className="w-4 h-4 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
@@ -6298,51 +6394,73 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           </div>
 
                           {safetySearchResults.length > 0 && (
-                            <div className="bg-white border border-gray-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-gray-100 shadow-sm">
-                              {safetySearchResults.map((child: any) => (
-                                <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                                  <div className="flex items-center space-x-2.5 min-w-0 pr-2">
-                                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
-                                      {child.photoUrl ? (
-                                        <img
-                                          src={child.photoUrl}
-                                          alt={child.childName}
-                                          className="w-full h-full object-cover"
-                                          referrerPolicy="no-referrer"
-                                        />
-                                      ) : (
-                                        <User className="h-4 w-4 text-gray-400" />
-                                      )}
+                            <div className="bg-white border border-neutral-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-neutral-100 shadow-sm">
+                              {safetySearchResults.map((child: any) => {
+                                const childPhoto = child.photoUrl;
+                                const resolvedUrl = childPhoto ? (
+                                  childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:')
+                                    ? childPhoto
+                                    : `/api/media/files/${childPhoto}`
+                                ) : '';
+                                const cName = child.childName || child.fullName || 'Child';
+                                const initial = cName.trim().charAt(0).toUpperCase();
+                                const cleanGroup = (child.ageGroup || '')
+                                  .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                                  .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                                  .trim();
+
+                                return (
+                                  <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-neutral-50 transition-colors">
+                                    <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                                      <div className="w-8 h-8 rounded-lg overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#9A7326] font-sans font-bold text-xs">
+                                        {resolvedUrl ? (
+                                          <SafeImage
+                                            src={resolvedUrl}
+                                            alt=""
+                                            className="w-full h-full object-cover"
+                                            containerClassName="w-full h-full flex items-center justify-center"
+                                            fallbackComponent={
+                                              <span className="font-sans font-bold text-xs text-[#9A7326]">
+                                                {initial || <User className="h-4 w-4 text-gray-400" />}
+                                              </span>
+                                            }
+                                          />
+                                        ) : (
+                                          <span className="font-sans font-bold text-xs text-[#9A7326]">
+                                            {initial || <User className="h-4 w-4 text-gray-400" />}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h5 className="font-sans font-semibold text-neutral-900 text-xs truncate">{cName}</h5>
+                                        <p className="text-[10px] text-neutral-500 font-sans">
+                                          {cleanGroup || 'Class unknown'}
+                                        </p>
+                                      </div>
                                     </div>
-                                    <div className="min-w-0">
-                                      <h5 className="font-bold text-gray-900 text-xs truncate">{child.childName || child.fullName}</h5>
-                                      <p className="text-[9px] text-gray-500 font-medium">
-                                        {child.ageGroup || 'Class unknown'} • <span className="font-semibold uppercase text-[9px]">{child.status || 'not arrived'}</span>
-                                      </p>
-                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSafetyChildContext({
+                                          id: child.childId,
+                                          fullName: cName,
+                                          ageGroup: cleanGroup,
+                                          status: child.status,
+                                          photoUrl: child.photoUrl
+                                        });
+                                      }}
+                                      className="text-[11px] font-sans font-semibold text-[#A47E1F] bg-[#FAF6EB] border border-amber-200/50 px-2.5 py-1 rounded-lg hover:bg-amber-100/50 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      Select
+                                    </button>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSafetyChildContext({
-                                        id: child.childId,
-                                        fullName: child.childName || child.fullName,
-                                        ageGroup: child.ageGroup,
-                                        status: child.status,
-                                        photoUrl: child.photoUrl
-                                      });
-                                    }}
-                                    className="text-[10px] font-bold text-[#A47E1F] bg-[#C59B27]/10 border border-[#C59B27]/20 px-2 py-1 rounded-md hover:bg-[#C59B27]/20 transition-colors cursor-pointer"
-                                  >
-                                    Select
-                                  </button>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
 
                           {safetySearchQuery.trim() && safetySearchResults.length === 0 && !safetySearching && (
-                            <p className="text-[10px] text-gray-400 italic text-center py-2">No matching children found.</p>
+                            <p className="text-[11px] text-neutral-400 italic text-center py-2 font-sans">No matching children found.</p>
                           )}
                         </div>
                       )}
@@ -6351,74 +6469,73 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Severity / Urgency Levels */}
-                <div className="space-y-3" data-component-version="volunteer-severity-selector-v2-premium">
-                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Urgency Level</label>
-                  <div className="flex flex-col gap-2.5">
+                <div className="space-y-2.5" data-component-version="volunteer-urgency-selector-v3-clean">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 block">
+                    How urgent is it?
+                  </label>
+                  <div className="flex flex-col gap-2">
                     {[
                       { 
                         value: 'normal', 
-                        label: 'Support needed soon', 
-                        desc: 'Use for help that can be reviewed shortly.', 
-                        activeClass: 'bg-blue-50 border-blue-300 text-blue-900 ring-2 ring-blue-500/20',
-                        inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-blue-200 hover:bg-blue-50/20'
+                        label: 'Not urgent', 
+                        desc: 'Can be handled when someone is available.'
                       },
                       { 
                         value: 'important', 
-                        label: 'Needs timely attention', 
-                        desc: 'Use when care or event activity may be affected.', 
-                        activeClass: 'bg-[#FFFDF3] border-amber-400 text-amber-950 ring-2 ring-amber-500/20',
-                        inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-amber-200 hover:bg-amber-50/20'
+                        label: 'Needs attention soon', 
+                        desc: 'Please respond when possible.'
                       },
                       { 
                         value: 'urgent', 
-                        label: 'Immediate help required', 
-                        desc: 'Use only when the child or event needs an immediate response.', 
-                        activeClass: 'bg-red-50 border-red-400 text-red-950 ring-2 ring-red-500/20',
-                        inactiveClass: 'bg-[#FAF9F6] border-gray-200 text-gray-700 hover:border-red-200 hover:bg-red-50/20'
+                        label: 'Urgent', 
+                        desc: 'Help is needed now.'
                       }
-                    ].map((level) => (
-                      <button
-                        key={level.value}
-                        type="button"
-                        onClick={() => setSafetySeverity(level.value)}
-                        className={`border rounded-2xl p-4 text-left transition-all cursor-pointer flex flex-col space-y-1 ${
-                          safetySeverity === level.value ? level.activeClass : level.inactiveClass
-                        }`}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <span className="font-bold text-xs font-serif tracking-tight">{level.label}</span>
-                          {safetySeverity === level.value && (
-                            <span className={`h-2 w-2 rounded-full ${
-                              level.value === 'urgent' ? 'bg-red-600' : level.value === 'important' ? 'bg-amber-500' : 'bg-blue-500'
-                            }`} />
-                          )}
-                        </div>
-                        <span className="text-[10px] leading-relaxed text-gray-500">
-                          {level.desc}
-                        </span>
-                      </button>
-                    ))}
+                    ].map((level) => {
+                      const isSelected = safetySeverity === level.value;
+                      return (
+                        <button
+                          key={level.value}
+                          type="button"
+                          onClick={() => setSafetySeverity(level.value)}
+                          className={`border rounded-xl p-3 text-left transition-all cursor-pointer flex flex-col space-y-0.5 ${
+                            isSelected 
+                              ? 'border-[#C59B27]/60 bg-amber-50/40 text-neutral-900' 
+                              : 'border-neutral-200/80 bg-white text-neutral-700 hover:bg-neutral-50/60'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="font-sans font-semibold text-xs text-neutral-900">{level.label}</span>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-[#A47E1F] shrink-0" />
+                            )}
+                          </div>
+                          <span className="text-[11px] font-sans leading-normal text-neutral-500">
+                            {level.desc}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {safetySeverity === 'urgent' && (
-                    <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs text-red-950 flex flex-col gap-3 animate-fade-in mt-2">
-                      <div className="flex items-start gap-2.5">
-                        <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-950 flex flex-col gap-2.5 animate-fade-in mt-2">
+                      <div className="flex items-start gap-2">
+                        <ShieldAlert className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                         <div>
-                          <p className="font-bold text-red-700">Send urgent alert?</p>
-                          <p className="mt-1 text-[11px] text-red-900 leading-relaxed font-sans">
+                          <p className="font-sans font-semibold text-red-700 text-xs">Send urgent alert?</p>
+                          <p className="mt-0.5 text-[11px] text-red-900 leading-relaxed font-sans">
                             This will notify enabled duty devices and may trigger repeating sound.
                           </p>
                         </div>
                       </div>
-                      <label className="flex items-center space-x-2.5 mt-1 cursor-pointer select-none">
+                      <label className="flex items-center space-x-2 mt-0.5 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           checked={hasAcceptedUrgentWarning}
                           onChange={(e) => setHasAcceptedUrgentWarning(e.target.checked)}
-                          className="h-4 w-4 rounded-lg border-red-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                          className="h-4 w-4 rounded border-red-300 text-red-600 focus:ring-red-500 cursor-pointer"
                         />
-                        <span className="font-semibold text-red-900 text-[11px]">
+                        <span className="font-sans font-medium text-red-900 text-[11px]">
                           I understand this triggers sound & vibration on duty devices. <span className="text-red-600">*</span>
                         </span>
                       </label>
@@ -6427,38 +6544,38 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Category / Type Selector */}
-                <div className="space-y-2" data-component-version="alert-severity-category-contract-v1">
-                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Alert Type / Category</label>
+                <div className="space-y-1.5" data-component-version="alert-severity-category-contract-v1">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 block">Category</label>
                   <select
                     value={safetyCategory}
                     onChange={(e) => setSafetyCategory(e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
+                    className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
                   >
-                    <option value="child_care">General Child Care Concern</option>
-                    <option value="pickup_issue">Pickup Authorization Issue</option>
-                    <option value="pass_issue">Pass Scan or Verification Failure</option>
-                    <option value="medical_support">Medical or First Aid Support</option>
-                    <option value="security_concern">Security / Missing Child Concerns</option>
-                    <option value="location_support">Room/Classroom Assistance</option>
+                    <option value="child_care">General child care concern</option>
+                    <option value="pickup_issue">Pickup authorization issue</option>
+                    <option value="pass_issue">Pass scan or verification failure</option>
+                    <option value="medical_support">Medical or first aid support</option>
+                    <option value="security_concern">Security / missing child concerns</option>
+                    <option value="location_support">Room/classroom assistance</option>
                     <option value="other">Other - Care support needed</option>
                   </select>
                 </div>
 
                 {/* Category-Specific Form Fields */}
-                <div className="bg-[#FAF9F6] border border-gray-150 rounded-2xl p-4 space-y-4 animate-fade-in" data-component-version="category-specific-fields-container">
-                  <h4 className="font-bold text-xs text-gray-900 border-b border-gray-100 pb-2 flex items-center gap-1.5">
+                <div className="bg-neutral-50/70 border border-neutral-200/80 rounded-2xl p-4 space-y-4 animate-fade-in" data-component-version="category-specific-fields-container">
+                  <h4 className="font-sans font-semibold text-xs text-neutral-900 border-b border-neutral-200/60 pb-2 flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#C59B27]" />
-                    Category Details
+                    Category details
                   </h4>
 
                   {safetyCategory === 'child_care' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Specific Care Need <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Specific Care Need <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyCcSpecificNeeds}
                           onChange={(e) => setSafetyCcSpecificNeeds(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
                           <option value="">-- Select care need --</option>
                           <option value="Restroom assistance">Restroom assistance</option>
@@ -6469,17 +6586,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Child Distress Level</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1.5">Child Distress Level</label>
                         <div className="grid grid-cols-3 gap-2">
                           {['Mild', 'Moderate', 'Distressed'].map((lvl) => (
                             <button
                               key={lvl}
                               type="button"
                               onClick={() => setSafetyCcSeveritySubtype(lvl)}
-                              className={`py-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer ${
+                              className={`py-2 rounded-xl text-center text-xs font-sans font-semibold border transition-all cursor-pointer ${
                                 safetyCcSeveritySubtype === lvl
                                   ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
-                                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                  : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
                               }`}
                             >
                               {lvl}
@@ -6493,33 +6610,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'pickup_issue' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Reported Pickup Name <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Reported Pickup Name <span className="text-rose-500">*</span></label>
                         <input
                           type="text"
                           placeholder="Name of person attempting pickup"
                           value={safetyPiReportedPickupName}
                           onChange={(e) => setSafetyPiReportedPickupName(e.target.value.substring(0, 100))}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Relationship to Child <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Relationship to Child <span className="text-rose-500">*</span></label>
                         <input
                           type="text"
                           placeholder="e.g. Uncle, Neighbor, Friend"
                           value={safetyPiRelationship}
                           onChange={(e) => setSafetyPiRelationship(e.target.value.substring(0, 50))}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Contact Phone (Optional)</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Contact Phone (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. +1 (555) 019-2834"
                           value={safetyPiContactPhone}
                           onChange={(e) => setSafetyPiContactPhone(e.target.value.substring(0, 30))}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                     </div>
@@ -6528,11 +6645,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'pass_issue' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Scan Error Type <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Scan Error Type <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyPaErrorType}
                           onChange={(e) => setSafetyPaErrorType(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
                           <option value="No match in roster">No match in roster</option>
                           <option value="Expired pass">Expired pass</option>
@@ -6541,13 +6658,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Pass Code (Optional)</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Pass Code (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. PASS-8921"
                           value={safetyPaPassCode}
                           onChange={(e) => setSafetyPaPassCode(e.target.value.substring(0, 50))}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none font-mono"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none font-mono"
                         />
                       </div>
                     </div>
@@ -6556,11 +6673,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'medical_support' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Medical Symptom / Injury <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Medical Symptom / Injury <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyMsMedicalSymptom}
                           onChange={(e) => setSafetyMsMedicalSymptom(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
                           <option value="">-- Select symptom --</option>
                           <option value="Fever / Temperature">Fever / Temperature</option>
@@ -6576,9 +6693,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           type="checkbox"
                           checked={safetyMsRequiresMedic}
                           onChange={(e) => setSafetyMsRequiresMedic(e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                          className="h-4 w-4 rounded border-neutral-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
                         />
-                        <span className="font-semibold text-gray-800 text-[11px]">
+                        <span className="font-sans font-medium text-neutral-800 text-[11px]">
                           Requires on-site certified medic response
                         </span>
                       </label>
@@ -6588,11 +6705,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'security_concern' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">When Last Seen <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">When Last Seen <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyScLastSeenTime}
                           onChange={(e) => setSafetyScLastSeenTime(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
                           <option value="Just now (under 2 mins)">Just now (under 2 mins)</option>
                           <option value="5 mins ago">5 mins ago</option>
@@ -6601,23 +6718,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Clothing Description <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Clothing Description <span className="text-rose-500">*</span></label>
                         <input
                           type="text"
                           placeholder="e.g. yellow jumper, jeans, white sandals"
                           value={safetyScClothingDescription}
                           onChange={(e) => setSafetyScClothingDescription(e.target.value.substring(0, 150))}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Physical Appearance (Optional)</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Physical Appearance (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. height, hair style, glasses"
                           value={safetyScPhysicalAppearance}
                           onChange={(e) => setSafetyScPhysicalAppearance(e.target.value.substring(0, 150))}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                     </div>
@@ -6626,11 +6743,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'location_support' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Reason for Assistance <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Reason for Assistance <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyLsAssistanceReason}
                           onChange={(e) => setSafetyLsAssistanceReason(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
                           <option value="Teacher break relief">Teacher break relief</option>
                           <option value="Material / supply shortage">Material / supply shortage</option>
@@ -6639,20 +6756,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Extra Volunteers Needed</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Extra Volunteers Needed</label>
                         <div className="flex items-center space-x-3 mt-1">
                           <button
                             type="button"
                             onClick={() => setSafetyLsVolunteerCountNeeded(Math.max(1, safetyLsVolunteerCountNeeded - 1))}
-                            className="w-9 h-9 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-700 font-bold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                            className="w-9 h-9 border border-neutral-200 rounded-xl bg-white hover:bg-neutral-50 text-neutral-700 font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
                           >
                             -
                           </button>
-                          <span className="font-mono font-bold text-sm w-8 text-center text-gray-900">{safetyLsVolunteerCountNeeded}</span>
+                          <span className="font-mono font-bold text-sm w-8 text-center text-neutral-900">{safetyLsVolunteerCountNeeded}</span>
                           <button
                             type="button"
                             onClick={() => setSafetyLsVolunteerCountNeeded(Math.min(5, safetyLsVolunteerCountNeeded + 1))}
-                            className="w-9 h-9 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-700 font-bold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                            className="w-9 h-9 border border-neutral-200 rounded-xl bg-white hover:bg-neutral-50 text-neutral-700 font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
                           >
                             +
                           </button>
@@ -6663,13 +6780,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {safetyCategory === 'other' && (
                     <div>
-                      <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block mb-1">Specify Care Request <span className="text-rose-500">*</span></label>
+                      <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Specify Care Request <span className="text-rose-500">*</span></label>
                       <input
                         type="text"
                         placeholder="Please specify custom request..."
                         value={safetyOtCustomCareType}
                         onChange={(e) => setSafetyOtCustomCareType(e.target.value.substring(0, 100))}
-                        className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                       />
                     </div>
                   )}
@@ -6688,8 +6805,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 />
 
                 {/* Description Message */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 block">
                     Details / Message {(safetySeverity === 'important' || safetySeverity === 'urgent') && <span className="text-rose-500">*</span>}
                   </label>
                   <textarea
@@ -6701,24 +6818,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     }
                     value={safetyMessage}
                     onChange={(e) => setSafetyMessage(e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-xs font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none"
+                    className="w-full bg-white border border-neutral-200 rounded-2xl p-3.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none placeholder-neutral-400"
                   />
-                  <p className="text-[9px] text-gray-400 leading-normal">
+                  <p className="text-[10px] font-sans text-neutral-400 leading-normal">
                     Limit message to 500 characters. Admin team receives these alerts in real-time.
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons & Validation Summary */}
-              <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col space-y-3 shrink-0">
+              <div className="p-5 bg-neutral-50/80 border-t border-neutral-100 flex flex-col space-y-3 shrink-0">
                 {safetyValidationErrors.length > 0 && (
                   <div 
                     id="safety-validation-summary" 
-                    className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl space-y-1 text-[11px] animate-fade-in"
+                    className="p-3 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl space-y-1 text-[11px] font-sans animate-fade-in"
                     data-component-version="volunteer-alert-validation-v7-visible"
                   >
-                    <p className="font-bold text-rose-700">Please complete these details:</p>
-                    <ul className="list-disc pl-4 space-y-0.5 font-semibold">
+                    <p className="font-semibold text-rose-700">Please complete these details:</p>
+                    <ul className="list-disc pl-4 space-y-0.5 font-medium">
                       {safetyValidationErrors.map((err, idx) => (
                         <li key={idx}>- {err}</li>
                       ))}
@@ -6730,7 +6847,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <button
                     type="button"
                     onClick={() => setIsSafetyModalOpen(false)}
-                    className="flex-1 py-3 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer bg-white"
+                    className="flex-1 py-2.5 border border-neutral-200 hover:bg-neutral-100 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer bg-white"
                   >
                     Cancel
                   </button>
@@ -6738,10 +6855,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     type="submit"
                     form="volunteer-admin-help-form"
                     disabled={isSubmittingSafetyAlert}
-                    data-component-version="volunteer-help-submit-v7-production"
-                    data-submit-state-version="volunteer-alert-submit-state-v6"
-                    data-idempotency-version="volunteer-alert-idempotency-v4"
-                    className="flex-1 py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer flex items-center justify-center space-x-2 shadow-md disabled:bg-gray-400"
+                    data-component-version="volunteer-help-submit-v8-production"
+                    data-submit-state-version="volunteer-alert-submit-state-v7"
+                    data-idempotency-version="volunteer-alert-idempotency-v5"
+                    className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:bg-neutral-300"
                   >
                     {isSubmittingSafetyAlert ? (
                       <span className="flex items-center space-x-2">
@@ -6749,7 +6866,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <span>Sending request…</span>
                       </span>
                     ) : (
-                      <span>Send Request</span>
+                      <span>Send request</span>
                     )}
                   </button>
                 </div>
