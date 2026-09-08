@@ -63,7 +63,13 @@ export const TEMPLATE_BUILDER_REGISTRY: Record<string, ReportTemplateBuilder> = 
   'training_drill': buildTrainingDrillReport,
   'training-drill': buildTrainingDrillReport,
   'custom_event': buildCustomEventReport,
-  'custom-event': buildCustomEventReport
+  'custom-event': buildCustomEventReport,
+  'care-safety': buildChildSafetyIncidentReport,
+  'care_safety': buildChildSafetyIncidentReport,
+  'care_safety_summary': buildChildSafetyIncidentReport,
+  'registration-demographics': buildRegistrationSelectionReport,
+  'registration_demographics': buildRegistrationSelectionReport,
+  'registration_selection': buildRegistrationSelectionReport
 };
 
 export function compileReportDocument(

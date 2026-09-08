@@ -14,10 +14,14 @@ import {
   needsModelUpgrade,
   upgradeReportRecord,
   upgradeAllStoredReports,
-  getValidatedBrandLogo
+  getValidatedBrandLogo,
+  formatReportFilename,
+  getOrRegenerateReportPDF
 } from '../services/reportService';
 import { calculateAnalytics } from '../services/reportAnalyticsService';
 import { createZipArchive } from '../utils/zipHelper';
+
+export { formatReportFilename };
 
 const router = Router();
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), 'data', 'reports');
@@ -39,47 +43,6 @@ export function resolveReportFilePath(storageKey: string | null | undefined, rep
   }
 
   return canonicalPath;
-}
-
-export function formatReportFilename(eventTitle?: string, reportTitle?: string, dateVal?: any): string {
-  const d = dateVal ? new Date(dateVal) : new Date();
-  const dateStr = !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : '2026-09-07';
-
-  let eventPrefix = 'TGA-2026';
-  const cleanEvent = (eventTitle || '').trim();
-  if (cleanEvent.toLowerCase().includes('general assembly')) {
-    eventPrefix = 'TGA-2026';
-  } else if (cleanEvent) {
-    eventPrefix = cleanEvent
-      .replace(/[^a-zA-Z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 20);
-  }
-
-  let typePart = 'Management-Report';
-  const cleanTitle = (reportTitle || '').trim();
-  if (cleanTitle.toLowerCase().includes('management')) {
-    typePart = 'Management-Report';
-  } else if (cleanTitle.toLowerCase().includes('full event')) {
-    typePart = 'Full-Event-Report';
-  } else if (cleanTitle.toLowerCase().includes('registration')) {
-    typePart = 'Registration-Selection-Report';
-  } else if (cleanTitle.toLowerCase().includes('attendance')) {
-    typePart = 'Attendance-Movement-Report';
-  } else if (cleanTitle.toLowerCase().includes('volunteer')) {
-    typePart = 'Volunteer-Coverage-Report';
-  } else if (cleanTitle.toLowerCase().includes('care') || cleanTitle.toLowerCase().includes('safety')) {
-    typePart = 'Care-Safety-Report';
-  } else if (cleanTitle) {
-    typePart = cleanTitle
-      .replace(/[^a-zA-Z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 30);
-  }
-
-  return `${eventPrefix}-${typePart}-${dateStr}.pdf`;
 }
 
 // Apply authMiddleware FIRST across all report routes so req.user is guaranteed
@@ -129,20 +92,39 @@ async function formatReportJob(job: any) {
   let requestedByName = 'Administrator';
   let requestedByEmail = '';
   if (job.requested_by) {
-    const user = await queryOne('SELECT pp.full_name, u.email FROM users u LEFT JOIN parent_profiles pp ON u.id = pp.user_id WHERE u.id = ?', [job.requested_by]);
+    const user = await queryOne(`
+      SELECT u.id, u.email, u.role,
+             vp.full_name as volunteer_name,
+             pp.full_name as parent_name
+      FROM users u
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
+      WHERE u.id = ?
+    `, [job.requested_by]);
     if (user) {
-      requestedByName = user.full_name || user.email || 'Administrator';
       requestedByEmail = user.email || '';
+      if (['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead', 'team'].includes(user.role)) {
+        requestedByName = user.volunteer_name || user.parent_name || (user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Event Admin' : user.email) || 'Administrator';
+      } else {
+        // Prevent parent profile identity from leaking into admin reports module
+        requestedByName = user.volunteer_name || 'Administrator';
+      }
     }
   }
 
   const reportTitle = `${templateName} — ${eventTitle}`;
 
   const storagePath = resolveReportFilePath(job.storage_key, job.id);
-  const storageAvailable = fs.existsSync(storagePath);
+  const hasRegenerableData = !!(job.document_model_json || job.snapshot_id);
+  const storageAvailable = fs.existsSync(storagePath) || hasRegenerableData;
 
   let status = job.status || 'queued';
   if (status === 'completed') status = 'ready';
+
+  // Truthful Ready status: A report should only be 'ready' if its artifact is stored or regenerable
+  if (status === 'ready' && !storageAvailable) {
+    status = 'failed';
+  }
 
   let errorMessage: string | null = null;
   if (job.error_code || job.error_message) {
@@ -161,6 +143,8 @@ async function formatReportJob(job: any) {
     } else {
       errorMessage = rawErr;
     }
+  } else if (status === 'failed' && !storageAvailable) {
+    errorMessage = "We couldn't prepare this report. Please create the report again.";
   }
 
   return {
@@ -459,7 +443,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunct
     }
 
     let jobsQuery = `
-      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash 
+      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash, gr.document_model_json 
       FROM report_jobs rj
       LEFT JOIN generated_reports gr ON rj.id = gr.report_job_id
     `;
@@ -894,38 +878,28 @@ router.post('/bulk-download', async (req: AuthenticatedRequest, res: Response) =
     const usedNames = new Set<string>();
 
     for (const job of jobs) {
-      if (!job.storage_key) continue;
-      const filePath = resolveReportFilePath(job.storage_key, job.id);
-      if (fs.existsSync(filePath)) {
-        const fileBuffer = fs.readFileSync(filePath);
-        if (fileBuffer.length > 0) {
-          let docModel: any = null;
-          if (job.document_model_json) {
-            try { docModel = JSON.parse(job.document_model_json); } catch (_) {}
-          }
-          const template = REPORT_TEMPLATES.find(t => t.key === job.template_key);
-          const title = docModel?.reportTitle || template?.name || 'Report';
-          const eventTitle = docModel?.eventContext?.eventTitle || 'Event';
-          const baseName = formatReportFilename(eventTitle, title, job.completed_at || job.created_at);
-          
-          let finalName = baseName;
-          let counter = 1;
-          while (usedNames.has(finalName)) {
-            finalName = baseName.replace(/\.pdf$/, `-${counter++}.pdf`);
-          }
-          usedNames.add(finalName);
-          filesToZip.push({ name: finalName, buffer: fileBuffer });
-
-          await execute(`
-            INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
-            VALUES (?, ?, ?, 'bulk_downloaded', 'Report PDF included in bulk ZIP download.', ?)
-          `, ['hist-' + crypto.randomUUID(), job.id, userId, new Date().toISOString()]);
-        }
+      const artifact = await getOrRegenerateReportPDF(job.id);
+      if (!artifact || !artifact.pdfBytes || artifact.pdfBytes.length === 0) {
+        continue;
       }
+
+      const baseName = artifact.filename;
+      let finalName = baseName;
+      let counter = 1;
+      while (usedNames.has(finalName)) {
+        finalName = baseName.replace(/\.pdf$/, `-${counter++}.pdf`);
+      }
+      usedNames.add(finalName);
+      filesToZip.push({ name: finalName, buffer: artifact.pdfBytes });
+
+      await execute(`
+        INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
+        VALUES (?, ?, ?, 'bulk_downloaded', 'Report PDF included in bulk ZIP download.', ?)
+      `, ['hist-' + crypto.randomUUID(), job.id, userId, new Date().toISOString()]);
     }
 
     if (filesToZip.length === 0) {
-      return res.status(404).json({ error: 'None of the selected reports have completed PDF files available for download.' });
+      return res.status(404).json({ error: "We couldn't prepare these downloads. Please create the reports again." });
     }
 
     const zipBuffer = createZipArchive(filesToZip);
@@ -992,14 +966,32 @@ router.get('/:reportId/history', async (req: AuthenticatedRequest, res: Response
       return res.status(403).json({ error: 'Unauthorized access.' });
     }
 
-    const history = await query(`
-      SELECT rh.*, pp.full_name as actor_name, u.email as actor_email
+    const rawHistory = await query(`
+      SELECT rh.*, 
+             vp.full_name as volunteer_name,
+             pp.full_name as parent_name,
+             u.email as actor_email,
+             u.role as actor_role
       FROM report_history rh
       LEFT JOIN users u ON rh.actor_user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
       LEFT JOIN parent_profiles pp ON u.id = pp.user_id
       WHERE rh.report_job_id = ?
       ORDER BY rh.created_at DESC
     `, [req.params.reportId]);
+
+    const history = rawHistory.map((h: any) => {
+      let actorName = 'Administrator';
+      if (['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead', 'team'].includes(h.actor_role)) {
+        actorName = h.volunteer_name || h.parent_name || (h.actor_role === 'super_admin' ? 'Super Admin' : h.actor_role === 'admin' ? 'Event Admin' : h.actor_email) || 'Administrator';
+      } else if (h.actor_user_id) {
+        actorName = h.volunteer_name || 'Team Member';
+      }
+      return {
+        ...h,
+        actor_name: actorName
+      };
+    });
 
     return res.json({ success: true, history });
   } catch (err: any) {
@@ -1022,103 +1014,54 @@ router.get('/:reportId/download', async (req: AuthenticatedRequest, res: Respons
     }
     console.log(`[Reports Download] access confirmed - User ID: ${userId}, Role: ${role}`);
 
-    const genReport = await queryOne('SELECT * FROM generated_reports WHERE report_job_id = ?', [reportId]);
     const job = await queryOne('SELECT * FROM report_jobs WHERE id = ?', [reportId]);
-
     if (!job) {
       console.warn(`[Reports Download] failed - report job not found: ${reportId}`);
-      return res.status(400).json({ error: 'Invalid report job reference.' });
+      return res.status(404).json({ error: "We couldn't prepare this download. Please create the report again." });
     }
 
     if (job.status !== 'ready' && job.status !== 'completed') {
       console.warn(`[Reports Download] failed - report status not ready: ${job.status}`);
       return res.status(409).json({ error: 'Report generation is not ready for download.' });
     }
-    
-    if (!genReport) {
-      console.warn(`[Reports Download] failed - no generated report record for job: ${reportId}`);
-      return res.status(404).json({ error: 'No generated report metadata matches this request.' });
-    }
 
-    if (genReport.expires_at && new Date(genReport.expires_at) < new Date()) {
+    const genReport = await queryOne('SELECT * FROM generated_reports WHERE report_job_id = ?', [reportId]);
+    if (genReport?.expires_at && new Date(genReport.expires_at) < new Date()) {
       console.warn(`[Reports Download] failed - report expired: ${genReport.expires_at}`);
       return res.status(410).json({ error: 'This report download has expired according to retention policy.' });
     }
-    console.log(`[Reports Download] metadata loaded - Version: ${genReport.report_version}, Size: ${genReport.file_size} bytes`);
 
-    const filePath = resolveReportFilePath(genReport.storage_key, reportId);
-    
-    // Security check: path traversal escape check
-    const approvedDir = path.resolve(LOCAL_STORAGE_DIR);
-    const resolvedPath = path.resolve(filePath);
-    if (!resolvedPath.startsWith(approvedDir)) {
-      console.error(`[Reports Download] failed - path traversal escape blocked: ${resolvedPath}`);
-      return res.status(403).json({ error: 'Access denied: Invalid storage path.' });
+    // Resilient artifact retrieval: disk cache first, or regenerate from persisted immutable model/snapshot
+    const artifact = await getOrRegenerateReportPDF(reportId);
+
+    if (!artifact || !artifact.pdfBytes || artifact.pdfBytes.length === 0) {
+      console.warn(`[Reports Download] failed - could not retrieve or regenerate PDF for: ${reportId}`);
+      return res.status(404).json({ error: "We couldn't prepare this download. Please create the report again." });
     }
 
-    if (!fs.existsSync(filePath)) {
-      console.warn(`[Reports Download] failed - file does not exist on disk: ${filePath}`);
-      return res.status(404).json({ error: 'Underlying report file not found in storage.' });
+    // Verify PDF header magic bytes
+    if (artifact.pdfBytes.toString('utf8', 0, 4) !== '%PDF') {
+      console.error(`[Reports Download] failed - artifact is not a valid PDF for: ${reportId}`);
+      return res.status(500).json({ error: "We couldn't prepare this download. Please create the report again." });
     }
 
-    const fileBytes = fs.readFileSync(filePath);
-    if (fileBytes.length === 0) {
-      console.warn(`[Reports Download] failed - file on disk is empty: ${filePath}`);
-      return res.status(500).json({ error: 'Underlying report file is empty.' });
-    }
-    console.log(`[Reports Download] file resolved - Path: ${filePath}, Exists: true, Bytes: ${fileBytes.length}`);
-
-    const calculatedHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
-    if (calculatedHash !== genReport.file_hash) {
-      console.warn(`[Reports Download] hash check discrepancy - Calculated: ${calculatedHash}, DB: ${genReport.file_hash}`);
-      // Self-heal DB hash if file is valid PDF
-      if (fileBytes.toString('utf8', 0, 4) === '%PDF') {
-        await execute('UPDATE generated_reports SET file_hash = ?, file_size = ? WHERE id = ?', [calculatedHash, fileBytes.length, genReport.id]);
-      }
-    } else {
-      console.log(`[Reports Download] hash verified - SHA256 match confirmed`);
-    }
+    console.log(`[Reports Download] artifact ready - fromCache: ${artifact.fromCache}, bytes: ${artifact.pdfBytes.length}, filename: ${artifact.filename}`);
 
     await execute(`
       INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
       VALUES (?, ?, ?, 'downloaded', 'Report PDF downloaded successfully by user.', ?)
     `, ['hist-' + crypto.randomUUID(), reportId, userId, new Date().toISOString()]);
 
-    let docModel: any = null;
-    if (genReport && genReport.document_model_json) {
-      try {
-        docModel = JSON.parse(genReport.document_model_json);
-      } catch (e) {
-        console.warn('[Reports Download] Could not parse stored document_model_json:', e);
-      }
-    }
-
-    const template = REPORT_TEMPLATES.find(t => t.key === job?.template_key);
-    const titlePart = docModel?.reportTitle || template?.name || 'Attendance and Demographics Report';
-    
-    let eventPart = docModel?.eventContext?.eventTitle;
-    if (!eventPart && job?.event_id) {
-      const ev = await queryOne('SELECT title FROM events WHERE id = ?', [job.event_id]);
-      if (ev?.title) eventPart = ev.title;
-    }
-    if (!eventPart) eventPart = 'The General Assembly';
-
-    const dateObj = new Date(job?.completed_at || job?.created_at || Date.now());
-    const datePart = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-
-    const downloadFilename = formatReportFilename(eventPart, titlePart, dateObj);
-
-    console.log(`[Reports Download] response started - Filename: ${downloadFilename}`);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${artifact.filename}"`);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    return res.send(fileBytes);
+    return res.send(artifact.pdfBytes);
 
   } catch (err: any) {
     console.error(`[Reports Download] failed - Internal error serving report ${reportId}:`, err);
-    return res.status(500).json({ error: 'Internal server error retrieving report download.' });
+    return res.status(500).json({ error: "We couldn't prepare this download. Please create the report again." });
   }
 });
 
@@ -1131,7 +1074,7 @@ router.get('/training/sessions/:sessionId', async (req: AuthenticatedRequest, re
     }
 
     const rawJobs = await query(`
-      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash
+      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash, gr.document_model_json
       FROM report_jobs rj
       LEFT JOIN generated_reports gr ON rj.id = gr.report_job_id
       WHERE rj.training_session_id = ?

@@ -96,15 +96,15 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     }
 
     if (model.findings && model.findings.length > 0) {
-      rawItems.push({ id: 'section-findings', title: 'Key findings' });
+      rawItems.push({ id: 'section-findings', title: 'Key observations' });
     }
 
     if (model.managementAttention && model.managementAttention.length > 0) {
-      rawItems.push({ id: 'section-attention', title: 'For management attention' });
+      rawItems.push({ id: 'section-attention', title: 'Items requiring attention' });
     }
 
     if (model.recommendations && model.recommendations.length > 0) {
-      rawItems.push({ id: 'section-recommendations', title: 'Follow-up actions' });
+      rawItems.push({ id: 'section-recommendations', title: 'Action points' });
     }
 
     if (

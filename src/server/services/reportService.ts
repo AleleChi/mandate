@@ -1004,9 +1004,11 @@ export async function requestReportJob(
 }
 
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), 'data', 'reports');
-if (!fs.existsSync(LOCAL_STORAGE_DIR)) {
-  fs.mkdirSync(LOCAL_STORAGE_DIR, { recursive: true });
-}
+try {
+  if (!fs.existsSync(LOCAL_STORAGE_DIR)) {
+    fs.mkdirSync(LOCAL_STORAGE_DIR, { recursive: true });
+  }
+} catch (_) {}
 
 let isWorkerRunning = false;
 
@@ -1117,13 +1119,7 @@ export async function processQueuedReportJobs() {
         const docModelJson = JSON.stringify(docModel);
         const docHash = crypto.createHash('sha256').update(docModelJson).digest('hex');
 
-        const { pdfBytes, pageCount } = await renderPDFReport(
-          pendingJob.template_key,
-          pendingJob.report_name,
-          pendingJob.privacy_classification,
-          snapshotData,
-          sections
-        );
+        const { pdfBytes, pageCount } = await renderDocumentToPDF(docModel);
 
         console.log(`[Reports] PDF rendering complete - Job ID: ${pendingJob.id}`);
 
@@ -1131,9 +1127,18 @@ export async function processQueuedReportJobs() {
         const storageKey = `${pendingJob.id}.pdf`;
         const tmpPath = path.join(LOCAL_STORAGE_DIR, `${pendingJob.id}.pdf.tmp`);
         const finalPath = path.join(LOCAL_STORAGE_DIR, storageKey);
-
-        fs.writeFileSync(tmpPath, Buffer.from(pdfBytes));
         const fileSize = pdfBytes.byteLength;
+
+        // Gracefully attempt local file write for caching (swallows errors in read-only / ephemeral runtimes)
+        try {
+          if (!fs.existsSync(LOCAL_STORAGE_DIR)) {
+            fs.mkdirSync(LOCAL_STORAGE_DIR, { recursive: true });
+          }
+          fs.writeFileSync(tmpPath, Buffer.from(pdfBytes));
+          fs.renameSync(tmpPath, finalPath);
+        } catch (fsErr) {
+          console.warn(`[Reports] Local disk caching skipped for job ${pendingJob.id} (ephemeral/serverless runtime):`, fsErr);
+        }
 
         // Check if job was cancelled while generating
         const currentJob = await queryOne('SELECT status FROM report_jobs WHERE id = ?', [pendingJob.id]);
@@ -1141,25 +1146,14 @@ export async function processQueuedReportJobs() {
           if (fs.existsSync(tmpPath)) {
             try { fs.unlinkSync(tmpPath); } catch (_) {}
           }
+          if (fs.existsSync(finalPath)) {
+            try { fs.unlinkSync(finalPath); } catch (_) {}
+          }
           console.log(`[Reports] Job ${pendingJob.id} was cancelled during generation. Preserving cancelled status.`);
           continue;
         }
 
-        // Atomically rename tmp file to final file
-        fs.renameSync(tmpPath, finalPath);
-
         await transaction(async () => {
-          const updateRes = await execute(`
-            UPDATE report_jobs 
-            SET status = 'ready', completed_at = ?, updated_at = ? 
-            WHERE id = ? AND status = 'generating'
-          `, [now, now, pendingJob.id]);
-
-          if (updateRes.changes === 0) {
-            console.log(`[Reports] Job ${pendingJob.id} status was not generating. Preserving status.`);
-            return;
-          }
-
           const existingGen = await queryOne('SELECT id, report_version FROM generated_reports WHERE report_job_id = ?', [pendingJob.id]);
           if (existingGen) {
             const nextVersion = (existingGen.report_version || 1) + 1;
@@ -1197,6 +1191,18 @@ export async function processQueuedReportJobs() {
               pendingJob.expires_at,
               now
             ]);
+          }
+
+          // Truthful Ready status: Only mark report ready after complete artifact persistence succeeds
+          const updateRes = await execute(`
+            UPDATE report_jobs 
+            SET status = 'ready', completed_at = ?, updated_at = ? 
+            WHERE id = ? AND status = 'generating'
+          `, [now, now, pendingJob.id]);
+
+          if (updateRes.changes === 0) {
+            console.log(`[Reports] Job ${pendingJob.id} status was not generating. Preserving status.`);
+            return;
           }
 
           await execute(`
@@ -1327,25 +1333,21 @@ export async function upgradeReportRecord(reportJobId: string): Promise<any | nu
     throw new Error(`Generated PDF for job ${job.id} failed sanity validation.`);
   }
 
-  // 4. Write PDF to disk atomically
+  // 4. Write PDF to disk atomically (gracefully handles read-only/ephemeral storage)
   const REPORTS_DIR = path.join(process.cwd(), 'data', 'reports');
-  if (!fs.existsSync(REPORTS_DIR)) {
-    fs.mkdirSync(REPORTS_DIR, { recursive: true });
-  }
   const relativeKey = `${job.id}.pdf`;
   const finalPath = path.join(REPORTS_DIR, relativeKey);
   const tempPath = path.join(REPORTS_DIR, `${job.id}.pdf.tmp`);
-  
-  fs.writeFileSync(tempPath, Buffer.from(pdfBytes));
-  
-  // Verify temp file
-  if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size !== fileSize) {
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    throw new Error(`Temporary PDF file verification failed for job ${job.id}.`);
-  }
 
-  // Atomic rename
-  fs.renameSync(tempPath, finalPath);
+  try {
+    if (!fs.existsSync(REPORTS_DIR)) {
+      fs.mkdirSync(REPORTS_DIR, { recursive: true });
+    }
+    fs.writeFileSync(tempPath, Buffer.from(pdfBytes));
+    fs.renameSync(tempPath, finalPath);
+  } catch (fsErr) {
+    console.warn(`[Report Upgrade] Local disk write skipped for ${job.id} (ephemeral/serverless runtime):`, fsErr);
+  }
 
   // 5. Update generated_reports in DB with relative storage_key
   const genReport = await queryOne('SELECT id, report_version FROM generated_reports WHERE report_job_id = ?', [job.id]);
@@ -1398,4 +1400,199 @@ export async function upgradeAllStoredReports(): Promise<number> {
     return 0;
   }
 }
+
+export function formatReportFilename(eventTitle?: string, reportTitle?: string, dateVal?: any): string {
+  const d = dateVal ? new Date(dateVal) : new Date();
+  const dateStr = !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : '2026-09-07';
+
+  let eventPrefix = 'TGA-2026';
+  const cleanEvent = (eventTitle || '').trim();
+  if (cleanEvent.toLowerCase().includes('general assembly')) {
+    eventPrefix = 'TGA-2026';
+  } else if (cleanEvent) {
+    eventPrefix = cleanEvent
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 20);
+  }
+
+  let typePart = 'Management-Report';
+  const cleanTitle = (reportTitle || '').trim();
+  if (cleanTitle.toLowerCase().includes('management')) {
+    typePart = 'Management-Report';
+  } else if (cleanTitle.toLowerCase().includes('full event')) {
+    typePart = 'Full-Event-Report';
+  } else if (cleanTitle.toLowerCase().includes('registration')) {
+    typePart = 'Registration-Selection-Report';
+  } else if (cleanTitle.toLowerCase().includes('attendance')) {
+    typePart = 'Attendance-Movement-Report';
+  } else if (cleanTitle.toLowerCase().includes('volunteer')) {
+    typePart = 'Volunteer-Coverage-Report';
+  } else if (cleanTitle.toLowerCase().includes('care') || cleanTitle.toLowerCase().includes('safety')) {
+    typePart = 'Care-Safety-Report';
+  } else if (cleanTitle) {
+    typePart = cleanTitle
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 30);
+  }
+
+  return `${eventPrefix}-${typePart}-${dateStr}.pdf`;
+}
+
+export interface ReportArtifactResult {
+  pdfBytes: Buffer;
+  filename: string;
+  docModel: any;
+  fromCache: boolean;
+}
+
+export async function getOrRegenerateReportPDF(reportId: string): Promise<ReportArtifactResult | null> {
+  const job = await queryOne('SELECT * FROM report_jobs WHERE id = ?', [reportId]);
+  if (!job) {
+    console.warn(`[Report Artifact] Job not found: ${reportId}`);
+    return null;
+  }
+
+  const genReport = await queryOne('SELECT * FROM generated_reports WHERE report_job_id = ?', [reportId]);
+
+  let docModel: any = null;
+  if (genReport?.document_model_json) {
+    try {
+      docModel = JSON.parse(genReport.document_model_json);
+    } catch (e) {
+      console.warn(`[Report Artifact] Could not parse stored document_model_json for ${reportId}:`, e);
+    }
+  }
+
+  // 1. Check disk cache if available
+  let fileBytes: Buffer | null = null;
+  const storageKey = genReport?.storage_key || `${reportId}.pdf`;
+  const cleanFilename = path.basename(storageKey);
+  const filePath = path.join(LOCAL_STORAGE_DIR, cleanFilename);
+
+  if (fs.existsSync(filePath)) {
+    try {
+      const diskBytes = fs.readFileSync(filePath);
+      if (diskBytes.length > 0 && diskBytes.toString('utf8', 0, 4) === '%PDF') {
+        fileBytes = diskBytes;
+      }
+    } catch (e) {
+      console.warn(`[Report Artifact] Could not read disk file ${filePath}:`, e);
+    }
+  }
+
+  let fromCache = true;
+
+  // 2. If no valid file on disk, regenerate from persisted immutable data
+  if (!fileBytes) {
+    fromCache = false;
+
+    // Check if docModel needs controlled upgrade or if it needs to be backfilled from snapshot
+    if (docModel && needsModelUpgrade(docModel)) {
+      try {
+        const upgraded = await upgradeReportRecord(reportId);
+        if (upgraded) {
+          docModel = upgraded;
+        }
+      } catch (upErr) {
+        console.warn(`[Report Artifact] Upgrade attempt failed for ${reportId}, continuing with existing model:`, upErr);
+      }
+    }
+
+    if (!docModel && job.snapshot_id) {
+      const snapshotRow = await queryOne('SELECT * FROM report_snapshots WHERE id = ?', [job.snapshot_id]);
+      if (snapshotRow?.snapshot_data) {
+        try {
+          const snapshot = JSON.parse(snapshotRow.snapshot_data);
+          const analytics = calculateAnalytics(snapshot);
+          const activeSections = job.section_configuration ? JSON.parse(job.section_configuration) : [];
+          docModel = compileReportDocument(
+            job.id,
+            snapshot,
+            analytics,
+            job.template_key,
+            job.privacy_classification,
+            activeSections
+          );
+
+          const logoInfo = await getValidatedBrandLogo();
+          if (logoInfo.available) {
+            docModel.branding = {
+              ...docModel.branding,
+              organizationName: 'Koinonia Global',
+              logoUrl: logoInfo.previewUrl || logoInfo.pdfData || undefined,
+              logoBase64: logoInfo.pdfData || undefined
+            };
+          }
+
+          const jsonStr = JSON.stringify(docModel);
+          const docHash = crypto.createHash('sha256').update(jsonStr).digest('hex');
+          if (genReport) {
+            await execute(
+              'UPDATE generated_reports SET document_model_json = ?, document_hash = ? WHERE report_job_id = ?',
+              [jsonStr, docHash, job.id]
+            );
+          }
+        } catch (compileErr) {
+          console.error(`[Report Artifact] Failed to compile docModel from snapshot for ${reportId}:`, compileErr);
+        }
+      }
+    }
+
+    if (!docModel) {
+      console.warn(`[Report Artifact] Report ${reportId} has neither document_model_json nor recoverable snapshot_data.`);
+      return null;
+    }
+
+    // Render PDF on the fly from the immutable document model
+    const rendered = await renderDocumentToPDF(docModel);
+    fileBytes = Buffer.from(rendered.pdfBytes);
+
+    // Update generated_reports metadata
+    const calculatedHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
+    if (genReport) {
+      try {
+        await execute(
+          'UPDATE generated_reports SET file_hash = ?, file_size = ?, page_count = ? WHERE id = ?',
+          [calculatedHash, fileBytes.length, rendered.pageCount, genReport.id]
+        );
+      } catch (dbErr) {
+        console.warn(`[Report Artifact] Could not update generated_reports metadata:`, dbErr);
+      }
+    }
+
+    // Cache to disk if runtime allows
+    try {
+      if (!fs.existsSync(LOCAL_STORAGE_DIR)) {
+        fs.mkdirSync(LOCAL_STORAGE_DIR, { recursive: true });
+      }
+      fs.writeFileSync(filePath, fileBytes);
+    } catch (_) {
+      // Ignore write errors in read-only / ephemeral environments
+    }
+  }
+
+  // 3. Resolve formatted filename
+  const template = REPORT_TEMPLATES.find(t => t.key === job.template_key);
+  const titlePart = docModel?.reportTitle || template?.name || 'Report';
+  let eventPart = docModel?.eventContext?.eventTitle;
+  if (!eventPart && job.event_id) {
+    const ev = await queryOne('SELECT title FROM events WHERE id = ?', [job.event_id]);
+    if (ev?.title) eventPart = ev.title;
+  }
+  if (!eventPart) eventPart = 'The General Assembly';
+  const dateObj = new Date(job.completed_at || job.created_at || Date.now());
+  const filename = formatReportFilename(eventPart, titlePart, dateObj);
+
+  return {
+    pdfBytes: fileBytes,
+    filename,
+    docModel,
+    fromCache
+  };
+}
+
 
