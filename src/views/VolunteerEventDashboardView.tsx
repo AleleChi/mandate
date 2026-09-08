@@ -29,45 +29,42 @@ import { KoinoniaEmptyState } from '../components/common/KoinoniaEmptyState';
 import { KoinoniaErrorState } from '../components/common/KoinoniaErrorState';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
-  if (!startsAt && !endsAt) return '18th to 22nd November 2026';
+  if (!startsAt && !endsAt) return '18–22 November 2026';
   const parseAndFormat = (dStr?: string) => {
     if (!dStr) return null;
     const d = new Date(dStr);
     if (isNaN(d.getTime())) return null;
     const day = d.getDate();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
     const month = months[d.getMonth()];
     const year = d.getFullYear();
-    
-    let suffix = 'th';
-    if (day % 10 === 1 && day % 100 !== 11) suffix = 'st';
-    else if (day % 10 === 2 && day % 100 !== 12) suffix = 'nd';
-    else if (day % 10 === 3 && day % 100 !== 13) suffix = 'rd';
-    
-    return { day, suffix, month, year };
+    return { day, month, year };
   };
 
   const startObj = parseAndFormat(startsAt);
   const endObj = parseAndFormat(endsAt);
 
-  if (!startObj && !endObj) return '18th to 22nd November 2026';
-  if (startObj && !endObj) return `${startObj.day}${startObj.suffix} ${startObj.month} ${startObj.year}`;
-  if (!startObj && endObj) return `${endObj.day}${endObj.suffix} ${endObj.month} ${endObj.year}`;
+  if (!startObj && !endObj) return '18–22 November 2026';
+  if (startObj && !endObj) return `${startObj.day} ${startObj.month} ${startObj.year}`;
+  if (!startObj && endObj) return `${endObj.day} ${endObj.month} ${endObj.year}`;
 
   if (startObj && endObj) {
     if (startObj.year !== endObj.year) {
-      return `${startObj.day}${startObj.suffix} ${startObj.month} ${startObj.year} to ${endObj.day}${endObj.suffix} ${endObj.month} ${endObj.year}`;
+      return `${startObj.day} ${startObj.month} ${startObj.year} – ${endObj.day} ${endObj.month} ${endObj.year}`;
     }
     if (startObj.month !== endObj.month) {
-      return `${startObj.day}${startObj.suffix} ${startObj.month} to ${endObj.day}${endObj.suffix} ${endObj.month} ${startObj.year}`;
+      return `${startObj.day} ${startObj.month} – ${endObj.day} ${endObj.month} ${startObj.year}`;
     }
     if (startObj.day !== endObj.day) {
-      return `${startObj.day}${startObj.suffix} to ${endObj.day}${endObj.suffix} ${startObj.month} ${startObj.year}`;
+      return `${startObj.day}–${endObj.day} ${startObj.month} ${startObj.year}`;
     }
-    return `${startObj.day}${startObj.suffix} ${startObj.month} ${startObj.year}`;
+    return `${startObj.day} ${startObj.month} ${startObj.year}`;
   }
 
-  return '18th to 22nd November 2026';
+  return '18–22 November 2026';
 };
 
 const formatChildNameAndRef = (rawName?: string) => {
@@ -2290,26 +2287,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             )}
           </div>
 
-          {/* Center: Concise Page Title */}
+          {/* Center: Page Title (omitted on home for a lightweight, calm header) */}
           <div className="text-center">
-            <span className="font-serif font-black text-sm text-[#18181B] tracking-widest uppercase leading-none">
-              {(() => {
-                if (cleanRoute === '/volunteer/event') return 'DUTY';
-                if (cleanRoute === '/volunteer/scan') {
-                  if (checkedInSuccessChild) return 'CHECKED IN';
-                  if (lookedUpChild) return 'CHILD FOUND';
-                  return 'CHECK-IN';
-                }
-                if (cleanRoute === '/volunteer/pickup') return 'PICKUP';
-                if (cleanRoute === '/volunteer/children') return selectedChildId ? 'PROFILE' : 'CHILDREN';
-                if (cleanRoute === '/volunteer/reports') return 'REPORTS';
-                if (cleanRoute === '/volunteer/profile') return 'PROFILE';
-                return 'VOLUNTEER';
-              })()}
-            </span>
+            {cleanRoute !== '/volunteer/event' && (
+              <span className="font-serif font-medium text-sm text-[#18181B] tracking-wide">
+                {(() => {
+                  if (cleanRoute === '/volunteer/scan') {
+                    if (checkedInSuccessChild) return 'Check-in confirmed';
+                    if (lookedUpChild) return 'Child found';
+                    return 'Scan';
+                  }
+                  if (cleanRoute === '/volunteer/pickup') return 'Pickup';
+                  if (cleanRoute === '/volunteer/children') return selectedChildId ? 'Child profile' : 'Children';
+                  if (cleanRoute === '/volunteer/reports') return 'Summary';
+                  if (cleanRoute === '/volunteer/team-alerts') return 'Alerts';
+                  if (cleanRoute === '/volunteer/profile') return 'Profile';
+                  return '';
+                })()}
+              </span>
+            )}
           </div>
 
-          {/* Right: Profile Avatar */}
+          {/* Right: Notifications & Profile Avatar */}
           <div className="flex items-center space-x-2">
             {hasParentProfile && (
               <button
@@ -2332,20 +2331,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </button>
             )}
 
-            {/* Live Notification Bell with Dropdown */}
+            {/* Notification Bell with Dropdown */}
             <div className="relative">
               <button
                 onClick={() => {
                   setShowNotifPanel(!showNotifPanel);
                   resumeAudioContext();
                 }}
-                className="p-1.5 text-gray-500 hover:text-gray-800 rounded-full transition-colors relative cursor-pointer hover:bg-gray-100"
-                title="Bulletins & Alerts"
+                className="p-2 text-zinc-500 hover:text-zinc-800 rounded-full transition-colors relative cursor-pointer hover:bg-zinc-100"
+                title="Notifications"
                 id="volunteer-notification-bell"
               >
                 <Bell className="h-5 w-5" />
                 {unreadNotifCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.5 text-[8px] font-sans font-bold leading-none text-white bg-[#C59B27] rounded-full animate-pulse">
+                  <span className="absolute top-1 right-1 min-w-[15px] h-[15px] px-1 text-[9px] font-sans font-semibold leading-none text-white bg-[#C59B27] rounded-full flex items-center justify-center">
                     {unreadNotifCount}
                   </span>
                 )}
@@ -2358,8 +2357,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 >
                   <div className="p-3 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between">
                     <div>
-                      <h4 className="font-serif font-bold text-xs text-[#18181B]">Care Bulletins</h4>
-                      <p className="text-[9px] text-zinc-500 font-sans">Active group announcements</p>
+                      <h4 className="font-serif font-bold text-xs text-[#18181B]">Notifications</h4>
+                      <p className="text-[10px] text-zinc-500 font-sans">Updates for today's event</p>
                     </div>
 
                     <div className="flex items-center gap-1.5">
@@ -2403,8 +2402,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   <div className="max-h-64 overflow-y-auto divide-y divide-zinc-100">
                     {notifications.length === 0 ? (
-                      <div className="p-6 text-center text-zinc-400 text-[11px]">
-                        No care bulletins active.
+                      <div className="p-6 text-center text-zinc-400 text-xs">
+                        No notifications right now.
                       </div>
                     ) : (
                       notifications.map((notif: any) => {
@@ -2454,7 +2453,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             
             <button
               onClick={() => onNavigate('/volunteer/profile')}
-              className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-sm overflow-hidden border border-[#D9D6CE] shadow-xs cursor-pointer transition-transform duration-200 hover:scale-105"
+              className="w-8 h-8 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs overflow-hidden border border-[#D9D6CE] shadow-2xs cursor-pointer transition-transform duration-200 hover:scale-105 shrink-0"
               data-component-version="volunteer-header-avatar-v3-handover-photo"
             >
               {(() => {
@@ -2613,8 +2612,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           <div className="space-y-4 animate-fade-in" data-view-version="volunteer-dashboard-v11-refined-mobile">
             
             {/* 1. Compact Volunteer Greeting */}
-            <div className="space-y-1 pt-1" data-component-version="volunteer-dashboard-compact-greeting">
-              <h1 className="text-2xl sm:text-3xl font-serif font-medium text-[#18181B] tracking-tight">
+            <div className="pt-2 pb-1 space-y-1" data-component-version="volunteer-dashboard-compact-greeting">
+              <h1 className="text-2xl sm:text-3xl font-serif font-normal text-[#18181B] tracking-tight">
                 {(() => {
                   const hour = new Date().getHours();
                   const rawName = volunteerProfile?.full_name || 
@@ -2636,97 +2635,93 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   return firstName ? `${greetingPrefix}, ${firstName}` : greetingPrefix;
                 })()}
               </h1>
-              <p className="text-sm text-[#71717A] font-normal">
-                Here is your duty information for today.
+              <p className="text-sm text-zinc-500 font-normal">
+                Here's what you need for today's event.
               </p>
             </div>
 
             {/* 2. Unified Event Cover & Summary Card */}
             <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs" data-component-version="volunteer-dashboard-unified-event-card">
-              <div className="relative h-32 sm:h-36 w-full bg-[#18181B] overflow-hidden flex flex-col justify-end p-4">
+              <div className="relative h-36 sm:h-44 w-full bg-[#18181B] overflow-hidden flex flex-col justify-end p-4 sm:p-5">
                 <SafeImage 
                   src={customHeroUrl}
                   fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
                   alt="Current Event" 
-                  className="w-full h-full object-cover opacity-80"
+                  className="w-full h-full object-cover opacity-85"
                   containerClassName="absolute inset-0 w-full h-full"
                   loading="eager"
                   decoding="async"
                   fetchPriority="high"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent pointer-events-none" />
-                <div className="relative z-10 space-y-0.5">
-                  <span className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider block">
-                    {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children and Teens'}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent pointer-events-none" />
+                <div className="relative z-10 space-y-1">
+                  <span className="text-[11px] font-semibold text-[#D4AF37] uppercase tracking-wider block">
+                    {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children & Teens'}
                   </span>
-                  <h2 className="text-lg sm:text-xl font-serif font-bold text-white leading-tight drop-shadow-xs truncate">
+                  <h2 className="text-xl sm:text-2xl font-serif font-semibold text-white leading-tight drop-shadow-xs">
                     {eventDetails?.title || 'The General Assembly'}
                   </h2>
                 </div>
               </div>
 
-              <div className="p-4 space-y-3 bg-white">
-                <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#F4F3EF]">
-                  <div className="inline-flex items-center space-x-2 px-3 py-1 bg-[#FAF6EB] border border-[#E8DCBF] rounded-full text-xs leading-none shrink-0">
-                    <span className="font-bold text-[#8C6B18] tracking-tight">Ready for duty</span>
-                    <span className="text-[#C59B27]/40 text-[11px] font-light">|</span>
-                    <span className="text-[11px] font-medium text-[#71717A]">{teamName || 'General Team'}</span>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowEventDetailsModal(true)} 
-                    className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] transition-colors cursor-pointer shrink-0"
-                  >
-                    View event details
-                  </button>
-                </div>
-
-                <div className="space-y-2 text-xs text-[#52525B] pt-0.5">
+              <div className="p-4 sm:p-5 space-y-3 bg-white">
+                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 font-normal">
                   <div className="flex items-center space-x-2.5">
                     <Calendar className="w-4 h-4 text-[#C59B27] shrink-0" />
-                    <span className="font-medium text-[#3F3F46]">
+                    <span>
                       {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
-                      <span className="mx-2 text-zinc-300">|</span>
-                      {eventDetails?.daily_start_time && eventDetails?.daily_end_time ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` : '9:00 AM – 7:00 PM'}
+                      <span className="mx-2 text-zinc-300">•</span>
+                      {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
+                        ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
+                        : '9:00 AM – 7:00 PM'}
                     </span>
                   </div>
                   <div className="flex items-center space-x-2.5">
                     <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                    <span className="font-medium text-[#3F3F46] leading-relaxed truncate">
+                    <span className="truncate text-zinc-700">
                       {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
                     </span>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F3EF] text-xs">
+                  <span className="text-zinc-500 font-normal">
+                    Serving with <span className="text-zinc-800 font-medium">{teamName || 'General Team'}</span>
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowEventDetailsModal(true)} 
+                    className="font-medium text-[#C59B27] hover:text-[#A47E1F] transition-colors cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <span>View event details</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
 
             {/* 3. My Duty Location Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
+              <div className="flex items-center space-x-2">
+                <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
+                <h2 className="text-sm font-serif font-bold text-[#18181B]">Your duty location</h2>
+              </div>
+
               {currentDutyLocation ? (
                 /* Assigned/Confirmed Duty Location State */
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                      <h3 className="text-sm font-serif font-bold text-[#18181B]">My duty location</h3>
-                    </div>
-                    <span className="px-2.5 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full">
-                      Location confirmed
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1">
-                    <div className="text-sm font-serif font-bold text-[#18181B]">
+                  <div className="p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1">
+                    <div className="text-base font-serif font-bold text-[#18181B]">
                       {currentDutyLocation.name}
                     </div>
-                    <div className="text-xs text-[#71717A] flex flex-wrap items-center gap-2">
+                    <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-2">
                       {currentDutyLocation.zone && <span>Zone: {currentDutyLocation.zone}</span>}
                       {currentDutyLocation.room_number && <span>• Room {currentDutyLocation.room_number}</span>}
                       {currentDutyLocation.location_type && <span>• {currentDutyLocation.location_type}</span>}
                     </div>
                     {currentDutyLocation.guideline && (
-                      <p className="text-xs text-[#52525B] italic pt-1">
-                        Guideline: {currentDutyLocation.guideline}
+                      <p className="text-xs text-zinc-600 italic pt-1">
+                        {currentDutyLocation.guideline}
                       </p>
                     )}
                   </div>
@@ -2735,7 +2730,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       type="button"
                       onClick={() => setShowSetLocationSheet(true)}
-                      className="flex-1 py-2 px-3 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-[#18181B] font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
+                      className="flex-1 py-2 px-3 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-[#18181B] font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
                     >
                       <RefreshCw className="w-3.5 h-3.5 text-[#C59B27]" />
                       <span>Change location</span>
@@ -2743,7 +2738,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       type="button"
                       onClick={handleLeaveLocation}
-                      className="py-2 px-3.5 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                      className="py-2 px-3.5 bg-zinc-50 border border-zinc-200 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 text-zinc-600 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
                       title="Leave current location"
                     >
                       <LogOut className="w-3.5 h-3.5" />
@@ -2752,30 +2747,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
                 </div>
               ) : (
-                /* Unconfirmed Location State */
+                /* Unconfirmed Location State (Quiet, helpful, no alert badge) */
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                      <h3 className="text-sm font-serif font-bold text-[#18181B]">My duty location</h3>
-                    </div>
-                    <span className="px-2 py-0.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-full">
-                      Location not confirmed
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[#52525B] leading-relaxed">
-                    Confirm where you are serving so you can receive the correct assignments and event alerts.
+                  <p className="text-xs text-zinc-600 leading-relaxed">
+                    Your location has not been assigned yet. We'll show it here once your coordinator confirms it.
                   </p>
 
                   <div className="pt-0.5 flex flex-col sm:flex-row gap-2">
                     <button
                       type="button"
                       onClick={() => setShowSetLocationSheet(true)}
-                      className="w-full py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                      className="w-full sm:flex-1 py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <MapPin className="w-4 h-4" />
-                      <span>Set duty location</span>
+                      <span>Select your location</span>
                     </button>
                     <button
                       type="button"
@@ -2783,7 +2768,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setShowLocationQRModal(true);
                         startLocationQRScanning();
                       }}
-                      className="w-full sm:w-auto py-2.5 px-3.5 bg-transparent hover:bg-zinc-50 text-[#52525B] hover:text-[#18181B] font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                      className="w-full sm:w-auto py-2.5 px-4 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
                     >
                       <QrCode className="w-3.5 h-3.5 text-[#C59B27]" />
                       <span>Scan location QR</span>
@@ -2793,8 +2778,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
-            {/* 5. Primary Quick Operational Actions */}
-            <div className="pt-1 space-y-2">
+            {/* 4. Primary Quick Operational Actions */}
+            <div className="space-y-2.5">
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
@@ -2803,7 +2788,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     setScanMode('check_in');
                     onNavigate('/volunteer/scan');
                   }}
-                  className="py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  className="py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-semibold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   <QrCode className="w-4 h-4" />
                   <span>Start check-in</span>
@@ -2811,7 +2796,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   type="button"
                   onClick={() => onNavigate('/volunteer/pickup')}
-                  className="py-3 px-4 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-[#18181B] font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  className="py-3 px-4 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-[#18181B] font-semibold text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
                   <span>Open pickup</span>
@@ -2822,26 +2807,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   type="button"
                   onClick={() => handleOpenSafetyAlertModal()}
-                  className="flex-1 py-2.5 bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
+                  className="flex-1 py-2.5 bg-rose-50/70 border border-rose-150 hover:bg-rose-100/70 text-rose-800 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
                 >
-                  <Bell className="h-4 w-4 animate-pulse shrink-0 text-rose-600" />
+                  <Bell className="h-4 w-4 shrink-0 text-rose-600" />
                   <span>Request admin help</span>
                 </button>
                 {mySafetyAlerts.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setShowMyAlertsView(true)}
-                    className="py-2.5 px-3 bg-gray-50 border border-[#EAE8E1] hover:bg-gray-100 text-gray-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                    className="py-2.5 px-3 bg-zinc-50 border border-[#EAE8E1] hover:bg-zinc-100 text-zinc-700 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
                     title="View requested support history"
                   >
-                    <History className="h-4 w-4 shrink-0 text-gray-500" />
+                    <History className="h-4 w-4 shrink-0 text-zinc-500" />
                     <span>({mySafetyAlerts.filter(a => a.status !== 'resolved').length})</span>
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Stitch Search Field */}
+            {/* 5. Child Search Field */}
             <form 
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2851,117 +2836,73 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               data-component-version="volunteer-dashboard-search-v5-mobile"
             >
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <Search className="h-4.5 w-4.5 text-gray-400" />
+                <Search className="h-4 w-4 text-zinc-400" />
               </div>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Find child by name or parent phone"
-                className="w-full pl-10 pr-4 py-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl text-sm text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] outline-hidden transition-all"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-xs sm:text-sm text-zinc-900 placeholder-zinc-400 focus:bg-white focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] outline-hidden transition-all"
               />
             </form>
 
-            {/* Primary Action Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-component-version="volunteer-dashboard-task-cards-v2">
-              {/* Check-in Card */}
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col justify-between">
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-xl font-serif font-bold text-gray-900">Check-in</h3>
-                    <QrCode className="h-5 w-5 text-[#C59B27]" />
-                  </div>
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    Scan a child’s pass at entry.
-                  </p>
+            {/* 6. Metrics Summary Grid (Cohesive card with subtle dividers, no box fatigue) */}
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs" data-component-version="volunteer-dashboard-summary-refined">
+              <div className="grid grid-cols-4 gap-2 text-center divide-x divide-zinc-100">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                    Expected
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 block leading-tight">
+                    {stats.expected || 0}
+                  </span>
                 </div>
-                <button
-                  onClick={() => {
-                    setCameraActive(true);
-                    setScanMode('check_in');
-                    onNavigate('/volunteer/scan');
-                  }}
-                  className="w-full py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-sm text-center"
-                >
-                  Start check-in
-                </button>
-              </div>
 
-              {/* Pickup Card */}
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col justify-between">
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-xl font-serif font-bold text-gray-900">Pickup</h3>
-                    <UserCheck className="h-5 w-5 text-[#C59B27]" />
-                  </div>
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    Confirm the approved person before releasing.
-                  </p>
+                <div className="space-y-1 pl-2">
+                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                    Checked in
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-[#C59B27] block leading-tight">
+                    {stats.checkedIn || 0}
+                  </span>
                 </div>
-                <button
-                  onClick={() => onNavigate('/volunteer/pickup')}
-                  className="w-full py-3 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold text-xs tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-xs text-center"
-                >
-                  Start pickup
-                </button>
+
+                <div className="space-y-1 pl-2">
+                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                    Picked up
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-700 block leading-tight">
+                    {stats.pickedUp || 0}
+                  </span>
+                </div>
+
+                <div className="space-y-1 pl-2">
+                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                    Attention
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 block leading-tight">
+                    {stats.attention || 0}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-2 gap-4" data-component-version="volunteer-dashboard-summary-v5-mobile" data-counts-version="under-one-child-counts-v1">
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
-                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
-                  EXPECTED
-                </span>
-                <span className="text-4xl font-serif font-medium text-gray-900 block leading-tight">
-                  {stats.expected || 0}
-                </span>
-              </div>
-
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
-                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
-                  CHECKED IN
-                </span>
-                <span className="text-4xl font-serif font-medium text-gray-900 block leading-tight text-[#C59B27]">
-                  {stats.checkedIn || 0}
-                </span>
-              </div>
-
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative">
-                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
-                  PICKED UP
-                </span>
-                <span className="text-4xl font-serif font-medium text-gray-900 block leading-tight">
-                  {stats.pickedUp || 0}
-                </span>
-              </div>
-
-              <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-1 relative" data-component-version="volunteer-dashboard-attention-count-v1">
-                <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
-                  ATTENTION
-                </span>
-                <span className="text-4xl font-serif font-medium text-[#C59B27] block leading-tight">
-                  {stats.attention || 0}
-                </span>
-                <div className="absolute top-4 right-4 w-3.5 h-3.5 bg-[#C59B27] rounded-xs" />
-              </div>
-            </div>
-
-            {/* Needs Attention Section */}
-            <div className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-dashboard-attention-v2-stitch">
-              <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
-                <AlertTriangle className="h-5 w-5 text-[#C59B27]" />
-                <h3 className="text-lg font-serif font-bold text-gray-900">Needs Attention</h3>
+            {/* 7. Needs Attention Section */}
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3" data-component-version="volunteer-dashboard-attention-refined">
+              <div className="flex items-center space-x-2 border-b border-zinc-100 pb-2.5">
+                <AlertTriangle className="h-4 w-4 text-[#C59B27]" />
+                <h2 className="text-base font-serif font-bold text-zinc-900">Needs Attention</h2>
               </div>
 
               {attentionItems.length === 0 && !loading && (
-                <div className="py-4 text-center text-xs text-gray-400">
+                <div className="py-3 text-center text-xs text-zinc-400">
                   No attention items right now.
                 </div>
               )}
 
               {attentionItems.length > 0 && (
-                <div className="divide-y divide-gray-100" data-component-version="volunteer-attention-list-v2">
+                <div className="divide-y divide-zinc-100" data-component-version="volunteer-attention-list-v2">
                   {attentionItems.map((item, index) => {
                     const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
                     const cName = item.child_name || item.childName || 'Child';
@@ -3004,10 +2945,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-gray-900 leading-tight truncate">
+                            <p className="text-xs font-semibold text-zinc-900 leading-tight truncate">
                               {item.issue_type || item.issueType || 'Unresolved issue'}
                             </p>
-                            <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                            <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
                               {cleaned.name} {item.child_id ? `(ID: ${item.child_id})` : ''}
                             </p>
                           </div>
@@ -3016,7 +2957,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <button
                           onClick={() => handleResolveAction(item)}
                           data-component-version="volunteer-attention-action-v2"
-                          className="text-[11px] font-bold text-[#C59B27] hover:text-[#A47E1F] tracking-wider uppercase shrink-0 transition-colors cursor-pointer"
+                          className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] shrink-0 transition-colors cursor-pointer"
                         >
                           {item.action_text === 'RESOLVE' || item.actionText === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' || item.actionText === 'VERIFY' ? 'Verify' : 'Review'}
                         </button>
@@ -3027,49 +2968,49 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
-            {/* Recent Activity Section */}
+            {/* 8. Recent Activity Section */}
             <div 
-              className="bg-[#FDFDFB] border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4 font-sans" 
-              data-component-version="volunteer-dashboard-recent-activity-v2"
+              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3 font-sans" 
+              data-component-version="volunteer-dashboard-recent-activity-refined"
             >
-              <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
-                <History className="h-5 w-5 text-[#C59B27]" />
-                <h3 className="text-lg font-serif font-bold text-gray-900">Recent Activity</h3>
+              <div className="flex items-center space-x-2 border-b border-zinc-100 pb-2.5">
+                <History className="h-4 w-4 text-[#C59B27]" />
+                <h2 className="text-base font-serif font-bold text-zinc-900">Recent Activity</h2>
               </div>
 
               {recentScans.length === 0 && (
-                <div className="py-4 text-center text-xs text-gray-400">
+                <div className="py-3 text-center text-xs text-zinc-400">
                   No scan activity recorded yet.
                 </div>
               )}
 
               {recentScans.length > 0 && (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-zinc-100">
                   {recentScans.slice(0, 3).map((item, index) => (
                     <div
                       key={item.id || index}
-                      className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
+                      className="py-2.5 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
                     >
                       <div className="flex items-center space-x-3 min-w-0">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs shrink-0 font-bold ${
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] shrink-0 font-semibold ${
                           item.status === 'checked_in' || item.status === 'inside'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-zinc-100 text-zinc-700 border border-zinc-200'
                         }`}>
                           {item.status === 'checked_in' || item.status === 'inside' ? 'IN' : 'OUT'}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-gray-900 truncate leading-tight">
+                          <p className="text-xs font-semibold text-zinc-900 truncate leading-tight">
                             {item.childName || 'Child'}
                           </p>
-                          <p className="text-[10px] text-gray-500 mt-0.5">
+                          <p className="text-[10px] text-zinc-500 mt-0.5">
                             {item.status === 'checked_in' || item.status === 'inside' ? 'Checked in' : 'Picked up'} • {formatTime(item.timestamp)}
                           </p>
                         </div>
                       </div>
                       
                       {item.ageGroup && (
-                        <span className="text-[10px] font-semibold text-[#C59B27] bg-[#C59B27]/5 border border-[#C59B27]/10 px-2.5 py-0.5 rounded-full shrink-0">
+                        <span className="text-[10px] font-medium text-zinc-500 bg-zinc-50 border border-zinc-200 px-2 py-0.5 rounded-full shrink-0">
                           {item.ageGroup}
                         </span>
                       )}
@@ -7273,13 +7214,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       )}
 
       {/* Persistent Bottom Tab Bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#EAE8E1] px-2 py-2 flex items-center justify-around z-20 shadow-lg" data-component-version="volunteer-navigation-v3-safe-routing">
+      <nav 
+        className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-[#EAE8E1] px-3 py-1 flex items-center justify-around z-20 shadow-xs" 
+        data-component-version="volunteer-navigation-v3-safe-routing"
+        aria-label="Volunteer navigation"
+      >
         <button
           onClick={() => onNavigate('/volunteer/event')}
-          className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+            cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' 
+              ? 'text-[#C59B27]' 
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
         >
-          <Calendar className="h-5 w-5" />
-          <span className="text-[9px] font-bold mt-1">Events</span>
+          <Calendar className={`h-5 w-5 ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
+          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'font-semibold' : 'font-medium'}`}>
+            Events
+          </span>
         </button>
         
         <button
@@ -7287,47 +7238,77 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             setCameraActive(true);
             onNavigate('/volunteer/scan');
           }}
-          className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/scan' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+            cleanRoute === '/volunteer/scan' 
+              ? 'text-[#C59B27]' 
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
         >
-          <QrCode className="h-5 w-5" />
-          <span className="text-[9px] font-medium mt-1">Scan</span>
+          <QrCode className={`h-5 w-5 ${cleanRoute === '/volunteer/scan' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
+          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/scan' ? 'font-semibold' : 'font-medium'}`}>
+            Scan
+          </span>
         </button>
 
         <button
           onClick={() => onNavigate('/volunteer/children')}
-          className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/children' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+            cleanRoute === '/volunteer/children' 
+              ? 'text-[#C59B27]' 
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
         >
-          <Users className="h-5 w-5" />
-          <span className="text-[9px] font-medium mt-1">Children</span>
+          <Users className={`h-5 w-5 ${cleanRoute === '/volunteer/children' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
+          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/children' ? 'font-semibold' : 'font-medium'}`}>
+            Children
+          </span>
         </button>
 
         <button
           onClick={() => onNavigate('/volunteer/reports')}
-          className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/reports' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+            cleanRoute === '/volunteer/reports' 
+              ? 'text-[#C59B27]' 
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
         >
-          <BarChart3 className="h-5 w-5" />
-          <span className="text-[9px] font-medium mt-1">Reports</span>
+          <BarChart3 className={`h-5 w-5 ${cleanRoute === '/volunteer/reports' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
+          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/reports' ? 'font-semibold' : 'font-medium'}`}>
+            Reports
+          </span>
         </button>
 
         {volunteerProfile && (
           <button
             onClick={() => onNavigate('/volunteer/team-alerts')}
             data-component-version="volunteer-dashboard-icon-route-v2"
-            className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/team-alerts' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+            className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+              cleanRoute === '/volunteer/team-alerts' 
+                ? 'text-[#C59B27]' 
+                : 'text-zinc-400 hover:text-zinc-600'
+            }`}
           >
-            <ShieldAlert className="h-5 w-5" />
-            <span className="text-[9px] font-medium mt-1">Desk</span>
+            <ShieldAlert className={`h-5 w-5 ${cleanRoute === '/volunteer/team-alerts' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
+            <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/team-alerts' ? 'font-semibold' : 'font-medium'}`}>
+              Desk
+            </span>
           </button>
         )}
 
         <button
           onClick={() => onNavigate('/volunteer/profile')}
-          className={`flex flex-col items-center justify-center transition-colors cursor-pointer ${cleanRoute === '/volunteer/profile' ? 'text-[#C59B27]' : 'text-gray-400 hover:text-gray-600'}`}
+          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+            cleanRoute === '/volunteer/profile' 
+              ? 'text-[#C59B27]' 
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
         >
-          <User className="h-5 w-5" />
-          <span className="text-[9px] font-medium mt-1">Profile</span>
+          <User className={`h-5 w-5 ${cleanRoute === '/volunteer/profile' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
+          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/profile' ? 'font-semibold' : 'font-medium'}`}>
+            Profile
+          </span>
         </button>
-      </div>
+      </nav>
 
       {/* MANUAL LOCATION SELECT MODAL */}
       {showLocationSelectModal && (
