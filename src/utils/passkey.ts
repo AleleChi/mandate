@@ -15,6 +15,31 @@ export function isWebAuthnSupported(): boolean {
          typeof window.PublicKeyCredential !== 'undefined';
 }
 
+// Check if a platform authenticator (e.g. fingerprint, Face ID, Windows Hello) is actually available on this device
+export async function isPlatformAuthenticatorAvailable(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (!window.PublicKeyCredential) return false;
+  if (typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
+    return false;
+  }
+  try {
+    return await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
+export function humanizeDeviceName(rawName?: string): string {
+  if (!rawName) return 'This device';
+  const lower = rawName.toLowerCase();
+  if (lower.includes('android')) return 'Android phone';
+  if (lower.includes('iphone')) return 'iPhone';
+  if (lower.includes('ipad')) return 'iPad';
+  if (lower.includes('macintosh') || lower.includes('macbook') || lower.includes('mac')) return 'Mac';
+  if (lower.includes('windows')) return 'Windows PC';
+  return rawName;
+}
+
 // Generate a random ID for credentials
 export function generateMockCredentialId(): string {
   return 'cred_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);

@@ -28,6 +28,8 @@ import { ModuleLoadingState } from '../components/common/ModuleLoadingState';
 import { KoinoniaInlineLoader } from '../components/common/KoinoniaInlineLoader';
 import { CardSkeleton, ListSkeleton } from '../components/common/KoinoniaSkeletons';
 import { KoinoniaEmptyState } from '../components/common/KoinoniaEmptyState';
+import { MobileNotificationCentre } from '../components/common/MobileNotificationCentre';
+import { PwaInstallBanner } from '../components/common/PwaInstallBanner';
 import { KoinoniaErrorState } from '../components/common/KoinoniaErrorState';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
@@ -2455,11 +2457,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </button>
             )}
 
-            {/* Notification Bell with Dropdown */}
+            {/* Notification Bell with Mobile Notification Centre */}
             <div className="relative">
               <button
                 onClick={() => {
-                  setShowNotifPanel(!showNotifPanel);
+                  setShowNotifPanel(true);
                   resumeAudioContext();
                 }}
                 className="p-2 text-zinc-500 hover:text-zinc-800 rounded-full transition-colors relative cursor-pointer hover:bg-zinc-100"
@@ -2474,105 +2476,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 )}
               </button>
 
-              {showNotifPanel && (
-                <div 
-                  className="absolute right-0 mt-2 w-72 sm:w-80 bg-white border border-[#EAE8E1] rounded-2xl shadow-xl overflow-hidden z-50 animate-fade-in"
-                  data-component-version="volunteer-care-bulletin-dropdown-v1"
-                >
-                  <div className="p-3 border-b border-[#EAE8E1] bg-[#FAF9F6] flex items-center justify-between">
-                    <div>
-                      <h4 className="font-serif font-bold text-xs text-[#18181B]">Notifications</h4>
-                      <p className="text-[10px] text-zinc-500 font-sans">Updates for today's event</p>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={toggleSound}
-                        data-component-version="volunteer-sound-notification-toggle-v1"
-                        className={`p-1 rounded transition-colors cursor-pointer ${
-                          soundEnabled 
-                            ? 'bg-[#FAF6EB] text-[#C59B27]' 
-                            : 'bg-zinc-50 text-zinc-400'
-                        }`}
-                        title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
-                      >
-                        {soundEnabled ? (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm10.95 3.536l-8.486-8.486" />
-                          </svg>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={togglePush}
-                        data-component-version="volunteer-push-notification-toggle-v1"
-                        className={`p-1 rounded transition-colors cursor-pointer ${
-                          pushEnabled 
-                            ? 'bg-[#FAF6EB] text-[#C59B27]' 
-                            : 'bg-zinc-50 text-zinc-400'
-                        }`}
-                        title={pushEnabled ? 'Disable Push' : 'Enable Push'}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="max-h-64 overflow-y-auto divide-y divide-zinc-100">
-                    {notifications.length === 0 ? (
-                      <div className="p-6 text-center text-zinc-400 text-xs">
-                        No notifications right now.
-                      </div>
-                    ) : (
-                      notifications.map((notif: any) => {
-                        const isUnread = !notif.isRead;
-                        return (
-                          <div 
-                            key={notif.id}
-                            className={`p-3 text-left hover:bg-zinc-50 transition-colors ${
-                              isUnread ? 'bg-[#FAF6EB]/20' : ''
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-serif font-bold text-xs text-zinc-800 truncate">
-                                {notif.title}
-                              </span>
-                              <span className="text-[8px] text-zinc-400 shrink-0">
-                                {formatTimeAgo(notif.createdAt)}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed break-words whitespace-normal">
-                              {notif.message}
-                            </p>
-                            {isUnread && (
-                              <div className="flex justify-end mt-1.5">
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await api.parent.markNotificationAsRead(notif.id);
-                                      fetchVolunteerNotifications();
-                                    } catch (_) {}
-                                  }}
-                                  data-component-version="volunteer-care-bulletin-acknowledge-v1"
-                                  className="text-[9px] font-bold text-[#C59B27] hover:underline cursor-pointer"
-                                >
-                                  Acknowledge
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
+              <MobileNotificationCentre
+                isOpen={showNotifPanel}
+                onClose={() => setShowNotifPanel(false)}
+                role="volunteer"
+                onNavigate={onNavigate}
+                onUnreadCountChange={(count) => setUnreadNotifCount(count)}
+              />
             </div>
             
             <button
@@ -3595,39 +3505,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
             );
           })() : (
-            /* ==================== 2. SCANNER VIEW (Stitch Design) ==================== */
-            <div className="max-w-md mx-auto space-y-6 w-full pb-12" data-view-version="volunteer-checkin-v5-clean-header">
+            /* ==================== 2. SCANNER VIEW (Refined Clean Layout) ==================== */
+            <div className="max-w-md mx-auto space-y-5 w-full pb-16 px-4" data-view-version="volunteer-scan-refined-v6">
               
               {cameraUnavailable ? (
-                /* Camera is unavailable: show only the manual entry card */
-                <div className="space-y-6" data-component-version="volunteer-scan-manual-fallback-v1">
-                  <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
-                    {cameraPermissionDenied ? 'CAMERA ACCESS BLOCKED' : 'CAMERA NOT FOUND'}
+                /* Camera is unavailable: calm fallback */
+                <div className="space-y-4" data-component-version="volunteer-scan-manual-fallback-v2">
+                  <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl p-4 text-center space-y-1">
+                    <p className="font-sans font-medium text-xs text-zinc-900">Camera unavailable</p>
+                    <p className="font-sans text-xs text-zinc-500">
+                      You can still find the child using search or enter the pass code manually below.
+                    </p>
                   </div>
-                  
-                  {cameraPermissionDenied ? (
-                    <div className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-250 rounded-2xl p-5 leading-relaxed space-y-1">
-                      <p className="font-serif font-bold text-sm text-amber-900">Camera Permission Denied</p>
-                      <p>
-                        The camera could not be initialized because access was blocked. Please enable camera access in your browser or device settings to scan passes.
-                      </p>
-                      <p className="text-[10px] text-amber-600 italic">
-                        If running inside a preview iframe, you can open the app in a new tab using the top-right button to allow permission popups.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-100 rounded-2xl p-4 leading-relaxed">
-                      Scanner is not available on this device. Please enter the child's entry pass code manually below to continue.
-                    </div>
-                  )}
 
-                  <div className="bg-white border border-[#EAE8E1] p-5 rounded-3xl shadow-sm space-y-4">
-                    <div className="flex items-center space-x-2 text-gray-900 pb-2 border-b border-gray-50">
-                      <Keyboard className="h-5 w-5 text-gray-400" />
-                      <h4 className="text-sm font-serif font-bold">Enter Pass Reference</h4>
+                  <div className="bg-white border border-zinc-200/80 p-5 rounded-2xl shadow-2xs space-y-3.5">
+                    <div className="flex items-center space-x-2 text-zinc-900 pb-2 border-b border-zinc-100">
+                      <Keyboard className="h-4 w-4 text-zinc-400" />
+                      <h4 className="text-xs font-sans font-semibold text-zinc-900">Enter pass reference</h4>
                     </div>
                     
-                    <form onSubmit={handleManualVerifySubmit} className="space-y-4">
+                    <form onSubmit={handleManualVerifySubmit} className="space-y-3.5">
                       <div className="relative">
                         <input
                           type="text"
@@ -3635,13 +3532,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                           placeholder="e.g. 6E80A7"
                           disabled={scanLoading}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60 text-center"
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-zinc-400 focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
                         />
                         {manualCode && (
                           <button
                             type="button"
                             onClick={() => setManualCode('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100"
                           >
                             <X className="h-3.5 w-3.5" />
                           </button>
@@ -3651,27 +3548,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <button
                         type="submit"
                         disabled={scanLoading || !manualCode}
-                        className="w-full py-3.5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center font-serif uppercase"
+                        className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 text-white font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
                       >
                         {scanLoading ? (
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                         ) : (
-                          <span>Verify Pass</span>
+                          <span>Verify pass</span>
                         )}
                       </button>
                     </form>
                   </div>
                 </div>
               ) : (
-                /* Camera is active/available: show portrait card with dedupe guard */
-                <div className="space-y-6" data-component-version="volunteer-scan-dedupe-guard-v2">
-                  {/* Tall Portrait Scan Card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs relative">
-                    <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
-                      {/* Blurred warm background when camera is inactive */}
+                /* Camera is active/available: portrait card */
+                <div className="space-y-4" data-component-version="volunteer-scan-viewport-v3">
+                  <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden shadow-2xs relative">
+                    <div className="aspect-[4/3] sm:aspect-[3/4] bg-zinc-950 relative flex flex-col items-center justify-center overflow-hidden">
                       {!cameraActive && (
                         <div 
-                          className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
+                          className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-35 scale-105"
                           style={{ 
                             backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
                           }}
@@ -3687,16 +3582,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             muted
                           />
                           
-                          {/* Gold overlay frame */}
+                          {/* Overlay frame */}
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-56 h-56 border border-white/25 rounded-2xl relative flex items-center justify-center">
-                              {/* Antique Gold corner highlights */}
-                              <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
-                              <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
-                              <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
-                              <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
+                            <div className="w-48 h-48 sm:w-56 sm:h-56 border border-white/30 rounded-2xl relative flex items-center justify-center">
+                              <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-[#C59B27] rounded-tl-md"></div>
+                              <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-[#C59B27] rounded-tr-md"></div>
+                              <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-[#C59B27] rounded-bl-md"></div>
+                              <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-[#C59B27] rounded-br-md"></div>
                               
-                              {/* Scanning Sweep line */}
                               <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
                             </div>
                           </div>
@@ -3707,26 +3600,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               <button
                                 type="button"
                                 onClick={handleFlipCamera}
-                                data-component-version="volunteer-camera-flip-action-v1"
-                                className="p-1.5 bg-[#C59B27] hover:bg-[#B58E33] text-gray-900 rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-bold text-[10px]"
+                                className="p-1.5 bg-white/90 text-zinc-900 rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-xs font-sans font-medium text-[10px]"
                                 title="Flip Camera"
                               >
-                                <RefreshCw className="h-3.5 w-3.5" />
+                                <RefreshCw className="h-3 w-3" />
                                 <span>Flip</span>
                               </button>
-                            )}
-                            {cameras.length > 1 && (
-                              <select
-                                value={selectedCameraId}
-                                onChange={(e) => setSelectedCameraId(e.target.value)}
-                                className="text-[10px] font-bold text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
-                              >
-                                {cameras.map((cam, i) => (
-                                  <option key={cam.deviceId} value={cam.deviceId}>
-                                    {cam.label || `Cam ${i + 1}`}
-                                  </option>
-                                ))}
-                              </select>
                             )}
                             <button
                               onClick={() => setCameraActive(false)}
@@ -3737,25 +3616,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           </div>
                         </>
                       ) : (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-6 z-10">
-                          {/* Antique Gold corners even when camera is inactive */}
-                          <div className="absolute inset-12 pointer-events-none border border-white/10 rounded-2xl">
-                            <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
-                            <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
-                            <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
-                            <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="text-white font-serif font-bold text-lg">Scan child pass</p>
-                            <p className="text-xs text-white/60 max-w-[200px] mx-auto leading-relaxed">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4 z-10">
+                          <div className="space-y-1">
+                            <p className="text-white font-sans font-semibold text-base">Scan child pass</p>
+                            <p className="text-xs font-sans text-white/70 max-w-[220px] mx-auto leading-relaxed">
                               Align the child's entry pass QR inside the viewfinder area.
                             </p>
                           </div>
 
                           <button
                             onClick={() => setCameraActive(true)}
-                            className="px-6 py-3 bg-white text-gray-900 font-bold text-xs tracking-wider rounded-full hover:bg-gray-100 transition-all active:scale-95 shadow-md flex items-center space-x-2 uppercase cursor-pointer"
+                            className="px-6 py-2.5 bg-white text-zinc-900 font-sans font-semibold text-xs rounded-full hover:bg-zinc-100 transition-colors shadow-md flex items-center space-x-2 cursor-pointer"
                           >
                             <Camera className="h-4 w-4" />
                             <span>Scan child pass</span>
@@ -3770,16 +3641,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       type="button"
                       onClick={() => setShowManualInput(!showManualInput)}
-                      className="w-full border border-gray-200 hover:border-gray-300 text-gray-700 font-bold text-xs tracking-wider py-4 px-4 rounded-2xl transition-all uppercase flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 cursor-pointer shadow-xs"
-                      data-component-version="volunteer-check-in-manual-pass-v2-stitch"
+                      className="w-full border border-zinc-200/80 hover:border-zinc-300 text-zinc-700 font-sans font-medium text-xs py-3 px-4 rounded-xl transition-colors flex items-center justify-center space-x-2 bg-white hover:bg-zinc-50 cursor-pointer shadow-2xs"
+                      data-component-version="volunteer-check-in-manual-pass-v3"
                     >
-                      <Keyboard className="h-4 w-4 text-gray-400" />
+                      <Keyboard className="h-4 w-4 text-zinc-400" />
                       <span>Enter pass code manually</span>
                     </button>
 
                     {/* Manual Pass Code Input Form */}
                     {showManualInput && (
-                      <form onSubmit={handleManualVerifySubmit} className="flex gap-3 animate-fade-in bg-white border border-[#EAE8E1] p-4 rounded-3xl shadow-sm">
+                      <form onSubmit={handleManualVerifySubmit} className="flex gap-2.5 animate-fade-in bg-white border border-zinc-200/80 p-3.5 rounded-xl shadow-2xs">
                         <div className="relative flex-1">
                           <input
                             type="text"
@@ -3787,15 +3658,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                             placeholder="e.g. 6E80A7"
                             disabled={scanLoading}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60"
+                            className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3.5 py-2.5 text-xs font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-zinc-400 focus:bg-white transition-all disabled:opacity-60 uppercase"
                           />
                           {manualCode && (
                             <button
                               type="button"
                               onClick={() => setManualCode('')}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100"
                             >
-                              <X className="h-3.5 w-3.5" />
+                              <X className="h-3 w-3" />
                             </button>
                           )}
                         </div>
@@ -3803,12 +3674,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <button
                           type="submit"
                           disabled={scanLoading || !manualCode}
-                          className="px-5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs tracking-wide rounded-xl transition-all cursor-pointer flex items-center justify-center font-mono uppercase shrink-0"
+                          className="px-4 bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center shrink-0"
                         >
                           {scanLoading ? (
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                           ) : (
-                            <span>Verify Pass</span>
+                            <span>Verify</span>
                           )}
                         </button>
                       </form>
@@ -3817,91 +3688,124 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
               )}
 
-              {/* Child Search Field */}
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (searchQuery.trim()) {
-                    onNavigate('/volunteer/children');
-                  }
-                }}
-                className="relative w-full"
-                data-component-version="volunteer-check-in-search-v2-stitch"
-              >
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Find child by name or parent phone"
-                  className="w-full bg-white border border-[#EAE8E1] rounded-2xl pl-11 pr-4 py-3.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:border-[#C59B27] transition-all shadow-xs"
-                />
-              </form>
+              {/* Child Search Field (Secondary task) */}
+              <div className="space-y-1.5">
+                <h3 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Find a child</h3>
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (searchQuery.trim()) {
+                      onNavigate('/volunteer/children');
+                    }
+                  }}
+                  className="relative w-full"
+                  data-component-version="volunteer-check-in-search-v3"
+                >
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by child name or parent's phone"
+                    className="w-full bg-white border border-zinc-200/80 rounded-xl pl-10 pr-4 py-3 text-xs text-zinc-800 placeholder-zinc-400 outline-none focus:border-zinc-400 transition-colors shadow-2xs font-sans"
+                  />
+                </form>
+              </div>
 
-              {/* Last Checked In Card */}
+              {/* Recently Checked In Card */}
               {(() => {
                 const lastCheckedInItem = recentScans.find(
                   (log) => log.status === 'checked_in' || log.status === 'inside'
                 ) || recentScans[0];
 
+                const matchedChild = directoryChildren?.find((c: any) => 
+                  c.id === lastCheckedInItem?.childId || 
+                  c.fullName?.toLowerCase() === lastCheckedInItem?.childName?.toLowerCase()
+                );
+
+                const rawGroup = (matchedChild?.ageGroup || matchedChild?.age_group || lastCheckedInItem?.ageGroup || '');
+                const cleanGroup = rawGroup
+                  .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                  .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                  .trim();
+
+                const ageNum = matchedChild?.age;
+                const ageText = ageNum !== undefined && ageNum !== null 
+                  ? (ageNum === 0 ? 'Under 1 year' : `${ageNum} ${ageNum === 1 ? 'year' : 'years'}`)
+                  : '';
+
+                const subtitleParts = [ageText, cleanGroup].filter(Boolean);
+                const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : 'Class assigned';
+
+                const hasReviewIssue = /review/i.test(rawGroup) || 
+                  Boolean(matchedChild?.needsReview || matchedChild?.status === 'review_needed' || matchedChild?.requires_special_attention);
+
                 return (
                   <div 
-                    className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs flex items-center justify-between"
-                    data-component-version="volunteer-check-in-last-v2-stitch"
+                    className="bg-white border border-zinc-200/80 rounded-2xl p-4 shadow-2xs space-y-2.5"
+                    data-component-version="volunteer-check-in-recent-v3"
                   >
-                    <div className="flex items-center space-x-3.5 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-[#C59B27]/10 border border-[#C59B27]/25 flex items-center justify-center text-[#C59B27] shrink-0">
-                        <Check className="h-5 w-5 stroke-[2.5]" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Last checked in</p>
-                        {lastCheckedInItem ? (
-                          <>
-                            <h4 className="text-sm font-bold text-gray-900 leading-tight truncate">
-                              {lastCheckedInItem.childName}{lastCheckedInItem.ageGroup ? `, ${lastCheckedInItem.ageGroup}` : ''}
-                            </h4>
-                            <p className="text-[11px] text-gray-500 mt-0.5">
-                              Checked in at {formatTime(lastCheckedInItem.timestamp)}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-xs text-gray-500 font-medium mt-0.5">
-                            No child has been checked in yet.
-                          </p>
-                        )}
-                      </div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Recently checked in</h3>
+                      {hasReviewIssue && (
+                        <span className="text-[11px] font-sans font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/80">
+                          Age needs confirmation
+                        </span>
+                      )}
                     </div>
+
+                    {lastCheckedInItem ? (
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-700 shrink-0">
+                          <Check className="h-5 w-5 stroke-[2]" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-sans font-semibold text-sm text-zinc-900 leading-tight truncate">
+                            {lastCheckedInItem.childName}
+                          </h4>
+                          <p className="font-sans text-xs text-zinc-500 mt-0.5">
+                            {subtitle} · Checked in at {formatTime(lastCheckedInItem.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="font-sans text-xs text-zinc-500 py-1">
+                        No child has been checked in yet.
+                      </p>
+                    )}
                   </div>
                 );
               })()}
 
-              {/* Metrics Row */}
-              <div 
-                className="grid grid-cols-3 gap-3"
-                data-component-version="volunteer-check-in-metrics-v2-stitch"
-              >
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 text-center">
-                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Expected</span>
-                  <span className="text-2xl font-serif text-gray-900 font-bold block mt-1.5">{stats.expected || 0}</span>
-                </div>
-                <div className="bg-[#C59B27]/5 border border-[#C59B27]/20 rounded-2xl p-4 text-center">
-                  <span className="text-[9px] font-bold text-[#C59B27] uppercase tracking-widest block font-mono">Checked in</span>
-                  <span className="text-2xl font-serif text-[#C59B27] font-bold block mt-1.5">{stats.checkedIn || 0}</span>
-                </div>
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 text-center">
-                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Waiting</span>
-                  <span className="text-2xl font-serif text-gray-800 font-bold block mt-1.5">
-                    {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
-                  </span>
+              {/* Metrics Strip */}
+              <div className="bg-white border border-zinc-200/80 rounded-2xl p-3.5 shadow-2xs">
+                <div className="grid grid-cols-3 divide-x divide-zinc-100 text-center">
+                  <div className="px-1 first:pl-0">
+                    <span className="block font-sans text-xs text-zinc-500 leading-tight">Expected</span>
+                    <span className="block font-sans font-semibold text-lg text-zinc-900 mt-1">{stats.expected || 0}</span>
+                  </div>
+                  <div className="px-1">
+                    <span className="block font-sans text-xs text-zinc-500 leading-tight">Checked in</span>
+                    <span className="block font-sans font-semibold text-lg text-zinc-900 mt-1">{stats.checkedIn || 0}</span>
+                  </div>
+                  <div className="px-1 last:pr-0">
+                    <span className="block font-sans text-xs text-zinc-500 leading-tight">Waiting</span>
+                    <span className="block font-sans font-semibold text-lg text-zinc-900 mt-1">
+                      {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Offline Note */}
-              <div className="text-center pt-2">
-                <p className="text-[10px] text-gray-400 font-mono tracking-wider uppercase">
-                  Offline mode available if connection drops
-                </p>
-              </div>
+              {/* Calm Offline Notice (only shown when offline) */}
+              {(isOffline || offlineService.isOffline()) && (
+                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl p-4 text-center space-y-1">
+                  <p className="font-sans font-medium text-xs text-zinc-900">You're offline</p>
+                  <p className="font-sans text-xs text-zinc-500">
+                    Check-ins will be saved and sent when you're connected again.
+                  </p>
+                </div>
+              )}
 
             </div>
           )
@@ -8017,6 +7921,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           </div>
         </div>
       )}
+
+      {/* PWA In-App Install Banner */}
+      <PwaInstallBanner />
     </div>
   );
 };

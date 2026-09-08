@@ -274,8 +274,28 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 
     const unreadOnly = req.query.unread === 'true';
     const finalResult = unreadOnly ? result.filter(n => !n.isRead) : result;
+    const total = finalResult.length;
 
-    return res.json({ notifications: finalResult });
+    let paginated = finalResult;
+    let page = 1;
+    let limit = total;
+    let hasMore = false;
+
+    if (req.query.limit || req.query.page) {
+      page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+      limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 30));
+      const startIndex = (page - 1) * limit;
+      paginated = finalResult.slice(startIndex, startIndex + limit);
+      hasMore = startIndex + limit < total;
+    }
+
+    return res.json({ 
+      notifications: paginated,
+      total,
+      page,
+      limit,
+      hasMore
+    });
   } catch (err: any) {
     console.error('Error fetching notifications:', err);
     return res.status(500).json({ error: 'Failed to retrieve notifications' });

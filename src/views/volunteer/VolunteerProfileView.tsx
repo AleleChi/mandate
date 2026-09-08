@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
+import { SharedNotificationSettings } from '../../components/common/SharedNotificationSettings';
+import { isAppInstalled, promptPwaInstall } from '../../utils/pwaInstall';
 
 interface VolunteerProfileViewProps {
   onSignOut: () => void;
@@ -410,6 +412,13 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
         </div>
       </div>
 
+      {/* Notifications settings card */}
+      <SharedNotificationSettings
+        role="volunteer"
+        showSuccess={showSuccess}
+        showError={showError}
+      />
+
       {/* Device security card */}
       <DeviceSecuritySettings 
         showSuccess={showSuccess}
@@ -418,13 +427,33 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
 
       {/* 7. Account actions card */}
       <div 
-        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
+        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3 font-sans"
         data-component-version="volunteer-profile-actions-v3-human"
         id="profile-actions-card"
       >
         <h4 className="text-xs font-semibold text-gray-900">Account actions</h4>
         
         <div className="space-y-1 text-xs">
+          {/* Install app row (if not installed) */}
+          {!isAppInstalled() && (
+            <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">
+              <div className="space-y-0.5">
+                <span className="font-bold text-gray-800">Install app</span>
+                <p className="text-[11px] text-gray-500">Add to your home screen for fast access.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  const outcome = await promptPwaInstall();
+                  if (outcome === 'accepted') {
+                    showSuccess('App installed', 'Koinonia has been added to your home screen.');
+                  }
+                }}
+                className="text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] cursor-pointer transition-colors"
+              >
+                Install
+              </button>
+            </div>
+          )}
           {/* Switch to Parent view (for dual-role accounts) */}
           {hasParentProfile && (
             <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">

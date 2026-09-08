@@ -14,6 +14,11 @@ import { resolveMediaUrl } from '../utils/mediaUrl';
 import { SafeImage } from '../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../components/common/DeviceSecuritySettings';
 import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
+import { MobileNotificationCentre } from '../components/common/MobileNotificationCentre';
+import { SharedNotificationSettings } from '../components/common/SharedNotificationSettings';
+import { PwaInstallBanner } from '../components/common/PwaInstallBanner';
+import { isAppInstalled, promptPwaInstall } from '../utils/pwaInstall';
+import { Download } from 'lucide-react';
 import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
 
 interface ParentHomeViewProps {
@@ -1458,8 +1463,37 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         </button>
       </div>
 
+      {/* 5b. Notification settings */}
+      <SharedNotificationSettings
+        role="parent"
+        showSuccess={showSuccess}
+        showError={showError}
+      />
+
       {/* 6. Account actions card */}
       <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-2xs divide-y divide-[#FAF8F4] overflow-hidden">
+        {!isAppInstalled() && (
+          <button
+            type="button"
+            onClick={async () => {
+              const outcome = await promptPwaInstall();
+              if (outcome === 'accepted') {
+                showSuccess('App installed', 'Koinonia has been added to your home screen.');
+              }
+            }}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+          >
+            <div className="flex items-center space-x-3.5">
+              <Download className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
+              <div>
+                <span className="text-sm font-medium text-[#18181B]">Install app</span>
+                <p className="text-[11px] text-zinc-500 leading-tight">Add to your home screen for quick access.</p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
@@ -1730,332 +1764,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         </div>
       )}
 
-      {/* Notifications Drawer Bottom Sheet */}
-      {showNotificationsDrawer && (
-        <div 
-          className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end"
-          data-component-version="notification-panel-v2-brand"
-        >
-          <div className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300">
-            {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2">
-                <Bell className="w-5 h-5 text-[#C59B27]" />
-                <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
-                  Notifications
-                </h3>
-                {unreadCount > 0 && (
-                  <span className="bg-[#C59B27] text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                    {unreadCount} new
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center space-x-4">
-                {unreadCount > 0 && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await api.parent.markAllNotificationsAsRead();
-                        fetchNotifications();
-                      } catch (e) {
-                        console.error(e);
-                      }
-                    }}
-                    className="text-xs font-bold text-[#9A7326] hover:underline cursor-pointer focus:outline-none"
-                  >
-                    Mark all read
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setShowNotificationsDrawer(false);
-                    setSelectedNotification(null);
-                  }}
-                  className="p-1 rounded-lg hover:bg-black/5 cursor-pointer focus:outline-none"
-                >
-                  <X className="w-5 h-5 text-[#6B7280]" />
-                </button>
-              </div>
-            </div>
+      {/* Mobile Notification Centre */}
+      <MobileNotificationCentre
+        isOpen={showNotificationsDrawer}
+        onClose={() => setShowNotificationsDrawer(false)}
+        role="parent"
+        onNavigate={onNavigate}
+        onUnreadCountChange={() => fetchNotifications()}
+      />
 
-            {/* Content Area */}
-            {selectedNotification ? (
-              /* PHASE 3 - Notification Detail View */
-              <div 
-                className="flex-1 overflow-y-auto p-5 space-y-4 text-left"
-                data-component-version="notification-detail-v2-brand"
-              >
-                <button
-                  onClick={() => setSelectedNotification(null)}
-                  className="flex items-center space-x-1.5 text-xs font-bold text-[#9A7326] hover:underline cursor-pointer focus:outline-none"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back to notifications</span>
-                </button>
-
-                <div className="bg-white border border-[#E5D5AE] p-5 rounded-2xl space-y-3.5 shadow-2xs">
-                  <div className="flex items-start gap-2.5">
-                    <div className="p-1.5 rounded-lg bg-[#FAF6EB] text-[#C59B27]">
-                      <Bell className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-base font-serif-koinonia font-bold text-[#18181B] leading-tight">
-                        {selectedNotification.title}
-                      </h4>
-                      <div className="text-[10px] text-[#A1A1AA] mt-1 font-mono">
-                        {new Date(selectedNotification.createdAt).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true
-                        })} • {new Date(selectedNotification.createdAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed whitespace-pre-wrap">
-                    {selectedNotification.message}
-                  </p>
-                  
-                  {selectedNotification.childId && (
-                    <div className="pt-2 flex gap-2">
-                      {(() => {
-                        const child = childrenList.find(c => c.id === selectedNotification.childId);
-                        const isPassReady = child && child.status === 'Pass ready';
-                        if (isPassReady) {
-                          return (
-                            <button
-                              onClick={() => {
-                                setShowNotificationsDrawer(false);
-                                setSelectedNotification(null);
-                                onNavigate(`/parent/children/${selectedNotification.childId}/pass`);
-                              }}
-                              className="px-4 py-2 bg-[#C59B27] text-white hover:bg-[#B58E33] text-xs font-bold rounded-xl shadow-2xs cursor-pointer focus:outline-none"
-                            >
-                              View pass
-                            </button>
-                          );
-                        } else {
-                          return (
-                            <button
-                              onClick={() => {
-                                setShowNotificationsDrawer(false);
-                                setSelectedNotification(null);
-                                onNavigate(`/parent/children/${selectedNotification.childId}/status`);
-                              }}
-                              className="px-4 py-2 bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] hover:bg-[#FAF8F3] text-xs font-bold rounded-xl shadow-2xs cursor-pointer focus:outline-none"
-                            >
-                              View child status
-                            </button>
-                          );
-                        }
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              /* Notification List View */
-              <div className="flex-1 overflow-y-auto p-5 space-y-3.5 min-h-[280px]">
-                 {notificationsError ? (
-                  <div className="text-center py-16 space-y-3">
-                    <AlertCircle className="w-10 h-10 text-[#E07A5F] mx-auto stroke-[1.5]" />
-                    <p className="text-sm font-medium text-[#3F3F46]">{notificationsError}</p>
-                  </div>
-                ) : notifications.length === 0 ? (
-                  <div className="text-center py-16 space-y-3">
-                    <Bell className="w-10 h-10 text-[#D9D6CE] mx-auto stroke-[1.5]" />
-                    <p className="text-sm font-medium text-[#3F3F46]">No updates yet</p>
-                    <p className="text-xs text-[#6B7280] max-w-[240px] mx-auto leading-relaxed">
-                      Personalized event schedules, check-in details, and pickup reminders will appear here.
-                    </p>
-                  </div>
-                ) : (
-                  notifications.map((notif) => {
-                    const isUnread = !notif.readAt && !notif.isRead;
-                    return (
-                      <div
-                        key={notif.id}
-                        onClick={async () => {
-                          setSelectedNotification(notif);
-                          if (isUnread) {
-                            try {
-                              await api.parent.markNotificationAsRead(notif.id);
-                              fetchNotifications();
-                            } catch (e) {
-                              console.error(e);
-                            }
-                          }
-                        }}
-                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                          isUnread
-                            ? 'bg-white border-[#C59B27] shadow-sm'
-                            : 'bg-white/60 border-[#EAE8E1] hover:border-[#D9D6CE]'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`p-1.5 rounded-lg shrink-0 ${isUnread ? 'bg-[#FAF6EB] text-[#C59B27]' : 'bg-[#FAF8F3] text-zinc-400'}`}>
-                            {notif.title?.toLowerCase().includes('pass') ? (
-                              <Ticket className="w-4 h-4" />
-                            ) : notif.title?.toLowerCase().includes('check') ? (
-                              <ShieldCheck className="w-4 h-4" />
-                            ) : (
-                              <Bell className="w-4 h-4" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug truncate">
-                                {notif.title}
-                              </h4>
-                              {isUnread && (
-                                <span className="w-2 h-2 rounded-full bg-[#C59B27] shrink-0" />
-                              )}
-                            </div>
-                            <p className="text-xs text-[#3F3F46] mt-1.5 leading-relaxed line-clamp-2">
-                              {notif.message}
-                            </p>
-                            <div className="text-[10px] text-[#A1A1AA] mt-2 font-mono">
-                              {new Date(notif.createdAt).toLocaleTimeString('en-US', {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true
-                              })} • {new Date(notif.createdAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* PHASE 4 - Notification preferences UI */}
-            <div 
-              className="px-5 py-4.5 bg-white border-t border-[#E5D5AE]/40 flex flex-col gap-3 shrink-0"
-              data-component-version="notification-preferences-v2-brand"
-            >
-              <h4 className="text-xs font-serif-koinonia font-bold text-[#8C6D23] uppercase tracking-wider">
-                Notification settings
-              </h4>
-
-              {/* Sound alerts row */}
-              <div className="flex items-center justify-between text-xs py-1">
-                <div className="flex flex-col text-left">
-                  <span className="font-semibold text-[#18181B]">Sound alerts</span>
-                  <span className="text-[10px] text-[#6B7280]">Play a soft alert for new updates.</span>
-                </div>
-                <button
-                  onClick={() => {
-                    const nextVal = !isSoundOn;
-                    setIsSoundOn(nextVal);
-                    soundUtility.setEnabled(nextVal);
-                    if (nextVal) {
-                      soundUtility.playChime(true);
-                    }
-                  }}
-                  data-component-version="parent-sound-notification-toggle-v1"
-                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all ${
-                    isSoundOn 
-                      ? 'bg-[#C59B27] text-white' 
-                      : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
-                  }`}
-                >
-                  {isSoundOn ? 'On' : 'Off'}
-                </button>
-              </div>
-
-              {/* Push notifications row */}
-              <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E5D5AE]/30">
-                <div className="flex flex-col text-left">
-                  <span className="font-semibold text-[#18181B]">Push notifications</span>
-                  <span className="text-[10px] text-[#6B7280]">Receive updates on this device.</span>
-                </div>
-                {typeof Notification === 'undefined' ? (
-                  <span className="text-[10px] font-semibold text-[#6B7280]">
-                    Push notifications are not available yet.
-                  </span>
-                ) : isPushEnabled ? (
-                  <span className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE] tracking-wider uppercase" data-component-version="parent-push-notification-toggle-v1">
-                    On
-                  </span>
-                ) : (
-                  <button
-                    onClick={async () => {
-                      const res = await subscribeUserToPush();
-                      if (res.success) {
-                        setIsPushEnabled(true);
-                        showInfo('Push notifications enabled!', 'You will now receive alerts directly on your device.');
-                      } else {
-                        showInfo('Setup Alert', 'Push notifications are not available yet.');
-                      }
-                    }}
-                    data-component-version="parent-push-notification-toggle-v1"
-                    className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all"
-                  >
-                    Enable
-                  </button>
-                )}
-              </div>
-
-              {/* Vibration alerts row */}
-              <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E5D5AE]/30">
-                <div className="flex flex-col text-left">
-                  <span className="font-semibold text-[#18181B]">Device vibration</span>
-                  <span className="text-[10px] text-[#6B7280]">Tactile vibration on critical emergencies.</span>
-                </div>
-                <button
-                  onClick={() => {
-                    const nextVal = !isVibrationOn;
-                    setIsVibrationOn(nextVal);
-                    if (nextVal && navigator.vibrate) {
-                      navigator.vibrate([100, 50, 100]);
-                    }
-                    showSuccess('Vibration Preferences Saved', nextVal ? 'Tactile vibration is enabled.' : 'Vibration disabled.');
-                  }}
-                  data-component-version="parent-vibration-notification-toggle-v1"
-                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all ${
-                    isVibrationOn 
-                      ? 'bg-[#C59B27] text-white' 
-                      : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
-                  }`}
-                >
-                  {isVibrationOn ? 'On' : 'Off'}
-                </button>
-              </div>
-
-              {/* WhatsApp Mock Delivery row */}
-              <div className="flex items-center justify-between text-xs pt-2 border-t border-[#E5D5AE]/30">
-                <div className="flex flex-col text-left">
-                  <span className="font-semibold text-[#18181B]">WhatsApp Alerts (Mock)</span>
-                  <span className="text-[10px] text-[#6B7280]">Mirror safety notifications to WhatsApp.</span>
-                </div>
-                <button
-                  onClick={() => {
-                    const nextVal = !isWhatsAppOn;
-                    setIsWhatsAppOn(nextVal);
-                    showSuccess('WhatsApp Alerts Status', nextVal ? 'WhatsApp mock-mirroring enabled.' : 'WhatsApp mirroring disabled.');
-                  }}
-                  data-component-version="parent-whatsapp-notification-toggle-v1"
-                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all ${
-                    isWhatsAppOn 
-                      ? 'bg-[#C59B27] text-white' 
-                      : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
-                  }`}
-                >
-                  {isWhatsAppOn ? 'On' : 'Off'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* PWA In-App Install Banner */}
+      <PwaInstallBanner />
 
       {/* Help and questions Drawer Bottom Sheet */}
       {showHelpDrawer && (

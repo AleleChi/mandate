@@ -305,15 +305,26 @@ export const api = {
         method: 'DELETE'
       });
     },
-    async getNotifications(unreadOnly = false, role?: string) {
+    async getNotifications(unreadOnly = false, role?: string, page?: number, limit?: number) {
       let url = `/api/notifications?unread=${unreadOnly}`;
       if (role) {
         url += `&role=${role}`;
+      }
+      if (page) {
+        url += `&page=${page}`;
+      }
+      if (limit) {
+        url += `&limit=${limit}`;
       }
       const res = await api.request<any>(url);
       if (res && Array.isArray(res.notifications)) return res.notifications;
       if (Array.isArray(res)) return res;
       return [];
+    },
+    async getNotificationsPaginated(unreadOnly = false, role?: string, page = 1, limit = 25) {
+      let url = `/api/notifications?unread=${unreadOnly}&page=${page}&limit=${limit}`;
+      if (role) url += `&role=${role}`;
+      return api.request<{ notifications: any[]; total: number; page: number; limit: number; hasMore: boolean }>(url);
     },
     async markAllNotificationsAsRead() {
       return api.request<any>('/api/notifications/read-all', {
