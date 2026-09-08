@@ -4478,13 +4478,27 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       WHERE e.event_id = ? AND e.status = 'pass_ready'
     `, [eventId]);
 
+    const countVolunteersRes = await queryOne(`
+      SELECT COUNT(DISTINCT vp.user_id) as count
+      FROM volunteer_profiles vp
+      WHERE vp.status IN ('active', 'approved')
+    `);
+
+    const countTeamRes = await queryOne(`
+      SELECT COUNT(DISTINCT u.id) as count
+      FROM users u
+      WHERE u.role IN ('staff', 'admin', 'super_admin', 'volunteer')
+    `);
+
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
       { key: 'selected_children', label: 'Selected children', count: Number(countSelectedRes?.count || 0) },
+      { key: 'pass_ready', label: 'Pass ready', count: Number(countPassReadyRes?.count || 0) },
       { key: 'under_review', label: 'Under review', count: Number(countReviewRes?.count || 0) },
       { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
       { key: 'not_selected', label: 'Not selected', count: Number(countNotSelectedRes?.count || 0) },
-      { key: 'pass_ready', label: 'Pass ready', count: Number(countPassReadyRes?.count || 0) }
+      { key: 'volunteers', label: 'Volunteers', count: Number(countVolunteersRes?.count || 0) },
+      { key: 'all_event_team', label: 'Event team & volunteers', count: Number(countTeamRes?.count || 0) }
     ];
 
     const messageTypes = [
@@ -5320,15 +5334,29 @@ router.post('/messages/drafts', async (req: AuthenticatedRequest, res: Response)
 router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const { recipientGroup, messageType, channel, subject, body, confirmed } = req.body;
+    const { recipientGroup, messageType, channel, channels, subject, body, confirmed } = req.body;
     if (!confirmed) {
       return res.status(400).json({ success: false, error: 'Send request must be explicitly confirmed.' });
     }
-    if (!recipientGroup || !messageType || !channel || !body) {
+    if (!recipientGroup || !messageType || !body) {
       return res.status(400).json({ success: false, error: 'All fields are required.' });
     }
 
-    // Honest provider configuration check before sending
+    // Resolve active delivery channels from array or single channel
+    let activeChannels: string[] = [];
+    if (Array.isArray(channels) && channels.length > 0) {
+      activeChannels = channels;
+    } else if (channel) {
+      if (channel === 'both') {
+        activeChannels = ['email', 'whatsapp'];
+      } else {
+        activeChannels = [channel];
+      }
+    } else {
+      activeChannels = ['in_app', 'push'];
+    }
+
+    // Provider configuration check for external channels only if selected
     const emailProvider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
     let emailEnabled = false;
     if (emailProvider === 'resend') {
@@ -5343,7 +5371,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       whatsappEnabled = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN;
     }
 
-    if ((channel === 'email' || channel === 'both') && !emailEnabled) {
+    if (activeChannels.includes('email') && !emailEnabled) {
       return res.status(400).json({
         success: false,
         code: 'EMAIL_UNCONFIGURED',
@@ -5351,7 +5379,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    if ((channel === 'whatsapp' || channel === 'both') && !whatsappEnabled) {
+    if (activeChannels.includes('whatsapp') && !whatsappEnabled) {
       return res.status(400).json({
         success: false,
         code: 'WHATSAPP_UNCONFIGURED',
@@ -5361,30 +5389,49 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     const eventId = req.body.eventId || 'event-ga-2026';
 
-    // 1. Resolve recipients query
-    let queryStr = `
-      SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, c.full_name as child_name, e.id as entry_id
-      FROM child_event_entries e
-      JOIN children c ON c.id = e.child_id
-      JOIN parent_profiles p ON p.id = c.parent_profile_id
-      JOIN users u ON u.id = p.user_id
-      WHERE e.event_id = ?
-    `;
-    const params: any[] = [eventId];
+    // 1. Resolve recipients query based on group
+    let rows: any[] = [];
 
-    if (recipientGroup === 'selected_children') {
-      queryStr += " AND e.status IN ('selected', 'pass_ready')";
-    } else if (recipientGroup === 'under_review') {
-      queryStr += " AND e.status = 'under_review'";
-    } else if (recipientGroup === 'waiting_list') {
-      queryStr += " AND e.status = 'waiting_list'";
-    } else if (recipientGroup === 'not_selected') {
-      queryStr += " AND e.status = 'not_selected'";
-    } else if (recipientGroup === 'pass_ready') {
-      queryStr += " AND e.status = 'pass_ready'";
+    if (recipientGroup === 'volunteers') {
+      rows = await query(`
+        SELECT vp.id as parent_id, vp.full_name as parent_name, vp.phone as phone_number, u.email, u.id as user_id, vp.full_name as child_name, NULL as entry_id
+        FROM volunteer_profiles vp
+        JOIN users u ON u.id = vp.user_id
+        WHERE vp.status IN ('active', 'approved')
+      `);
+    } else if (recipientGroup === 'all_event_team') {
+      rows = await query(`
+        SELECT u.id as parent_id, COALESCE(vp.full_name, u.email) as parent_name, vp.phone as phone_number, u.email, u.id as user_id, COALESCE(vp.full_name, u.email) as child_name, NULL as entry_id
+        FROM users u
+        LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+        WHERE u.role IN ('staff', 'admin', 'super_admin', 'volunteer')
+      `);
+    } else {
+      let queryStr = `
+        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.full_name as child_name, e.id as entry_id
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        JOIN users u ON u.id = p.user_id
+        WHERE e.event_id = ?
+      `;
+      const params: any[] = [eventId];
+
+      if (recipientGroup === 'selected_children') {
+        queryStr += " AND e.status IN ('selected', 'pass_ready')";
+      } else if (recipientGroup === 'under_review') {
+        queryStr += " AND e.status = 'under_review'";
+      } else if (recipientGroup === 'waiting_list') {
+        queryStr += " AND e.status = 'waiting_list'";
+      } else if (recipientGroup === 'not_selected') {
+        queryStr += " AND e.status = 'not_selected'";
+      } else if (recipientGroup === 'pass_ready') {
+        queryStr += " AND e.status = 'pass_ready'";
+      }
+
+      rows = await query(queryStr, params);
     }
 
-    const rows = await query(queryStr, params);
     if (!rows || rows.length === 0) {
       return res.status(400).json({
         success: false,
@@ -5393,12 +5440,13 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    // 2. Check tokens to decide on deduplication
+    // 2. Build personalized messages
     const hasChildTokens = body.includes('{Child name}') || body.includes('{Pass link}');
     const messagesToSend: Array<{
       parentName: string;
       email: string;
       phone: string;
+      userId?: string;
       subject: string;
       body: string;
     }> = [];
@@ -5423,6 +5471,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           parentName: row.parent_name,
           email: row.email,
           phone: row.phone_number,
+          userId: row.user_id,
           subject: renderedSubject,
           body: renderedBody
         });
@@ -5430,9 +5479,10 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     } else {
       const parentMap = new Map<string, any>();
       for (const row of rows) {
-        parentMap.set(row.parent_id, row);
+        const key = row.user_id || row.parent_id;
+        parentMap.set(key, row);
       }
-      for (const [parentId, parentRow] of parentMap.entries()) {
+      for (const [, parentRow] of parentMap.entries()) {
         const renderedBody = body
           .replace(/{Parent name}/g, parentRow.parent_name || '')
           .replace(/{Event name}/g, 'The General Assembly')
@@ -5448,113 +5498,190 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           parentName: parentRow.parent_name,
           email: parentRow.email,
           phone: parentRow.phone_number,
+          userId: parentRow.user_id,
           subject: renderedSubject,
           body: renderedBody
         });
       }
     }
 
-    // Load custom sender settings if present
-    const settings = await queryOne(`
-      SELECT sender_name as senderName, reply_to_email as replyToEmail
-      FROM admin_message_settings
-      WHERE id = 'primary_settings'
-    `);
-    const customFromName = settings?.senderName || undefined;
-    const customReplyTo = settings?.replyToEmail || undefined;
+    const notifNow = new Date().toISOString();
+    const notifId = `notif-${crypto.randomUUID()}`;
+    const audienceRole = recipientGroup === 'volunteers' 
+      ? 'volunteer' 
+      : (recipientGroup === 'all_event_team' ? 'staff' : 'parent');
 
-    // 3. Dispatch messages to providers
-    let sentCount = 0;
-    let failedCount = 0;
+    // 3. IN-APP NOTIFICATION (Canonical source of truth)
+    let inAppCreated = false;
+    if (activeChannels.includes('in_app')) {
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id,
+          created_by_user_id, visible_to_event_team, created_at, priority, channel
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        notifId,
+        subject?.trim() || 'Event Update',
+        body,
+        messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+        audienceRole,
+        recipientGroup,
+        eventId,
+        req.user?.id || null,
+        audienceRole === 'parent' ? 0 : 1,
+        notifNow,
+        messageType === 'safety_alert' ? 'high' : 'normal',
+        'in-app'
+      ]);
 
-    for (const msg of messagesToSend) {
-      let emailSuccess = true;
-      let whatsappSuccess = true;
-
-      if (channel === 'email' || channel === 'both') {
-        if (msg.email) {
-          try {
-            const res = await sendEmail({
-              to: msg.email,
-              subject: msg.subject,
-              text: msg.body,
-              html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
-              fromName: customFromName,
-              replyTo: customReplyTo
-            });
-            if (!res.success) emailSuccess = false;
-          } catch (err) {
-            console.error('[Admin sendEmail failed]:', err);
-            emailSuccess = false;
-          }
-        } else {
-          emailSuccess = false;
-        }
+      try {
+        broadcastSSEEvent('notification', {
+          id: notifId,
+          title: subject?.trim() || 'Event Update',
+          message: body,
+          type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+          audienceRole,
+          createdAt: notifNow
+        });
+      } catch (sseErr) {
+        console.warn('[Admin SSE broadcast warning]:', sseErr);
       }
+      inAppCreated = true;
+    }
 
-      if (channel === 'whatsapp' || channel === 'both') {
-        if (msg.phone) {
-          try {
-            const res = await sendWhatsApp(msg.phone, msg.body);
-            if (!res.success) whatsappSuccess = false;
-          } catch (err) {
-            console.error('[Admin sendWhatsApp failed]:', err);
-            whatsappSuccess = false;
+    // 4. PUSH NOTIFICATIONS
+    let pushSentCount = 0;
+    let pushFailCount = 0;
+    if (activeChannels.includes('push')) {
+      const uniqueUserIds = Array.from(
+        new Set(rows.map((r: any) => r.user_id).filter(Boolean))
+      ) as string[];
+
+      // Push Privacy Rules:
+      // Never expose medical notes, safeguarding details, pickup secrets, passwords on lock screen.
+      const safeTitle = 'Koinonia Children & Teens';
+      const safeBody = messageType === 'safety_alert'
+        ? 'Urgent team update — Open Koinonia Children & Teens to view the alert.'
+        : (subject?.trim()
+            ? `${subject.trim()} — You have a new update for The General Assembly.`
+            : 'You have a new update for The General Assembly. Open Koinonia to view.');
+
+      const targetDestination = audienceRole === 'volunteer'
+        ? '/volunteer/event'
+        : (audienceRole === 'staff' ? '/volunteer/team-alerts' : '/notifications');
+
+      for (const uid of uniqueUserIds) {
+        try {
+          const pushRes = await sendWebPush(uid, {
+            title: safeTitle,
+            body: safeBody,
+            metadata: {
+              alertId: notifId,
+              targetUrl: targetDestination,
+              type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast'
+            }
+          });
+
+          if (pushRes.success && pushRes.sentCount > 0) {
+            pushSentCount += pushRes.sentCount;
+          } else if (pushRes.error) {
+            pushFailCount++;
           }
-        } else {
-          whatsappSuccess = false;
+        } catch (pushErr) {
+          console.warn(`[Admin Push Error for user ${uid}]:`, pushErr);
+          pushFailCount++;
         }
-      }
-
-      const msgSuccess = (channel === 'both') ? (emailSuccess && whatsappSuccess) : (channel === 'email' ? emailSuccess : whatsappSuccess);
-      if (msgSuccess) {
-        sentCount++;
-      } else {
-        failedCount++;
       }
     }
 
-    // 4. Log sending outcome in our manual database table
-    const logId = crypto.randomUUID();
-    const logNow = new Date().toISOString();
-    const logStatus = failedCount === 0 ? 'sent' : (sentCount > 0 ? 'sent' : 'failed');
+    // 5. EMAIL & WHATSAPP (if selected)
+    let emailSentCount = 0;
+    let whatsappSentCount = 0;
+    let externalFailCount = 0;
 
+    if (activeChannels.includes('email') || activeChannels.includes('whatsapp')) {
+      const settings = await queryOne(`
+        SELECT sender_name as senderName, reply_to_email as replyToEmail
+        FROM admin_message_settings
+        WHERE id = 'primary_settings'
+      `);
+      const customFromName = settings?.senderName || undefined;
+      const customReplyTo = settings?.replyToEmail || undefined;
+
+      for (const msg of messagesToSend) {
+        if (activeChannels.includes('email')) {
+          if (msg.email) {
+            try {
+              const res = await sendEmail({
+                to: msg.email,
+                subject: msg.subject,
+                text: msg.body,
+                html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
+                fromName: customFromName,
+                replyTo: customReplyTo
+              });
+              if (res.success) emailSentCount++;
+              else externalFailCount++;
+            } catch (err) {
+              console.error('[Admin sendEmail failed]:', err);
+              externalFailCount++;
+            }
+          }
+        }
+
+        if (activeChannels.includes('whatsapp')) {
+          if (msg.phone) {
+            try {
+              const res = await sendWhatsApp(msg.phone, msg.body);
+              if (res.success) whatsappSentCount++;
+              else externalFailCount++;
+            } catch (err) {
+              console.error('[Admin sendWhatsApp failed]:', err);
+              externalFailCount++;
+            }
+          }
+        }
+      }
+    }
+
+    // 6. Log sending outcome in admin_message_logs
+    const logId = crypto.randomUUID();
+    const logChannelsStr = activeChannels.join(',');
     await execute(
       'INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [logId, recipientGroup, messageType, channel, subject || '', body, messagesToSend.length, logStatus, logNow]
+      [logId, recipientGroup, messageType, logChannelsStr, subject || '', body, messagesToSend.length, 'sent', notifNow]
     );
 
-    if (failedCount > 0) {
-      const failNotifId = `notif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO notifications (
-          id, title, message, type, audience_role, audience_scope, created_at, priority, channel, metadata_json
-        ) VALUES (?, ?, ?, 'delivery_failed', 'admin', 'all', ?, 'high', 'in-app', ?)
-      `, [
-        failNotifId,
-        'Message delivery failed',
-        `Failed to deliver ${failedCount} message(s) to group "${recipientGroup}" via ${channel}.`,
-        logNow,
-        JSON.stringify({ type: 'delivery_failed', recipientGroup, channel, failedCount, logId })
-      ]);
+    // 7. Human result feedback
+    let humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'}.`;
+    if (activeChannels.includes('push')) {
+      if (pushSentCount > 0 && pushFailCount > 0) {
+        humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${pushFailCount} device${pushFailCount === 1 ? '' : 's'} could not be reached.`;
+      } else if (pushSentCount > 0) {
+        humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipients (${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received push).`;
+      }
     }
 
     res.json({
       success: true,
+      message: humanMessage,
       summary: {
         requested: messagesToSend.length,
-        sent: sentCount,
-        pending: 0,
-        failed: failedCount
-      },
-      message: 'Message sending has completed.'
+        recipients: messagesToSend.length,
+        inAppCreated,
+        pushSent: pushSentCount,
+        pushFailed: pushFailCount,
+        emailSent: emailSentCount,
+        whatsappSent: whatsappSentCount,
+        failed: externalFailCount + pushFailCount
+      }
     });
   } catch (err: any) {
     console.error('Error dispatching admin messages:', err);
     res.status(500).json({
       success: false,
       code: 'MESSAGE_SEND_FAILED',
-      message: 'We could not send this message right now.'
+      message: err.message || 'We could not send this message right now.'
     });
   }
 });

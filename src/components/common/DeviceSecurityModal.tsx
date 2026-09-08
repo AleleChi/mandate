@@ -77,15 +77,20 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           throw new Error('Secure device unlock registration is not supported on this browser.');
         }
 
-        const optionsRes = await api.auth.passkeys.registerOptions();
+        const optionsRes = await api.auth.passkeys.registerOptions(window.location.hostname);
         if (!optionsRes.success || !optionsRes.options) {
-          throw new Error(optionsRes.error || 'Failed to prepare device registration options.');
+          throw new Error(optionsRes.error || 'Failed to prepare device registration.');
         }
 
         const opts = optionsRes.options;
+        const clientHostname = window.location.hostname;
         const formattedOpts = {
           publicKey: {
             ...opts,
+            rp: {
+              ...opts.rp,
+              id: clientHostname || opts.rp?.id
+            },
             challenge: base64URLToBuffer(opts.challenge),
             user: {
               ...opts.user,
@@ -222,11 +227,11 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
       const isCancel = err?.name === 'NotAllowedError' || err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('abort');
       
       if (isCancel) {
-        setErrorMessage(isRegistration ? 'Device setup was cancelled.' : 'Device verification was cancelled.');
+        setErrorMessage(isRegistration ? 'Setup was cancelled.' : 'Verification was cancelled.');
       } else {
         const isUnsupported = err?.name === 'SecurityError' || err?.message?.toLowerCase().includes('not supported') || !isWebAuthnSupported();
         if (isUnsupported) {
-          setErrorMessage('Secure device unlock is not supported on this browser.');
+          setErrorMessage("Secure unlock isn't available on this browser.");
         } else {
           setErrorMessage(err?.message || 'Device verification could not be completed.');
         }
@@ -295,20 +300,20 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
   return (
     <AnimatePresence>
       <div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
-        data-component-version="sensitive-action-passkey-confirm-v1"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans"
+        data-component-version="sensitive-action-passkey-confirm-v2"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
-          className="bg-[#FCFAF7] border border-[#EAE8E1] rounded-3xl max-w-sm w-full overflow-hidden shadow-xl"
+          className="bg-[#FCFAF7] border border-[#EAE8E1] rounded-3xl max-w-sm w-full overflow-hidden shadow-xl font-sans"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-5 border-b border-[#FAF8F4]">
             <h3 className="text-sm font-semibold text-zinc-800">
-              {isRegistration ? 'Add device key' : 'Device security'}
+              {isRegistration ? 'Set up secure unlock' : 'Device security'}
             </h3>
             <button 
               onClick={onClose}
@@ -319,19 +324,19 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           </div>
 
           {/* Body */}
-          <div className="p-6 flex flex-col items-center text-center">
+          <div className="p-6 flex flex-col items-center text-center font-sans">
             {mode === 'prompt' && (
               <>
                 <div className="p-4 bg-amber-500/5 text-[#C59B27] rounded-full mb-4 animate-pulse">
                   <Fingerprint className="w-12 h-12 stroke-[1.5]" />
                 </div>
-                <h4 className="text-base font-serif-koinonia font-bold text-zinc-900 mb-1.5">
-                  {isRegistration ? 'Register this device' : 'Verification required'}
+                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Set up on this device' : 'Verification required'}
                 </h4>
                 <p className="text-xs text-zinc-500 mb-6 leading-relaxed max-w-xs">
                   {isRegistration 
-                    ? 'Secure your account using Fingerprint, Face ID, Windows Hello, or a secure passkey on this device.'
-                    : `Confirm your identity using secure device authentication to proceed with: "${actionName}".`}
+                    ? 'Protect your account using your device’s screen lock, fingerprint, or face recognition.'
+                    : `Confirm your identity to proceed with: "${actionName}".`}
                 </p>
 
                 {isRegistration && (
@@ -355,7 +360,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                     className="w-full bg-[#C59B27] hover:bg-[#A37E1C] text-white py-2.5 rounded-xl shadow-xs flex items-center justify-center space-x-2 text-xs font-semibold"
                   >
                     <Fingerprint className="w-4 h-4" />
-                    <span>Verify with {isWebAuthnSupported() ? 'Biometrics' : 'Passkey'}</span>
+                    <span>{isRegistration ? 'Set up secure unlock' : 'Verify on this device'}</span>
                   </Button>
 
                   <button
@@ -370,19 +375,15 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'simulating' && (
               <>
-                <div className="p-4 bg-zinc-100 rounded-full mb-4 flex items-center justify-center animate-spin">
-                  <Loader2 className="w-10 h-10 text-[#C59B27]" />
+                <div className="p-4 bg-zinc-100 rounded-full mb-4 flex items-center justify-center">
+                  <Loader2 className="w-10 h-10 text-[#C59B27] animate-spin" />
                 </div>
-                <h4 className="text-base font-serif-koinonia font-bold text-zinc-900 mb-1.5">
-                  Secure unlock active
+                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Setting up secure unlock...' : 'Verifying on this device...'}
                 </h4>
-                <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mb-4">
-                  Please complete the biometric check, passcode entry, or screen security prompt on your device.
+                <p className="text-xs text-zinc-500 leading-relaxed max-w-xs">
+                  Follow the prompt on your device to continue.
                 </p>
-                <div className="flex items-center space-x-1.5 text-[10px] font-mono text-[#C59B27] bg-[#C59B27]/5 px-3 py-1 rounded-full">
-                  <span>Awaiting device handshake</span>
-                  <span className="animate-bounce">...</span>
-                </div>
               </>
             )}
 
@@ -391,11 +392,11 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                 <div className="p-3 bg-zinc-100 text-zinc-500 rounded-full mb-4 w-fit mx-auto">
                   <Lock className="w-6 h-6 stroke-[1.5]" />
                 </div>
-                <h4 className="text-base font-serif-koinonia font-bold text-zinc-900 mb-1.5 text-center">
+                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5 text-center">
                   Account verification
                 </h4>
                 <p className="text-xs text-zinc-500 leading-relaxed text-center mb-5">
-                  Please confirm with your primary account password to authorize: "{actionName}".
+                  Please confirm with your account password to authorize: "{actionName}".
                 </p>
 
                 <div className="mb-4">
@@ -448,13 +449,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                 <div className="p-4 bg-emerald-500/5 text-emerald-600 rounded-full mb-4">
                   <ShieldCheck className="w-12 h-12 stroke-[1.5]" />
                 </div>
-                <h4 className="text-base font-serif-koinonia font-bold text-zinc-900 mb-1.5">
-                  {isRegistration ? 'Device ready' : 'Verification successful'}
+                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Secure unlock active' : 'Verification successful'}
                 </h4>
-                <p className="text-xs text-emerald-600/80 leading-relaxed max-w-xs">
+                <p className="text-xs text-emerald-600/90 leading-relaxed max-w-xs">
                   {isRegistration 
-                    ? 'This device is ready for secure unlock.' 
-                    : 'Secure unlock confirmed.'}
+                    ? 'Your device is now set up for secure unlock.' 
+                    : 'Device verification confirmed.'}
                 </p>
               </>
             )}
@@ -464,8 +465,8 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                 <div className="p-4 bg-red-500/5 text-red-500 rounded-full mb-4">
                   <ShieldAlert className="w-12 h-12 stroke-[1.5]" />
                 </div>
-                <h4 className="text-base font-serif-koinonia font-bold text-zinc-900 mb-1.5">
-                  Verification failed
+                <h4 className="text-base font-sans font-semibold text-zinc-900 mb-1.5">
+                  {isRegistration ? 'Setup not completed' : 'Verification failed'}
                 </h4>
                 <p className="text-xs text-red-500 mb-5 leading-relaxed max-w-xs">
                   {errorMessage}
@@ -476,7 +477,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                       onClick={() => setMode('prompt')}
                       className="w-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 py-2.5 rounded-xl text-xs font-semibold shadow-xs"
                     >
-                      Try secure unlock again
+                      {isRegistration ? 'Try setup again' : 'Try again'}
                     </Button>
                   )}
                   <button

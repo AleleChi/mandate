@@ -19,9 +19,11 @@ import {
   ChevronDown, 
   Clock, 
   User, 
-  ExternalLink, 
+  ExternalLink,
   X,
-  Inbox as InboxIcon
+  Inbox as InboxIcon,
+  Bell,
+  Smartphone
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -192,12 +194,26 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
   const [selectedGroup, setSelectedGroup] = useState('all_parents');
   const [selectedType, setSelectedType] = useState('general_announcement');
-  const [selectedChannel, setSelectedChannel] = useState<'email' | 'whatsapp' | 'both'>('email');
+  const [selectedChannels, setSelectedChannels] = useState<string[]>(['in_app', 'push']);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
+  const toggleChannel = (channelId: string) => {
+    setSelectedChannels(prev => {
+      if (prev.includes(channelId)) {
+        if (prev.length === 1) {
+          showError('Please select at least one delivery channel.');
+          return prev;
+        }
+        return prev.filter(c => c !== channelId);
+      } else {
+        return [...prev, channelId];
+      }
+    });
+  };
+
   // Live preview
-  const [previewTab, setPreviewTab] = useState<'email' | 'whatsapp'>('email');
+  const [previewTab, setPreviewTab] = useState<'push' | 'in_app' | 'email' | 'whatsapp'>('push');
   const [previewSubject, setPreviewSubject] = useState('');
   const [previewBody, setPreviewBody] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -315,7 +331,9 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           { key: 'under_review', label: 'Under review', count: 0 },
           { key: 'waiting_list', label: 'Waiting list', count: 0 },
           { key: 'not_selected', label: 'Not selected', count: 0 },
-          { key: 'pass_ready', label: 'Pass ready', count: 0 }
+          { key: 'pass_ready', label: 'Pass ready', count: 0 },
+          { key: 'volunteers', label: 'Volunteers', count: 0 },
+          { key: 'all_event_team', label: 'Event team & volunteers', count: 0 }
         ]);
 
         setMessageTypes(data.messageTypes || [
@@ -337,25 +355,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           setProviderStatus(data.providerStatus);
         }
 
-        let defaultChan: 'email' | 'whatsapp' | 'both' = 'email';
-        if (!mEnabled && wEnabled) {
-          defaultChan = 'whatsapp';
-        } else if (mEnabled && !wEnabled) {
-          defaultChan = 'email';
-        }
-
         if (data.latestDraft && !body) {
           setSelectedGroup(data.latestDraft.recipientGroup || 'all_parents');
           setSelectedType(data.latestDraft.messageType || 'general_announcement');
-          const draftChan = (data.latestDraft.channel as any) || 'email';
-          if (draftChan === 'both' && (!mEnabled || !wEnabled)) {
-            setSelectedChannel(mEnabled ? 'email' : 'whatsapp');
-          } else if (draftChan === 'email' && !mEnabled) {
-            setSelectedChannel(wEnabled ? 'whatsapp' : 'email');
-          } else if (draftChan === 'whatsapp' && !wEnabled) {
-            setSelectedChannel(mEnabled ? 'email' : 'whatsapp');
-          } else {
-            setSelectedChannel(draftChan);
+          if (data.latestDraft.channel) {
+            const parsedChans = String(data.latestDraft.channel).split(',').map((c: string) => c.trim()).filter(Boolean);
+            if (parsedChans.length > 0) {
+              setSelectedChannels(parsedChans);
+            }
           }
           setSubject(data.latestDraft.subject || '');
           setBody(data.latestDraft.body || '');
@@ -363,7 +370,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           const defaultTemplate = DEFAULT_TEMPLATES.general_announcement;
           setSubject(defaultTemplate.subject);
           setBody(defaultTemplate.body);
-          setSelectedChannel(defaultChan);
+          setSelectedChannels(['in_app', 'push']);
         }
       }
     } catch (err: any) {
@@ -413,7 +420,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       const res = await api.admin.previewMessage({
         recipientGroup: selectedGroup,
         messageType: selectedType,
-        channel: selectedChannel,
+        channel: selectedChannels.includes('email') ? 'email' : (selectedChannels.includes('whatsapp') ? 'whatsapp' : 'in_app'),
         subject,
         body
       });
@@ -433,15 +440,21 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       generateLivePreview();
     }, 400);
     return () => clearTimeout(timer);
-  }, [body, subject, selectedGroup, selectedType, selectedChannel]);
+  }, [body, subject, selectedGroup, selectedType, selectedChannels]);
 
   useEffect(() => {
-    if (selectedChannel === 'whatsapp') {
-      setPreviewTab('whatsapp');
-    } else {
-      setPreviewTab('email');
+    if (!selectedChannels.includes(previewTab)) {
+      if (selectedChannels.includes('push')) {
+        setPreviewTab('push');
+      } else if (selectedChannels.includes('in_app')) {
+        setPreviewTab('in_app');
+      } else if (selectedChannels.includes('email')) {
+        setPreviewTab('email');
+      } else if (selectedChannels.includes('whatsapp')) {
+        setPreviewTab('whatsapp');
+      }
     }
-  }, [selectedChannel]);
+  }, [selectedChannels, previewTab]);
 
   // Item interaction handlers
   const handleSelectUpdate = async (update: any) => {
@@ -583,7 +596,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       const res = await api.admin.saveMessageDraft({
         recipientGroup: selectedGroup,
         messageType: selectedType,
-        channel: selectedChannel,
+        channels: selectedChannels,
+        channel: selectedChannels.join(','),
         subject,
         body
       });
@@ -603,8 +617,12 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       showError('Please write a message before sending.');
       return;
     }
-    if (selectedChannel !== 'whatsapp' && !subject.trim()) {
-      showError('Subject is required for email delivery.');
+    if (selectedChannels.length === 0) {
+      showError('Please select at least one delivery channel.');
+      return;
+    }
+    if (selectedChannels.includes('email') && !subject.trim()) {
+      showError('A subject is required for email delivery.');
       return;
     }
 
@@ -624,15 +642,20 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       const res = await api.admin.sendMessage({
         recipientGroup: selectedGroup,
         messageType: selectedType,
-        channel: selectedChannel,
+        channels: selectedChannels,
+        channel: selectedChannels.includes('email') && selectedChannels.includes('whatsapp') ? 'both' : (selectedChannels.includes('email') ? 'email' : (selectedChannels.includes('whatsapp') ? 'whatsapp' : 'in_app')),
         subject,
         body,
-        confirmed: true
+        confirmed: true,
+        eventId: selectedEventId
       });
       
       if (res.success) {
-        setDispatchSummary(res.summary);
-        showSuccess('Announcement sent');
+        setDispatchSummary({
+          ...res.summary,
+          message: res.message
+        });
+        showSuccess(res.message || 'Update sent');
         setBody('');
         setSubject('');
         fetchMessagesData(true, selectedEventId);
@@ -1374,9 +1397,9 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
               <div className="flex items-start space-x-3">
                 <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-xs font-bold text-[#18181B]">Announcement sent</h4>
+                  <h4 className="text-xs font-bold text-[#18181B]">Update sent</h4>
                   <p className="text-xs text-zinc-600 mt-0.5">
-                    Requested: <strong>{dispatchSummary.requested}</strong> · Sent: <strong>{dispatchSummary.sent}</strong> · Could not send: <strong>{dispatchSummary.failed}</strong>
+                    {dispatchSummary.message || `Delivered to ${dispatchSummary.recipients || dispatchSummary.sent || dispatchSummary.requested || 0} recipient(s).`}
                   </p>
                 </div>
               </div>
@@ -1453,60 +1476,89 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                 </div>
               </div>
 
-              {/* Send method */}
+              {/* Send through / Delivery channels */}
               <div className="space-y-2">
                 <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
-                  Send by
+                  Send through
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
-                    { id: 'email', label: 'Email', desc: 'Send to parent email addresses', icon: Mail, enabled: emailEnabled },
-                    { id: 'whatsapp', label: 'WhatsApp', desc: 'Send to parent WhatsApp numbers', icon: Phone, enabled: whatsappEnabled },
-                    { id: 'both', label: 'Email & WhatsApp', desc: 'Send using both methods', icon: MessageSquare, enabled: emailEnabled && whatsappEnabled }
+                    {
+                      id: 'in_app',
+                      label: 'In-app',
+                      desc: 'Deliver to notification center',
+                      icon: Bell,
+                      enabled: true
+                    },
+                    {
+                      id: 'push',
+                      label: 'Push notification',
+                      desc: 'Deliver to registered devices',
+                      icon: Smartphone,
+                      enabled: true
+                    },
+                    {
+                      id: 'email',
+                      label: 'Email',
+                      desc: emailEnabled ? 'Send email to account addresses' : 'Email provider not configured',
+                      icon: Mail,
+                      enabled: emailEnabled
+                    },
+                    {
+                      id: 'whatsapp',
+                      label: 'WhatsApp',
+                      desc: whatsappEnabled ? 'Send message to WhatsApp numbers' : 'WhatsApp provider not configured',
+                      icon: Phone,
+                      enabled: whatsappEnabled
+                    }
                   ].map(ch => {
                     const SelectedIcon = ch.icon;
-                    const isChActive = selectedChannel === ch.id;
+                    const isChecked = selectedChannels.includes(ch.id);
                     const isDisabled = !ch.enabled;
                     return (
-                      <button
+                      <label
                         key={ch.id}
-                        type="button"
-                        disabled={isDisabled}
-                        onClick={() => setSelectedChannel(ch.id as any)}
-                        className={`p-3 rounded-xl border text-left transition-all ${
+                        className={`p-3 rounded-xl border flex items-start space-x-3 transition-all cursor-pointer select-none ${
                           isDisabled
                             ? 'border-zinc-200 bg-zinc-50 text-zinc-400 opacity-60 cursor-not-allowed'
-                            : isChActive
-                            ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#18181B] font-semibold cursor-pointer'
-                            : 'border-[#EAE8E1] bg-white text-zinc-600 hover:bg-zinc-50 cursor-pointer'
+                            : isChecked
+                            ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#18181B]'
+                            : 'border-[#EAE8E1] bg-white text-zinc-600 hover:bg-zinc-50'
                         }`}
                       >
-                        <div className="flex items-center space-x-2">
-                          <SelectedIcon className={`w-3.5 h-3.5 ${isDisabled ? 'text-zinc-400' : isChActive ? 'text-[#C59B27]' : 'text-zinc-500'}`} />
-                          <span className="text-xs">{ch.label}</span>
+                        <input
+                          type="checkbox"
+                          disabled={isDisabled}
+                          checked={isChecked}
+                          onChange={() => !isDisabled && toggleChannel(ch.id)}
+                          className="mt-0.5 rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center space-x-2">
+                            <SelectedIcon className={`w-3.5 h-3.5 ${isDisabled ? 'text-zinc-400' : isChecked ? 'text-[#C59B27]' : 'text-zinc-500'}`} />
+                            <span className="text-xs font-semibold">{ch.label}</span>
+                          </div>
+                          <span className="text-[10px] text-zinc-400 block mt-0.5 leading-tight">{ch.desc}</span>
                         </div>
-                        <span className="text-[10px] text-zinc-400 block mt-1 leading-tight">{ch.desc}</span>
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Subject */}
-              {(selectedChannel === 'email' || selectedChannel === 'both') && (
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
-                    Subject
-                  </label>
-                  <input
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Enter announcement subject..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
-                  />
-                </div>
-              )}
+              {/* Title / Subject */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
+                  Title / Subject
+                </label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Enter announcement title or subject..."
+                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27]"
+                />
+              </div>
 
               {/* Message */}
               <div className="space-y-1.5">
@@ -1546,7 +1598,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
               {/* Footer */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
                 <span className="text-xs text-zinc-500">
-                  Sending to: <strong>{activeGroupRecipients} parent(s)</strong>
+                  Sending to: <strong>{activeGroupRecipients} recipient{activeGroupRecipients === 1 ? '' : 's'}</strong>
                 </span>
 
                 <div className="flex items-center space-x-2">
@@ -1563,7 +1615,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                   <button
                     type="button"
                     onClick={handleSendRequest}
-                    disabled={actionLoading || !body.trim() || activeGroupRecipients === 0 || (selectedChannel === 'email' && !emailEnabled) || (selectedChannel === 'whatsapp' && !whatsappEnabled)}
+                    disabled={actionLoading || !body.trim() || activeGroupRecipients === 0 || selectedChannels.length === 0 || (selectedChannels.includes('email') && !emailEnabled) || (selectedChannels.includes('whatsapp') && !whatsappEnabled)}
                     className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
                   >
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
@@ -1585,54 +1637,113 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                     <h3 className="text-sm font-bold text-[#18181B]">Preview</h3>
                   </div>
 
-                  <div className="flex items-center bg-zinc-50 p-1 rounded-xl border border-[#EAE8E1]">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewTab('email')}
-                      disabled={selectedChannel === 'whatsapp'}
-                      className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all ${
-                        previewTab === 'email'
-                          ? 'bg-white text-[#18181B] shadow-2xs'
-                          : 'text-zinc-400 hover:text-zinc-600 disabled:opacity-40'
-                      }`}
-                    >
-                      Email
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewTab('whatsapp')}
-                      disabled={selectedChannel === 'email'}
-                      className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all ${
-                        previewTab === 'whatsapp'
-                          ? 'bg-white text-[#18181B] shadow-2xs'
-                          : 'text-zinc-400 hover:text-zinc-600 disabled:opacity-40'
-                      }`}
-                    >
-                      WhatsApp
-                    </button>
+                  <div className="flex items-center bg-zinc-50 p-1 rounded-xl border border-[#EAE8E1] gap-1 flex-wrap">
+                    {selectedChannels.includes('push') && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('push')}
+                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
+                          previewTab === 'push'
+                            ? 'bg-white text-[#18181B] shadow-2xs'
+                            : 'text-zinc-400 hover:text-zinc-600'
+                        }`}
+                      >
+                        Push
+                      </button>
+                    )}
+                    {selectedChannels.includes('in_app') && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('in_app')}
+                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
+                          previewTab === 'in_app'
+                            ? 'bg-white text-[#18181B] shadow-2xs'
+                            : 'text-zinc-400 hover:text-zinc-600'
+                        }`}
+                      >
+                        In-app
+                      </button>
+                    )}
+                    {selectedChannels.includes('email') && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('email')}
+                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
+                          previewTab === 'email'
+                            ? 'bg-white text-[#18181B] shadow-2xs'
+                            : 'text-zinc-400 hover:text-zinc-600'
+                        }`}
+                      >
+                        Email
+                      </button>
+                    )}
+                    {selectedChannels.includes('whatsapp') && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('whatsapp')}
+                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
+                          previewTab === 'whatsapp'
+                            ? 'bg-white text-[#18181B] shadow-2xs'
+                            : 'text-zinc-400 hover:text-zinc-600'
+                        }`}
+                      >
+                        WhatsApp
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="border border-[#EAE8E1] rounded-xl bg-[#FAF9F6] p-4 min-h-[180px]">
-                  {!previewBody ? (
+                  {!body.trim() && !subject.trim() ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center space-y-2 text-zinc-400">
                       <MessageSquare className="w-6 h-6 text-zinc-300" />
                       <p className="text-xs">Enter message text to see sample preview.</p>
+                    </div>
+                  ) : previewTab === 'push' ? (
+                    <div className="bg-zinc-900 text-white rounded-2xl p-4 shadow-lg space-y-2.5 border border-zinc-800">
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                        <div className="flex items-center space-x-1.5">
+                          <div className="w-4 h-4 rounded-full bg-[#C59B27] flex items-center justify-center text-[9px] text-black font-bold">K</div>
+                          <span className="font-semibold text-zinc-200">Koinonia Children & Teens</span>
+                        </div>
+                        <span>Now</span>
+                      </div>
+                      <div className="text-xs font-bold text-white">
+                        {subject.trim() || 'Koinonia Children & Teens'}
+                      </div>
+                      <div className="text-xs text-zinc-300 leading-relaxed">
+                        {subject.trim()
+                          ? `${subject.trim()} — You have a new update for The General Assembly.`
+                          : 'You have a new update for The General Assembly. Open Koinonia to view.'}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 pt-1.5 border-t border-zinc-800 flex items-center justify-between">
+                        <span>Tap to view notification</span>
+                        <span className="text-zinc-400">Lock screen preview</span>
+                      </div>
+                    </div>
+                  ) : previewTab === 'in_app' ? (
+                    <div className="bg-white border border-[#EAE8E1] rounded-xl p-4 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold bg-[#C59B27]/10 text-[#C59B27] px-2 py-0.5 rounded">Announcement</span>
+                        <span className="text-[10px] text-zinc-400">Just now</span>
+                      </div>
+                      <h4 className="text-xs font-bold text-[#18181B]">{subject.trim() || 'Event update'}</h4>
+                      <p className="text-xs text-zinc-600 line-clamp-3 leading-relaxed whitespace-pre-line">{body || 'Message content...'}</p>
                     </div>
                   ) : previewTab === 'email' ? (
                     <div className="space-y-3 text-xs">
                       <div className="bg-white border border-[#EAE8E1] rounded-lg p-3 text-zinc-600 space-y-1">
                         <div><strong>From:</strong> {providerStatus.senderName || 'Koinonia Global'}</div>
-                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{previewSubject || '(No subject)'}</span></div>
+                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{previewSubject || subject || '(No subject)'}</span></div>
                       </div>
                       <div className="bg-white border border-[#EAE8E1] rounded-lg p-3.5 text-zinc-800 leading-relaxed whitespace-pre-line min-h-[120px]">
-                        {previewBody}
+                        {previewBody || body}
                       </div>
                     </div>
                   ) : (
                     <div className="flex justify-end">
                       <div className="bg-emerald-50 border border-emerald-200 rounded-2xl rounded-tr-none p-3.5 text-xs text-zinc-800 leading-relaxed max-w-[90%] whitespace-pre-line shadow-2xs">
-                        {previewBody}
+                        {previewBody || body}
                         <div className="text-[10px] text-zinc-400 text-right mt-2">
                           12:00 PM · WhatsApp
                         </div>
@@ -1835,10 +1946,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
               
               <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 space-y-1.5 text-xs">
                 <div>• Recipient group: <strong className="text-zinc-900">{selectedGroup.replace(/_/g, ' ')}</strong></div>
-                <div>• Method: <strong className="text-zinc-900">{selectedChannel === 'both' ? 'Email & WhatsApp' : selectedChannel.toUpperCase()}</strong></div>
-                <div>• Estimated recipients: <strong className="text-emerald-700 font-bold">{activeGroupRecipients} parent(s)</strong></div>
-                {(selectedChannel === 'email' || selectedChannel === 'both') && (
-                  <div>• Subject: <strong className="text-zinc-900 truncate block">{subject}</strong></div>
+                <div>• Delivery channels: <strong className="text-zinc-900">{selectedChannels.map(c => c === 'in_app' ? 'In-app' : c === 'push' ? 'Push notification' : c.toUpperCase()).join(', ')}</strong></div>
+                <div>• Estimated recipients: <strong className="text-emerald-700 font-bold">{activeGroupRecipients} recipient(s)</strong></div>
+                {subject && (
+                  <div>• Title / Subject: <strong className="text-zinc-900 truncate block">{subject}</strong></div>
                 )}
               </div>
             </div>

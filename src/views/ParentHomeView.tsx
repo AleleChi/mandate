@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -16,7 +16,7 @@ import { DeviceSecuritySettings } from '../components/common/DeviceSecuritySetti
 import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 import { MobileNotificationCentre } from '../components/common/MobileNotificationCentre';
 import { SharedNotificationSettings } from '../components/common/SharedNotificationSettings';
-import { PwaInstallBanner } from '../components/common/PwaInstallBanner';
+import { PwaInstallBanner, PwaInstallGuideModal } from '../components/common/PwaInstallBanner';
 import { isAppInstalled, promptPwaInstall } from '../utils/pwaInstall';
 import { Download } from 'lucide-react';
 import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
@@ -127,6 +127,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [selectedArrivalChild, setSelectedArrivalChild] = useState<ChildItem | null>(null);
   const [showPickupDetailsModal, setShowPickupDetailsModal] = useState(false);
   const [selectedPickupChild, setSelectedPickupChild] = useState<ChildItem | null>(null);
+  const [pwaGuidePlatform, setPwaGuidePlatform] = useState<'ios' | 'browser' | null>(null);
 
   useEffect(() => {
     const fetchCustomHero = async () => {
@@ -435,51 +436,73 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   pickupPoint = "Family Collection Desk D";
                 }
 
+                // Format age nicely: e.g. "Under 1 year" or "1 year" or "3 years"
+                const ageNum = typeof child.age === 'number' ? child.age : parseInt(child.age, 10) || 0;
+                const ageLabel = ageNum < 1 ? 'Under 1 year' : ageNum === 1 ? '1 year' : `${ageNum} years`;
+                
+                // Clean ageGroup: remove "(Review Needed)", change "Under 4" to "Under 4s"
+                const rawGroup = child.ageGroup || '';
+                const hasReviewNeeded = rawGroup.toLowerCase().includes('review') || child.needsAgeReview;
+                let cleanAgeGroup = rawGroup.replace(/\s*\(Review Needed\)/gi, '').trim();
+                if (cleanAgeGroup === 'Under 4' || ageNum < 4) {
+                  cleanAgeGroup = 'Under 4s';
+                }
+                if (!cleanAgeGroup) cleanAgeGroup = 'Children';
+
                 return (
-                  <div key={`today-${child.id}`} className="bg-white rounded-2xl p-4 border border-[#EAE8E1] shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <FallbackAvatar src={child.photoUrl} name={child.name} className="w-10 h-10 rounded-full shrink-0" />
+                  <div key={`today-${child.id}`} className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs space-y-3 font-sans">
+                    {/* Header: Photo, Name, Clean Age/Group, Status capsule top-right */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start space-x-3 min-w-0">
+                        <FallbackAvatar src={child.photoUrl} name={child.name} className="w-10 h-10 rounded-full shrink-0 mt-0.5" />
                         <div className="min-w-0">
-                          <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] truncate leading-tight">
+                          <h4 className="text-sm font-sans font-semibold text-[#18181B] truncate leading-tight">
                             {child.name}
                           </h4>
-                          <p className="text-xs text-[#71717A] mt-0.5">
-                            {child.age} years • {child.ageGroup || 'Children'}
+                          <p className="text-xs text-[#71717A] mt-0.5 font-sans">
+                            {ageLabel} · {cleanAgeGroup}
                           </p>
+                          {hasReviewNeeded && (
+                            <p className="text-[11px] text-amber-800 font-sans mt-0.5 font-medium">
+                              Age needs confirmation
+                            </p>
+                          )}
                         </div>
                       </div>
-                      <StatusBadge status={child.status} size="sm" />
+                      <div className="shrink-0 pt-0.5">
+                        <StatusBadge status={child.status} size="sm" />
+                      </div>
                     </div>
 
-                    <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-2 text-xs">
+                    {/* Location and check-in details with clean divided rows */}
+                    <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl divide-y divide-zinc-200/60 text-xs font-sans">
                       {!isCheckedIn ? (
                         <>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#71717A]">Planned location:</span>
+                          <div className="flex items-center justify-between py-1.5 first:pt-0">
+                            <span className="text-[#71717A]">Planned location</span>
                             <span className="font-semibold text-[#18181B]">{plannedLocation}</span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#71717A]">Check-in point:</span>
+                          <div className="flex items-center justify-between py-1.5">
+                            <span className="text-[#71717A]">Check-in point</span>
                             <span className="font-semibold text-[#18181B]">{checkInPoint}</span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#71717A]">Status:</span>
+                          <div className="flex items-center justify-between py-1.5 last:pb-0">
+                            <span className="text-[#71717A]">Status</span>
                             <span className="font-semibold text-[#B89047]">Not checked in</span>
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#71717A]">Current location:</span>
+                          <div className="flex items-center justify-between py-1.5 first:pt-0">
+                            <span className="text-[#71717A]">Current location</span>
                             <span className="font-semibold text-[#18181B]">{plannedLocation}</span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#71717A]">Checked in at:</span>
+                          <div className="flex items-center justify-between py-1.5">
+                            <span className="text-[#71717A]">Checked in at</span>
                             <span className="font-semibold text-[#18181B]">9:14 AM</span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#71717A]">Pickup point:</span>
+                          <div className="flex items-center justify-between py-1.5 last:pb-0">
+                            <span className="text-[#71717A]">Pickup point</span>
                             <span className="font-semibold text-[#18181B]">{pickupPoint}</span>
                           </div>
                         </>
@@ -580,26 +603,41 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             <>
               {/* 8 & 9. Child cards */}
               <div className="space-y-4">
-                {childrenList.map((child) => (
-                  <div
-                    key={child.id}
-                    className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B] leading-snug">
-                          {child.name}
-                        </h4>
-                        <p className="text-xs sm:text-sm text-[#3F3F46] mt-0.5">
-                          {child.age} years
-                        </p>
-                      </div>
-                      <StatusBadge status={child.status} size="sm" />
-                    </div>
+                {childrenList.map((child) => {
+                  const cAgeNum = typeof child.age === 'number' ? child.age : parseInt(child.age, 10) || 0;
+                  const cAgeLabel = cAgeNum < 1 ? 'Under 1 year' : cAgeNum === 1 ? '1 year' : `${cAgeNum} years`;
+                  const cRawGroup = child.ageGroup || '';
+                  const cHasReview = cRawGroup.toLowerCase().includes('review') || child.needsAgeReview;
+                  let cCleanGroup = cRawGroup.replace(/\s*\(Review Needed\)/gi, '').trim();
+                  if (cCleanGroup === 'Under 4' || cAgeNum < 4) cCleanGroup = 'Under 4s';
 
-                    <p className="text-xs sm:text-sm text-[#3F3F46]">
-                      {child.statusNote || (child.status === 'Pass ready' ? 'Event pass is available' : child.status === 'Incomplete' || child.status === 'Draft' ? 'Continue entering child details' : 'Details sent for review')}
-                    </p>
+                  return (
+                    <div
+                      key={child.id}
+                      className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs space-y-3 font-sans"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="text-base font-sans font-semibold text-[#18181B] leading-snug truncate">
+                            {child.name}
+                          </h4>
+                          <p className="text-xs text-[#71717A] mt-0.5 font-sans">
+                            {cAgeLabel}{cCleanGroup ? ` · ${cCleanGroup}` : ''}
+                          </p>
+                          {cHasReview && (
+                            <p className="text-[11px] text-amber-800 font-sans mt-0.5 font-medium">
+                              Age needs confirmation
+                            </p>
+                          )}
+                        </div>
+                        <div className="shrink-0 pt-0.5">
+                          <StatusBadge status={child.status} size="sm" />
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-[#3F3F46] font-sans">
+                        {child.statusNote || (child.status === 'Pass ready' ? 'Event pass is available' : child.status === 'Incomplete' || child.status === 'Draft' ? 'Continue entering child details' : 'Details sent for review')}
+                      </p>
 
                     <div className="pt-1">
                       {child.status === 'Pass ready' ? (
@@ -645,8 +683,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         </button>
                       )}
                     </div>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* 10. Add a child dashed card */}
@@ -725,7 +764,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 />
                 <div className="flex-1 min-w-0">
                   <h3 className="text-lg font-bold text-[#18181B] truncate">{child.name}</h3>
-                  <p className="text-xs text-[#B89047] font-semibold mt-0.5">{child.ageGroup} • {child.age === 0 ? 'Under 1 year old' : `${child.age} years old`}</p>
+                  <p className="text-xs text-[#9A7326] font-medium mt-0.5 font-sans">
+                    {child.age === 0 ? 'Under 1 year' : `${child.age} years`} · {((child.ageGroup || '').replace(/\s*\(Review Needed\)/gi, '').trim() || 'Children') === 'Under 4' ? 'Under 4s' : ((child.ageGroup || '').replace(/\s*\(Review Needed\)/gi, '').trim() || 'Children')}
+                  </p>
                   <div className="mt-2">
                     <StatusBadge status={child.status} />
                   </div>
@@ -1472,13 +1513,29 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
       {/* 6. Account actions card */}
       <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-2xs divide-y divide-[#FAF8F4] overflow-hidden">
-        {!isAppInstalled() && (
+        {isAppInstalled() ? (
+          <div className="w-full p-4 flex items-center justify-between text-left">
+            <div className="flex items-center space-x-3.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[1.75]" />
+              <div>
+                <span className="text-sm font-medium text-[#18181B]">App installed</span>
+                <p className="text-[11px] text-zinc-500 leading-tight">Koinonia Children & Teens is already installed on this device.</p>
+              </div>
+            </div>
+          </div>
+        ) : (
           <button
             type="button"
             onClick={async () => {
               const outcome = await promptPwaInstall();
               if (outcome === 'accepted') {
-                showSuccess('App installed', 'Koinonia has been added to your home screen.');
+                showSuccess('App installed', 'Koinonia Children & Teens has been added to your device.');
+              } else if (outcome === 'manual_ios') {
+                setPwaGuidePlatform('ios');
+              } else if (outcome === 'manual_browser') {
+                setPwaGuidePlatform('browser');
+              } else if (outcome === 'already_installed') {
+                showSuccess('Already installed', 'Koinonia Children & Teens is already installed on this device.');
               }
             }}
             className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
@@ -1487,7 +1544,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               <Download className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
               <div>
                 <span className="text-sm font-medium text-[#18181B]">Install app</span>
-                <p className="text-[11px] text-zinc-500 leading-tight">Add to your home screen for quick access.</p>
+                <p className="text-[11px] text-zinc-500 leading-tight">Add Koinonia Children & Teens to this device.</p>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
@@ -2417,6 +2474,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Manual Install Guide Modal for iOS / Android fallback */}
+      <PwaInstallGuideModal
+        isOpen={Boolean(pwaGuidePlatform)}
+        onClose={() => setPwaGuidePlatform(null)}
+        platform={pwaGuidePlatform || undefined}
+      />
     </div>
   );
 };

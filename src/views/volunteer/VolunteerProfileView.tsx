@@ -10,6 +10,7 @@ import { api, extractApiError } from '../../services/api';
 import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
 import { SharedNotificationSettings } from '../../components/common/SharedNotificationSettings';
 import { isAppInstalled, promptPwaInstall } from '../../utils/pwaInstall';
+import { PwaInstallGuideModal } from '../../components/common/PwaInstallBanner';
 
 interface VolunteerProfileViewProps {
   onSignOut: () => void;
@@ -54,6 +55,7 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
+  const [installGuidePlatform, setInstallGuidePlatform] = useState<'ios' | 'browser' | null>(null);
 
   // Synchronize edit state when profile data loads or edit modal opens
   useEffect(() => {
@@ -434,21 +436,36 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
         <h4 className="text-xs font-semibold text-gray-900">Account actions</h4>
         
         <div className="space-y-1 text-xs">
-          {/* Install app row (if not installed) */}
-          {!isAppInstalled() && (
+          {/* Install app row */}
+          {isAppInstalled() ? (
             <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">
               <div className="space-y-0.5">
-                <span className="font-bold text-gray-800">Install app</span>
-                <p className="text-[11px] text-gray-500">Add to your home screen for fast access.</p>
+                <span className="font-semibold text-gray-800">App installed</span>
+                <p className="text-[11px] text-gray-500">Koinonia Children & Teens is already installed on this device.</p>
+              </div>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            </div>
+          ) : (
+            <div className="flex items-center justify-between py-2.5 border-b border-[#F4F3EF]">
+              <div className="space-y-0.5">
+                <span className="font-semibold text-gray-800">Install app</span>
+                <p className="text-[11px] text-gray-500">Add Koinonia Children & Teens to this device.</p>
               </div>
               <button
+                type="button"
                 onClick={async () => {
                   const outcome = await promptPwaInstall();
                   if (outcome === 'accepted') {
-                    showSuccess('App installed', 'Koinonia has been added to your home screen.');
+                    showSuccess('App installed', 'Koinonia Children & Teens has been added to your device.');
+                  } else if (outcome === 'manual_ios') {
+                    setInstallGuidePlatform('ios');
+                  } else if (outcome === 'manual_browser') {
+                    setInstallGuidePlatform('browser');
+                  } else if (outcome === 'already_installed') {
+                    showSuccess('Already installed', 'Koinonia Children & Teens is already installed on this device.');
                   }
                 }}
-                className="text-xs font-bold text-[#C59B27] hover:text-[#A47E1F] cursor-pointer transition-colors"
+                className="text-xs font-semibold text-[#9A7326] hover:text-[#7D5B18] cursor-pointer transition-colors px-2 py-1 rounded-lg hover:bg-amber-50"
               >
                 Install
               </button>
@@ -895,6 +912,13 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Manual Install Instructions Modal */}
+      <PwaInstallGuideModal
+        isOpen={Boolean(installGuidePlatform)}
+        onClose={() => setInstallGuidePlatform(null)}
+        platform={installGuidePlatform || undefined}
+      />
 
     </div>
   );

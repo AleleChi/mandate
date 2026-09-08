@@ -4,6 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
+      // Early capture of PWA beforeinstallprompt to prevent missing prompt fired before React hydration
+      window.__koinoniaDeferredPrompt = null;
+      window.__koinoniaPromptListeners = [];
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__koinoniaDeferredPrompt = e;
+        if (window.__koinoniaPromptListeners) {
+          window.__koinoniaPromptListeners.forEach(function(fn) {
+            try { fn(true); } catch (err) {}
+          });
+        }
+      });
+      window.addEventListener('appinstalled', function() {
+        window.__koinoniaDeferredPrompt = null;
+        if (window.__koinoniaPromptListeners) {
+          window.__koinoniaPromptListeners.forEach(function(fn) {
+            try { fn(false); } catch (err) {}
+          });
+        }
+      });
+
       // Safe environment check to prevent test/headless/extension-injection crash on undefined matchMedia or chrome runtime APIs
       (function() {
         if (typeof window !== 'undefined') {

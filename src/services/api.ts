@@ -225,9 +225,11 @@ export const api = {
           method: 'DELETE'
         });
       },
-      async registerOptions() {
+      async registerOptions(rpId?: string) {
+        const targetRpId = rpId || (typeof window !== 'undefined' ? window.location.hostname : undefined);
         return api.request<any>('/api/auth/passkeys/register/options', {
-          method: 'POST'
+          method: 'POST',
+          body: JSON.stringify({ rpId: targetRpId })
         });
       },
       async registerVerify(credential: any, deviceName: string) {
@@ -236,10 +238,11 @@ export const api = {
           body: JSON.stringify({ credential, deviceName })
         });
       },
-      async loginOptions(email: string) {
+      async loginOptions(email: string, rpId?: string) {
+        const targetRpId = rpId || (typeof window !== 'undefined' ? window.location.hostname : undefined);
         return api.request<any>('/api/auth/passkeys/login/options', {
           method: 'POST',
-          body: JSON.stringify({ email })
+          body: JSON.stringify({ email, rpId: targetRpId })
         });
       },
       async loginVerify(credential: any, challengeKey: string) {
@@ -987,7 +990,8 @@ export const api = {
     async saveMessageDraft(payload: {
       recipientGroup: string;
       messageType: string;
-      channel: string;
+      channel?: string;
+      channels?: string[];
       subject?: string;
       body: string;
     }) {
@@ -999,14 +1003,16 @@ export const api = {
     async sendMessage(payload: {
       recipientGroup: string;
       messageType: string;
-      channel: string;
+      channel?: string;
+      channels?: string[];
       subject?: string;
       body: string;
       confirmed: boolean;
+      eventId?: string;
     }) {
       return api.request<{
         success: boolean;
-        summary: { requested: number; sent: number; pending: number; failed: number };
+        summary: { requested: number; sent?: number; pending?: number; failed?: number; recipients?: number; inAppCreated?: boolean; pushSent?: number; pushFailed?: number; emailSent?: number; whatsappSent?: number };
         message: string;
       }>('/api/admin/messages/send', {
         method: 'POST',

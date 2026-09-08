@@ -608,14 +608,118 @@ router.delete('/passkeys/:passkeyId', authMiddleware, async (req: AuthenticatedR
   }
 });
 
+const TRUSTED_PRODUCTION_HOSTNAMES = [
+  'koinonia12.netlify.app',
+  'themandate.dontechservicesconst.com'
+];
+
+function getConfiguredEnvHostnames(): string[] {
+  const envVars = [
+    process.env.PUBLIC_APP_URL,
+    process.env.APP_BASE_URL,
+    process.env.CORS_ORIGIN
+  ].filter(Boolean) as string[];
+
+  const hosts: string[] = [];
+  for (const raw of envVars) {
+    for (const piece of raw.split(',')) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = trimmed.startsWith('http') ? new URL(trimmed).hostname : trimmed.split(':')[0];
+        if (parsed && !hosts.includes(parsed.toLowerCase())) {
+          hosts.push(parsed.toLowerCase());
+        }
+      } catch {}
+    }
+  }
+  return hosts;
+}
+
+function isAllowedHostname(hostname: string): boolean {
+  if (!hostname) return false;
+  const cleanHost = hostname.toLowerCase().trim().split(':')[0];
+
+  // 1. Exact known production frontend hosts
+  if (TRUSTED_PRODUCTION_HOSTNAMES.includes(cleanHost)) {
+    return true;
+  }
+
+  // 2. Exact frontend hosts parsed from configured environment variables
+  const envHosts = getConfiguredEnvHostnames();
+  if (envHosts.includes(cleanHost)) {
+    return true;
+  }
+
+  // 3. Local development hosts (localhost and 127.0.0.1 only for development)
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev && (cleanHost === 'localhost' || cleanHost === '127.0.0.1')) {
+    return true;
+  }
+
+  return false;
+}
+
+function resolveAndValidateRpId(req: any): { rpId: string | null; error?: string } {
+  // 1. Check explicit rpId in body
+  if (req.body?.rpId && typeof req.body.rpId === 'string' && req.body.rpId.trim()) {
+    const candidate = req.body.rpId.trim().toLowerCase().split(':')[0];
+    if (isAllowedHostname(candidate)) {
+      return { rpId: candidate };
+    }
+    return { rpId: null, error: 'The requested Relying Party ID is not authorized.' };
+  }
+
+  // 2. Check explicit Origin header
+  if (req.headers.origin) {
+    try {
+      const candidate = new URL(req.headers.origin as string).hostname.toLowerCase();
+      if (isAllowedHostname(candidate)) {
+        return { rpId: candidate };
+      }
+      return { rpId: null, error: 'The request origin is not authorized for secure unlock.' };
+    } catch {
+      return { rpId: null, error: 'Invalid request origin header.' };
+    }
+  }
+
+  // 3. Check explicit Referer header
+  if (req.headers.referer) {
+    try {
+      const candidate = new URL(req.headers.referer as string).hostname.toLowerCase();
+      if (isAllowedHostname(candidate)) {
+        return { rpId: candidate };
+      }
+      return { rpId: null, error: 'The request referer is not authorized for secure unlock.' };
+    } catch {
+      return { rpId: null, error: 'Invalid request referer header.' };
+    }
+  }
+
+  // 4. Default fallback when no explicit client origin/rpId is provided
+  const isDev = process.env.NODE_ENV !== 'production';
+  return { rpId: isDev ? 'localhost' : 'koinonia12.netlify.app' };
+}
+
 // POST /api/auth/passkeys/register/options
 router.post('/passkeys/register/options', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
     const challenge = crypto.randomBytes(32).toString('base64url');
     challengesStore.set(`reg-${req.user.id}`, {
       challenge,
       expires: Date.now() + 5 * 60 * 1000
     });
+
+    const rpId = resolved.rpId;
 
     res.json({
       success: true,
@@ -623,7 +727,7 @@ router.post('/passkeys/register/options', authMiddleware, async (req: Authentica
         challenge,
         rp: {
           name: 'Koinonia Children & Teens',
-          id: req.headers.host ? req.headers.host.split(':')[0] : 'localhost'
+          id: rpId
         },
         user: {
           id: req.user.id,
@@ -652,6 +756,15 @@ router.post('/passkeys/register/options', authMiddleware, async (req: Authentica
 // POST /api/auth/passkeys/register/verify
 router.post('/passkeys/register/verify', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
     const { credential, deviceName } = req.body;
     if (!credential || !credential.id) {
       return res.status(400).json({ success: false, error: 'Invalid passkey credential details provided' });
@@ -682,6 +795,15 @@ router.post('/passkeys/register/verify', authMiddleware, async (req: Authenticat
 // POST /api/auth/passkeys/login/options
 router.post('/passkeys/login/options', async (req, res) => {
   try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, error: 'Email is required' });
@@ -714,7 +836,7 @@ router.post('/passkeys/login/options', async (req, res) => {
       options: {
         challenge,
         timeout: 60000,
-        rpId: req.headers.host ? req.headers.host.split(':')[0] : 'localhost',
+        rpId: resolved.rpId,
         allowCredentials,
         userVerification: 'required'
       }
@@ -728,6 +850,15 @@ router.post('/passkeys/login/options', async (req, res) => {
 // POST /api/auth/passkeys/login/verify
 router.post('/passkeys/login/verify', async (req, res) => {
   try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
     const { credential, challengeKey } = req.body;
     if (!credential || !credential.id || !challengeKey) {
       return res.status(400).json({ success: false, error: 'Authentication request details are missing' });
@@ -770,6 +901,15 @@ router.post('/passkeys/login/verify', async (req, res) => {
 // POST /api/auth/passkeys/verify-action
 router.post('/passkeys/verify-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
     const { credential, actionName } = req.body;
     if (!credential || !credential.id) {
       return res.status(400).json({ success: false, error: 'Verification credentials are required' });

@@ -3,6 +3,7 @@
   "short_name": "Koinonia",
   "description": "Koinonia Children and Teens Event Registration, Attendance & Safety Platform",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#FAF9F6",
   "theme_color": "#C59B27",
