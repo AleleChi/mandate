@@ -984,6 +984,18 @@ export const api = {
           whatsappNumbers: number;
           whatsappOptedIn: number;
         };
+        eventParents?: Array<{
+          id: string;
+          name: string;
+          phone: string;
+          whatsappNumber?: string;
+          whatsappConsentStatus: string;
+          email: string;
+          userId: string;
+          pushCount: number;
+          children: Array<{ id: string; name: string }>;
+          childCount: number;
+        }>;
         messageTypes: Array<{ key: string; label: string }>;
         recentActivity: any[];
         latestDraft: any;
@@ -1007,8 +1019,9 @@ export const api = {
       channel: string;
       subject?: string;
       body: string;
+      selectedParentIds?: string[];
     }) {
-      return api.request<{ success: boolean; preview: { subject: string; body: string } }>('/api/admin/messages/preview', {
+      return api.request<{ success: boolean; preview: { subject: string; body: string; representativeParentName?: string } }>('/api/admin/messages/preview', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
@@ -1035,10 +1048,27 @@ export const api = {
       body: string;
       confirmed: boolean;
       eventId?: string;
+      selectedParentIds?: string[];
     }) {
       return api.request<{
         success: boolean;
-        summary: { requested: number; sent?: number; pending?: number; failed?: number; recipients?: number; inAppCreated?: boolean; pushSent?: number; pushFailed?: number; emailSent?: number; whatsappSent?: number };
+        recipientsCount?: number;
+        whatsappQueued?: number;
+        whatsappSkipped?: number;
+        summary: {
+          requested: number;
+          sent?: number;
+          pending?: number;
+          failed?: number;
+          recipients?: number;
+          inAppCreated?: boolean;
+          pushSent?: number;
+          pushFailed?: number;
+          emailSent?: number;
+          whatsappSent?: number;
+          whatsappQueued?: number;
+          whatsappSkipped?: number;
+        };
         message: string;
       }>('/api/admin/messages/send', {
         method: 'POST',

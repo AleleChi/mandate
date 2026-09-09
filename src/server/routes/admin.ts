@@ -4709,8 +4709,49 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       whatsappOptedIn: whatsappReadiness.configured ? Number(whatsappOptedInCountRes?.count || 0) : 0
     };
 
+    // Query active parents registered for this event to support specific parent recipient targeting
+    const eventParents = await query(`
+      SELECT
+        p.id,
+        p.full_name as name,
+        p.phone_number as phone,
+        p.whatsapp_number as "whatsappNumber",
+        p.whatsapp_consent_status as "whatsappConsentStatus",
+        u.email,
+        u.id as "userId",
+        (SELECT COUNT(DISTINCT ps.id) FROM push_subscriptions ps WHERE ps.user_id = u.id AND ps.revoked_at IS NULL) as "pushCount"
+      FROM parent_profiles p
+      JOIN users u ON u.id = p.user_id
+      WHERE (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND EXISTS (
+          SELECT 1
+          FROM children c
+          JOIN child_event_entries e ON e.child_id = c.id
+          WHERE c.parent_profile_id = p.id
+            AND e.event_id = ?
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        )
+      ORDER BY p.full_name ASC
+    `, [eventId]);
+
+    for (const p of eventParents) {
+      const children = await query(`
+        SELECT c.id, c.full_name as name
+        FROM children c
+        JOIN child_event_entries e ON e.child_id = c.id
+        WHERE c.parent_profile_id = ?
+          AND e.event_id = ?
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      `, [p.id, eventId]);
+      p.children = children || [];
+      p.childCount = children?.length || 0;
+    }
+
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
+      { key: 'specific_parents', label: 'Specific parents', count: eventParents.length },
       { key: 'selected_children', label: 'Selected children', count: Number(countSelectedRes?.count || 0) },
       { key: 'under_review', label: 'Under review', count: Number(countReviewRes?.count || 0) },
       { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
@@ -4787,7 +4828,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       latestDraft: latestDraft || null,
       emailEnabled,
       whatsappEnabled,
-      providerStatus
+      providerStatus,
+      eventParents: eventParents || []
     });
   } catch (err: any) {
     console.error('Error fetching admin messages dashboard:', err);
@@ -5470,7 +5512,16 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
     }
 
     let sampleParent = null;
-    if (groupCondition) {
+    if (recipientGroup === 'specific_parents' && Array.isArray(req.body.selectedParentIds) && req.body.selectedParentIds.length > 0) {
+      sampleParent = await queryOne(`
+        SELECT p.full_name as parent_name, c.full_name as child_name, e.id as entry_id
+        FROM parent_profiles p
+        LEFT JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        WHERE p.id = ?
+        LIMIT 1
+      `, [eventId, req.body.selectedParentIds[0]]);
+    } else if (groupCondition) {
       sampleParent = await queryOne(`
         SELECT p.full_name as parent_name, c.full_name as child_name, e.id as entry_id
         FROM child_event_entries e
@@ -5513,7 +5564,8 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       success: true,
       preview: {
         subject: renderedSubject,
-        body: renderedBody
+        body: renderedBody,
+        representativeParentName: parentName
       }
     });
   } catch (err: any) {
@@ -5618,6 +5670,26 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
         WHERE u.role IN ('staff', 'admin', 'super_admin', 'volunteer')
       `);
+    } else if (recipientGroup === 'specific_parents') {
+      const selectedIds = Array.isArray(req.body.selectedParentIds) ? req.body.selectedParentIds : [];
+      const deduplicatedParentIds = Array.from(new Set(selectedIds)).filter(Boolean) as string[];
+      if (deduplicatedParentIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'NO_RECIPIENTS',
+          message: 'Please select at least one parent recipient.'
+        });
+      }
+      const placeholders = deduplicatedParentIds.map(() => '?').join(',');
+      rows = await query(`
+        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.full_name as child_name, e.id as entry_id
+        FROM parent_profiles p
+        JOIN users u ON u.id = p.user_id
+        LEFT JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        WHERE p.id IN (${placeholders})
+          AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+      `, [eventId, ...deduplicatedParentIds]);
     } else {
       let queryStr = `
         SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.full_name as child_name, e.id as entry_id
@@ -5901,11 +5973,19 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     // 8. Human result feedback
+    const parentIdsInAudience = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
+    const whatsappSkippedCount = activeChannels.includes('whatsapp')
+      ? Math.max(0, parentIdsInAudience.length - whatsappQueuedCount)
+      : 0;
+
     let humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'}.`;
     if (activeChannels.includes('whatsapp')) {
-      humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued for delivery.`;
+      const skippedNote = whatsappSkippedCount > 0
+        ? `, ${whatsappSkippedCount} selected parent${whatsappSkippedCount === 1 ? '' : 's'} not eligible for WhatsApp`
+        : '';
+      humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
       if (activeChannels.includes('in_app') || activeChannels.includes('push') || activeChannels.includes('email')) {
-        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued.`;
+        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
       }
     } else if (activeChannels.includes('push')) {
       if (pushSentCount > 0 && pushFailCount > 0) {
@@ -5918,6 +5998,13 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     res.json({
       success: true,
       message: humanMessage,
+      recipientsCount: messagesToSend.length,
+      channels: activeChannels,
+      emailSent: emailSentCount,
+      whatsappQueued: whatsappQueuedCount,
+      whatsappSkipped: whatsappSkippedCount,
+      pushSent: pushSentCount,
+      inAppSent: inAppCreated ? messagesToSend.length : 0,
       summary: {
         requested: messagesToSend.length,
         recipients: messagesToSend.length,
@@ -5927,6 +6014,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         emailSent: emailSentCount,
         whatsappSent: 0,
         whatsappQueued: whatsappQueuedCount,
+        whatsappSkipped: whatsappSkippedCount,
         failed: externalFailCount + pushFailCount
       }
     });
