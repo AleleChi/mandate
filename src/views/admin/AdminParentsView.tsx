@@ -53,7 +53,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     parents: 0,
     childrenLinked: 0,
     teamMembers: 0,
-    whatsAppAvailable: 0
+    whatsAppNumbers: 0,
+    whatsAppOptedIn: 0
   });
 
   // Overflow menu state per row
@@ -92,7 +93,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             parents: list.length,
             childrenLinked: list.reduce((sum: number, p: any) => sum + Number(p.childrenCount || 0), 0),
             teamMembers: list.filter((p: any) => p.isKoinoniaWorker).length,
-            whatsAppAvailable: list.filter((p: any) => Boolean(p.whatsapp && String(p.whatsapp).trim())).length
+            whatsAppNumbers: list.filter((p: any) => Boolean(p.whatsapp && String(p.whatsapp).trim())).length,
+            whatsAppOptedIn: list.filter((p: any) => p.whatsappConsentStatus === 'opted_in').length
           });
         }
       }
@@ -665,9 +667,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             <p className="text-[10px] text-zinc-400 mb-0.5">Team members</p>
             <p className="text-lg font-semibold text-zinc-700">{stats.teamMembers}</p>
           </div>
+          <div className="px-8 shrink-0">
+            <p className="text-[10px] text-zinc-400 mb-0.5">WhatsApp numbers</p>
+            <p className="text-lg font-semibold text-zinc-700">{stats.whatsAppNumbers}</p>
+          </div>
           <div className="pl-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 mb-0.5">WhatsApp available</p>
-            <p className="text-lg font-semibold text-zinc-700">{stats.whatsAppAvailable}</p>
+            <p className="text-[10px] text-zinc-400 mb-0.5">Opted in</p>
+            <p className="text-lg font-semibold text-zinc-700">{stats.whatsAppOptedIn}</p>
           </div>
         </div>
       </div>

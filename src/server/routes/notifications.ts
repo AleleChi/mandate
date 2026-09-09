@@ -1223,10 +1223,11 @@ router.get('/admin/updates/summary', async (req: AuthenticatedRequest, res: Resp
     const rawNotifs = await query(notifsQuery, notifsParams);
 
     // Query open safety alerts directly from the database table for perfect, independent stats integrity
-    const openAlertsRow = await queryOne(`
-      SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND (event_id = ? OR ? IS NULL)
-    `, [eventId || REAL_EVENT_ID, eventId || null]);
-    const openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
+    const targetEventId = eventId || REAL_EVENT_ID;
+    const openAlertsRow = targetEventId
+      ? await queryOne(`SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?`, [targetEventId])
+      : await queryOne(`SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open'`);
+    const openAlerts = openAlertsRow ? Number(openAlertsRow.cnt || 0) : 0;
 
     let total = 0;
     let unread = 0;

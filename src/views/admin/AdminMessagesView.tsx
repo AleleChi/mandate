@@ -178,6 +178,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
 
   // Send Announcement / Composer states
   const [recipientGroups, setRecipientGroups] = useState<any[]>([]);
+  const [channelEligibility, setChannelEligibility] = useState<{
+    inApp: number;
+    push: number;
+    email: number;
+    whatsappNumbers: number;
+    whatsappOptedIn: number;
+  } | null>(null);
   const [messageTypes, setMessageTypes] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [emailEnabled, setEmailEnabled] = useState(true);
@@ -185,6 +192,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
   const [providerStatus, setProviderStatus] = useState<any>({
     emailEnabled: true,
     whatsappEnabled: true,
+    whatsappStatus: 'Setup pending',
     emailProvider: null,
     whatsappProvider: null,
     senderName: 'Koinonia Global',
@@ -275,7 +283,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
       }
     } catch (err) {
       console.warn('Failed to fetch summary card statistics:', err);
-      setSummaryStatsError("We couldn't refresh message counts.");
+      setSummaryStatsError("Message summary unavailable");
     } finally {
       setSummaryStatsLoading(false);
     }
@@ -335,6 +343,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
           { key: 'volunteers', label: 'Volunteers', count: 0 },
           { key: 'all_event_team', label: 'Event team & volunteers', count: 0 }
         ]);
+
+        if (data.channelEligibility) {
+          setChannelEligibility(data.channelEligibility);
+        }
 
         setMessageTypes(data.messageTypes || [
           { key: 'general_announcement', label: 'General announcement' },
@@ -838,7 +850,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                 className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${statusFilter === 'unread' ? 'bg-[#C59B27]/5' : ''}`}
               >
                 <div className="text-[11px] font-semibold text-zinc-500">Unread</div>
-                <div className="text-xl font-bold text-[#18181B] mt-1">{summaryStats.unread}</div>
+                <div className="text-xl font-bold text-[#18181B] mt-1">{summaryStatsError ? '—' : summaryStats.unread}</div>
                 <div className="text-[10px] text-zinc-400 mt-0.5">Messages not yet opened</div>
               </button>
 
@@ -851,8 +863,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                 className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${statusFilter === 'open' ? 'bg-[#C59B27]/5' : ''}`}
               >
                 <div className="text-[11px] font-semibold text-zinc-500">Needs attention</div>
-                <div className={`text-xl font-bold mt-1 ${summaryStats.openAlerts > 0 ? 'text-amber-700' : 'text-[#18181B]'}`}>
-                  {summaryStats.openAlerts}
+                <div className={`text-xl font-bold mt-1 ${!summaryStatsError && summaryStats.openAlerts > 0 ? 'text-amber-700' : 'text-[#18181B]'}`}>
+                  {summaryStatsError ? '—' : summaryStats.openAlerts}
                 </div>
                 <div className="text-[10px] text-zinc-400 mt-0.5">Updates awaiting action</div>
               </button>
@@ -866,8 +878,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                 className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${priorityFilter === 'urgent' ? 'bg-[#C59B27]/5' : ''}`}
               >
                 <div className="text-[11px] font-semibold text-zinc-500">Urgent</div>
-                <div className={`text-xl font-bold mt-1 ${summaryStats.urgent > 0 ? 'text-rose-700' : 'text-[#18181B]'}`}>
-                  {summaryStats.urgent}
+                <div className={`text-xl font-bold mt-1 ${!summaryStatsError && summaryStats.urgent > 0 ? 'text-rose-700' : 'text-[#18181B]'}`}>
+                  {summaryStatsError ? '—' : summaryStats.urgent}
                 </div>
                 <div className="text-[10px] text-zinc-400 mt-0.5">Items marked urgent</div>
               </button>
@@ -881,8 +893,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                 className={`p-4 text-left transition-colors cursor-pointer hover:bg-zinc-50/80 ${typeFilter === 'delivery_issue' ? 'bg-[#C59B27]/5' : ''}`}
               >
                 <div className="text-[11px] font-semibold text-zinc-500">Not delivered</div>
-                <div className={`text-xl font-bold mt-1 ${summaryStats.deliveryIssues > 0 ? 'text-rose-700' : 'text-[#18181B]'}`}>
-                  {summaryStats.deliveryIssues}
+                <div className={`text-xl font-bold mt-1 ${!summaryStatsError && summaryStats.deliveryIssues > 0 ? 'text-rose-700' : 'text-[#18181B]'}`}>
+                  {summaryStatsError ? '—' : summaryStats.deliveryIssues}
                 </div>
                 <div className="text-[10px] text-zinc-400 mt-0.5">Messages that could not be sent</div>
               </button>
@@ -1450,11 +1462,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                     onChange={(e) => setSelectedGroup(e.target.value)}
                     className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                   >
-                    {recipientGroups.map(group => (
-                      <option key={group.key} value={group.key}>
-                        {group.label} ({group.count} contacts)
-                      </option>
-                    ))}
+                    {recipientGroups.map(group => {
+                      const groupLabel = group.key === 'all_parents' ? 'All current-event parents' : group.label;
+                      return (
+                        <option key={group.key} value={group.key}>
+                          {groupLabel} ({group.count} {group.count === 1 ? 'contact' : 'contacts'})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -1486,28 +1501,32 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                     {
                       id: 'in_app',
                       label: 'In-app',
-                      desc: 'Deliver to notification center',
+                      desc: 'Notification centre',
+                      countLabel: channelEligibility ? `${channelEligibility.inApp} eligible` : 'Eligible contacts',
                       icon: Bell,
                       enabled: true
                     },
                     {
                       id: 'push',
-                      label: 'Push notification',
-                      desc: 'Deliver to registered devices',
+                      label: 'Push',
+                      desc: 'Registered devices',
+                      countLabel: channelEligibility ? `${channelEligibility.push} eligible` : 'Registered devices',
                       icon: Smartphone,
                       enabled: true
                     },
                     {
                       id: 'email',
                       label: 'Email',
-                      desc: emailEnabled ? 'Send email to account addresses' : 'Email provider not configured',
+                      desc: 'Account email addresses',
+                      countLabel: channelEligibility ? `${channelEligibility.email} eligible` : (emailEnabled ? 'Account email addresses' : 'Email provider not configured'),
                       icon: Mail,
                       enabled: emailEnabled
                     },
                     {
                       id: 'whatsapp',
                       label: 'WhatsApp',
-                      desc: whatsappEnabled ? 'Send message to WhatsApp numbers' : 'WhatsApp provider not configured',
+                      desc: 'Parents who opted in',
+                      countLabel: channelEligibility ? `${channelEligibility.whatsappOptedIn} opted in` : 'Parents who opted in',
                       icon: Phone,
                       enabled: whatsappEnabled
                     }
@@ -1534,9 +1553,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                           className="mt-0.5 rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center space-x-2">
-                            <SelectedIcon className={`w-3.5 h-3.5 ${isDisabled ? 'text-zinc-400' : isChecked ? 'text-[#C59B27]' : 'text-zinc-500'}`} />
-                            <span className="text-xs font-semibold">{ch.label}</span>
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center space-x-2">
+                              <SelectedIcon className={`w-3.5 h-3.5 ${isDisabled ? 'text-zinc-400' : isChecked ? 'text-[#C59B27]' : 'text-zinc-500'}`} />
+                              <span className="text-xs font-semibold">{ch.label}</span>
+                            </div>
+                            <span className={`text-[10px] font-medium ${isChecked ? 'text-[#C59B27]' : 'text-zinc-400'}`}>
+                              {ch.countLabel}
+                            </span>
                           </div>
                           <span className="text-[10px] text-zinc-400 block mt-0.5 leading-tight">{ch.desc}</span>
                         </div>
@@ -1546,10 +1570,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                 </div>
               </div>
 
-              {/* Title / Subject */}
+              {/* Title / subject */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
-                  Title / Subject
+                  Title / subject
                 </label>
                 <input
                   type="text"
@@ -1638,58 +1662,31 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                   </div>
 
                   <div className="flex items-center bg-zinc-50 p-1 rounded-xl border border-[#EAE8E1] gap-1 flex-wrap">
-                    {selectedChannels.includes('push') && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTab('push')}
-                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
-                          previewTab === 'push'
-                            ? 'bg-white text-[#18181B] shadow-2xs'
-                            : 'text-zinc-400 hover:text-zinc-600'
-                        }`}
-                      >
-                        Push
-                      </button>
-                    )}
-                    {selectedChannels.includes('in_app') && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTab('in_app')}
-                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
-                          previewTab === 'in_app'
-                            ? 'bg-white text-[#18181B] shadow-2xs'
-                            : 'text-zinc-400 hover:text-zinc-600'
-                        }`}
-                      >
-                        In-app
-                      </button>
-                    )}
-                    {selectedChannels.includes('email') && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTab('email')}
-                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
-                          previewTab === 'email'
-                            ? 'bg-white text-[#18181B] shadow-2xs'
-                            : 'text-zinc-400 hover:text-zinc-600'
-                        }`}
-                      >
-                        Email
-                      </button>
-                    )}
-                    {selectedChannels.includes('whatsapp') && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTab('whatsapp')}
-                        className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
-                          previewTab === 'whatsapp'
-                            ? 'bg-white text-[#18181B] shadow-2xs'
-                            : 'text-zinc-400 hover:text-zinc-600'
-                        }`}
-                      >
-                        WhatsApp
-                      </button>
-                    )}
+                    {(['push', 'in_app', 'email', 'whatsapp'] as const).map((chKey) => {
+                      const labels: Record<string, string> = {
+                        push: 'Push',
+                        in_app: 'In-app',
+                        email: 'Email',
+                        whatsapp: 'WhatsApp'
+                      };
+                      const isSelectedChannel = selectedChannels.includes(chKey);
+                      return (
+                        <button
+                          key={chKey}
+                          type="button"
+                          onClick={() => setPreviewTab(chKey)}
+                          className={`px-2.5 py-1 text-[10px] font-semibold rounded-lg transition-all cursor-pointer ${
+                            previewTab === chKey
+                              ? 'bg-white text-[#18181B] shadow-2xs'
+                              : isSelectedChannel
+                              ? 'text-zinc-600 hover:text-zinc-900'
+                              : 'text-zinc-400 hover:text-zinc-600'
+                          }`}
+                        >
+                          {labels[chKey]}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1700,50 +1697,53 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                       <p className="text-xs">Enter message text to see sample preview.</p>
                     </div>
                   ) : previewTab === 'push' ? (
-                    <div className="bg-zinc-900 text-white rounded-2xl p-4 shadow-lg space-y-2.5 border border-zinc-800">
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    /* Calm, light Koinonia push notification preview - no black slab, no fake OS screen */
+                    <div className="bg-[#FFFDF9] text-[#18181B] rounded-xl p-4 border border-[#EAE8E1] shadow-2xs space-y-2.5 font-sans">
+                      <div className="flex items-center justify-between text-[11px] text-zinc-500">
                         <div className="flex items-center space-x-1.5">
-                          <div className="w-4 h-4 rounded-full bg-[#C59B27] flex items-center justify-center text-[9px] text-black font-bold">K</div>
-                          <span className="font-semibold text-zinc-200">Koinonia Children & Teens</span>
+                          <div className="w-5 h-5 rounded-full bg-[#C59B27]/15 text-[#C59B27] flex items-center justify-center text-[10px] font-bold">
+                            K
+                          </div>
+                          <span className="font-semibold text-zinc-800">Koinonia Children & Teens</span>
                         </div>
-                        <span>Now</span>
+                        <span className="text-zinc-400 text-[10px]">Now</span>
                       </div>
-                      <div className="text-xs font-bold text-white">
-                        {subject.trim() || 'Koinonia Children & Teens'}
+                      <div className="text-xs font-bold text-[#18181B]">
+                        {subject.trim() || 'Important Event Details — The General Assembly'}
                       </div>
-                      <div className="text-xs text-zinc-300 leading-relaxed">
-                        {subject.trim()
-                          ? `${subject.trim()} — You have a new update for The General Assembly.`
-                          : 'You have a new update for The General Assembly. Open Koinonia to view.'}
+                      <div className="text-xs text-zinc-600 leading-relaxed">
+                        {body.trim()
+                          ? (body.length > 140 ? body.slice(0, 140) + '…' : body)
+                          : 'You have a new update for The General Assembly.'}
                       </div>
-                      <div className="text-[10px] text-zinc-500 pt-1.5 border-t border-zinc-800 flex items-center justify-between">
-                        <span>Tap to view notification</span>
-                        <span className="text-zinc-400">Lock screen preview</span>
+                      <div className="text-[10px] text-zinc-400 pt-2 border-t border-[#EAE8E1] flex items-center justify-between">
+                        <span>Push notification</span>
+                        <span className="text-[#C59B27] font-medium">Delivered to registered devices</span>
                       </div>
                     </div>
                   ) : previewTab === 'in_app' ? (
-                    <div className="bg-white border border-[#EAE8E1] rounded-xl p-4 shadow-2xs space-y-2">
+                    <div className="bg-[#FFFDF9] border border-[#EAE8E1] rounded-xl p-4 shadow-2xs space-y-2 font-sans">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-semibold bg-[#C59B27]/10 text-[#C59B27] px-2 py-0.5 rounded">Announcement</span>
                         <span className="text-[10px] text-zinc-400">Just now</span>
                       </div>
-                      <h4 className="text-xs font-bold text-[#18181B]">{subject.trim() || 'Event update'}</h4>
-                      <p className="text-xs text-zinc-600 line-clamp-3 leading-relaxed whitespace-pre-line">{body || 'Message content...'}</p>
+                      <h4 className="text-xs font-bold text-[#18181B]">{subject.trim() || 'Important Event Details — The General Assembly'}</h4>
+                      <p className="text-xs text-zinc-600 line-clamp-4 leading-relaxed whitespace-pre-line">{body || 'You have a new update for The General Assembly.'}</p>
                     </div>
                   ) : previewTab === 'email' ? (
-                    <div className="space-y-3 text-xs">
-                      <div className="bg-white border border-[#EAE8E1] rounded-lg p-3 text-zinc-600 space-y-1">
+                    <div className="space-y-3 text-xs font-sans">
+                      <div className="bg-[#FFFDF9] border border-[#EAE8E1] rounded-lg p-3 text-zinc-600 space-y-1">
                         <div><strong>From:</strong> {providerStatus.senderName || 'Koinonia Global'}</div>
-                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{previewSubject || subject || '(No subject)'}</span></div>
+                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{previewSubject || subject || 'Important Event Details — The General Assembly'}</span></div>
                       </div>
-                      <div className="bg-white border border-[#EAE8E1] rounded-lg p-3.5 text-zinc-800 leading-relaxed whitespace-pre-line min-h-[120px]">
-                        {previewBody || body}
+                      <div className="bg-[#FFFDF9] border border-[#EAE8E1] rounded-lg p-3.5 text-zinc-800 leading-relaxed whitespace-pre-line min-h-[120px]">
+                        {previewBody || body || 'You have a new update for The General Assembly.'}
                       </div>
                     </div>
                   ) : (
-                    <div className="flex justify-end">
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl rounded-tr-none p-3.5 text-xs text-zinc-800 leading-relaxed max-w-[90%] whitespace-pre-line shadow-2xs">
-                        {previewBody || body}
+                    <div className="flex justify-end font-sans">
+                      <div className="bg-[#F0F7F4] border border-[#D1E7DD] rounded-2xl rounded-tr-none p-3.5 text-xs text-zinc-800 leading-relaxed max-w-[90%] whitespace-pre-line shadow-2xs">
+                        {previewBody || body || 'Important Event Details — The General Assembly\n\nYou have a new update for The General Assembly.'}
                         <div className="text-[10px] text-zinc-400 text-right mt-2">
                           12:00 PM · WhatsApp
                         </div>
@@ -1754,7 +1754,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
               </div>
 
               {/* Sender Details */}
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4">
+              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-3 font-sans">
                 <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
                   <div className="flex items-center space-x-2">
                     <Settings className="w-4 h-4 text-[#C59B27]" />
@@ -1769,29 +1769,23 @@ export function AdminMessagesView({ onBackToOverview, onNavigate }: AdminMessage
                   </button>
                 </div>
 
-                <div className="space-y-2.5 text-xs">
-                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Sender name</span>
-                      <span className="font-semibold text-zinc-800 truncate block">{providerStatus.senderName || 'Koinonia Global'}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Reply-to email</span>
-                      <span className="font-semibold text-zinc-800 truncate block">{providerStatus.replyToEmail || 'info@themandate.dontechservicesconst.com'}</span>
-                    </div>
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <div className="font-semibold text-sm text-[#18181B]">{providerStatus.senderName || 'Koinonia Global'}</div>
+                    <div className="text-zinc-500 text-xs mt-0.5">Reply-to: {providerStatus.replyToEmail || 'info@themandate.dontechservicesconst.com'}</div>
                   </div>
 
-                  <div className="border border-[#EAE8E1] rounded-xl p-3 bg-zinc-50 space-y-1.5 text-[11px]">
-                    <div className="flex justify-between items-center">
-                      <span className="text-zinc-600">Email delivery:</span>
+                  <div className="pt-2.5 border-t border-[#EAE8E1] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-zinc-500">Email:</span>
                       <span className={`font-semibold ${emailEnabled ? 'text-emerald-700' : 'text-zinc-400'}`}>
                         {emailEnabled ? 'Ready' : 'Not ready'}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-zinc-600">WhatsApp delivery:</span>
-                      <span className={`font-semibold ${whatsappEnabled ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                        {whatsappEnabled ? 'Ready' : 'Not ready'}
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-zinc-500">WhatsApp:</span>
+                      <span className="font-semibold text-amber-700">
+                        {providerStatus.whatsappStatus || 'Setup pending'}
                       </span>
                     </div>
                   </div>

@@ -959,6 +959,13 @@ export const api = {
           pending: number;
         };
         recipientGroups: Array<{ key: string; label: string; count: number }>;
+        channelEligibility?: {
+          inApp: number;
+          push: number;
+          email: number;
+          whatsappNumbers: number;
+          whatsappOptedIn: number;
+        };
         messageTypes: Array<{ key: string; label: string }>;
         recentActivity: any[];
         latestDraft: any;
@@ -967,6 +974,7 @@ export const api = {
         providerStatus?: {
           emailEnabled: boolean;
           whatsappEnabled: boolean;
+          whatsappStatus?: 'Ready' | 'Setup pending';
           emailProvider: string | null;
           whatsappProvider: string | null;
           senderName: string | null;

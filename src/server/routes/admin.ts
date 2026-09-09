@@ -4454,13 +4454,16 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    // 2. Fetch real counts for recipient groups based on actual children/parents
+    // 2. Fetch real counts for recipient groups based on actual children/parents for current event
     const countAllRes = await queryOne(`
       SELECT COUNT(DISTINCT p.id) as count
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     `, [eventId]);
 
     const countSelectedRes = await queryOne(`
@@ -4469,6 +4472,9 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready')
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     `, [eventId]);
 
     const countReviewRes = await queryOne(`
@@ -4477,6 +4483,9 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.event_id = ? AND e.status = 'under_review'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     `, [eventId]);
 
     const countWaitingRes = await queryOne(`
@@ -4485,6 +4494,9 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.event_id = ? AND e.status = 'waiting_list'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     `, [eventId]);
 
     const countNotSelectedRes = await queryOne(`
@@ -4493,6 +4505,9 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.event_id = ? AND e.status = 'not_selected'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     `, [eventId]);
 
     const countPassReadyRes = await queryOne(`
@@ -4501,6 +4516,9 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.event_id = ? AND e.status = 'pass_ready'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     `, [eventId]);
 
     const countVolunteersRes = await queryOne(`
@@ -4513,7 +4531,79 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       SELECT COUNT(DISTINCT u.id) as count
       FROM users u
       WHERE u.role IN ('staff', 'admin', 'super_admin', 'volunteer')
+        AND (u.status = 'active' OR u.status IS NULL)
     `);
+
+    // Channel eligibility for current event active parents
+    const inAppCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN users u ON u.id = p.user_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const pushCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN push_subscriptions ps ON ps.user_id = p.user_id AND ps.revoked_at IS NULL
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const emailCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN users u ON u.id = p.user_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND (u.email IS NOT NULL AND trim(u.email) != '')
+    `, [eventId]);
+
+    const whatsappNumbersCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND (p.whatsapp_number IS NOT NULL AND trim(p.whatsapp_number) != '')
+    `, [eventId]);
+
+    const whatsappOptedInCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND (p.whatsapp_number IS NOT NULL AND trim(p.whatsapp_number) != '')
+        AND p.whatsapp_consent_status = 'opted_in'
+    `, [eventId]);
+
+    const channelEligibility = {
+      inApp: Number(inAppCountRes?.count || 0),
+      push: Number(pushCountRes?.count || 0),
+      email: Number(emailCountRes?.count || 0),
+      whatsappNumbers: Number(whatsappNumbersCountRes?.count || 0),
+      whatsappOptedIn: Number(whatsappOptedInCountRes?.count || 0)
+    };
 
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
@@ -4559,10 +4649,10 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
-    let whatsappEnabled = false;
-    if (whatsappProvider === 'twilio') {
-      whatsappEnabled = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN;
-    }
+    // Live WhatsApp delivery setup status:
+    // Foundation is prepared in Phase 1A; live bulk delivery activation is pending
+    const whatsappStatus: 'Ready' | 'Setup pending' = 'Setup pending';
+    const whatsappEnabled = false; // Kept false for safety; bulk sending disabled
 
     const settings = await queryOne(`
       SELECT sender_name as senderName, reply_to_email as replyToEmail
@@ -4573,6 +4663,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
     const providerStatus = {
       emailEnabled,
       whatsappEnabled,
+      whatsappStatus,
       emailProvider: emailProvider === 'resend' ? 'resend' : emailProvider === 'smtp' ? 'smtp' : null,
       whatsappProvider: whatsappProvider === 'twilio' ? 'twilio' : null,
       senderName: settings?.senderName || process.env.MAIL_FROM_NAME || 'Koinonia Global',
@@ -4590,6 +4681,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         pending
       },
       recipientGroups,
+      channelEligibility,
       messageTypes,
       recentActivity: recentActivity || [],
       latestDraft: latestDraft || null,
@@ -6542,6 +6634,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       fullName: p.full_name,
       phone: p.phone_number,
       whatsapp: p.whatsapp_number,
+      whatsappConsentStatus: p.whatsapp_consent_status || 'unknown',
       email: p.email || p.user_email,
       homeAddress: p.home_address,
       preferredContact: p.preferred_contact,
