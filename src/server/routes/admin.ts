@@ -16,6 +16,7 @@ import { serializeChildEmergencySummary, captureChildSnapshot } from './voluntee
 import { eventOperationsService } from '../services/eventOperationsService';
 import { adminDutyRouter } from './duty';
 import { buildPublicAppUrl } from '../utils/urlHelper';
+import { getWhatsAppProvider, normalizePhoneNumberToE164 } from '../services/whatsapp';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -4364,37 +4365,61 @@ router.post('/notifications/test', async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-// POST test whatsapp message
+// POST test whatsapp message (Restricted to Super Admin in Phase 1A)
 router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const { to, message } = req.body;
-    if (!to || !message) {
-      return res.status(400).json({ error: 'Recipient phone number ("to") and "message" are required.' });
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Super Administrators can execute WhatsApp test delivery.'
+      });
     }
 
-    const provider = process.env.WHATSAPP_PROVIDER || 'twilio';
-    console.log(`[WhatsApp Test Endpoint] Dispatching via provider: ${provider} to: ${to}`);
+    const { to, message } = req.body;
+    if (!to) {
+      return res.status(400).json({ success: false, error: 'Recipient phone number ("to") is required.' });
+    }
 
-    const result = await sendWhatsApp(to, message);
+    const normalizedTo = normalizePhoneNumberToE164(to);
+    if (!normalizedTo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid phone number format. Provide a valid Nigerian (+234...) or international E.164 number.'
+      });
+    }
+
+    const safeMessage = message && typeof message === 'string' && message.trim()
+      ? message.trim()
+      : 'Koinonia Children & Teens\nThis is a test message from the TGA communication system.';
+
+    const provider = getWhatsAppProvider();
+    console.log(`[WhatsApp Test Endpoint] Dispatching test message via provider: ${provider.name} to: ${normalizedTo}`);
+
+    const result = await provider.sendSessionMessage({
+      to: normalizedTo,
+      body: safeMessage
+    });
 
     if (result.success) {
       return res.json({
         success: true,
         message: 'WhatsApp message accepted by provider.',
-        provider,
-        messageSid: result.messageSid || 'simulated-sid'
+        provider: provider.name,
+        messageSid: result.messageId || 'simulated-sid',
+        status: result.status
       });
     } else {
       return res.status(400).json({
         success: false,
-        error: result.error || 'Failed to send WhatsApp message via Twilio.',
-        provider
+        error: result.error || 'Failed to send WhatsApp message via configured provider.',
+        provider: provider.name,
+        status: result.status
       });
     }
   } catch (err: any) {
     console.error('Error in test-whatsapp endpoint:', err);
-    res.status(500).json({ error: err.message || 'Failed to process WhatsApp test request.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to process WhatsApp test request.' });
   }
 });
 
@@ -5379,11 +5404,11 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    if (activeChannels.includes('whatsapp') && !whatsappEnabled) {
+    if (activeChannels.includes('whatsapp')) {
       return res.status(400).json({
         success: false,
-        code: 'WHATSAPP_UNCONFIGURED',
-        message: 'The WhatsApp delivery channel is currently disabled because the Twilio credentials are not configured.'
+        code: 'WHATSAPP_SETUP_PENDING',
+        message: 'WhatsApp delivery setup is being completed (Phase 1A). Mass broadcast delivery to parents is currently withheld. Super Administrators can verify delivery via the test panel.'
       });
     }
 
@@ -5630,16 +5655,8 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         }
 
         if (activeChannels.includes('whatsapp')) {
-          if (msg.phone) {
-            try {
-              const res = await sendWhatsApp(msg.phone, msg.body);
-              if (res.success) whatsappSentCount++;
-              else externalFailCount++;
-            } catch (err) {
-              console.error('[Admin sendWhatsApp failed]:', err);
-              externalFailCount++;
-            }
-          }
+          // SAFEGUARD: Bulk WhatsApp delivery is withheld in Phase 1A to prevent Render timeout and unconsented sends.
+          console.log('[Admin Broadcast] WhatsApp bulk channel selected; synchronous send skipped pending Phase 1B async queue certification.');
         }
       }
     }

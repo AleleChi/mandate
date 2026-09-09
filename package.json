@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
     "migrate:production:gallery": "tsx scripts/run-production-migration.ts",
-    "migrate:production:duty": "tsx scripts/run-event-duty-migration.ts"
+    "migrate:production:duty": "tsx scripts/run-event-duty-migration.ts",
+    "migrate:production:whatsapp": "tsx scripts/run-whatsapp-delivery-migration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

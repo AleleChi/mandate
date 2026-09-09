@@ -235,6 +235,10 @@ function initSqliteSchema(db: Database.Database) {
       country TEXT,
       state_region TEXT,
       city TEXT,
+      whatsapp_consent_status TEXT NOT NULL DEFAULT 'unknown' CHECK (whatsapp_consent_status IN ('unknown', 'opted_in', 'opted_out')),
+      whatsapp_consent_at TEXT,
+      whatsapp_opt_out_at TEXT,
+      whatsapp_consent_source TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -385,6 +389,11 @@ function initSqliteSchema(db: Database.Database) {
       channel TEXT NOT NULL,
       scheduled_for TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
+      idempotency_key TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      processing_started_at TEXT,
+      last_error TEXT,
       sent_at TEXT,
       failure_reason TEXT,
       created_at TEXT NOT NULL,
@@ -474,6 +483,33 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_notifications_parent ON notifications(parent_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_event ON notifications(event_id);
     CREATE INDEX IF NOT EXISTS idx_notification_reads_unread ON notification_reads(user_id, notification_id);
+
+    CREATE TABLE IF NOT EXISTS whatsapp_delivery_logs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT REFERENCES notification_jobs(id) ON DELETE SET NULL,
+      campaign_id TEXT,
+      parent_profile_id TEXT REFERENCES parent_profiles(id) ON DELETE SET NULL,
+      child_event_entry_id TEXT REFERENCES child_event_entries(id) ON DELETE SET NULL,
+      recipient_phone TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      provider_message_id TEXT,
+      template_name TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error_code TEXT,
+      error_message TEXT,
+      sent_at TEXT,
+      delivered_at TEXT,
+      read_at TEXT,
+      failed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_delivery_provider_msg ON whatsapp_delivery_logs(provider, provider_message_id) WHERE provider_message_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_wa_delivery_parent ON whatsapp_delivery_logs(parent_profile_id);
+    CREATE INDEX IF NOT EXISTS idx_wa_delivery_status ON whatsapp_delivery_logs(status);
+    CREATE INDEX IF NOT EXISTS idx_wa_delivery_job_id ON whatsapp_delivery_logs(job_id);
+    CREATE INDEX IF NOT EXISTS idx_wa_delivery_entry_id ON whatsapp_delivery_logs(child_event_entry_id);
 
     CREATE TABLE IF NOT EXISTS volunteer_profiles (
       id TEXT PRIMARY KEY,
@@ -1104,6 +1140,42 @@ function initSqliteSchema(db: Database.Database) {
       db.exec(`ALTER TABLE notification_preferences ADD COLUMN ${col.name} ${col.type};`);
     } catch (e) {}
   }
+
+  // WhatsApp consent columns for parent_profiles in SQLite
+  const sqliteParentWhatsAppConsentCols = [
+    "whatsapp_consent_status TEXT NOT NULL DEFAULT 'unknown'",
+    "whatsapp_consent_at TEXT",
+    "whatsapp_opt_out_at TEXT",
+    "whatsapp_consent_source TEXT"
+  ];
+  for (const col of sqliteParentWhatsAppConsentCols) {
+    try {
+      db.exec(`ALTER TABLE parent_profiles ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  // Idempotency and worker retry state for notification_jobs in SQLite
+  const sqliteJobsCols = [
+    "idempotency_key TEXT",
+    "attempt_count INTEGER NOT NULL DEFAULT 0",
+    "next_attempt_at TEXT",
+    "processing_started_at TEXT",
+    "last_error TEXT"
+  ];
+  for (const col of sqliteJobsCols) {
+    try {
+      db.exec(`ALTER TABLE notification_jobs ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  try {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_jobs_idempotency_key ON notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+  } catch (e) {}
+
+  try {
+    db.exec(`DROP INDEX IF EXISTS idx_wa_delivery_provider_msg_id;`);
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_delivery_provider_msg ON whatsapp_delivery_logs(provider, provider_message_id) WHERE provider_message_id IS NOT NULL;`);
+  } catch (e) {}
 
   try {
     db.exec(`ALTER TABLE event_safety_alerts ADD COLUMN idempotency_key TEXT;`);
@@ -1812,6 +1884,10 @@ async function initPostgresSchema(pool: any) {
         country VARCHAR(255),
         state_region VARCHAR(255),
         city VARCHAR(255),
+        whatsapp_consent_status VARCHAR(32) NOT NULL DEFAULT 'unknown' CHECK (whatsapp_consent_status IN ('unknown', 'opted_in', 'opted_out')),
+        whatsapp_consent_at TIMESTAMP,
+        whatsapp_opt_out_at TIMESTAMP,
+        whatsapp_consent_source VARCHAR(32),
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -1962,6 +2038,11 @@ async function initPostgresSchema(pool: any) {
         channel VARCHAR(64) NOT NULL,
         scheduled_for VARCHAR(64) NOT NULL,
         status VARCHAR(64) NOT NULL DEFAULT 'pending',
+        idempotency_key VARCHAR(255),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMP,
+        processing_started_at TIMESTAMP,
+        last_error TEXT,
         sent_at TIMESTAMP,
         failure_reason TEXT,
         created_at TIMESTAMP NOT NULL,
@@ -2051,6 +2132,33 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_notifications_parent ON notifications(parent_id);
       CREATE INDEX IF NOT EXISTS idx_notifications_event ON notifications(event_id);
       CREATE INDEX IF NOT EXISTS idx_notification_reads_unread ON notification_reads(user_id, notification_id);
+
+      CREATE TABLE IF NOT EXISTS whatsapp_delivery_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        job_id VARCHAR(64) REFERENCES notification_jobs(id) ON DELETE SET NULL,
+        campaign_id VARCHAR(64),
+        parent_profile_id VARCHAR(64) REFERENCES parent_profiles(id) ON DELETE SET NULL,
+        child_event_entry_id VARCHAR(64) REFERENCES child_event_entries(id) ON DELETE SET NULL,
+        recipient_phone VARCHAR(32) NOT NULL,
+        provider VARCHAR(32) NOT NULL,
+        provider_message_id VARCHAR(128),
+        template_name VARCHAR(128),
+        status VARCHAR(32) NOT NULL DEFAULT 'queued',
+        error_code VARCHAR(64),
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        delivered_at TIMESTAMP,
+        read_at TIMESTAMP,
+        failed_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_delivery_provider_msg ON whatsapp_delivery_logs(provider, provider_message_id) WHERE provider_message_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_wa_delivery_parent ON whatsapp_delivery_logs(parent_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_wa_delivery_status ON whatsapp_delivery_logs(status);
+      CREATE INDEX IF NOT EXISTS idx_wa_delivery_job_id ON whatsapp_delivery_logs(job_id);
+      CREATE INDEX IF NOT EXISTS idx_wa_delivery_entry_id ON whatsapp_delivery_logs(child_event_entry_id);
 
       CREATE TABLE IF NOT EXISTS volunteer_profiles (
         id VARCHAR(64) PRIMARY KEY,
@@ -2724,6 +2832,63 @@ async function initPostgresSchema(pool: any) {
         await pool.query(`ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
       } catch (e) {}
     }
+
+    // WhatsApp consent columns for parent_profiles in Postgres
+    const pgParentWhatsAppConsentCols = [
+      "whatsapp_consent_status VARCHAR(32) DEFAULT 'unknown'",
+      "whatsapp_consent_at TIMESTAMP",
+      "whatsapp_opt_out_at TIMESTAMP",
+      "whatsapp_consent_source VARCHAR(32)"
+    ];
+    for (const col of pgParentWhatsAppConsentCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE parent_profiles ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'chk_parent_profiles_whatsapp_consent_status'
+          ) THEN
+            ALTER TABLE parent_profiles
+              ADD CONSTRAINT chk_parent_profiles_whatsapp_consent_status
+              CHECK (whatsapp_consent_status IN ('unknown', 'opted_in', 'opted_out'));
+          END IF;
+        END $$;
+      `);
+    } catch (e) {}
+
+    // Idempotency and worker retry state for notification_jobs in Postgres
+    const pgJobsCols = [
+      "idempotency_key VARCHAR(255)",
+      "attempt_count INTEGER DEFAULT 0",
+      "next_attempt_at TIMESTAMP",
+      "processing_started_at TIMESTAMP",
+      "last_error TEXT"
+    ];
+    for (const col of pgJobsCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE notification_jobs ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    try {
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_jobs_idempotency_key ON notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`DROP INDEX IF EXISTS idx_wa_delivery_provider_msg_id;`);
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_delivery_provider_msg ON whatsapp_delivery_logs(provider, provider_message_id) WHERE provider_message_id IS NOT NULL;`);
+    } catch (e) {}
 
     try {
       await pool.query(`ALTER TABLE event_safety_alerts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255);`);
