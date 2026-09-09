@@ -107,17 +107,39 @@ export async function getPushNotificationStatus(): Promise<PushNotificationDetai
     const subscription = await registration.pushManager.getSubscription();
 
     if (permission === 'granted') {
-      if (subscription) {
-        return {
-          status: 'enabled',
-          permission: 'granted',
-          isSupported: true,
-          hasServiceWorker: true,
-          hasPushManager: true,
-          subscription,
-          serverSubscribed: true,
-          message: 'Push notifications are active on this device.'
-        };
+      if (subscription && subscription.endpoint) {
+        let serverSubscribed = false;
+        try {
+          const res = await api.parent.getPushStatus(subscription.endpoint);
+          serverSubscribed = Boolean(res?.subscribed);
+        } catch (err) {
+          console.warn('[PushNotificationStatus] Failed to verify subscription persistence on server:', err);
+          serverSubscribed = false;
+        }
+
+        if (serverSubscribed) {
+          return {
+            status: 'enabled',
+            permission: 'granted',
+            isSupported: true,
+            hasServiceWorker: true,
+            hasPushManager: true,
+            subscription,
+            serverSubscribed: true,
+            message: 'Push notifications are active on this device.'
+          };
+        } else {
+          return {
+            status: 'needs_attention',
+            permission: 'granted',
+            isSupported: true,
+            hasServiceWorker: true,
+            hasPushManager: true,
+            subscription,
+            serverSubscribed: false,
+            message: 'Browser subscription exists, but is not confirmed on the server.'
+          };
+        }
       } else {
         return {
           status: 'needs_attention',
@@ -158,7 +180,7 @@ export async function getPushNotificationStatus(): Promise<PushNotificationDetai
 }
 
 /**
- * Triggers user permission prompt and subscribes the user to push notifications via PushManager.
+ * Triggers user permission prompt, inspects/creates subscription, persists to backend, and verifies persistence.
  */
 export async function subscribeUserToPush(): Promise<{ success: boolean; error?: string }> {
   try {
@@ -177,15 +199,18 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
       return { success: false, error: 'Service worker is not active on this browser.' };
     }
 
+    // 1. Get active service worker
     const registration = await navigator.serviceWorker.ready;
-    if (!registration) {
+    if (!registration || !registration.pushManager) {
       return { success: false, error: 'Service worker registration is not ready.' };
     }
 
-    // Request permission from user gesture
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      return { success: false, error: 'Notification permission was not granted.' };
+    // Request permission from user gesture if not already granted
+    if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        return { success: false, error: 'Notification permission was not granted.' };
+      }
     }
 
     // Retrieve VAPID Key from the server dynamically
@@ -194,41 +219,62 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
     if (!publicKey) {
       return { success: false, error: 'Push notification server key not found.' };
     }
-
-    // Check existing subscription and handle potential key mismatches or stale browser push registrations
-    let subscription = await registration.pushManager.getSubscription();
     const appServerKey = urlBase64ToUint8Array(publicKey);
 
+    // 2. Inspect current PushSubscription
+    let subscription = await registration.pushManager.getSubscription();
+
+    // 3. If necessary create/recreate subscription
+    let needsNewSubscription = !subscription;
     if (subscription) {
-      try {
-        // Try to obtain or refresh subscription with current server VAPID key
-        await subscription.unsubscribe();
+      const existingKeyBuf = subscription.options?.applicationServerKey;
+      if (existingKeyBuf) {
+        const existingKeyArr = new Uint8Array(existingKeyBuf);
+        if (existingKeyArr.length !== appServerKey.length || !existingKeyArr.every((b, i) => b === appServerKey[i])) {
+          needsNewSubscription = true;
+        }
+      }
+      const subJson = subscription.toJSON();
+      if (!subJson.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) {
+        needsNewSubscription = true;
+      }
+    }
+
+    if (needsNewSubscription) {
+      if (subscription) {
+        try {
+          await subscription.unsubscribe();
+        } catch (e) {
+          console.warn('[PushSubscription] Could not unsubscribe old subscription:', e);
+        }
         subscription = null;
-      } catch (e) {
-        console.warn('[PushSubscription] Could not unsubscribe old subscription:', e);
+      }
+
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey
+        });
+      } catch (subErr: any) {
+        console.warn('[PushSubscription] PushManager.subscribe failed on first try, attempting force repair:', subErr);
+        const existing = await registration.pushManager.getSubscription();
+        if (existing) {
+          await existing.unsubscribe().catch(() => {});
+        }
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey
+        });
       }
     }
 
-    try {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: appServerKey
-      });
-    } catch (subErr: any) {
-      console.warn('[PushSubscription] PushManager.subscribe failed on first try, attempting force repair:', subErr);
-      const existing = await registration.pushManager.getSubscription();
-      if (existing) {
-        await existing.unsubscribe().catch(() => {});
-      }
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: appServerKey
-      });
+    if (!subscription) {
+      return { success: false, error: 'Failed to obtain browser push subscription.' };
     }
 
-    // Send subscription object to backend
+    // 4. Persist subscription to backend
     const subJson = subscription.toJSON();
-    if (!subJson.endpoint || !subJson.keys || !subJson.keys.p256dh || !subJson.keys.auth) {
+    if (!subJson.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) {
       return { success: false, error: 'Invalid subscription details generated by browser.' };
     }
 
@@ -240,6 +286,13 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
       }
     });
 
+    // 5. Verify backend persistence
+    const verifyRes = await api.parent.getPushStatus(subJson.endpoint);
+    if (!verifyRes?.subscribed) {
+      return { success: false, error: 'Push subscription could not be confirmed on the server.' };
+    }
+
+    // 6. Only then return success
     return { success: true };
   } catch (err: any) {
     console.error('Error during push subscription:', err);
@@ -248,25 +301,10 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
 }
 
 /**
- * Unsubscribes current device from PushManager and notifies backend.
+ * Reconnects/repairs push subscription with full service worker inspection and server verification.
  */
 export async function repairPushSubscription(): Promise<{ success: boolean; error?: string }> {
-  try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      return { success: false, error: 'Push notifications are not supported on this browser.' };
-    }
-    const registration = await navigator.serviceWorker.ready;
-    if (registration && registration.pushManager) {
-      const existing = await registration.pushManager.getSubscription();
-      if (existing) {
-        await existing.unsubscribe().catch(() => {});
-      }
-    }
-    return await subscribeUserToPush();
-  } catch (err: any) {
-    console.error('Error repairing push subscription:', err);
-    return { success: false, error: err.message || 'Failed to repair subscription.' };
-  }
+  return subscribeUserToPush();
 }
 
 /**

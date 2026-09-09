@@ -4751,7 +4751,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
-      { key: 'specific_parents', label: 'Specific parents', count: eventParents.length },
+      { key: 'specific_parents', label: 'Selected parents', count: eventParents.length },
       { key: 'selected_children', label: 'Selected children', count: Number(countSelectedRes?.count || 0) },
       { key: 'under_review', label: 'Under review', count: Number(countReviewRes?.count || 0) },
       { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
@@ -4770,8 +4770,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       { key: 'safety_alert', label: 'Safety alert' }
     ];
 
-    // 3. Fetch recent broadcast activities
-    const recentActivity = await query(`
+    // 3. Fetch recent broadcast activities with real delivery statuses and clean copy
+    const rawRecentActivity = await query(`
       SELECT
         id,
         recipient_group as "recipientGroup",
@@ -4786,6 +4786,72 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       ORDER BY created_at DESC
       LIMIT 20
     `);
+
+    const evRow = await queryOne('SELECT title FROM events WHERE id = ?', [eventId]);
+    const eventName = evRow?.title || 'The General Assembly';
+
+    const recentActivity = await Promise.all(rawRecentActivity.map(async (log: any) => {
+      let resolvedStatus = log.status || 'sent';
+
+      // For WhatsApp campaigns, verify live progression from delivery logs and queue jobs
+      if (String(log.channel || '').includes('whatsapp')) {
+        const delivLogs = await query(`
+          SELECT status FROM whatsapp_delivery_logs WHERE campaign_id = ?
+        `, [log.id]);
+
+        const pendingJobs = await query(`
+          SELECT status FROM notification_jobs WHERE idempotency_key LIKE ?
+        `, [`campaign:${log.id}:%`]);
+
+        let hasPending = false;
+        let hasFailed = false;
+        let hasSent = false;
+        let hasDelivered = false;
+        let hasRead = false;
+
+        for (const j of pendingJobs) {
+          if (j.status === 'pending' || j.status === 'processing') hasPending = true;
+          if (j.status === 'failed') hasFailed = true;
+        }
+
+        for (const dl of delivLogs) {
+          if (dl.status === 'queued') hasPending = true;
+          if (dl.status === 'sent') hasSent = true;
+          if (dl.status === 'delivered') hasDelivered = true;
+          if (dl.status === 'read') hasRead = true;
+          if (dl.status === 'failed') hasFailed = true;
+        }
+
+        if (hasRead) resolvedStatus = 'read';
+        else if (hasDelivered) resolvedStatus = 'delivered';
+        else if (hasSent) resolvedStatus = 'sent';
+        else if (hasFailed && !hasSent && !hasDelivered && !hasRead) resolvedStatus = 'failed';
+        else if (hasPending) resolvedStatus = 'queued';
+      }
+
+      // Remove raw placeholders from history
+      const cleanSubject = (log.subject || '')
+        .replace(/\{Event name\}/gi, eventName)
+        .replace(/\{Parent name\}/gi, '')
+        .trim();
+
+      const cleanBody = (log.body || '')
+        .replace(/\{Event name\}/gi, eventName)
+        .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
+        .replace(/\{Parent name\}/gi, 'Parent')
+        .replace(/\{Child name\}/gi, 'your child')
+        .replace(/\{Review link\}/gi, 'https://koinonia.org/parent/status')
+        .replace(/\{Pass link\}/gi, 'https://koinonia.org/pass')
+        .replace(/\{Pickup time\}/gi, '4:00 PM')
+        .replace(/\{Support contact\}/gi, '+234 803 123 4567');
+
+      return {
+        ...log,
+        status: resolvedStatus,
+        subject: cleanSubject,
+        body: cleanBody
+      };
+    }));
 
     // 4. Fetch latest saved draft
     const latestDraft = await queryOne(`
@@ -5885,10 +5951,16 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
             }
           });
 
-          if (pushRes.success && pushRes.sentCount > 0) {
+          if (pushRes.sentCount > 0) {
             pushSentCount += pushRes.sentCount;
-          } else if (pushRes.error) {
+          } else {
+            // Count as failure whether no subscription found or send error
             pushFailCount++;
+            if (pushRes.noSubscriptions) {
+              console.warn(`[Admin Push] No active push subscriptions for userId=${uid.slice(0, 8)}`);
+            } else if (pushRes.error) {
+              console.error(`[Admin Push Error for userId=${uid.slice(0, 8)}]:`, pushRes.error);
+            }
           }
         } catch (pushErr) {
           console.warn(`[Admin Push Error for user ${uid}]:`, pushErr);
@@ -5939,9 +6011,21 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     // 6. Log sending outcome in admin_message_logs
     const logId = crypto.randomUUID();
     const logChannelsStr = activeChannels.join(',');
+    const initialStatus = activeChannels.includes('whatsapp') ? 'queued' : 'sent';
+
+    const cleanLogSubject = (subject || '')
+      .replace(/\{Event name\}/gi, eventTitle)
+      .replace(/\{Parent name\}/gi, '')
+      .trim();
+
+    const cleanLogBody = body
+      .replace(/\{Event name\}/gi, eventTitle)
+      .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
+      .replace(/\{Parent name\}/gi, 'Parent');
+
     await execute(
       'INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [logId, recipientGroup, messageType, logChannelsStr, subject || '', body, messagesToSend.length, 'sent', notifNow]
+      [logId, recipientGroup, messageType, logChannelsStr, cleanLogSubject, cleanLogBody, messagesToSend.length, initialStatus, notifNow]
     );
 
     // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
@@ -6002,15 +6086,24 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       const skippedNote = whatsappSkippedCount > 0
         ? `, ${whatsappSkippedCount} selected parent${whatsappSkippedCount === 1 ? '' : 's'} not eligible for WhatsApp`
         : '';
-      humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
       if (activeChannels.includes('in_app') || activeChannels.includes('push') || activeChannels.includes('email')) {
-        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
+        // Mixed-channel: report each independently
+        const pushNote = activeChannels.includes('push')
+          ? (pushSentCount > 0
+            ? ` Push delivered to ${pushSentCount} device${pushSentCount === 1 ? '' : 's'}.`
+            : pushFailCount > 0 ? ' Push could not be delivered — no active device subscription found.' : '')
+          : '';
+        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.${pushNote}`;
+      } else {
+        humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
       }
     } else if (activeChannels.includes('push')) {
       if (pushSentCount > 0 && pushFailCount > 0) {
-        humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${pushFailCount} device${pushFailCount === 1 ? '' : 's'} could not be reached.`;
+        humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${pushFailCount} selected parent${pushFailCount === 1 ? '' : 's'} had no active device subscription.`;
       } else if (pushSentCount > 0) {
-        humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipients (${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received push).`;
+        humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'} (${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received push).`;
+      } else if (pushFailCount > 0) {
+        humanMessage = `Update sent. However, push could not be delivered — the selected parent has no active device subscription. Ask them to enable push notifications from their device.`;
       }
     }
 

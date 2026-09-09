@@ -369,8 +369,9 @@ export const api = {
         body: JSON.stringify({ endpoint })
       });
     },
-    async getPushStatus() {
-      return api.request<{ isSubscribed: boolean; subscriptionCount: number }>('/api/notifications/push/status');
+    async getPushStatus(endpoint?: string) {
+      const queryStr = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : '';
+      return api.request<{ subscribed?: boolean; isSubscribed?: boolean; subscriptionCount?: number }>(`/api/notifications/push/status${queryStr}`);
     },
     async sendTestPush() {
       return api.request<{ success: boolean; sentCount: number; message: string }>('/api/notifications/push/test', {

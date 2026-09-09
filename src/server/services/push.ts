@@ -10,7 +10,7 @@ export async function ensureVapidKeysLoaded(): Promise<boolean> {
 
   let publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
   let privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT || 'mailto:info@koinoniachildrenandteens.org';
+  const subject = process.env.VAPID_SUBJECT || 'mailto:info@themandate.dontechservicesconst.com';
 
   if (!publicKey || !privateKey) {
     try {
@@ -66,7 +66,7 @@ export function initVapidKeys(): boolean {
   // Fallback sync attempt using env vars if available
   let publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
   let privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT || 'mailto:info@koinoniachildrenandteens.org';
+  const subject = process.env.VAPID_SUBJECT || 'mailto:info@themandate.dontechservicesconst.com';
 
   if (publicKey && privateKey) {
     try {
@@ -87,17 +87,23 @@ export async function getVapidPublicKey(): Promise<string> {
   return currentPublicKey || process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || '';
 }
 
-export async function sendWebPush(userId: string, payload: { title: string; body: string; metadata?: any }): Promise<{ success: boolean; sentCount: number; error?: string }> {
+export async function sendWebPush(userId: string, payload: { title: string; body: string; metadata?: any }): Promise<{ success: boolean; sentCount: number; noSubscriptions?: boolean; error?: string }> {
   const isConfigured = await ensureVapidKeysLoaded();
   if (!isConfigured) {
+    console.error(`[WebPush] VAPID keys not initialized for userId=${userId.slice(0, 8)}`);
     return { success: false, sentCount: 0, error: 'WebPush is not configured and key initialization failed' };
   }
 
   // Retrieve subscriptions for this user that are not revoked
   const subscriptions = await query('SELECT * FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL', [userId]);
+
   if (subscriptions.length === 0) {
-    return { success: true, sentCount: 0 };
+    console.warn(`[WebPush] No active subscriptions found for userId=${userId.slice(0, 8)}`);
+    // noSubscriptions=true distinguishes this from a send failure
+    return { success: false, sentCount: 0, noSubscriptions: true };
   }
+
+  console.log(`[WebPush] Attempting push to ${subscriptions.length} subscription(s) for userId=${userId.slice(0, 8)}`);
 
   let sentCount = 0;
   let failures: string[] = [];
@@ -114,21 +120,36 @@ export async function sendWebPush(userId: string, payload: { title: string; body
 
       await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
       sentCount++;
+      console.log(`[WebPush] ✓ Delivered to subscription ${sub.id.slice(0, 12)} (ua: ${(sub.user_agent || '').slice(0, 40)})`);
     } catch (err: any) {
-      console.error(`[WebPush Error] Failed to send push to subscription ${sub.id}:`, err);
-      // If subscription is expired or invalid (404 or 410 Gone), mark revoked/delete automatically
-      if (err.statusCode === 404 || err.statusCode === 410) {
-        console.log(`[WebPush] Removing expired subscription ${sub.id}`);
+      const statusCode = err.statusCode;
+      const errBody = err.body || '';
+
+      if (statusCode === 404 || statusCode === 410) {
+        // FCM/VAPID: subscription is unsubscribed or expired — remove safely
+        console.warn(`[WebPush] Subscription ${sub.id.slice(0, 12)} expired (${statusCode}): ${errBody}. Removing.`);
         await execute('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
+      } else if (statusCode === 401 || statusCode === 403) {
+        // VAPID or auth mismatch — do NOT delete subscription
+        console.error(`[WebPush] Auth/VAPID error (${statusCode}) for subscription ${sub.id.slice(0, 12)}: ${errBody}`);
+        failures.push(`VAPID_AUTH_ERROR(${statusCode}): ${err.message}`);
+      } else if (statusCode === 429) {
+        console.error(`[WebPush] Rate limited (429) for subscription ${sub.id.slice(0, 12)}`);
+        failures.push(`RATE_LIMITED(429): ${err.message}`);
       } else {
-        failures.push(err.message || String(err));
+        console.error(`[WebPush] Failed (${statusCode || 'no-status'}) for subscription ${sub.id.slice(0, 12)}: ${err.message}`);
+        failures.push(`ERROR(${statusCode || 'network'}): ${err.message}`);
       }
     }
   }
 
-  return {
-    success: failures.length === 0 || sentCount > 0,
+  const hasFailures = failures.length > 0;
+  const result = {
+    success: sentCount > 0,
     sentCount,
-    error: failures.length > 0 && sentCount === 0 ? failures.join('; ') : undefined
+    error: hasFailures ? failures.join('; ') : undefined
   };
+
+  console.log(`[WebPush] Result for userId=${userId.slice(0, 8)}: sent=${sentCount}, failures=${failures.length}`);
+  return result;
 }

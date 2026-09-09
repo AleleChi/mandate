@@ -9,7 +9,7 @@ import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { soundUtility } from '../utils/sound';
-import { subscribeUserToPush } from '../utils/pushSubscription';
+import { subscribeUserToPush, getPushNotificationStatus, GranularPushStatus } from '../utils/pushSubscription';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { SafeImage } from '../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../components/common/DeviceSecuritySettings';
@@ -118,7 +118,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
-  const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
+  const [pushStatus, setPushStatus] = useState<GranularPushStatus>('needed');
   const [isVibrationOn, setIsVibrationOn] = useState<boolean>(true);
   const [whatsappStatus, setWhatsappStatus] = useState<'unknown' | 'opted_in' | 'opted_out'>(
     parentProfile.whatsappConsentStatus || 'unknown'
@@ -226,7 +226,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   useEffect(() => {
     setIsSoundOn(soundUtility.isEnabled());
-    setIsPushEnabled(typeof Notification !== 'undefined' ? Notification.permission === 'granted' : false);
+    // Verify actual push status: permission + SW active + PushSubscription exists
+    if (typeof window !== 'undefined' && 'PushManager' in window) {
+      getPushNotificationStatus().then((details) => {
+        setPushStatus(details.status);
+      }).catch(() => {
+        setPushStatus('needed');
+      });
+    } else {
+      setPushStatus('unsupported');
+    }
   }, []);
 
   const unreadCount = notifications.filter(n => !n.readAt && !n.isRead).length;
@@ -1386,26 +1395,61 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <div className="flex items-center justify-between pt-3.5">
             <div className="flex flex-col text-left">
               <span className="font-semibold text-zinc-800">Push notifications</span>
-              <span className="text-[10px] text-[#6B7280]">Receive updates on this device</span>
+              <span className="text-[10px] text-[#6B7280]">
+                {pushStatus === 'enabled' ? 'Receiving alerts on this device' : 'Receive updates on this device'}
+              </span>
+              {pushStatus === 'needs_attention' && (
+                <span className="text-[10px] text-amber-600 mt-0.5">Needs attention</span>
+              )}
             </div>
-            {typeof Notification === 'undefined' ? (
+            {pushStatus === 'unsupported' ? (
               <span className="text-[10px] font-semibold text-[#6B7280]">
                 Unavailable
               </span>
-            ) : isPushEnabled ? (
+            ) : pushStatus === 'blocked' ? (
+              <span className="text-[10px] font-semibold text-red-500">
+                Blocked
+              </span>
+            ) : pushStatus === 'enabled' ? (
               <span className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE] tracking-wider uppercase">
                 On
               </span>
+            ) : pushStatus === 'needs_attention' ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await subscribeUserToPush();
+                  if (res.success) {
+                    const details = await getPushNotificationStatus();
+                    setPushStatus(details.status);
+                    if (details.status === 'enabled') {
+                      showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                    } else {
+                      showInfo('Setup Alert', 'Push notification setup could not be confirmed on the server.');
+                    }
+                  } else {
+                    showInfo('Setup Alert', res.error || 'Could not connect push. Please try again.');
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100 transition-all cursor-pointer"
+              >
+                Try again
+              </button>
             ) : (
               <button
                 type="button"
                 onClick={async () => {
                   const res = await subscribeUserToPush();
                   if (res.success) {
-                    setIsPushEnabled(true);
-                    showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                    const details = await getPushNotificationStatus();
+                    setPushStatus(details.status);
+                    if (details.status === 'enabled') {
+                      showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                    } else {
+                      showInfo('Setup Alert', 'Push notification setup could not be confirmed on the server.');
+                    }
                   } else {
-                    showInfo('Setup Alert', 'Push notifications are not available yet.');
+                    showInfo('Setup Alert', res.error || 'Push notifications are not available yet.');
                   }
                 }}
                 className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all cursor-pointer"

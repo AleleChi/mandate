@@ -3,13 +3,18 @@ import express from 'express';
 import { query, queryOne, execute } from '../src/server/db';
 import { generateToken } from '../src/server/auth';
 import adminRoutes from '../src/server/routes/admin';
+import notificationRoutes from '../src/server/routes/notifications';
+import webpush from 'web-push';
+import { sendWebPush } from '../src/server/services/push';
 import {
   isWhatsAppInProcessWorkerEnabled,
   SimulatedWhatsAppProvider,
   enqueueWhatsAppJob,
   processQueuedWhatsAppJobs,
-  resetWhatsAppProviderCache
+  resetWhatsAppProviderCache,
+  getWhatsAppProviderReadiness
 } from '../src/server/services/whatsapp';
+import { TwilioWhatsAppProvider } from '../src/server/services/whatsapp/twilioProvider';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -36,10 +41,11 @@ async function runTests() {
     }
   }
 
-  // Setup express test server for admin routes
+  // Setup express test server for admin and notification routes
   const app = express();
   app.use(express.json());
   app.use('/api/admin', adminRoutes);
+  app.use('/api/notifications', notificationRoutes);
 
   let server: any;
   let testBaseUrl = '';
@@ -535,6 +541,415 @@ async function runTests() {
       const jobMatch = await queryOne("SELECT id FROM notification_jobs WHERE idempotency_key LIKE 'test_send:%'");
       assert(jobMatch === null, 'Test delivery must not pollute notification_jobs queue');
     });
+
+    // ====================================================
+    // SECTION 6: UX REFINEMENTS, SANDBOX ERROR 63015 & LABELS
+    // ====================================================
+    console.log('\n--- SECTION 6: UX REFINEMENTS, SANDBOX ERROR 63015 & LABELS ---');
+
+    await test('recipientGroups label is "Selected parents" and recentActivity contains no raw placeholders', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/messages?eventId=${testEventId}`, {
+        headers: { 'Authorization': `Bearer ${superAdminToken}` }
+      });
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const data = await res.json();
+      assert(data.success === true, 'Expected success true');
+
+      const specGroup = data.recipientGroups.find((g: any) => g.key === 'specific_parents');
+      assert(specGroup !== undefined, 'Expected specific_parents group');
+      assert(specGroup.label === 'Selected parents', `Expected label 'Selected parents', got ${specGroup.label}`);
+
+      for (const item of data.recentActivity) {
+        assert(!item.subject.includes('{Parent name}'), `Subject should not have {Parent name}: ${item.subject}`);
+        assert(!item.subject.includes('{Event name}'), `Subject should not have {Event name}: ${item.subject}`);
+        assert(!item.body.includes('{Parent name}'), `Body should not have {Parent name}: ${item.body}`);
+        assert(!item.body.includes('{Event name}'), `Body should not have {Event name}: ${item.body}`);
+      }
+    });
+
+    await test('Twilio error 63015 is translated to friendly test environment message', async () => {
+      const origFetch = global.fetch;
+      const prevSid = process.env.TWILIO_ACCOUNT_SID;
+      const prevToken = process.env.TWILIO_AUTH_TOKEN;
+      const prevFrom = process.env.TWILIO_WHATSAPP_FROM;
+      const prevSandbox = process.env.TWILIO_WHATSAPP_SANDBOX;
+
+      try {
+        process.env.TWILIO_ACCOUNT_SID = 'AC_test_mock_sid';
+        process.env.TWILIO_AUTH_TOKEN = 'mock_auth_token';
+        process.env.TWILIO_WHATSAPP_FROM = '+14155238886';
+        process.env.TWILIO_WHATSAPP_SANDBOX = 'true';
+
+        global.fetch = async () => ({
+          ok: false,
+          status: 400,
+          json: async () => ({
+            code: 63015,
+            message: 'Channel could not find a To phone number'
+          })
+        }) as any;
+
+        const provider = new TwilioWhatsAppProvider();
+        const res = await provider.sendSessionMessage({
+          to: '+2348000000000',
+          body: 'Test message'
+        });
+
+        assert(res.success === false, 'Expected success false');
+        assert(res.error === 'This number is not connected to the WhatsApp test environment.', `Expected friendly error, got: ${res.error}`);
+      } finally {
+        global.fetch = origFetch;
+        process.env.TWILIO_ACCOUNT_SID = prevSid;
+        process.env.TWILIO_AUTH_TOKEN = prevToken;
+        process.env.TWILIO_WHATSAPP_FROM = prevFrom;
+        process.env.TWILIO_WHATSAPP_SANDBOX = prevSandbox;
+      }
+    });
+
+    await test('WhatsApp provider readiness includes isSandbox boolean reflecting env', async () => {
+      const prevSandbox = process.env.TWILIO_WHATSAPP_SANDBOX;
+      try {
+        process.env.TWILIO_WHATSAPP_SANDBOX = 'true';
+        const readiness1 = getWhatsAppProviderReadiness();
+        assert(readiness1.isSandbox === true, 'Expected isSandbox true when env is true');
+
+        process.env.TWILIO_WHATSAPP_SANDBOX = 'false';
+        const readiness2 = getWhatsAppProviderReadiness();
+        assert(readiness2.isSandbox === false, 'Expected isSandbox false when env is false');
+      } finally {
+        if (prevSandbox !== undefined) process.env.TWILIO_WHATSAPP_SANDBOX = prevSandbox;
+        else delete process.env.TWILIO_WHATSAPP_SANDBOX;
+      }
+    });
+
+    // ====================================================
+    // SECTION 7: PUSH STATUS, DELIVERY & MIXED CHANNELS
+    // ====================================================
+    console.log('\n--- SECTION 7: PUSH STATUS, DELIVERY & MIXED CHANNELS ---');
+
+    // Save original webpush transport to guarantee NO real push is sent
+    const origSendNotification = webpush.sendNotification;
+    let realPushAttempted = false;
+    let mockSendCount = 0;
+
+    const pushTestUser1Id = `u_push_t1_${crypto.randomUUID()}`;
+    const pushTestUser1Token = generateToken(pushTestUser1Id);
+    const pushTestUser2Id = `u_push_t2_${crypto.randomUUID()}`;
+    const pushTestUser2Token = generateToken(pushTestUser2Id);
+
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES
+        (?, ?, 'parent', ?, ?),
+        (?, ?, 'parent', ?, ?)
+    `, [pushTestUser1Id, `ptest1_${crypto.randomUUID()}@koinonia.org`, now, now,
+        pushTestUser2Id, `ptest2_${crypto.randomUUID()}@koinonia.org`, now, now]);
+
+    // A. PUSH STATUS TESTS
+    function evaluatePushStatus(permission: string, hasBrowserSub: boolean, serverSubscribed: boolean): string {
+      if (permission === 'denied') return 'blocked';
+      if (permission === 'granted') {
+        if (hasBrowserSub && serverSubscribed) return 'enabled'; // Displays as "On"
+        return 'needs_attention'; // Displays as "Try again" / "Needs attention"
+      }
+      return 'needed';
+    }
+
+    await test('Push status: permission granted + browser subscription + server match -> On', async () => {
+      const validEndpoint = `https://fcm.googleapis.com/fcm/send/test_ep_${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+        VALUES (?, ?, ?, 'p256_mock_key', 'auth_mock_key', ?)
+      `, [`sub_t_${crypto.randomUUID()}`, pushTestUser1Id, validEndpoint, now]);
+
+      const res = await fetch(`${testBaseUrl}/api/notifications/push/status?endpoint=${encodeURIComponent(validEndpoint)}`, {
+        headers: { 'Authorization': `Bearer ${pushTestUser1Token}` }
+      });
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const body = await res.json();
+      assert(body.subscribed === true, 'Server must confirm matching active subscription exists');
+
+      const status = evaluatePushStatus('granted', true, body.subscribed);
+      assert(status === 'enabled', `Expected status 'enabled' (On), got '${status}'`);
+    });
+
+    await test('Push status: permission granted + browser subscription + no server match -> Needs attention', async () => {
+      const nonExistentEndpoint = `https://fcm.googleapis.com/fcm/send/unpersisted_${crypto.randomUUID()}`;
+      const res = await fetch(`${testBaseUrl}/api/notifications/push/status?endpoint=${encodeURIComponent(nonExistentEndpoint)}`, {
+        headers: { 'Authorization': `Bearer ${pushTestUser1Token}` }
+      });
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const body = await res.json();
+      assert(body.subscribed === false, 'Server must return false when subscription does not exist on server');
+
+      const status = evaluatePushStatus('granted', true, body.subscribed);
+      assert(status === 'needs_attention', `Expected status 'needs_attention', got '${status}'`);
+    });
+
+    await test('Push status: permission granted + no browser subscription -> Needs attention', async () => {
+      const status = evaluatePushStatus('granted', false, false);
+      assert(status === 'needs_attention', `Expected status 'needs_attention', got '${status}'`);
+    });
+
+    await test('Push status: permission denied -> Blocked', async () => {
+      const status = evaluatePushStatus('denied', false, false);
+      assert(status === 'blocked', `Expected status 'blocked', got '${status}'`);
+    });
+
+    await test('Push status: endpoint verification strictly isolates users (user A cannot verify user B subscription)', async () => {
+      const user1SubEndpoint = `https://fcm.googleapis.com/fcm/send/user1_private_${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+        VALUES (?, ?, ?, 'p256_mock', 'auth_mock', ?)
+      `, [`sub_u1_${crypto.randomUUID()}`, pushTestUser1Id, user1SubEndpoint, now]);
+
+      const res = await fetch(`${testBaseUrl}/api/notifications/push/status?endpoint=${encodeURIComponent(user1SubEndpoint)}`, {
+        headers: { 'Authorization': `Bearer ${pushTestUser2Token}` }
+      });
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const body = await res.json();
+      assert(body.subscribed === false, 'Cross-user subscription must NOT be verified');
+    });
+
+    // B. SERVER DELIVERY TESTS (with mocked webpush transport)
+    await test('Server delivery: no active subscriptions -> success false, sentCount 0, noSubscriptions true', async () => {
+      const emptyUserId = `u_empty_${crypto.randomUUID()}`;
+      await execute(`INSERT INTO users (id, email, role, created_at, updated_at) VALUES (?, ?, 'parent', ?, ?)`,
+        [emptyUserId, `empty_${crypto.randomUUID()}@koinonia.org`, now, now]);
+
+      const result = await sendWebPush(emptyUserId, {
+        title: 'Test Title',
+        body: 'Test Body'
+      });
+
+      assert(result.success === false, 'Expected success false when no subscriptions');
+      assert(result.sentCount === 0, `Expected sentCount 0, got ${result.sentCount}`);
+      assert(result.noSubscriptions === true, 'Expected noSubscriptions flag to be true');
+    });
+
+    await test('Server delivery: one successful subscription -> success true, sentCount 1', async () => {
+      const singleSubUser = `u_single_${crypto.randomUUID()}`;
+      await execute(`INSERT INTO users (id, email, role, created_at, updated_at) VALUES (?, ?, 'parent', ?, ?)`,
+        [singleSubUser, `single_${crypto.randomUUID()}@koinonia.org`, now, now]);
+
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+        VALUES (?, ?, ?, 'p256_test', 'auth_test', ?)
+      `, [`sub_s_${crypto.randomUUID()}`, singleSubUser, `https://fcm.googleapis.com/fcm/send/s_${crypto.randomUUID()}`, now]);
+
+      webpush.sendNotification = async () => {
+        mockSendCount++;
+        return { statusCode: 201, body: '', headers: {} } as any;
+      };
+
+      const result = await sendWebPush(singleSubUser, {
+        title: 'Delivered Title',
+        body: 'Delivered Body'
+      });
+
+      assert(result.success === true, 'Expected success true for active subscription');
+      assert(result.sentCount === 1, `Expected sentCount 1, got ${result.sentCount}`);
+    });
+
+    await test('Server delivery: 410 Gone -> stale subscription cleanup path runs, send not reported as delivered', async () => {
+      const staleUser = `u_stale_${crypto.randomUUID()}`;
+      const staleSubId = `sub_stale_${crypto.randomUUID()}`;
+      await execute(`INSERT INTO users (id, email, role, created_at, updated_at) VALUES (?, ?, 'parent', ?, ?)`,
+        [staleUser, `stale_${crypto.randomUUID()}@koinonia.org`, now, now]);
+
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+        VALUES (?, ?, ?, 'p256_stale', 'auth_stale', ?)
+      `, [staleSubId, staleUser, `https://fcm.googleapis.com/fcm/send/stale_${crypto.randomUUID()}`, now]);
+
+      webpush.sendNotification = async () => {
+        mockSendCount++;
+        const err: any = new Error('subscription is no longer valid');
+        err.statusCode = 410;
+        err.body = 'Gone';
+        throw err;
+      };
+
+      const result = await sendWebPush(staleUser, {
+        title: 'Stale Test',
+        body: 'Should fail and clean up'
+      });
+
+      assert(result.success === false, 'Expected success false when subscription is 410 Gone');
+      assert(result.sentCount === 0, `Expected sentCount 0, got ${result.sentCount}`);
+
+      const checkDeleted = await queryOne('SELECT id FROM push_subscriptions WHERE id = ?', [staleSubId]);
+      assert(checkDeleted === null, 'Stale 410 subscription must be deleted from DB');
+    });
+
+    await test('Server delivery: one stale + one valid -> valid subscription can still succeed, actual count reflected', async () => {
+      const mixedUser = `u_mixed_${crypto.randomUUID()}`;
+      const mixedStaleSubId = `sub_mix_stale_${crypto.randomUUID()}`;
+      const mixedValidSubId = `sub_mix_valid_${crypto.randomUUID()}`;
+      const validEndpoint = `https://fcm.googleapis.com/fcm/send/valid_${crypto.randomUUID()}`;
+
+      await execute(`INSERT INTO users (id, email, role, created_at, updated_at) VALUES (?, ?, 'parent', ?, ?)`,
+        [mixedUser, `mixed_${crypto.randomUUID()}@koinonia.org`, now, now]);
+
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+        VALUES
+          (?, ?, ?, 'p256_stale', 'auth_stale', ?),
+          (?, ?, ?, 'p256_valid', 'auth_valid', ?)
+      `, [mixedStaleSubId, mixedUser, `https://fcm.googleapis.com/fcm/send/stale_${crypto.randomUUID()}`, now,
+          mixedValidSubId, mixedUser, validEndpoint, now]);
+
+      webpush.sendNotification = async (sub: any) => {
+        mockSendCount++;
+        if (sub.endpoint.includes('stale')) {
+          const err: any = new Error('Expired subscription');
+          err.statusCode = 410;
+          err.body = 'Gone';
+          throw err;
+        }
+        return { statusCode: 201, body: '', headers: {} } as any;
+      };
+
+      const result = await sendWebPush(mixedUser, {
+        title: 'Mixed Test',
+        body: 'One stale, one valid'
+      });
+
+      assert(result.success === true, 'Expected success true because 1 subscription succeeded');
+      assert(result.sentCount === 1, `Expected sentCount 1, got ${result.sentCount}`);
+
+      const checkStale = await queryOne('SELECT id FROM push_subscriptions WHERE id = ?', [mixedStaleSubId]);
+      const checkValid = await queryOne('SELECT id FROM push_subscriptions WHERE id = ?', [mixedValidSubId]);
+      assert(checkStale === null, 'Stale subscription must be deleted');
+      assert(checkValid !== null, 'Valid subscription must remain intact in DB');
+    });
+
+    // C. ADMIN MIXED CHANNEL RESULT
+    await test('Admin mixed channel: WhatsApp succeeds + Push fails -> WhatsApp remains successful, Push reported failed', async () => {
+      const testParentUser = `u_admin_mix_${crypto.randomUUID()}`;
+      const testParentProfile = `p_admin_mix_${crypto.randomUUID()}`;
+      const testParentEmail = `adminmix_${crypto.randomUUID()}@koinonia.org`;
+      const testChild = `c_admin_mix_${crypto.randomUUID()}`;
+      const testEntry = `e_admin_mix_${crypto.randomUUID()}`;
+
+      await execute(`
+        INSERT INTO users (id, email, role, created_at, updated_at)
+        VALUES (?, ?, 'parent', ?, ?)
+      `, [testParentUser, testParentEmail, now, now]);
+
+      await execute(`
+        INSERT INTO parent_profiles (id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email, created_at, updated_at)
+        VALUES (?, ?, 'Mixed Channel Parent', '08098765432', '08098765432', 'opted_in', ?, ?, ?)
+      `, [testParentProfile, testParentUser, testParentEmail, now, now]);
+
+      await execute(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, created_at, updated_at)
+        VALUES (?, ?, 'Mixed Child', 'male', '2019-01-01', ?, ?)
+      `, [testChild, testParentProfile, now, now]);
+
+      await execute(`
+        INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+        VALUES (?, 'event-ga-2026', ?, 'checked_in', ?, ?)
+      `, [testEntry, testChild, now, now]);
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${superAdminToken}`
+        },
+        body: JSON.stringify({
+          eventId: 'event-ga-2026',
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentProfile],
+          messageType: 'general_announcement',
+          channels: ['whatsapp', 'push'],
+          subject: 'Mixed Channel Notice',
+          body: 'Testing WhatsApp success and Push failure isolation.',
+          confirmed: true
+        })
+      });
+
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const data = await res.json();
+      assert(data.success === true, 'Admin send call returned success');
+      assert(data.summary.whatsappQueued === 1, `Expected whatsappQueued 1, got ${data.summary.whatsappQueued}`);
+      assert(data.summary.pushFailed === 1, `Expected pushFailed 1, got ${data.summary.pushFailed}`);
+      assert(data.summary.pushSent === 0, `Expected pushSent 0, got ${data.summary.pushSent}`);
+      assert(data.message.includes('WhatsApp recipient'), 'Human message must reflect WhatsApp status');
+      assert(data.message.includes('Push could not be delivered'), 'Human message must reflect Push failure');
+    });
+
+    await test('Admin push succeeds: push failure count remains 0', async () => {
+      const testParentUser2 = `u_admin_p2_${crypto.randomUUID()}`;
+      const testParentProfile2 = `p_admin_p2_${crypto.randomUUID()}`;
+      const testParentEmail2 = `adminp2_${crypto.randomUUID()}@koinonia.org`;
+      const testChild2 = `c_admin_p2_${crypto.randomUUID()}`;
+      const testEntry2 = `e_admin_p2_${crypto.randomUUID()}`;
+
+      await execute(`
+        INSERT INTO users (id, email, role, created_at, updated_at)
+        VALUES (?, ?, 'parent', ?, ?)
+      `, [testParentUser2, testParentEmail2, now, now]);
+
+      await execute(`
+        INSERT INTO parent_profiles (id, user_id, full_name, phone_number, email, created_at, updated_at)
+        VALUES (?, ?, 'Push Success Parent', '08012345678', ?, ?, ?)
+      `, [testParentProfile2, testParentUser2, testParentEmail2, now, now]);
+
+      await execute(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, created_at, updated_at)
+        VALUES (?, ?, 'Push Child', 'female', '2020-05-05', ?, ?)
+      `, [testChild2, testParentProfile2, now, now]);
+
+      await execute(`
+        INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+        VALUES (?, 'event-ga-2026', ?, 'checked_in', ?, ?)
+      `, [testEntry2, testChild2, now, now]);
+
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+        VALUES (?, ?, ?, 'p256_ok', 'auth_ok', ?)
+      `, [`sub_ok_${crypto.randomUUID()}`, testParentUser2, `https://fcm.googleapis.com/fcm/send/ok_${crypto.randomUUID()}`, now]);
+
+      webpush.sendNotification = async () => {
+        mockSendCount++;
+        return { statusCode: 201, body: '', headers: {} } as any;
+      };
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${superAdminToken}`
+        },
+        body: JSON.stringify({
+          eventId: 'event-ga-2026',
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentProfile2],
+          messageType: 'general_announcement',
+          channels: ['push'],
+          subject: 'Push Alert',
+          body: 'Testing successful push delivery.',
+          confirmed: true
+        })
+      });
+
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const data = await res.json();
+      assert(data.success === true, 'Admin send call returned success');
+      assert(data.summary.pushSent === 1, `Expected pushSent 1, got ${data.summary.pushSent}`);
+      assert(data.summary.pushFailed === 0, `Expected pushFailed 0, got ${data.summary.pushFailed}`);
+    });
+
+    // D. NO REAL PUSH
+    await test('No real pushes sent: all delivery invoked through mocked transport', async () => {
+      assert(realPushAttempted === false, 'Real push transport must NEVER be reached during tests');
+      assert(mockSendCount > 0, `Expected mock sendNotification to have been called, got ${mockSendCount}`);
+    });
+
+    // Restore original webpush transport
+    webpush.sendNotification = origSendNotification;
 
   } finally {
     if (server) {

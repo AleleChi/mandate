@@ -926,19 +926,65 @@ router.post('/push/unsubscribe', async (req: AuthenticatedRequest, res: Response
 
 // GET /api/notifications/push/status
 router.get('/push/status', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const subs = await query('SELECT id FROM push_subscriptions WHERE user_id = ?', [userId]);
+
+    const endpoint = typeof req.query.endpoint === 'string' ? req.query.endpoint : undefined;
+    if (endpoint) {
+      const match = await queryOne(
+        'SELECT id FROM push_subscriptions WHERE user_id = ? AND endpoint = ? AND revoked_at IS NULL',
+        [userId, endpoint]
+      );
+      return res.json({
+        subscribed: !!match
+      });
+    }
+
+    const subs = await query('SELECT id FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL', [userId]);
     return res.json({
+      subscribed: subs.length > 0,
       isSubscribed: subs.length > 0,
       subscriptionCount: subs.length
     });
   } catch (err: any) {
     console.error('Error fetching push status:', err);
     return res.status(500).json({ error: 'Failed to fetch push status' });
+  }
+});
+
+// POST /api/notifications/push/status
+router.post('/push/status', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : undefined;
+    if (endpoint) {
+      const match = await queryOne(
+        'SELECT id FROM push_subscriptions WHERE user_id = ? AND endpoint = ? AND revoked_at IS NULL',
+        [userId, endpoint]
+      );
+      return res.json({
+        subscribed: !!match
+      });
+    }
+
+    const subs = await query('SELECT id FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL', [userId]);
+    return res.json({
+      subscribed: subs.length > 0,
+      isSubscribed: subs.length > 0,
+      subscriptionCount: subs.length
+    });
+  } catch (err: any) {
+    console.error('Error verifying push status:', err);
+    return res.status(500).json({ error: 'Failed to verify push status' });
   }
 });
 
