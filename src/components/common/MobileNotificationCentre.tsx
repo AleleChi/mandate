@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   Bell, 
   X, 
@@ -39,9 +39,16 @@ interface MobileNotificationCentreProps {
 /**
  * Humanizes technical system copy into natural, role-appropriate language.
  */
-function humanizeNotificationCopy(text: string): string {
+function humanizeNotificationCopy(text: string, role?: 'volunteer' | 'parent'): string {
   if (!text) return '';
-  return text
+  let result = text;
+  if (role === 'parent') {
+    result = result
+      .replace(/New child application/gi, 'Application submitted')
+      .replace(/New application submitted for\s+([^.]+)\.?/gi, "$1's application has been received.")
+      .replace(/Application submitted for\s+([^.]+)\.?/gi, "$1's application has been received.");
+  }
+  return result
     .replace(/escalation state/gi, 'safety status')
     .replace(/event duty assignment/gi, 'duty location')
     .replace(/notification delivery/gi, 'notice')
@@ -124,6 +131,11 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
   const [hasMore, setHasMore] = useState(false);
   const [selectedNotif, setSelectedNotif] = useState<NotificationItem | null>(null);
 
+  const onUnreadCountChangeRef = useRef(onUnreadCountChange);
+  useEffect(() => {
+    onUnreadCountChangeRef.current = onUnreadCountChange;
+  });
+
   const fetchNotifications = useCallback(async (pageNum = 1, isBackground = false) => {
     if (!isBackground && pageNum === 1) setLoading(true);
     if (pageNum > 1) setLoadingMore(true);
@@ -132,7 +144,16 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
       const res = await api.parent.getNotificationsPaginated(false, role, pageNum, 25);
       if (res && Array.isArray(res.notifications)) {
         if (pageNum === 1) {
-          setNotifications(res.notifications);
+          setNotifications(prev => {
+            if (isBackground && prev.length > 0) {
+              const localReadMap = new Map(prev.map(n => [n.id, n.isRead]));
+              return res.notifications.map(n => ({
+                ...n,
+                isRead: localReadMap.has(n.id) ? (localReadMap.get(n.id) || n.isRead) : n.isRead
+              }));
+            }
+            return res.notifications;
+          });
         } else {
           setNotifications(prev => {
             const existingIds = new Set(prev.map(n => n.id));
@@ -144,7 +165,9 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
         setPage(pageNum);
 
         const unread = res.notifications.filter(n => !n.isRead).length;
-        if (onUnreadCountChange) onUnreadCountChange(unread);
+        if (onUnreadCountChangeRef.current) {
+          onUnreadCountChangeRef.current(unread);
+        }
       }
     } catch (err) {
       console.warn('[MobileNotificationCentre] fetch issue:', err);
@@ -152,12 +175,16 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [role, onUnreadCountChange]);
+  }, [role]);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedNotif(null);
-      fetchNotifications(1);
+      fetchNotifications(1, false);
+      const interval = setInterval(() => {
+        fetchNotifications(1, true);
+      }, 25000);
+      return () => clearInterval(interval);
     }
   }, [isOpen, fetchNotifications]);
 
@@ -281,7 +308,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-semibold text-zinc-900 leading-snug">
-                    {humanizeNotificationCopy(selectedNotif.title)}
+                    {humanizeNotificationCopy(selectedNotif.title, role)}
                   </h3>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     {formatNotificationTime(selectedNotif.createdAt)}
@@ -291,7 +318,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
 
               <div className="p-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl">
                 <p className="text-sm text-zinc-700 leading-relaxed whitespace-pre-wrap">
-                  {humanizeNotificationCopy(selectedNotif.message)}
+                  {humanizeNotificationCopy(selectedNotif.message, role)}
                 </p>
               </div>
 
@@ -324,10 +351,10 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                 </div>
               )}
             </div>
-          ) : loading ? (
+          ) : (loading && notifications.length === 0) ? (
             <div className="flex flex-col items-center justify-center py-20 space-y-3 text-zinc-400">
               <Loader2 className="w-5 h-5 animate-spin text-[#9A7326]" />
-              <p className="text-xs">Loading updates...</p>
+              <p className="text-xs">Loading notifications...</p>
             </div>
           ) : notifications.length === 0 ? (
             /* Calm empty state */
@@ -365,7 +392,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
                               <h4 className={`text-xs leading-snug truncate ${isUnread ? 'font-semibold text-zinc-900' : 'font-normal text-zinc-800'}`}>
-                                {humanizeNotificationCopy(notif.title)}
+                                {humanizeNotificationCopy(notif.title, role)}
                               </h4>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {isUnread && (
@@ -379,7 +406,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                               </div>
                             </div>
                             <p className="text-xs text-zinc-600 mt-1 leading-relaxed line-clamp-2">
-                              {humanizeNotificationCopy(notif.message)}
+                              {humanizeNotificationCopy(notif.message, role)}
                             </p>
                           </div>
                         </div>

@@ -36,9 +36,6 @@ export const AddChildStep2View: React.FC<AddChildStep2ViewProps> = ({
   const [schoolClass, setSchoolClass] = useState<string>(
     draft?.schoolAndAgeGroup?.schoolClass || draft?.schoolClass || ''
   );
-  const [schoolName, setSchoolName] = useState<string>(
-    draft?.schoolAndAgeGroup?.schoolName || draft?.schoolName || ''
-  );
   const [attendedBefore, setAttendedBefore] = useState<'Yes' | 'No'>(
     draft?.schoolAndAgeGroup?.previousChildrenProgramme || draft?.attendedBefore || 'No'
   );
@@ -116,16 +113,17 @@ export const AddChildStep2View: React.FC<AddChildStep2ViewProps> = ({
     }
 
     if (draft) {
+      const existingSchoolName = draft?.schoolAndAgeGroup?.schoolName || draft?.schoolName || '';
       const updatedDraft: AddChildDraft = {
         ...draft,
         schoolClass,
-        schoolName: schoolName.trim(),
+        ...(existingSchoolName ? { schoolName: existingSchoolName } : {}),
         attendedBefore,
         careNote: careNote.trim(),
         needsReview: ageYears < 2 ? true : draft.needsReview,
         schoolAndAgeGroup: {
           schoolClass,
-          schoolName: schoolName.trim(),
+          ...(existingSchoolName ? { schoolName: existingSchoolName } : {}),
           previousChildrenProgramme: attendedBefore,
           noteToTeam: careNote.trim()
         }
@@ -137,16 +135,17 @@ export const AddChildStep2View: React.FC<AddChildStep2ViewProps> = ({
 
   const handleSaveAndFinishLater = () => {
     if (draft) {
+      const existingSchoolName = draft?.schoolAndAgeGroup?.schoolName || draft?.schoolName || '';
       const updatedDraft: AddChildDraft = {
         ...draft,
         schoolClass,
-        schoolName: schoolName.trim(),
+        ...(existingSchoolName ? { schoolName: existingSchoolName } : {}),
         attendedBefore,
         careNote: careNote.trim(),
         needsReview: ageYears < 2 ? true : draft.needsReview,
         schoolAndAgeGroup: {
           schoolClass,
-          schoolName: schoolName.trim(),
+          ...(existingSchoolName ? { schoolName: existingSchoolName } : {}),
           previousChildrenProgramme: attendedBefore,
           noteToTeam: careNote.trim()
         }
@@ -254,24 +253,7 @@ export const AddChildStep2View: React.FC<AddChildStep2ViewProps> = ({
             }}
           />
 
-          {/* 2. SCHOOL NAME */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold tracking-wider uppercase text-[#3F3F46]">
-                SCHOOL NAME
-              </label>
-              <span className="text-xs text-[#6B7280]">Optional</span>
-            </div>
-            <input
-              type="text"
-              placeholder="Enter school name"
-              value={schoolName}
-              onChange={(e) => setSchoolName(e.target.value)}
-              className="w-full py-2.5 px-3.5 bg-white border border-[#D9D6CE] text-sm text-[#18181B] placeholder:text-[#9CA3AF] rounded-xl focus:outline-none focus:border-[#C59B27] shadow-2xs transition-colors"
-            />
-          </div>
-
-          {/* 3. Previous programme */}
+          {/* 2. Previous programme */}
           <div>
             <label className="text-xs font-semibold text-[#18181B] block mb-2">
               Has your child attended a previous children or teens programme?

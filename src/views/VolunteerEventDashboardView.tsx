@@ -2481,7 +2481,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 onClose={() => setShowNotifPanel(false)}
                 role="volunteer"
                 onNavigate={onNavigate}
-                onUnreadCountChange={(count) => setUnreadNotifCount(count)}
+                onUnreadCountChange={setUnreadNotifCount}
               />
             </div>
             

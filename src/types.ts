@@ -31,7 +31,7 @@ export interface AddChildDraft {
   };
   schoolAndAgeGroup?: {
     schoolClass: string;
-    schoolName: string;
+    schoolName?: string;
     previousChildrenProgramme: 'Yes' | 'No';
     noteToTeam?: string;
   };

@@ -155,6 +155,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const unreadCount = notifications.filter(n => !n.readAt && !n.isRead).length;
   const prevUnreadCountRef = React.useRef(unreadCount);
 
+  const handleUnreadCountChange = React.useCallback((count: number) => {
+    prevUnreadCountRef.current = count;
+    if (count === 0) {
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true, readAt: n.readAt || new Date().toISOString() })));
+    }
+  }, []);
+
   const fetchNotifications = async () => {
     try {
       setNotificationsError(null);
@@ -1801,10 +1808,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* Mobile Notification Centre */}
       <MobileNotificationCentre
         isOpen={showNotificationsDrawer}
-        onClose={() => setShowNotificationsDrawer(false)}
+        onClose={() => {
+          setShowNotificationsDrawer(false);
+          fetchNotifications();
+        }}
         role="parent"
         onNavigate={onNavigate}
-        onUnreadCountChange={() => fetchNotifications()}
+        onUnreadCountChange={handleUnreadCountChange}
       />
 
       {/* PWA In-App Install Banner */}

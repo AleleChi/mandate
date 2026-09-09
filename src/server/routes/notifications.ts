@@ -144,40 +144,50 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       const params: any[] = [];
 
       if (parentProfileId) {
-        queryStr += ` OR parent_id = ?`;
+        queryStr += ` OR (parent_id = ? AND (audience_role IN ('parent', 'all') OR audience_role IS NULL OR title = 'New child application'))`;
         params.push(parentProfileId);
       }
 
       if (childIds.length > 0) {
         const placeholders = childIds.map(() => '?').join(',');
-        queryStr += ` OR child_id IN (${placeholders})`;
+        queryStr += ` OR (child_id IN (${placeholders}) AND (audience_role IN ('parent', 'all') OR audience_role IS NULL OR title = 'New child application'))`;
         params.push(...childIds);
       }
 
       queryStr += ` ) ORDER BY created_at DESC`;
       const rawNotifs = await query(queryStr, params);
 
-      const mappedGeneral = rawNotifs.map((n: any) => ({
-        id: `notifications:${n.id}`,
-        rawId: n.id,
-        source: 'notifications',
-        title: n.title,
-        message: n.message,
-        type: n.type || 'info',
-        audience_role: n.audience_role,
-        audience_scope: n.audience_scope,
-        event_id: n.event_id,
-        child_id: n.child_id,
-        parent_id: n.parent_id,
-        created_by_user_id: n.created_by_user_id,
-        visible_to_event_team: n.visible_to_event_team,
-        created_at: n.created_at,
-        expires_at: n.expires_at,
-        priority: n.priority || 'normal',
-        channel: n.channel || 'in-app',
-        metadata_json: n.metadata_json,
-        read_at: null
-      }));
+      const mappedGeneral = rawNotifs.map((n: any) => {
+        let title = n.title;
+        let message = n.message;
+        if (title === 'New child application' || title?.toLowerCase() === 'new child application') {
+          title = 'Application submitted';
+        }
+        if (message && /^New application submitted for\s+/i.test(message)) {
+          message = message.replace(/^New application submitted for\s+([^.]+)\.?/i, "$1's application has been received.");
+        }
+        return {
+          id: `notifications:${n.id}`,
+          rawId: n.id,
+          source: 'notifications',
+          title,
+          message,
+          type: n.type || 'info',
+          audience_role: 'parent',
+          audience_scope: n.audience_scope,
+          event_id: n.event_id,
+          child_id: n.child_id,
+          parent_id: n.parent_id,
+          created_by_user_id: n.created_by_user_id,
+          visible_to_event_team: n.visible_to_event_team,
+          created_at: n.created_at,
+          expires_at: n.expires_at,
+          priority: n.priority || 'normal',
+          channel: n.channel || 'in-app',
+          metadata_json: n.metadata_json,
+          read_at: null
+        };
+      });
 
       let mappedParentNotifs: any[] = [];
       if (parentProfileId) {
@@ -212,11 +222,11 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
-      // Deduplicate: If same title and message, keep parent_notifications version if available
+      // Deduplicate: If same title and message for same child, keep parent_notifications version if available
       const seenKeys = new Set<string>();
       const deduplicated: any[] = [];
       for (const item of merged) {
-        const key = `${item.title.trim().toLowerCase()}|${item.message.trim().toLowerCase()}|${item.child_id || ''}`;
+        const key = `${item.title.trim().toLowerCase()}|${item.message.trim().toLowerCase()}|${item.child_id || item.rawId || ''}`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           deduplicated.push(item);
@@ -225,7 +235,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
             const idx = deduplicated.findIndex(d => 
               d.title.trim().toLowerCase() === item.title.trim().toLowerCase() &&
               d.message.trim().toLowerCase() === item.message.trim().toLowerCase() &&
-              (d.child_id || '') === (item.child_id || '')
+              (d.child_id || d.rawId || '') === (item.child_id || item.rawId || '')
             );
             if (idx !== -1 && deduplicated[idx].source === 'notifications') {
               deduplicated[idx] = item;

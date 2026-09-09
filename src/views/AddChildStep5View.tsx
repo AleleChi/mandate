@@ -752,7 +752,6 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   const childFirstName = draft.fullName ? draft.fullName.split(' ')[0] : 'your child';
 
   // Check optional fields emptiness for badges
-  const isSchoolNameEmpty = !draft.schoolName || !draft.schoolName.trim();
   const isWhatsappEmpty = !parentProfile?.whatsapp || parentProfile.whatsapp === parentProfile.phone;
 
   return (
@@ -952,7 +951,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
               </button>
             </div>
 
-            {renderCardStatus('School & Age Group', true, isSchoolNameEmpty)}
+            {renderCardStatus('School & Age Group')}
 
             <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
@@ -961,14 +960,6 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 </span>
                 <span className="font-normal text-[#18181B] block mt-1">
                   {draft.schoolClass || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
-                  School Name
-                </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.schoolName || <span className="text-zinc-400 italic">Not added</span>}
                 </span>
               </div>
               <div>

@@ -471,6 +471,7 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
       draft.schoolAndAgeGroup?.school_name ||
       draft.schoolName ||
       draft.school_name ||
+      existingEntry?.school_name ||
       ''
     ).trim();
 
@@ -740,13 +741,52 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     WHERE id = ?
   `, [now, now, entry.id]);
 
-  const appNotifId = `notif-${crypto.randomUUID()}`;
+  // 1. Parent confirmation notifications
+  const parentNotifId = `pnotif-${crypto.randomUUID()}`;
+  await execute(`
+    INSERT INTO parent_notifications (
+      id, parent_id, event_id, child_id, title, message, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, [
+    parentNotifId,
+    req.parentProfile.id,
+    REAL_EVENT_ID,
+    childId,
+    'Application submitted',
+    `${c.full_name || 'Child'}'s application has been received.`,
+    now
+  ]);
+
+  const parentGeneralNotifId = `notif-${crypto.randomUUID()}`;
   await execute(`
     INSERT INTO notifications (
       id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at, priority, channel, metadata_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
-    appNotifId,
+    parentGeneralNotifId,
+    'Application submitted',
+    `${c.full_name || 'Child'}'s application has been received.`,
+    'application_submitted',
+    'parent',
+    'individual',
+    REAL_EVENT_ID,
+    childId,
+    req.parentProfile.id,
+    req.user.id,
+    now,
+    'normal',
+    'in-app',
+    JSON.stringify({ childId, applicationId: entry.id, type: 'application_submitted' })
+  ]);
+
+  // 2. Admin operational notification (parent_id is null so it never leaks to parent view)
+  const adminNotifId = `notif-${crypto.randomUUID()}`;
+  await execute(`
+    INSERT INTO notifications (
+      id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_by_user_id, created_at, priority, channel, metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    adminNotifId,
     'New child application',
     `New application submitted for ${c.full_name || 'child'}.`,
     'new_application',
@@ -754,7 +794,7 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     'all',
     REAL_EVENT_ID,
     childId,
-    req.parentProfile.id,
+    null,
     req.user.id,
     now,
     'normal',
