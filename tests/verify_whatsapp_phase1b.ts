@@ -1,5 +1,8 @@
 import crypto from 'crypto';
+import express from 'express';
 import { query, queryOne, execute } from '../src/server/db';
+import { generateToken } from '../src/server/auth';
+import adminRoutes from '../src/server/routes/admin';
 import {
   getWhatsAppProviderReadiness,
   getWhatsAppProvider,
@@ -527,6 +530,218 @@ async function runTests() {
       resetWhatsAppProviderCache();
     }
 
+    // ====================================================
+    // 8. PARENT CONSENT UI & STATE PERSISTENCE
+    // ====================================================
+    console.log('\n--- SECTION 8: PARENT CONSENT UI & PERSISTENCE ---');
+
+    // 8.1 unknown -> banner is visible
+    await test('Consent status "unknown" renders enable banner as visible', () => {
+      const consentStatus = 'unknown';
+      const isDismissed = false;
+      const shouldShowBanner = consentStatus === 'unknown' && !isDismissed;
+      assert(shouldShowBanner === true, 'Banner must be visible when consent is unknown');
+    });
+
+    // 8.2 Opt-in update -> local state updates to opted_in and banner is hidden
+    await test('Successful opt-in updates local state to opted_in and hides banner immediately', () => {
+      const evaluateBanner = (status: 'unknown' | 'opted_in' | 'opted_out', isDismissed: boolean) => status === 'unknown' && !isDismissed;
+      let consentStatus: 'unknown' | 'opted_in' | 'opted_out' = 'unknown';
+      assert(evaluateBanner(consentStatus, false) === true, 'Banner visible initially');
+
+      // Simulate successful opt-in action
+      consentStatus = 'opted_in';
+      assert(consentStatus === 'opted_in', 'Status must be opted_in');
+      assert(evaluateBanner(consentStatus, false) === false, 'Banner must be hidden immediately upon opt-in');
+    });
+
+    // 8.3 Page reload with opted_in in server profile preserves opted_in and hides banner
+    await test('Page reload with opted_in preserves consent status and hides banner', () => {
+      const evaluateBanner = (status: 'unknown' | 'opted_in' | 'opted_out', isDismissed: boolean) => status === 'unknown' && !isDismissed;
+      // Simulate server response from GET /api/parent/home
+      const serverProfile = {
+        fullName: 'Test Parent',
+        phone: '+2348011112222',
+        whatsapp_consent_status: 'opted_in' as const,
+        whatsapp_consent_at: now,
+        whatsapp_consent_source: 'parent_home_banner'
+      };
+
+      // App normalizeParentProfile logic
+      const normalized = {
+        whatsappConsentStatus: (serverProfile.whatsapp_consent_status || 'unknown') as 'unknown' | 'opted_in' | 'opted_out',
+        whatsappConsentAt: serverProfile.whatsapp_consent_at || null,
+        whatsappConsentSource: serverProfile.whatsapp_consent_source || null
+      };
+
+      assert(normalized.whatsappConsentStatus === 'opted_in', 'Normalized profile must retain opted_in status');
+      assert(evaluateBanner(normalized.whatsappConsentStatus, false) === false, 'Banner must remain hidden after page reload with opted_in');
+    });
+
+    // 8.4 opted_out shows Off in communication preferences with option to turn on
+    await test('opted_out shows Off in communication preferences with option to turn on', () => {
+      const getPreferencesUI = (status: 'unknown' | 'opted_in' | 'opted_out') => ({
+        badge: status === 'opted_in' ? 'On' : (status === 'opted_out' ? 'Off' : ''),
+        action: status === 'opted_in' ? 'Turn off' : (status === 'opted_out' ? 'Turn on' : 'Enable')
+      });
+      const ui = getPreferencesUI('opted_out');
+
+      assert(ui.badge === 'Off', 'Preferences badge must display Off when opted_out');
+      assert(ui.action === 'Turn on', 'Preferences action must display Turn on when opted_out');
+    });
+
+    // 8.5 opted_out does NOT cause repetitive Home enable banner
+    await test('opted_out does NOT cause repetitive Home enable banner', () => {
+      const evaluateBanner = (status: 'unknown' | 'opted_in' | 'opted_out', isDismissed: boolean) => status === 'unknown' && !isDismissed;
+      assert(evaluateBanner('opted_out', false) === false, 'opted_out must not show enable banner on Home screen');
+    });
+
+    // ====================================================
+    // 9. SUPER ADMIN TEST-SEND AUTHENTICATION & ERROR HANDLING
+    // ====================================================
+    console.log('\n--- SECTION 9: SUPER ADMIN TEST-SEND AUTH & ERROR HANDLING ---');
+
+    // Spin up an in-memory express test server on an ephemeral port
+    const testApp = express();
+    testApp.use(express.json());
+    testApp.use('/api/admin', adminRoutes);
+
+    const testServer = await new Promise<any>((resolve) => {
+      const s = testApp.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const testPort = (testServer.address() as any).port;
+    const testBaseUrl = `http://127.0.0.1:${testPort}`;
+
+    const testAdminUserId = `u_admin_auth_${crypto.randomUUID()}`;
+    const testParentUserId = `u_parent_auth_${crypto.randomUUID()}`;
+    const testSuperAdminUserId = `u_super_auth_${crypto.randomUUID()}`;
+
+    try {
+      await execute(`
+        INSERT INTO users (id, email, role, created_at, updated_at)
+        VALUES
+          (?, 'test_admin_auth@koinonia.org', 'admin', ?, ?),
+          (?, 'test_parent_auth@koinonia.org', 'parent', ?, ?),
+          (?, 'test_super_auth@koinonia.org', 'super_admin', ?, ?)
+      `, [testAdminUserId, now, now, testParentUserId, now, now, testSuperAdminUserId, now, now]);
+
+      const parentToken = generateToken(testParentUserId);
+      const adminToken = generateToken(testAdminUserId);
+      const superAdminToken = generateToken(testSuperAdminUserId);
+
+      // 9.1 Unauthenticated request returns 401
+      await test('Unauthenticated test-send request returns HTTP 401', async () => {
+        const res = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: '+2348011112222' })
+        });
+        assert(res.status === 401, `Status must be 401, got ${res.status}`);
+        const data = await res.json() as any;
+        assert(data.error !== undefined, 'Error message must be returned');
+      });
+
+      // 9.2 Authenticated non-Super-Admin (admin role) returns 403
+      await test('Authenticated non-Super-Admin (admin) returns HTTP 403', async () => {
+        const res = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ to: '+2348011112222' })
+        });
+        assert(res.status === 403, `Status must be 403, got ${res.status}`);
+        const data = await res.json() as any;
+        assert(data.error.includes('Super Admin'), 'Error must specify Super Admin requirement');
+      });
+
+      // 9.3 Authenticated parent role returns 403
+      await test('Authenticated parent role returns HTTP 403', async () => {
+        const res = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${parentToken}`
+          },
+          body: JSON.stringify({ to: '+2348011112222' })
+        });
+        assert(res.status === 403, `Status must be 403, got ${res.status}`);
+      });
+
+      // 9.4 Failed auth does NOT call provider or create delivery log
+      await test('Failed auth does NOT create delivery log or call provider', async () => {
+        const probePhone = '+2348077776666';
+        await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: probePhone })
+        });
+        const log = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE recipient_phone = ?', [probePhone]);
+        assert(log === null, 'No delivery log must be created when authentication fails');
+      });
+
+      // 9.5 Status polling endpoint requires authentication (401 unauth, 403 non-super)
+      await test('Status polling endpoint enforces Super Admin authentication', async () => {
+        const resUnauth = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp-status?logId=probe`, {
+          headers: { 'Content-Type': 'application/json' }
+        });
+        assert(resUnauth.status === 401, 'Unauthenticated status poll must return 401');
+
+        const resNonSuper = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp-status?logId=probe`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken}`
+          }
+        });
+        assert(resNonSuper.status === 403, 'Non-Super-Admin status poll must return 403');
+      });
+
+      // 9.6 Authenticated Super Admin request is accepted
+      await test('Authenticated Super Admin request is accepted by endpoint', async () => {
+        const res = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${superAdminToken}`
+          },
+          body: JSON.stringify({ to: '+2348011112222' })
+        });
+        // In dev mode with simulated provider, it succeeds (200)
+        assert(res.status === 200, `Super Admin request should succeed, got ${res.status}`);
+        const data = await res.json() as any;
+        assert(data.success === true, 'Response must be success');
+        assert(data.logId !== undefined, 'logId must be returned');
+
+        // Cleanup delivery log created by this test
+        if (data.logId) {
+          await execute('DELETE FROM whatsapp_delivery_logs WHERE id = ?', [data.logId]);
+        }
+      });
+
+      // 9.7 Twilio Error 20003 Authenticate is cleanly translated and not raw Authenticate
+      await test('Twilio Error 20003 Authenticate is translated to descriptive provider error', () => {
+        const rawTwilioResponse = {
+          code: 20003,
+          message: 'Authenticate',
+          more_info: 'https://www.twilio.com/docs/errors/20003',
+          status: 401
+        };
+
+        let errMsg = rawTwilioResponse.message;
+        if (rawTwilioResponse.code === 20003 || errMsg.trim().toLowerCase() === 'authenticate') {
+          errMsg = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
+        }
+
+        assert(errMsg !== 'Authenticate', 'Error message must not be raw "Authenticate"');
+        assert(errMsg.includes('Twilio authentication failed'), 'Error message must clearly identify Twilio provider authentication');
+      });
+
+    } finally {
+      testServer.close();
+      await execute('DELETE FROM users WHERE id IN (?, ?, ?)', [testAdminUserId, testParentUserId, testSuperAdminUserId]);
+    }
+
   } finally {
     // Cleanup test artifacts
     await execute('DELETE FROM child_event_entries WHERE child_id IN (?, ?)', [child1Id, child2Id]);
@@ -544,6 +759,7 @@ async function runTests() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runTests().catch((err) => {

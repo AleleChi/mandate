@@ -243,11 +243,15 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         });
       }
     } catch (err: any) {
-      showError(err.message || 'Test send request failed.');
+      let errorMsg = err.message || 'Test send request failed.';
+      if (errorMsg.trim().toLowerCase() === 'authenticate') {
+        errorMsg = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
+      }
+      showError(errorMsg);
       setTestStatus({
         status: 'failed',
         recipientPhone: testPhone.trim(),
-        errorMessage: err.message
+        errorMessage: errorMsg
       });
     } finally {
       setTestSending(false);

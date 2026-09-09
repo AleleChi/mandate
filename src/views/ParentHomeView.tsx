@@ -36,6 +36,7 @@ interface ParentHomeViewProps {
   activeEvent?: any;
   onSwitchExperience?: (target: 'parent' | 'volunteer') => Promise<boolean>;
   isSwitchingExperience?: boolean;
+  onUpdateProfile?: (profile: ParentProfile) => void;
 }
 
 // Check whether photo is a custom uploaded image vs sample default asset
@@ -99,7 +100,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   volunteerProfile,
   activeEvent,
   onSwitchExperience,
-  isSwitchingExperience = false
+  isSwitchingExperience = false,
+  onUpdateProfile
 }) => {
   const { showInfo, showSuccess, showError } = useNotification();
   const [selectedDetailChild, setSelectedDetailChild] = useState<ChildItem | null>(null);
@@ -122,7 +124,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     parentProfile.whatsappConsentStatus || 'unknown'
   );
   const [whatsappNumber, setWhatsappNumber] = useState<string>(
-    parentProfile.whatsapp || parentProfile.phone || ''
+    parentProfile.whatsapp || parentProfile.whatsappNumber || parentProfile.phone || ''
   );
   const [isWaQuietDismissed, setIsWaQuietDismissed] = useState<boolean>(() => {
     try {
@@ -133,9 +135,21 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   });
   const [showWaOptInModal, setShowWaOptInModal] = useState(false);
   const [waModalPhone, setWaModalPhone] = useState<string>(
-    parentProfile.whatsapp || parentProfile.phone || ''
+    parentProfile.whatsapp || parentProfile.whatsappNumber || parentProfile.phone || ''
   );
   const [waConsentLoading, setWaConsentLoading] = useState(false);
+
+  // Sync WhatsApp consent status and number whenever parentProfile updates from server
+  useEffect(() => {
+    if (parentProfile.whatsappConsentStatus) {
+      setWhatsappStatus(parentProfile.whatsappConsentStatus);
+    }
+    const currentNumber = parentProfile.whatsapp || parentProfile.whatsappNumber || parentProfile.phone || '';
+    if (currentNumber) {
+      setWhatsappNumber(currentNumber);
+      setWaModalPhone(currentNumber);
+    }
+  }, [parentProfile.whatsappConsentStatus, parentProfile.whatsapp, parentProfile.whatsappNumber, parentProfile.phone]);
 
   const handleOptInWhatsApp = async (phone: string) => {
     if (!phone.trim()) {
@@ -149,7 +163,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         setWhatsappStatus('opted_in');
         setWhatsappNumber(phone.trim());
         setShowWaOptInModal(false);
-        showSuccess('WhatsApp Enabled', 'You will receive important updates on WhatsApp.');
+        showSuccess('WhatsApp updates enabled', 'You will receive important updates on WhatsApp.');
+        if (res.profile && onUpdateProfile) {
+          onUpdateProfile(res.profile);
+        }
       } else {
         showError('Failed', res.message || 'Could not enable WhatsApp updates.');
       }
@@ -166,7 +183,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       const res = await api.parent.updateWhatsAppConsent({ action: 'opt_out' });
       if (res.success) {
         setWhatsappStatus('opted_out');
-        showSuccess('WhatsApp Disabled', 'WhatsApp updates turned off. In-app, push, and email updates remain active.');
+        showSuccess('WhatsApp updates turned off', 'In-app, push, and email updates remain active.');
+        if (res.profile && onUpdateProfile) {
+          onUpdateProfile(res.profile);
+        }
       } else {
         showError('Failed', res.message || 'Could not disable WhatsApp updates.');
       }
@@ -1432,26 +1452,38 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               </span>
             </div>
             {whatsappStatus === 'opted_in' ? (
-              <button
-                type="button"
-                disabled={waConsentLoading}
-                onClick={handleOptOutWhatsApp}
-                className="px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer bg-[#C59B27] text-white hover:bg-[#b0881e]"
-              >
-                On
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-[#C59B27] text-white">
+                  On
+                </span>
+                <button
+                  type="button"
+                  disabled={waConsentLoading}
+                  onClick={handleOptOutWhatsApp}
+                  className="px-2.5 py-1 rounded-xl text-[10px] font-semibold text-[#71717A] hover:text-red-600 hover:bg-red-50 border border-zinc-200 transition-all cursor-pointer"
+                >
+                  Turn off
+                </button>
+              </div>
             ) : (
-              <button
-                type="button"
-                disabled={waConsentLoading}
-                onClick={() => {
-                  setWaModalPhone(whatsappNumber || parentProfile.phone || '');
-                  setShowWaOptInModal(true);
-                }}
-                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] tracking-wider uppercase transition-all cursor-pointer"
-              >
-                {whatsappStatus === 'opted_out' ? 'Off' : 'Enable'}
-              </button>
+              <div className="flex items-center gap-2">
+                {whatsappStatus === 'opted_out' && (
+                  <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-zinc-200 text-zinc-700">
+                    Off
+                  </span>
+                )}
+                <button
+                  type="button"
+                  disabled={waConsentLoading}
+                  onClick={() => {
+                    setWaModalPhone(whatsappNumber || parentProfile.phone || '');
+                    setShowWaOptInModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] tracking-wider uppercase transition-all cursor-pointer"
+                >
+                  {whatsappStatus === 'opted_out' ? 'Turn on' : 'Enable'}
+                </button>
+              </div>
             )}
           </div>
         </div>

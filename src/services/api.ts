@@ -76,6 +76,7 @@ export const api = {
     let res: Response;
     try {
       res = await fetch(url, {
+        credentials: options.credentials || 'same-origin',
         ...options,
         headers
       });
@@ -135,7 +136,18 @@ export const api = {
     }
 
     if (!res.ok) {
-      const rawError = data.error || data.message || `Request failed (${res.status})`;
+      if (res.status === 401) {
+        throw new ParentApiError('Your session has expired. Please sign in again.', 'Please sign in again to continue.', 'UNAUTHORIZED');
+      }
+      if (res.status === 403) {
+        const forbiddenMsg = data?.error || data?.message || 'Only a Super Admin can send WhatsApp test messages.';
+        throw new ParentApiError(forbiddenMsg, 'You do not have permission to perform this action.', 'FORBIDDEN');
+      }
+
+      let rawError = data.error || data.message || `Request failed (${res.status})`;
+      if (typeof rawError === 'string' && rawError.trim().toLowerCase() === 'authenticate') {
+        rawError = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
+      }
       const errorCode = data.code;
       console.error('[api.request Error Details]:', { url, status: res.status, rawError, errorCode, data });
       const lower = rawError.toLowerCase();

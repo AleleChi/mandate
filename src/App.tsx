@@ -212,7 +212,11 @@ function normalizeParentProfile(p: any): ParentProfile {
     department: p.department || '',
     photoFileId: p.photoFileId || p.photo_file_id || '',
     photoUrl: p.photoUrl || p.photo_url || '',
-    profileCompletedAt: p.profileCompletedAt || p.profile_completed_at || null
+    profileCompletedAt: p.profileCompletedAt || p.profile_completed_at || null,
+    whatsappConsentStatus: p.whatsappConsentStatus || p.whatsapp_consent_status || 'unknown',
+    whatsappConsentAt: p.whatsappConsentAt || p.whatsapp_consent_at || null,
+    whatsappOptOutAt: p.whatsappOptOutAt || p.whatsapp_opt_out_at || null,
+    whatsappConsentSource: p.whatsappConsentSource || p.whatsapp_consent_source || null
   };
 }
 
@@ -1067,6 +1071,7 @@ export default function App() {
             selectedChildId={childIdParam}
             volunteerProfile={volunteerProfile}
             activeEvent={activeEvent}
+            onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
           />
         </ProtectedRoute>
       );
@@ -1287,6 +1292,7 @@ export default function App() {
               activeEvent={activeEvent}
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
             />
           </ProtectedRoute>
         );
@@ -1307,6 +1313,7 @@ export default function App() {
               activeEvent={activeEvent}
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
             />
           </ProtectedRoute>
         );
@@ -1327,6 +1334,7 @@ export default function App() {
               activeEvent={activeEvent}
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
             />
           </ProtectedRoute>
         );
@@ -1411,6 +1419,7 @@ export default function App() {
               activeEvent={activeEvent}
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
             />
           </ProtectedRoute>
         );

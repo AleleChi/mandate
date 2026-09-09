@@ -65,7 +65,12 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
       const resJson = await response.json() as any;
 
       if (!response.ok) {
-        const errMsg = resJson.message || `Twilio dispatch failed with HTTP ${response.status}`;
+        let errMsg = resJson.message || `Twilio dispatch failed with HTTP ${response.status}`;
+        if (resJson.code === 20003 || errMsg.trim().toLowerCase() === 'authenticate' || response.status === 401) {
+          errMsg = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
+        } else if (resJson.code) {
+          errMsg = `Twilio error ${resJson.code}: ${errMsg}`;
+        }
         return {
           success: false,
           provider: this.name,

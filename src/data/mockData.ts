@@ -22,7 +22,11 @@ export const initialParentProfile: ParentProfile = {
   isWorker: false,
   department: '',
   photoUrl: '',
-  profileCompletedAt: null
+  profileCompletedAt: null,
+  whatsappConsentStatus: 'unknown',
+  whatsappConsentAt: null,
+  whatsappOptOutAt: null,
+  whatsappConsentSource: null
 };
 
 export const initialChildren: ChildItem[] = [];

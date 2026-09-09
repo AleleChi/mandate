@@ -4378,10 +4378,17 @@ router.post('/notifications/test', async (req: AuthenticatedRequest, res: Respon
 router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    if (!req.user || req.user.role !== 'super_admin') {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Your session has expired. Please sign in again.'
+      });
+    }
+
+    if (req.user.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only Super Administrators can execute WhatsApp test delivery.'
+        error: 'Only a Super Admin can send WhatsApp test messages.'
       });
     }
 
@@ -4414,7 +4421,8 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
     }
 
     const provider = getWhatsAppProvider();
-    console.log(`[WhatsApp Test Endpoint] Dispatching test message via provider: ${provider.name} to: ${normalizedTo}`);
+    const maskedPhone = normalizedTo.length > 4 ? `${normalizedTo.slice(0, 4)}****` : '****';
+    console.log(`[WhatsApp Test Endpoint] Dispatching test message via provider: ${provider.name} to: ${maskedPhone}`);
 
     const result = await provider.sendSessionMessage({
       to: normalizedTo,
@@ -4461,10 +4469,17 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
 router.get('/notifications/test-whatsapp-status', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    if (!req.user || req.user.role !== 'super_admin') {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Your session has expired. Please sign in again.'
+      });
+    }
+
+    if (req.user.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only Super Administrators can query WhatsApp test delivery status.'
+        error: 'Only a Super Admin can query WhatsApp test delivery status.'
       });
     }
 
