@@ -34,6 +34,7 @@ import { getDb } from './src/server/db';
 import { processPendingNotifications } from './src/server/services/notifications';
 import { authMiddleware, AuthenticatedRequest } from './src/server/auth';
 import { validatePublicAppUrlOnStartup } from './src/server/utils/urlHelper';
+import { processQueuedWhatsAppJobs, isWhatsAppInProcessWorkerEnabled } from './src/server/services/whatsapp';
 
 async function startServer() {
   const app = express();
@@ -359,6 +360,26 @@ async function startServer() {
         console.error('[Background Scheduler] Error running escalation scheduler:', err);
       }
     }, 10000);
+
+    // WhatsApp Queue Worker Mode configuration:
+    // Render Background Worker runs scripts/run-whatsapp-worker.ts
+    // Web service sets WHATSAPP_WORKER_MODE=disabled (or external)
+    const workerMode = (process.env.WHATSAPP_WORKER_MODE || '').trim().toLowerCase();
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isWhatsAppInProcessWorkerEnabled()) {
+      console.log(`[WhatsApp Worker] Starting in-process queue polling (mode: ${workerMode || 'in_process'}).`);
+      processQueuedWhatsAppJobs().catch(err => console.error('[Startup] WhatsApp worker error:', err));
+      setInterval(async () => {
+        try {
+          await processQueuedWhatsAppJobs();
+        } catch (err) {
+          console.error('[Background Scheduler] Error processing WhatsApp jobs:', err);
+        }
+      }, 10000);
+    } else {
+      const displayMode = workerMode || (isProd ? 'disabled/external (production default)' : 'disabled');
+      console.log(`[WhatsApp Worker] In-process polling is disabled (${displayMode}). Processing delegated to external worker.`);
+    }
 
     // Periodically process scheduled parent notification rules (emails, in-app notifications, and WhatsApp mockups)
     setInterval(async () => {

@@ -3240,6 +3240,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminMessagesView 
               onBackToOverview={() => handleTabChange('overview')} 
               onNavigate={onNavigate}
+              adminUser={adminUser}
             />
           )}
 

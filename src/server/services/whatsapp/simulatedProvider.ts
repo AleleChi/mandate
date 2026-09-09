@@ -13,6 +13,14 @@ export class SimulatedWhatsAppProvider implements WhatsAppProvider {
   readonly name = 'simulated' as const;
 
   async sendTemplate(params: SendTemplateParams): Promise<ProviderSendResult> {
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        success: false,
+        provider: this.name,
+        status: 'failed',
+        error: 'Simulated WhatsApp provider is strictly prohibited in production.'
+      };
+    }
     console.log(`[Simulated WhatsApp Template] Template: ${params.templateName}`);
     return {
       success: true,
@@ -23,6 +31,14 @@ export class SimulatedWhatsAppProvider implements WhatsAppProvider {
   }
 
   async sendSessionMessage(params: SendSessionMessageParams): Promise<ProviderSendResult> {
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        success: false,
+        provider: this.name,
+        status: 'failed',
+        error: 'Simulated WhatsApp provider is strictly prohibited in production.'
+      };
+    }
     console.log(`[Simulated WhatsApp Session] Dispatched: "${params.body}"`);
     return {
       success: true,

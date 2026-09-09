@@ -101,6 +101,10 @@ export interface ParentProfile {
   photoFileId?: string;
   photoUrl?: string;
   profileCompletedAt?: string | null;
+  whatsappConsentStatus?: 'unknown' | 'opted_in' | 'opted_out';
+  whatsappConsentAt?: string | null;
+  whatsappOptOutAt?: string | null;
+  whatsappConsentSource?: string | null;
 }
 
 export interface EventDetails {

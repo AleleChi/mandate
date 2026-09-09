@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2, Phone } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
@@ -118,7 +118,64 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
   const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
   const [isVibrationOn, setIsVibrationOn] = useState<boolean>(true);
-  const [isWhatsAppOn, setIsWhatsAppOn] = useState<boolean>(true);
+  const [whatsappStatus, setWhatsappStatus] = useState<'unknown' | 'opted_in' | 'opted_out'>(
+    parentProfile.whatsappConsentStatus || 'unknown'
+  );
+  const [whatsappNumber, setWhatsappNumber] = useState<string>(
+    parentProfile.whatsapp || parentProfile.phone || ''
+  );
+  const [isWaQuietDismissed, setIsWaQuietDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('koinonia_wa_quiet_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [showWaOptInModal, setShowWaOptInModal] = useState(false);
+  const [waModalPhone, setWaModalPhone] = useState<string>(
+    parentProfile.whatsapp || parentProfile.phone || ''
+  );
+  const [waConsentLoading, setWaConsentLoading] = useState(false);
+
+  const handleOptInWhatsApp = async (phone: string) => {
+    if (!phone.trim()) {
+      showError('Phone Required', 'Please enter a valid WhatsApp phone number.');
+      return;
+    }
+    setWaConsentLoading(true);
+    try {
+      const res = await api.parent.updateWhatsAppConsent({ action: 'opt_in', whatsappNumber: phone.trim() });
+      if (res.success) {
+        setWhatsappStatus('opted_in');
+        setWhatsappNumber(phone.trim());
+        setShowWaOptInModal(false);
+        showSuccess('WhatsApp Enabled', 'You will receive important updates on WhatsApp.');
+      } else {
+        showError('Failed', res.message || 'Could not enable WhatsApp updates.');
+      }
+    } catch (err: any) {
+      showError('Error', err.message || 'An error occurred while enabling WhatsApp updates.');
+    } finally {
+      setWaConsentLoading(false);
+    }
+  };
+
+  const handleOptOutWhatsApp = async () => {
+    setWaConsentLoading(true);
+    try {
+      const res = await api.parent.updateWhatsAppConsent({ action: 'opt_out' });
+      if (res.success) {
+        setWhatsappStatus('opted_out');
+        showSuccess('WhatsApp Disabled', 'WhatsApp updates turned off. In-app, push, and email updates remain active.');
+      } else {
+        showError('Failed', res.message || 'Could not disable WhatsApp updates.');
+      }
+    } catch (err: any) {
+      showError('Error', err.message || 'An error occurred while disabling WhatsApp updates.');
+    } finally {
+      setWaConsentLoading(false);
+    }
+  };
   const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(null);
   const [defaultEventHeroUrl, setDefaultEventHeroUrl] = useState<string | null>(null);
 
@@ -314,6 +371,45 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               >
                 Update profile
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quiet WhatsApp Opt-in Prompt for existing parents */}
+        {whatsappStatus === 'unknown' && !isWaQuietDismissed && (
+          <div data-component-version="parent-whatsapp-quiet-banner-v1" className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl p-4 flex items-start justify-between gap-3 shadow-2xs">
+            <div className="flex items-start gap-3">
+              <Phone className="w-5 h-5 text-[#9A7326] shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-[#18181B]">Get updates on WhatsApp</h4>
+                <p className="text-[11px] text-[#6B7280] mt-0.5">
+                  Receive important registration and event updates on WhatsApp.
+                </p>
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWaModalPhone(whatsappNumber || parentProfile.phone || '');
+                      setShowWaOptInModal(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#18181B] text-white hover:bg-zinc-800 transition-all cursor-pointer shadow-2xs"
+                  >
+                    Enable WhatsApp updates
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('koinonia_wa_quiet_dismissed', 'true');
+                      } catch {}
+                      setIsWaQuietDismissed(true);
+                    }}
+                    className="text-xs text-[#6B7280] hover:text-[#18181B] font-medium cursor-pointer"
+                  >
+                    Not now
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1323,6 +1419,40 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             >
               {localStorage.getItem('koinonia_parent_email_notifications') === 'true' ? 'On' : 'Off'}
             </button>
+          </div>
+
+          {/* WhatsApp Notification Preference */}
+          <div className="flex items-center justify-between pt-3.5 border-t border-[#FAF8F4]">
+            <div className="flex flex-col text-left">
+              <span className="font-semibold text-zinc-800">WhatsApp updates</span>
+              <span className="text-[10px] text-[#6B7280]">
+                {whatsappStatus === 'opted_in'
+                  ? (whatsappNumber ? `Active for ${whatsappNumber}` : 'Active for account')
+                  : 'Important registration and event updates'}
+              </span>
+            </div>
+            {whatsappStatus === 'opted_in' ? (
+              <button
+                type="button"
+                disabled={waConsentLoading}
+                onClick={handleOptOutWhatsApp}
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer bg-[#C59B27] text-white hover:bg-[#b0881e]"
+              >
+                On
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={waConsentLoading}
+                onClick={() => {
+                  setWaModalPhone(whatsappNumber || parentProfile.phone || '');
+                  setShowWaOptInModal(true);
+                }}
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] tracking-wider uppercase transition-all cursor-pointer"
+              >
+                {whatsappStatus === 'opted_out' ? 'Off' : 'Enable'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2402,6 +2532,71 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               >
                 <QrCode className="w-4 h-4" />
                 <span>Show Pickup Pass QR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Opt-in Modal */}
+      {showWaOptInModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 max-w-md w-full shadow-xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Phone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#18181B]">Get updates on WhatsApp</h3>
+                  <p className="text-xs text-[#6B7280]">Stay informed directly on your phone</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWaOptInModal(false)}
+                className="text-zinc-400 hover:text-zinc-700 cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#3F3F46] leading-relaxed">
+              Receive important registration and event updates on WhatsApp. You can opt out at any time from your profile.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#18181B] block">
+                WhatsApp number
+              </label>
+              <input
+                type="tel"
+                value={waModalPhone}
+                onChange={(e) => setWaModalPhone(e.target.value)}
+                placeholder="+234 800 000 0000"
+                className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-sm text-[#18181B] focus:outline-none focus:border-[#C59B27]"
+              />
+              <p className="text-[11px] text-[#6B7280]">
+                Enter with country code (e.g. +234 for Nigeria or local format).
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowWaOptInModal(false)}
+                disabled={waConsentLoading}
+                className="px-4 py-2 text-xs font-medium text-[#6B7280] hover:text-[#18181B] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={waConsentLoading || !waModalPhone.trim()}
+                onClick={() => handleOptInWhatsApp(waModalPhone)}
+                className="px-4 py-2 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              >
+                {waConsentLoading ? 'Enabling...' : 'Enable WhatsApp updates'}
               </button>
             </div>
           </div>

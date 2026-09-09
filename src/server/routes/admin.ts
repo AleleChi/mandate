@@ -16,7 +16,16 @@ import { serializeChildEmergencySummary, captureChildSnapshot } from './voluntee
 import { eventOperationsService } from '../services/eventOperationsService';
 import { adminDutyRouter } from './duty';
 import { buildPublicAppUrl } from '../utils/urlHelper';
-import { getWhatsAppProvider, normalizePhoneNumberToE164 } from '../services/whatsapp';
+import {
+  getWhatsAppProvider,
+  getWhatsAppProviderReadiness,
+  normalizePhoneNumberToE164,
+  logWhatsAppDelivery,
+  enqueueWhatsAppJob,
+  buildIdempotencyKey,
+  processQueuedWhatsAppJobs,
+  isWhatsAppInProcessWorkerEnabled
+} from '../services/whatsapp';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -4376,12 +4385,13 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
       });
     }
 
-    const { to, message } = req.body;
-    if (!to) {
-      return res.status(400).json({ success: false, error: 'Recipient phone number ("to") is required.' });
+    const rawTo = req.body.to || req.body.phone;
+    const message = req.body.message;
+    if (!rawTo) {
+      return res.status(400).json({ success: false, error: 'Recipient phone number is required.' });
     }
 
-    const normalizedTo = normalizePhoneNumberToE164(to);
+    const normalizedTo = normalizePhoneNumberToE164(rawTo);
     if (!normalizedTo) {
       return res.status(400).json({
         success: false,
@@ -4393,6 +4403,16 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
       ? message.trim()
       : 'Koinonia Children & Teens\nThis is a test message from the TGA communication system.';
 
+    const readiness = getWhatsAppProviderReadiness();
+    if (!readiness.testSendAvailable) {
+      return res.status(400).json({
+        success: false,
+        error: 'WhatsApp setup incomplete. Provider credentials must be configured before sending test messages.',
+        status: 'failed',
+        readiness
+      });
+    }
+
     const provider = getWhatsAppProvider();
     console.log(`[WhatsApp Test Endpoint] Dispatching test message via provider: ${provider.name} to: ${normalizedTo}`);
 
@@ -4401,25 +4421,90 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
       body: safeMessage
     });
 
+    const nowIso = new Date().toISOString();
+    const logId = await logWhatsAppDelivery({
+      recipientPhone: normalizedTo,
+      provider: provider.name,
+      providerMessageId: result.messageId || null,
+      status: result.success ? (result.status === 'queued' ? 'queued' : 'sent') : 'failed',
+      sentAt: result.success ? nowIso : null,
+      failedAt: !result.success ? nowIso : null,
+      errorMessage: result.error || null,
+      templateName: 'super_admin_test'
+    });
+
     if (result.success) {
       return res.json({
         success: true,
         message: 'WhatsApp message accepted by provider.',
         provider: provider.name,
         messageSid: result.messageId || 'simulated-sid',
-        status: result.status
+        status: result.status,
+        logId
       });
     } else {
       return res.status(400).json({
         success: false,
         error: result.error || 'Failed to send WhatsApp message via configured provider.',
         provider: provider.name,
-        status: result.status
+        status: result.status,
+        logId
       });
     }
   } catch (err: any) {
     console.error('Error in test-whatsapp endpoint:', err);
     res.status(500).json({ success: false, error: err.message || 'Failed to process WhatsApp test request.' });
+  }
+});
+
+// GET test whatsapp delivery status progression (Restricted to Super Admin)
+router.get('/notifications/test-whatsapp-status', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Super Administrators can query WhatsApp test delivery status.'
+      });
+    }
+
+    const logId = (req.query.logId as string) || '';
+    const messageSid = (req.query.messageSid as string) || '';
+
+    if (!logId && !messageSid) {
+      return res.status(400).json({ success: false, error: 'logId or messageSid query parameter is required.' });
+    }
+
+    let logRow: any = null;
+    if (logId) {
+      logRow = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE id = ?', [logId]);
+    } else if (messageSid) {
+      logRow = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE provider_message_id = ?', [messageSid]);
+    }
+
+    if (!logRow) {
+      return res.status(404).json({ success: false, error: 'Test delivery log entry not found.' });
+    }
+
+    return res.json({
+      success: true,
+      log: {
+        id: logRow.id,
+        status: logRow.status,
+        provider: logRow.provider,
+        providerMessageId: logRow.provider_message_id,
+        recipientPhone: logRow.recipient_phone,
+        sentAt: logRow.sent_at,
+        deliveredAt: logRow.delivered_at,
+        readAt: logRow.read_at,
+        failedAt: logRow.failed_at,
+        errorCode: logRow.error_code,
+        errorMessage: logRow.error_message
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching test-whatsapp-status:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch test delivery status.' });
   }
 });
 
@@ -4597,34 +4682,39 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         AND p.whatsapp_consent_status = 'opted_in'
     `, [eventId]);
 
+    const whatsappReadiness = getWhatsAppProviderReadiness();
+    const whatsappEnabled = whatsappReadiness.configured;
+    const whatsappStatus = whatsappReadiness.configured ? 'Ready' : 'WhatsApp setup incomplete';
+
     const channelEligibility = {
       inApp: Number(inAppCountRes?.count || 0),
       push: Number(pushCountRes?.count || 0),
       email: Number(emailCountRes?.count || 0),
       whatsappNumbers: Number(whatsappNumbersCountRes?.count || 0),
-      whatsappOptedIn: Number(whatsappOptedInCountRes?.count || 0)
+      whatsappOptedIn: whatsappReadiness.configured ? Number(whatsappOptedInCountRes?.count || 0) : 0
     };
 
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
       { key: 'selected_children', label: 'Selected children', count: Number(countSelectedRes?.count || 0) },
-      { key: 'pass_ready', label: 'Pass ready', count: Number(countPassReadyRes?.count || 0) },
       { key: 'under_review', label: 'Under review', count: Number(countReviewRes?.count || 0) },
       { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
       { key: 'not_selected', label: 'Not selected', count: Number(countNotSelectedRes?.count || 0) },
+      { key: 'pass_ready', label: 'Pass ready', count: Number(countPassReadyRes?.count || 0) },
       { key: 'volunteers', label: 'Volunteers', count: Number(countVolunteersRes?.count || 0) },
       { key: 'all_event_team', label: 'Event team & volunteers', count: Number(countTeamRes?.count || 0) }
     ];
 
     const messageTypes = [
-      { key: 'pass_ready', label: 'Pass ready' },
+      { key: 'general_announcement', label: 'General announcement' },
+      { key: 'pickup_reminder', label: 'Pickup reminder' },
+      { key: 'pass_ready', label: 'Pass ready update' },
       { key: 'review_update', label: 'Review update' },
       { key: 'waiting_list_update', label: 'Waiting list update' },
-      { key: 'pickup_reminder', label: 'Pickup reminder' },
-      { key: 'general_announcement', label: 'General announcement' }
+      { key: 'safety_alert', label: 'Safety alert' }
     ];
 
-    // 3. Fetch recent message activity log
+    // 3. Fetch recent broadcast activities
     const recentActivity = await query(`
       SELECT id, recipient_group as recipientGroup, message_type as messageType, channel, subject, body, recipients_count as recipientsCount, status, created_at as createdAt
       FROM admin_message_logs
@@ -4648,12 +4738,6 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       emailEnabled = !!process.env.SMTP_USER && !!process.env.SMTP_PASS && !!process.env.SMTP_HOST && !!process.env.MAIL_FROM_ADDRESS;
     }
 
-    const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
-    // Live WhatsApp delivery setup status:
-    // Foundation is prepared in Phase 1A; live bulk delivery activation is pending
-    const whatsappStatus: 'Ready' | 'Setup pending' = 'Setup pending';
-    const whatsappEnabled = false; // Kept false for safety; bulk sending disabled
-
     const settings = await queryOne(`
       SELECT sender_name as senderName, reply_to_email as replyToEmail
       FROM admin_message_settings
@@ -4664,8 +4748,9 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       emailEnabled,
       whatsappEnabled,
       whatsappStatus,
+      whatsappReadiness,
       emailProvider: emailProvider === 'resend' ? 'resend' : emailProvider === 'smtp' ? 'smtp' : null,
-      whatsappProvider: whatsappProvider === 'twilio' ? 'twilio' : null,
+      whatsappProvider: whatsappReadiness.provider,
       senderName: settings?.senderName || process.env.MAIL_FROM_NAME || 'Koinonia Global',
       fromEmail: process.env.MAIL_FROM_ADDRESS || null,
       replyToEmail: settings?.replyToEmail || process.env.MAIL_FROM_ADDRESS || null
@@ -5482,12 +5567,6 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       emailEnabled = !!process.env.SMTP_USER && !!process.env.SMTP_PASS && !!process.env.SMTP_HOST && !!process.env.MAIL_FROM_ADDRESS;
     }
 
-    const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
-    let whatsappEnabled = false;
-    if (whatsappProvider === 'twilio') {
-      whatsappEnabled = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN;
-    }
-
     if (activeChannels.includes('email') && !emailEnabled) {
       return res.status(400).json({
         success: false,
@@ -5496,11 +5575,12 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    if (activeChannels.includes('whatsapp')) {
+    const whatsappReadiness = getWhatsAppProviderReadiness();
+    if (activeChannels.includes('whatsapp') && !whatsappReadiness.configured) {
       return res.status(400).json({
         success: false,
-        code: 'WHATSAPP_SETUP_PENDING',
-        message: 'WhatsApp delivery setup is being completed (Phase 1A). Mass broadcast delivery to parents is currently withheld. Super Administrators can verify delivery via the test panel.'
+        code: 'WHATSAPP_UNCONFIGURED',
+        message: 'WhatsApp delivery setup is incomplete. Provider credentials must be configured before broadcasting.'
       });
     }
 
@@ -5746,10 +5826,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           }
         }
 
-        if (activeChannels.includes('whatsapp')) {
-          // SAFEGUARD: Bulk WhatsApp delivery is withheld in Phase 1A to prevent Render timeout and unconsented sends.
-          console.log('[Admin Broadcast] WhatsApp bulk channel selected; synchronous send skipped pending Phase 1B async queue certification.');
-        }
+        // Note: WhatsApp delivery is processed asynchronously via notification_jobs below
       }
     }
 
@@ -5761,9 +5838,61 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       [logId, recipientGroup, messageType, logChannelsStr, subject || '', body, messagesToSend.length, 'sent', notifNow]
     );
 
-    // 7. Human result feedback
+    // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
+    let whatsappQueuedCount = 0;
+    if (activeChannels.includes('whatsapp')) {
+      // GENERAL BROADCAST RULE:
+      // Parent with multiple children: general announcement -> ONE WhatsApp message.
+      // Filter strictly for eligible parents: active parent + current event + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
+      const parentIdsInGroup = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
+
+      for (const pid of parentIdsInGroup) {
+        const pProfile = await queryOne(`
+          SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+          FROM parent_profiles
+          WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+        `, [pid]);
+
+        if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+          const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+          const normalized = normalizePhoneNumberToE164(rawPhone);
+          if (normalized) {
+            const idempotencyKey = buildIdempotencyKey({
+              type: 'campaign',
+              campaignId: logId,
+              parentId: pid
+            });
+
+            const enqueueRes = await enqueueWhatsAppJob({
+              eventId,
+              parentId: pid,
+              idempotencyKey
+            });
+
+            if (enqueueRes.queued || enqueueRes.duplicate) {
+              whatsappQueuedCount++;
+            }
+          }
+        }
+      }
+
+      // Trigger in-process queue worker only if in-process worker mode is active.
+      // In external or disabled mode, jobs safely remain queued for the external background worker.
+      if (isWhatsAppInProcessWorkerEnabled()) {
+        processQueuedWhatsAppJobs().catch(err => {
+          console.error('[Admin Messages] Async WhatsApp queue processing trigger error:', err);
+        });
+      }
+    }
+
+    // 8. Human result feedback
     let humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'}.`;
-    if (activeChannels.includes('push')) {
+    if (activeChannels.includes('whatsapp')) {
+      humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued for delivery.`;
+      if (activeChannels.includes('in_app') || activeChannels.includes('push') || activeChannels.includes('email')) {
+        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued.`;
+      }
+    } else if (activeChannels.includes('push')) {
       if (pushSentCount > 0 && pushFailCount > 0) {
         humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${pushFailCount} device${pushFailCount === 1 ? '' : 's'} could not be reached.`;
       } else if (pushSentCount > 0) {
@@ -5781,7 +5910,8 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         pushSent: pushSentCount,
         pushFailed: pushFailCount,
         emailSent: emailSentCount,
-        whatsappSent: whatsappSentCount,
+        whatsappSent: 0,
+        whatsappQueued: whatsappQueuedCount,
         failed: externalFailCount + pushFailCount
       }
     });

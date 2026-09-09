@@ -96,7 +96,11 @@ async function mapProfileToFrontend(row: any) {
     department: row.department || '',
     photoFileId: row.photo_file_id || '',
     photoUrl: resolvedPhoto,
-    profileCompletedAt: row.profile_completed_at || null
+    profileCompletedAt: row.profile_completed_at || null,
+    whatsappConsentStatus: (row.whatsapp_consent_status as any) || 'unknown',
+    whatsappConsentAt: row.whatsapp_consent_at || null,
+    whatsappOptOutAt: row.whatsapp_opt_out_at || null,
+    whatsappConsentSource: row.whatsapp_consent_source || null
   };
 }
 
@@ -365,6 +369,78 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
   const updated = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [req.parentProfile.id]);
   req.parentProfile = updated;
   res.json(await mapProfileToFrontend(updated));
+});
+
+// POST /api/parent/whatsapp/consent - Explicit parent WhatsApp opt-in / opt-out
+router.post('/whatsapp/consent', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) {
+    return res.status(404).json({ error: 'Parent profile not found' });
+  }
+
+  const { action, whatsappNumber } = req.body;
+  const now = new Date().toISOString();
+
+  if (action === 'opt_in') {
+    // Require parent to confirm/use an explicit WhatsApp number
+    const targetNumber = whatsappNumber || req.parentProfile.whatsapp_number || req.parentProfile.phone_number;
+    if (!targetNumber || !String(targetNumber).trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'A valid WhatsApp phone number is required to enable WhatsApp updates.'
+      });
+    }
+
+    const val = validatePhoneNumber(targetNumber, 'NG');
+    if (!val.valid || !val.normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        error: val.message || 'Please provide a valid phone number (e.g. 08012345678).'
+      });
+    }
+
+    await execute(`
+      UPDATE parent_profiles SET
+        whatsapp_consent_status = 'opted_in',
+        whatsapp_consent_at = ?,
+        whatsapp_opt_out_at = NULL,
+        whatsapp_consent_source = 'profile',
+        whatsapp_number = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, val.normalizedPhone, now, req.parentProfile.id]);
+
+    const updated = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [req.parentProfile.id]);
+    req.parentProfile = updated;
+
+    return res.json({
+      success: true,
+      message: 'WhatsApp updates enabled successfully.',
+      profile: await mapProfileToFrontend(updated)
+    });
+  } else if (action === 'opt_out') {
+    // Turning WhatsApp off must NOT disable in-app, push, or email
+    await execute(`
+      UPDATE parent_profiles SET
+        whatsapp_consent_status = 'opted_out',
+        whatsapp_opt_out_at = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, now, req.parentProfile.id]);
+
+    const updated = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [req.parentProfile.id]);
+    req.parentProfile = updated;
+
+    return res.json({
+      success: true,
+      message: 'WhatsApp updates turned off.',
+      profile: await mapProfileToFrontend(updated)
+    });
+  } else {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid action. Action must be "opt_in" or "opt_out".'
+    });
+  }
 });
 
 router.get('/home', async (req: AuthenticatedRequest, res: Response) => {

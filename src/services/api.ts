@@ -272,6 +272,12 @@ export const api = {
         body: JSON.stringify(profile)
       });
     },
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
+      return api.request<{ success: boolean; message: string; profile: any }>('/api/parent/whatsapp/consent', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async getHome() {
       return api.request<any>('/api/parent/home');
     },
@@ -1044,6 +1050,40 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+    },
+    async testWhatsApp(payload: { to: string; message?: string }) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        provider: string;
+        messageSid: string;
+        status: string;
+        logId?: string;
+      }>('/api/admin/notifications/test-whatsapp', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getTestWhatsAppStatus(params: { logId?: string; messageSid?: string }) {
+      const query = new URLSearchParams();
+      if (params.logId) query.append('logId', params.logId);
+      if (params.messageSid) query.append('messageSid', params.messageSid);
+      return api.request<{
+        success: boolean;
+        log: {
+          id: string;
+          status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+          provider: string;
+          providerMessageId?: string;
+          recipientPhone: string;
+          sentAt?: string;
+          deliveredAt?: string;
+          readAt?: string;
+          failedAt?: string;
+          errorCode?: string;
+          errorMessage?: string;
+        };
+      }>(`/api/admin/notifications/test-whatsapp-status?${query.toString()}`);
     },
     async getGeneralSettings() {
       return api.request<{

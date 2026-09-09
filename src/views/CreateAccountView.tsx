@@ -81,6 +81,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   }, []);
 
   const [agreedToUpdates, setAgreedToUpdates] = useState(false);
+  const [agreedToWhatsApp, setAgreedToWhatsApp] = useState(false);
 
   const [touched, setTouched] = useState({
     fullName: false,
@@ -184,7 +185,8 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
           password: formData.password,
           fullName: formData.fullName.trim(),
           phone: formData.phone.trim(),
-          whatsapp: formData.whatsapp.trim() || formData.phone.trim()
+          whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
+          whatsappConsent: agreedToWhatsApp
         });
         onSetParentEmail(formData.email.trim());
         if (onUpdateProfile) {
@@ -286,20 +288,56 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
           isTouched={touched.phone}
         />
 
-        {/* WhatsApp number */}
-        <AuthFormField
-          id="whatsapp"
-          label="WhatsApp number"
-          type="tel"
-          placeholder="0801 234 5678"
-          helperText="We may send important updates here."
-          value={formData.whatsapp}
-          onChange={(e) => handleChange('whatsapp', e.target.value)}
-          onBlur={() => handleBlur('whatsapp')}
-          error={errors.whatsapp}
-          isValid={!errors.whatsapp}
-          isTouched={touched.whatsapp}
-        />
+        {/* WhatsApp updates */}
+        <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 sm:p-4.5 space-y-3">
+          <div>
+            <span className="text-xs font-semibold text-[#18181B] block">WhatsApp updates</span>
+            <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+              Receive important registration and event updates on WhatsApp.
+            </p>
+          </div>
+
+          <AuthFormField
+            id="whatsapp"
+            label="WhatsApp number"
+            type="tel"
+            placeholder="0801 234 5678"
+            helperText="Optional. If omitted, we can use your phone number above if opted in."
+            value={formData.whatsapp}
+            onChange={(e) => handleChange('whatsapp', e.target.value)}
+            onBlur={() => handleBlur('whatsapp')}
+            error={errors.whatsapp}
+            isValid={!errors.whatsapp}
+            isTouched={touched.whatsapp}
+          />
+
+          <div className="pt-0.5">
+            <label
+              htmlFor="whatsappConsent"
+              className="flex items-start gap-2.5 cursor-pointer select-none group"
+            >
+              <input
+                id="whatsappConsent"
+                type="checkbox"
+                className="sr-only"
+                checked={agreedToWhatsApp}
+                onChange={(e) => setAgreedToWhatsApp(e.target.checked)}
+              />
+              <div
+                className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center transition-all shrink-0 ${
+                  agreedToWhatsApp
+                    ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
+                    : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+                }`}
+              >
+                {agreedToWhatsApp && <Check className="w-3 h-3 stroke-[3] text-[#18181B]" />}
+              </div>
+              <span className="text-xs text-zinc-700 leading-snug">
+                Send me important updates on WhatsApp.
+              </span>
+            </label>
+          </div>
+        </div>
 
         {/* Password */}
         <div className="space-y-1 relative">

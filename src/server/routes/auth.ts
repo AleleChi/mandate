@@ -8,9 +8,9 @@ import { buildPublicAppUrl } from '../utils/urlHelper';
 
 const router = Router();
 
-router.post('/create-account', async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { email, password, fullName, phone, whatsapp } = req.body;
+    const { email, password, fullName, phone, whatsapp, whatsappConsent } = req.body;
 
     // Validate Full Name
     const nameVal = validateName(fullName, 'fullName');
@@ -96,6 +96,12 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
     const now = new Date().toISOString();
     const hashedPwd = hashPassword(password);
 
+    // Optional WhatsApp consent tracking
+    const isConsentGranted = Boolean(whatsappConsent) && Boolean(cleanWhatsapp || cleanPhone);
+    const consentStatus = isConsentGranted ? 'opted_in' : 'unknown';
+    const consentAt = isConsentGranted ? now : null;
+    const consentSource = isConsentGranted ? 'registration' : null;
+
     await transaction(async () => {
       await execute(`
         INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
@@ -105,8 +111,10 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
       await execute(`
         INSERT INTO parent_profiles (
           id, user_id, full_name, phone_number, whatsapp_number, email,
-          preferred_contact, is_koinonia_worker, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'WhatsApp', 0, ?, ?)
+          preferred_contact, is_koinonia_worker,
+          whatsapp_consent_status, whatsapp_consent_at, whatsapp_consent_source,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'WhatsApp', 0, ?, ?, ?, ?, ?)
       `, [
         profileId,
         userId,
@@ -114,6 +122,9 @@ router.post('/create-account', async (req: AuthenticatedRequest, res: Response) 
         cleanPhone,
         cleanWhatsapp,
         cleanEmail,
+        consentStatus,
+        consentAt,
+        consentSource,
         now,
         now
       ]);
