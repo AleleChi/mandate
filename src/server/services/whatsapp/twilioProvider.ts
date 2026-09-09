@@ -66,9 +66,16 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
 
       if (!response.ok) {
         let errMsg = resJson.message || `Twilio dispatch failed with HTTP ${response.status}`;
-        if (resJson.code === 20003 || errMsg.trim().toLowerCase() === 'authenticate' || response.status === 401) {
+        const isSandbox = process.env.TWILIO_WHATSAPP_SANDBOX === 'true';
+
+        if (resJson.code === 63015 || (isSandbox && (resJson.code === 63015 || String(errMsg).toLowerCase().includes('sandbox')))) {
+          console.error(`[Twilio WhatsApp] Sandbox restriction (Error ${resJson.code}): ${errMsg}`);
+          errMsg = 'This number is not connected to the WhatsApp test environment.';
+        } else if (resJson.code === 20003 || errMsg.trim().toLowerCase() === 'authenticate' || response.status === 401) {
+          console.error(`[Twilio WhatsApp] Auth failure (Error 20003): ${errMsg}`);
           errMsg = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
         } else if (resJson.code) {
+          console.error(`[Twilio WhatsApp] Provider error (${resJson.code}): ${errMsg}`);
           errMsg = `Twilio error ${resJson.code}: ${errMsg}`;
         }
         return {

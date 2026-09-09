@@ -114,12 +114,14 @@ export interface WhatsAppProviderReadiness {
   testSendAvailable: boolean;
   bulkEnabled: boolean;
   statusMessage: string;
+  isSandbox?: boolean;
 }
 
 export function getWhatsAppProviderReadiness(): WhatsAppProviderReadiness {
   const isProd = process.env.NODE_ENV === 'production';
   const rawProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
   const providerName = (rawProvider || (isProd ? 'meta' : 'simulated')) as WhatsAppProviderName;
+  const isSandbox = process.env.TWILIO_WHATSAPP_SANDBOX === 'true';
 
   let configured = false;
   let webhookConfigured = false;
@@ -133,7 +135,8 @@ export function getWhatsAppProviderReadiness(): WhatsAppProviderReadiness {
         webhookConfigured: false,
         testSendAvailable: false,
         bulkEnabled: false,
-        statusMessage: 'WhatsApp setup incomplete: production requires explicit meta or twilio provider'
+        statusMessage: 'WhatsApp setup incomplete: production requires explicit meta or twilio provider',
+        isSandbox
       };
     }
 
@@ -181,6 +184,7 @@ export function getWhatsAppProviderReadiness(): WhatsAppProviderReadiness {
     webhookConfigured,
     testSendAvailable,
     bulkEnabled,
-    statusMessage
+    statusMessage,
+    isSandbox
   };
 }

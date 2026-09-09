@@ -148,6 +148,7 @@ function formatHumanSenderRole(roleStr?: string) {
 
 export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: AdminMessagesViewProps) {
   const { showSuccess, showError } = useNotification();
+  const isSuperAdmin = adminUser?.role === 'super_admin';
   const [initialLoading, setInitialLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -264,16 +265,22 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           pollTestStatus(res.logId);
         }
       } else {
-        showError(res.message || 'Failed to dispatch test WhatsApp message.');
+        let errorMsg = res.message || 'Failed to dispatch test WhatsApp message.';
+        if (errorMsg.includes('63015') || errorMsg.toLowerCase().includes('sandbox')) {
+          errorMsg = 'This number is not connected to the WhatsApp test environment.';
+        }
+        showError(errorMsg);
         setTestStatus({
           status: 'failed',
           recipientPhone: testPhone.trim(),
-          errorMessage: res.message
+          errorMessage: errorMsg
         });
       }
     } catch (err: any) {
       let errorMsg = err.message || 'Test send request failed.';
-      if (errorMsg.trim().toLowerCase() === 'authenticate') {
+      if (errorMsg.includes('63015') || errorMsg.toLowerCase().includes('sandbox')) {
+        errorMsg = 'This number is not connected to the WhatsApp test environment.';
+      } else if (errorMsg.trim().toLowerCase() === 'authenticate' || errorMsg.includes('20003')) {
         errorMsg = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
       }
       showError(errorMsg);
@@ -295,7 +302,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       try {
         const res = await api.admin.getTestWhatsAppStatus({ logId });
         if (res.success && res.log) {
-          setTestStatus(res.log);
+          const logData = { ...res.log };
+          if (logData.errorMessage && (logData.errorMessage.includes('63015') || logData.errorMessage.toLowerCase().includes('sandbox'))) {
+            logData.errorMessage = 'This number is not connected to the WhatsApp test environment.';
+          }
+          setTestStatus(logData);
           if (res.log.status === 'read' || res.log.status === 'failed') {
             clearInterval(interval);
           }
@@ -339,6 +350,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [dispatchSummary, setDispatchSummary] = useState<any | null>(null);
   const [recentSend, setRecentSend] = useState<RecentSendState | null>(null);
+  const [showTechnicalStatus, setShowTechnicalStatus] = useState(false);
 
   // Polling effect for campaign delivery status
   useEffect(() => {
@@ -1815,10 +1827,18 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                   >
                     {recipientGroups.map(group => {
-                      const groupLabel = group.key === 'all_parents' ? 'All current-event parents' : group.label;
+                      let groupLabel = group.key === 'all_parents' ? 'All current-event parents' : group.label;
+                      let count = group.count;
+                      if (group.key === 'specific_parents') {
+                        groupLabel = 'Selected parents';
+                        count = selectedParentIds.length;
+                      }
+                      const unitLabel = group.key === 'specific_parents'
+                        ? (count === 1 ? 'parent' : 'parents')
+                        : (count === 1 ? 'contact' : 'contacts');
                       return (
                         <option key={group.key} value={group.key}>
-                          {groupLabel} ({group.count} {group.count === 1 ? 'contact' : 'contacts'})
+                          {groupLabel} ({count} {unitLabel})
                         </option>
                       );
                     })}
@@ -1848,7 +1868,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <span className="text-xs font-bold text-[#18181B] block">Select specific parents</span>
+                      <span className="text-xs font-bold text-[#18181B] block">Selected parents</span>
                       <p className="text-[11px] text-zinc-500">
                         Choose recipient parents for this announcement (one message per parent).
                       </p>
@@ -1906,6 +1926,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                           ? `${parent.childCount} ${parent.childCount === 1 ? 'child' : 'children'}`
                           : 'No linked children';
                         const isOptedIn = parent.whatsappConsentStatus === 'opted_in';
+                        const isOptedOut = parent.whatsappConsentStatus === 'opted_out';
 
                         return (
                           <label
@@ -1935,11 +1956,15 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                               {isOptedIn ? (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1">
                                   <Check className="w-2.5 h-2.5 inline" />
-                                  <span>WhatsApp Opted In</span>
+                                  <span>WhatsApp enabled</span>
+                                </span>
+                              ) : isOptedOut ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500">
+                                  WhatsApp off
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500">
-                                  WhatsApp Unconsented
+                                  WhatsApp not enabled
                                 </span>
                               )}
                             </div>
@@ -1955,7 +1980,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       {selectedParentIds.length} of {eventParents.length} parents selected
                     </span>
                     <span className="font-medium text-[#18181B]">
-                      {selectedParentIds.length} unique {selectedParentIds.length === 1 ? 'recipient' : 'recipients'}
+                      {selectedParentIds.length === 1 ? '1 parent selected' : `${selectedParentIds.length} parents selected`}
                     </span>
                   </div>
                 </div>
@@ -1972,7 +1997,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       id: 'in_app',
                       label: 'In-app',
                       desc: 'Notification centre',
-                      countLabel: effectiveEligibility ? `${effectiveEligibility.inApp} eligible` : 'Eligible contacts',
+                      countLabel: `${effectiveEligibility ? effectiveEligibility.inApp : 0} available`,
                       icon: Bell,
                       enabled: true
                     },
@@ -1980,7 +2005,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       id: 'push',
                       label: 'Push',
                       desc: 'Registered devices',
-                      countLabel: effectiveEligibility ? `${effectiveEligibility.push} eligible` : 'Registered devices',
+                      countLabel: `${effectiveEligibility ? effectiveEligibility.push : 0} available`,
                       icon: Smartphone,
                       enabled: true
                     },
@@ -1988,17 +2013,15 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       id: 'email',
                       label: 'Email',
                       desc: 'Account email addresses',
-                      countLabel: effectiveEligibility ? `${effectiveEligibility.email} eligible` : (emailEnabled ? 'Account email addresses' : 'Email provider not configured'),
+                      countLabel: `${effectiveEligibility ? effectiveEligibility.email : 0} available`,
                       icon: Mail,
                       enabled: emailEnabled
                     },
                     {
                       id: 'whatsapp',
                       label: 'WhatsApp',
-                      desc: 'Parents who opted in',
-                      countLabel: isSpecificParents
-                        ? `${effectiveEligibility ? effectiveEligibility.whatsappOptedIn : 0} of ${selectedParentsList.length} eligible`
-                        : (effectiveEligibility ? `${effectiveEligibility.whatsappOptedIn} opted in` : 'Parents who opted in'),
+                      desc: 'Parents with WhatsApp updates enabled',
+                      countLabel: `${effectiveEligibility ? effectiveEligibility.whatsappOptedIn : 0} available`,
                       icon: Phone,
                       enabled: whatsappEnabled && (effectiveEligibility ? effectiveEligibility.whatsappOptedIn > 0 : false)
                     }
@@ -2094,7 +2117,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               {/* Footer */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
                 <span className="text-xs text-zinc-500">
-                  Sending to: <strong>{activeGroupRecipients} recipient{activeGroupRecipients === 1 ? '' : 's'}</strong>
+                  Sending to: <strong>{activeGroupRecipients} {isSpecificParents ? (activeGroupRecipients === 1 ? 'parent' : 'parents') : (activeGroupRecipients === 1 ? 'recipient' : 'recipients')}</strong>
                 </span>
 
                 <div className="flex items-center space-x-2">
@@ -2163,15 +2186,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 </div>
 
                 {isSpecificParents && (
-                  <div className="px-3 py-2 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start space-x-2">
-                    <User className="w-4 h-4 text-amber-700 mt-0.5 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold">
-                        Previewing as {previewRepresentativeParent || selectedParentsList[0]?.name || 'Representative parent'}
-                      </div>
-                      <p className="text-[11px] text-amber-700/90 mt-0.5">
-                        This preview demonstrates token substitution for a representative selected parent. Each selected parent receives their own personalized copy.
-                      </p>
+                  <div className="px-3 py-2 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-center space-x-2">
+                    <User className="w-4 h-4 text-amber-700 shrink-0" />
+                    <div className="min-w-0 flex-1 font-semibold truncate">
+                      Preview for {previewRepresentativeParent || selectedParentsList[0]?.name || 'Selected parent'}
                     </div>
                   </div>
                 )}
@@ -2283,134 +2301,168 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
                   <div className="flex items-center space-x-2">
                     <Phone className="w-4 h-4 text-[#25D366]" />
-                    <h3 className="text-sm font-bold text-[#18181B]">WhatsApp setup</h3>
+                    <h3 className="text-sm font-bold text-[#18181B]">WhatsApp</h3>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                     providerStatus.whatsappReadiness?.configured ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
                   }`}>
-                    {providerStatus.whatsappReadiness?.configured ? 'Ready' : 'WhatsApp setup incomplete'}
+                    {providerStatus.whatsappReadiness?.configured ? 'Ready' : 'Setup required'}
                   </span>
                 </div>
 
-                <div className="space-y-2.5 text-xs">
+                <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Provider:</span>
-                    <span className="font-semibold text-zinc-800 capitalize">
-                      {providerStatus.whatsappReadiness?.provider || 'simulated'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Webhook:</span>
-                    <span className={`font-semibold ${providerStatus.whatsappReadiness?.webhookConfigured ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                      {providerStatus.whatsappReadiness?.webhookConfigured ? 'Active' : 'Unconfigured'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Test send:</span>
+                    <span className="text-zinc-500">Recipient availability:</span>
                     <span className="font-semibold text-zinc-800">
-                      {providerStatus.whatsappReadiness?.testSendAvailable ? 'Available' : 'Unavailable'}
+                      {channelEligibility?.whatsappOptedIn ?? 0} available
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Bulk broadcasts:</span>
-                    <span className={`font-semibold ${providerStatus.whatsappReadiness?.bulkEnabled ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                      {providerStatus.whatsappReadiness?.bulkEnabled ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Opted-in parents:</span>
-                    <span className="font-semibold text-zinc-800">
-                      {channelEligibility?.whatsappOptedIn ?? 0}
-                    </span>
-                  </div>
+                  <p className="text-[11px] text-zinc-500">
+                    Parents with WhatsApp updates enabled for this event.
+                  </p>
                 </div>
 
-                {/* Test delivery section */}
-                <div className="pt-3 border-t border-[#EAE8E1] space-y-2.5">
-                  <div className="font-semibold text-xs text-zinc-900">Test delivery</div>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed">
-                    Send a controlled test message to verify provider connectivity and delivery state tracking.
-                  </p>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
-                      Phone number
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        disabled={testSending || !providerStatus.whatsappReadiness?.testSendAvailable}
-                        value={testPhone}
-                        onChange={(e) => setTestPhone(e.target.value)}
-                        placeholder="+234 800 000 0000"
-                        className="flex-1 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-1.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <button
-                        type="button"
-                        disabled={testSending || !testPhone.trim() || !providerStatus.whatsappReadiness?.testSendAvailable}
-                        onClick={handleSendTestWhatsApp}
-                        className="px-3 py-1.5 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shrink-0"
-                      >
-                        {testSending ? 'Sending...' : 'Send test'}
-                      </button>
-                    </div>
-                    {!providerStatus.whatsappReadiness?.testSendAvailable && (
-                      <p className="text-[11px] text-amber-700 font-medium">
-                        WhatsApp setup incomplete. Provider credentials must be configured before test delivery is available.
-                      </p>
+                {isSuperAdmin && (
+                  <div className="pt-3 border-t border-[#EAE8E1] space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowTechnicalStatus(prev => !prev)}
+                      className="flex items-center justify-between w-full text-xs font-semibold text-zinc-700 hover:text-zinc-900 cursor-pointer transition-colors"
+                    >
+                      <span>WhatsApp setup</span>
+                      <span className="text-[11px] text-[#C59B27] font-medium flex items-center gap-1">
+                        {showTechnicalStatus ? 'Hide technical status' : 'View technical status'}
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showTechnicalStatus ? 'rotate-180' : ''}`} />
+                      </span>
+                    </button>
+
+                    {showTechnicalStatus && (
+                      <div className="space-y-4 pt-1">
+                        {/* Test environment notice (Super Admin test mode only) */}
+                        {providerStatus.whatsappReadiness?.isSandbox && (
+                          <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1 text-xs text-amber-900">
+                            <div className="font-semibold">Test environment</div>
+                            <p className="text-[11px] text-amber-800 leading-relaxed">
+                              Only numbers connected to the WhatsApp test environment can receive messages.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Operational Details */}
+                        <div className="space-y-2 text-xs bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-500">Provider:</span>
+                            <span className="font-semibold text-zinc-800 capitalize">
+                              {providerStatus.whatsappReadiness?.provider || 'simulated'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-500">Webhook:</span>
+                            <span className={`font-semibold ${providerStatus.whatsappReadiness?.webhookConfigured ? 'text-emerald-700' : 'text-zinc-400'}`}>
+                              {providerStatus.whatsappReadiness?.webhookConfigured ? 'Active' : 'Unconfigured'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-500">Test send:</span>
+                            <span className="font-semibold text-zinc-800">
+                              {providerStatus.whatsappReadiness?.testSendAvailable ? 'Available' : 'Unavailable'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-500">Bulk broadcasts:</span>
+                            <span className={`font-semibold ${providerStatus.whatsappReadiness?.bulkEnabled ? 'text-emerald-700' : 'text-zinc-400'}`}>
+                              {providerStatus.whatsappReadiness?.bulkEnabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Super Admin Test WhatsApp */}
+                        <div className="space-y-2.5 pt-2 border-t border-[#EAE8E1]">
+                          <div className="font-semibold text-xs text-zinc-900">Test WhatsApp</div>
+                          <p className="text-[11px] text-zinc-500 leading-relaxed">
+                            Send a test message to a number connected to the Twilio test environment.
+                          </p>
+                          <div className="space-y-2">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                disabled={testSending || !providerStatus.whatsappReadiness?.testSendAvailable}
+                                value={testPhone}
+                                onChange={(e) => setTestPhone(e.target.value)}
+                                placeholder="+234 800 000 0000"
+                                className="flex-1 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-1.5 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                              <button
+                                type="button"
+                                disabled={testSending || !testPhone.trim() || !providerStatus.whatsappReadiness?.testSendAvailable}
+                                onClick={handleSendTestWhatsApp}
+                                className="px-3 py-1.5 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shrink-0"
+                              >
+                                {testSending ? 'Sending...' : 'Send test'}
+                              </button>
+                            </div>
+                            {!providerStatus.whatsappReadiness?.testSendAvailable && (
+                              <p className="text-[11px] text-amber-700 font-medium">
+                                WhatsApp setup incomplete. Provider credentials must be configured before test delivery is available.
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Delivery States Stepper */}
+                          {testStatus && (
+                            <div className="mt-3 p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-2.5">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-semibold text-zinc-700">Delivery state:</span>
+                                <span className={`font-bold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-full ${
+                                  testStatus.status === 'read' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                  testStatus.status === 'delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  testStatus.status === 'sent' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                                  testStatus.status === 'queued' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                  'bg-rose-50 text-rose-700 border border-rose-200'
+                                }`}>
+                                  {testStatus.status}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-1 text-center text-[9px] font-semibold pt-1">
+                                {['Queued', 'Sent', 'Delivered', 'Read'].map((st) => {
+                                  const stateOrder = ['queued', 'sent', 'delivered', 'read'];
+                                  const currentIdx = stateOrder.indexOf(testStatus.status);
+                                  const thisIdx = stateOrder.indexOf(st.toLowerCase());
+                                  const isReached = currentIdx >= thisIdx && testStatus.status !== 'failed';
+                                  const isCurrent = testStatus.status === st.toLowerCase();
+
+                                  return (
+                                    <div key={st} className="flex flex-col items-center">
+                                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                        isCurrent
+                                          ? 'bg-[#C59B27] text-white ring-2 ring-[#C59B27]/30'
+                                          : isReached
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'bg-zinc-200 text-zinc-500'
+                                      }`}>
+                                        {isReached && !isCurrent ? '✓' : thisIdx + 1}
+                                      </div>
+                                      <span className={`mt-1 ${isCurrent ? 'text-[#18181B] font-bold' : isReached ? 'text-emerald-700' : 'text-zinc-400'}`}>
+                                        {st}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {testStatus.status === 'failed' && (
+                                <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-medium">
+                                  Failed: {testStatus.errorMessage || 'Delivery failed'}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {/* Delivery States Stepper */}
-                  {testStatus && (
-                    <div className="mt-3 p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-2.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-zinc-700">Delivery state:</span>
-                        <span className={`font-bold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-full ${
-                          testStatus.status === 'read' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                          testStatus.status === 'delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                          testStatus.status === 'sent' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
-                          testStatus.status === 'queued' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                          'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}>
-                          {testStatus.status}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-1 text-center text-[9px] font-semibold pt-1">
-                        {['Queued', 'Sent', 'Delivered', 'Read'].map((st) => {
-                          const stateOrder = ['queued', 'sent', 'delivered', 'read'];
-                          const currentIdx = stateOrder.indexOf(testStatus.status);
-                          const thisIdx = stateOrder.indexOf(st.toLowerCase());
-                          const isReached = currentIdx >= thisIdx && testStatus.status !== 'failed';
-                          const isCurrent = testStatus.status === st.toLowerCase();
-
-                          return (
-                            <div key={st} className="flex flex-col items-center">
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                                isCurrent
-                                  ? 'bg-[#C59B27] text-white ring-2 ring-[#C59B27]/30'
-                                  : isReached
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'bg-zinc-200 text-zinc-500'
-                              }`}>
-                                {isReached && !isCurrent ? '✓' : thisIdx + 1}
-                              </div>
-                              <span className={`mt-1 ${isCurrent ? 'text-[#18181B] font-bold' : isReached ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                                {st}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {testStatus.status === 'failed' && (
-                        <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-medium">
-                          Failed: {testStatus.errorMessage || 'Provider delivery error'}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Recent Announcements */}
@@ -2432,29 +2484,59 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     </div>
                   ) : (
                     recentActivity.map((log: any) => {
-                      const logSubject = log.subject || (log.messageType || log.messagetype || '').replace(/_/g, ' ') || 'Announcement';
-                      const logGroup = (log.recipientGroup || log.recipientgroup || '').replace(/_/g, ' ') || 'General';
+                      const rawSub = log.subject || (log.messageType || log.messagetype || '').replace(/_/g, ' ') || 'Announcement';
+                      const logSubject = String(rawSub)
+                        .replace(/{Event name}/gi, resolvedEventName)
+                        .replace(/{Parent name}/gi, 'Parent');
+                      const logGroup = log.recipientGroup === 'specific_parents' || log.recipientgroup === 'specific_parents'
+                        ? 'Selected parents'
+                        : ((log.recipientGroup || log.recipientgroup || '').replace(/_/g, ' ') || 'General');
                       const dateVal = log.createdAt || log.createdat;
+                      const channelRaw = log.channel || 'in_app';
+                      const logChannel = channelRaw.includes('whatsapp') ? 'WhatsApp' : channelRaw.includes('email') ? 'Email' : 'In-app';
+                      const recipientCount = log.recipientCount || log.recipient_count || 1;
+                      const status = log.status || 'queued';
+                      const statusBadge = status === 'read'
+                        ? { text: 'Read', class: 'bg-blue-50 text-blue-700 border-blue-200' }
+                        : status === 'delivered'
+                        ? { text: 'Delivered', class: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                        : status === 'sent'
+                        ? { text: 'Sent', class: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+                        : status === 'failed'
+                        ? { text: 'Failed', class: 'bg-rose-50 text-rose-700 border-rose-200' }
+                        : { text: 'Queued', class: 'bg-amber-50 text-amber-700 border-amber-200' };
+
+                      const cleanBody = String(log.body || '')
+                        .replace(/{Event name}/gi, resolvedEventName)
+                        .replace(/{Parent name}/gi, 'Parent')
+                        .replace(/{Child name}/gi, 'your child')
+                        .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
+                        .replace(/{Pass link}/gi, 'https://koinonia.org/pass')
+                        .replace(/{Pickup time}/gi, '4:00 PM')
+                        .replace(/{Support contact}/gi, '+234 803 123 4567');
+
                       return (
                         <div
                           key={log.id}
-                          className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1 text-xs"
+                          className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1.5 text-xs"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold text-zinc-900 truncate">
                               {logSubject}
                             </span>
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                              log.status === 'sent' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
-                            }`}>
-                              {log.status === 'sent' ? 'Sent' : 'Not delivered'}
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge.class}`}>
+                              {statusBadge.text}
                             </span>
                           </div>
-                          <p className="text-[11px] text-zinc-500 line-clamp-2 leading-normal">
-                            {log.body}
+                          <div className="text-[11px] text-zinc-500 font-medium">
+                            {logGroup} · {logChannel} · {recipientCount} {recipientCount === 1 ? 'recipient' : 'recipients'}
+                            {log.deliverySummary ? ` · ${log.deliverySummary}` : ''}
+                          </div>
+                          <p className="text-[11px] text-zinc-600 line-clamp-2 leading-relaxed">
+                            {cleanBody}
                           </p>
                           <div className="text-[10px] text-zinc-400 pt-1 flex justify-between border-t border-zinc-200/60">
-                            <span>Group: {logGroup}</span>
+                            <span>Status: {statusBadge.text}</span>
                             <span>{dateVal ? new Date(dateVal).toLocaleDateString() : ''}</span>
                           </div>
                         </div>
@@ -2588,7 +2670,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   </span>
                   {selectedChannels.includes('whatsapp') && (
                     <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                      {whatsappEligibleCount} eligible for WhatsApp
+                      {whatsappEligibleCount} available for WhatsApp
                     </span>
                   )}
                 </div>
@@ -2600,25 +2682,25 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     {selectedChannels.includes('in_app') && (
                       <div className="flex justify-between">
                         <span>In-app:</span>
-                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.inApp : activeGroupRecipients} recipients</span>
+                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.inApp : activeGroupRecipients} available</span>
                       </div>
                     )}
                     {selectedChannels.includes('push') && (
                       <div className="flex justify-between">
                         <span>Push notification:</span>
-                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.push : activeGroupRecipients} recipients</span>
+                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.push : activeGroupRecipients} available</span>
                       </div>
                     )}
                     {selectedChannels.includes('email') && (
                       <div className="flex justify-between">
                         <span>Email:</span>
-                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.email : activeGroupRecipients} recipients</span>
+                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.email : activeGroupRecipients} available</span>
                       </div>
                     )}
                     {selectedChannels.includes('whatsapp') && (
                       <div className="flex justify-between">
                         <span>WhatsApp:</span>
-                        <span className="font-semibold text-emerald-700">{whatsappEligibleCount} eligible</span>
+                        <span className="font-semibold text-emerald-700">{whatsappEligibleCount} available</span>
                       </div>
                     )}
                   </div>
@@ -2659,7 +2741,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Message</div>
                   {resolvedRepresentativeName && (
                     <span className="text-[10px] text-zinc-500 italic">
-                      Previewing as {resolvedRepresentativeName}
+                      Preview for {resolvedRepresentativeName}
                     </span>
                   )}
                 </div>
