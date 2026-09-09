@@ -43,6 +43,20 @@ interface EventOption {
   status: string;
 }
 
+interface RecentSendState {
+  campaignId: string;
+  subject: string;
+  channels: string[];
+  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+  queued: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  errorMessage?: string | null;
+  lastUpdated?: string;
+}
+
 const DEFAULT_TEMPLATES: Record<string, { subject: string; body: string }> = {
   general_announcement: {
     subject: 'Important Event Details - {Event name}',
@@ -324,6 +338,46 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   // Confirmation modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [dispatchSummary, setDispatchSummary] = useState<any | null>(null);
+  const [recentSend, setRecentSend] = useState<RecentSendState | null>(null);
+
+  // Polling effect for campaign delivery status
+  useEffect(() => {
+    if (!recentSend?.campaignId) return;
+    if (recentSend.status === 'delivered' || recentSend.status === 'read' || recentSend.status === 'failed') return;
+
+    let pollCount = 0;
+    const maxPolls = 15;
+    const interval = setInterval(async () => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const res = await api.admin.getCampaignStatus(recentSend.campaignId);
+        if (res.success) {
+          setRecentSend(prev => prev ? {
+            ...prev,
+            status: res.status,
+            queued: res.queued,
+            sent: res.sent,
+            delivered: res.delivered,
+            read: res.read,
+            failed: res.failed,
+            errorMessage: res.errorMessage || null,
+            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          } : null);
+          if (res.status === 'delivered' || res.status === 'read' || res.status === 'failed') {
+            clearInterval(interval);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling campaign status:', err);
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [recentSend?.campaignId, recentSend?.status]);
 
   // Sender settings modal
   const [isEditingSettings, setIsEditingSettings] = useState(false);
@@ -774,16 +828,40 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       if (res.success) {
         setDispatchSummary({
           ...res.summary,
+          whatsappQueued: res.queued?.whatsapp ?? res.whatsappQueued,
           message: res.message
         });
-        showSuccess(res.message || 'Update sent');
-        setBody('');
-        setSubject('');
+
+        const whatsappQueued = res.queued?.whatsapp ?? (res.summary?.whatsappQueued ?? (selectedChannels.includes('whatsapp') ? 1 : 0));
+
+        if (selectedChannels.includes('whatsapp') && !selectedChannels.includes('email') && !selectedChannels.includes('in_app') && !selectedChannels.includes('push')) {
+          showSuccess(`Announcement queued. ${whatsappQueued} WhatsApp message${whatsappQueued === 1 ? '' : 's'} queued for delivery.`);
+        } else {
+          showSuccess(res.message || 'Announcement queued for delivery');
+        }
+
+        if (res.campaignId) {
+          setRecentSend({
+            campaignId: res.campaignId,
+            subject: subject || 'Announcement',
+            channels: selectedChannels,
+            status: 'queued',
+            queued: whatsappQueued,
+            sent: res.sent?.whatsapp ?? 0,
+            delivered: 0,
+            read: 0,
+            failed: 0,
+            errorMessage: null,
+            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          });
+        }
+
+        // Keep composer usable - do not blank subject or body
         fetchMessagesData(true, selectedEventId);
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError(parsed.message || "We couldn't send this announcement. Try again");
+      showError(parsed.message || "We couldn't queue this announcement. Try again.");
     } finally {
       setActionLoading(false);
     }
@@ -840,6 +918,27 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const activeGroupRecipients = isSpecificParents
     ? selectedParentIds.length
     : (recipientGroups.find(g => g.key === selectedGroup)?.count ?? 0);
+
+  const isWhatsAppOnly = selectedChannels.length === 1 && selectedChannels[0] === 'whatsapp';
+  const whatsappEligibleCount = effectiveEligibility?.whatsappOptedIn ?? 0;
+  const representativeParent = isSpecificParents
+    ? selectedParentsList[0]
+    : (eventParents.length > 0 ? eventParents[0] : null);
+  const resolvedRepresentativeName = previewRepresentativeParent || representativeParent?.name || (isSpecificParents && selectedParentsList.length > 0 ? selectedParentsList[0].name : 'Stephanie Keenam');
+  const resolvedEventName = events.find(e => e.id === selectedEventId)?.title || 'The General Assembly';
+
+  const resolvedPreviewSubject = (previewSubject || subject || '')
+    .replace(/{Parent name}/gi, resolvedRepresentativeName)
+    .replace(/{Event name}/gi, resolvedEventName);
+
+  const resolvedPreviewBody = (previewBody || body || '')
+    .replace(/{Parent name}/gi, resolvedRepresentativeName)
+    .replace(/{Event name}/gi, resolvedEventName)
+    .replace(/{Child name}/gi, representativeParent?.children?.[0]?.name || 'your child')
+    .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
+    .replace(/{Pass link}/gi, 'https://koinonia.org/pass/sample')
+    .replace(/{Pickup time}/gi, '4:00 PM')
+    .replace(/{Support contact}/gi, '+234 803 123 4567');
 
   const filteredParents = eventParents.filter(p => {
     if (!parentSearchQuery.trim()) return true;
@@ -1557,9 +1656,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               <div className="flex items-start space-x-3">
                 <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-xs font-bold text-[#18181B]">Update sent</h4>
+                  <h4 className="text-xs font-bold text-[#18181B]">
+                    {selectedChannels.includes('whatsapp') && !selectedChannels.includes('email') && !selectedChannels.includes('in_app') && !selectedChannels.includes('push')
+                      ? 'Announcement queued'
+                      : 'Announcement queued & dispatched'}
+                  </h4>
                   <p className="text-xs text-zinc-600 mt-0.5">
-                    {dispatchSummary.message || `Delivered to ${dispatchSummary.recipients || dispatchSummary.sent || dispatchSummary.requested || 0} recipient(s).`}
+                    {dispatchSummary.message || `${dispatchSummary.whatsappQueued || 1} WhatsApp message(s) queued for delivery.`}
                   </p>
                 </div>
               </div>
@@ -1569,6 +1672,90 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               >
                 Dismiss
               </button>
+            </div>
+          )}
+
+          {/* RECENT SEND DELIVERY STATUS SECTION */}
+          {recentSend && (
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3.5 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className={`w-2 h-2 rounded-full ${
+                    recentSend.status === 'delivered' || recentSend.status === 'read'
+                      ? 'bg-emerald-500'
+                      : recentSend.status === 'failed'
+                      ? 'bg-rose-500'
+                      : recentSend.status === 'sent'
+                      ? 'bg-sky-500'
+                      : 'bg-amber-500 animate-pulse'
+                  }`} />
+                  <h4 className="text-xs font-bold text-zinc-900 tracking-wider uppercase">Recent send</h4>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                    recentSend.status === 'delivered' || recentSend.status === 'read'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : recentSend.status === 'failed'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : recentSend.status === 'sent'
+                      ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}>
+                    {recentSend.status === 'delivered' ? 'Delivered' : recentSend.status === 'read' ? 'Read' : recentSend.status === 'sent' ? 'Sent' : recentSend.status === 'failed' ? 'Failed' : 'Queued'}
+                  </span>
+                  <button
+                    onClick={() => setRecentSend(null)}
+                    className="text-zinc-400 hover:text-zinc-600 p-1 rounded-md cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs gap-1 border-b border-[#EAE8E1] pb-2.5">
+                <div className="font-semibold text-zinc-900 truncate">
+                  {recentSend.subject}
+                </div>
+                <div className="text-[11px] text-zinc-500 font-medium">
+                  {recentSend.channels.map(c => c === 'whatsapp' ? 'WhatsApp' : c === 'in_app' ? 'In-app' : c === 'push' ? 'Push' : 'Email').join(', ')}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-500 font-medium">Queued</div>
+                  <div className="text-base font-bold text-amber-700">{recentSend.queued}</div>
+                </div>
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-500 font-medium">Sent</div>
+                  <div className="text-base font-bold text-sky-700">{recentSend.sent}</div>
+                </div>
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-500 font-medium">Delivered</div>
+                  <div className="text-base font-bold text-emerald-700">{recentSend.delivered}</div>
+                </div>
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-500 font-medium">Failed</div>
+                  <div className={`text-base font-bold ${recentSend.failed > 0 ? 'text-rose-600' : 'text-zinc-400'}`}>{recentSend.failed}</div>
+                </div>
+              </div>
+
+              {recentSend.errorMessage && (
+                <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2.5 flex items-start space-x-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Delivery issue: </span>
+                    <span>{recentSend.errorMessage}</span>
+                  </div>
+                </div>
+              )}
+
+              {recentSend.lastUpdated && (
+                <div className="text-[10px] text-zinc-400 text-right">
+                  Updated {recentSend.lastUpdated}
+                </div>
+              )}
             </div>
           )}
 
@@ -2244,30 +2431,35 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       No announcements sent yet.
                     </div>
                   ) : (
-                    recentActivity.map((log) => (
-                      <div 
-                        key={log.id}
-                        className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1 text-xs"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-zinc-900 truncate">
-                            {log.subject || log.messageType.replace(/_/g, ' ')}
-                          </span>
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                            log.status === 'sent' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
-                          }`}>
-                            {log.status === 'sent' ? 'Sent' : 'Not delivered'}
-                          </span>
+                    recentActivity.map((log: any) => {
+                      const logSubject = log.subject || (log.messageType || log.messagetype || '').replace(/_/g, ' ') || 'Announcement';
+                      const logGroup = (log.recipientGroup || log.recipientgroup || '').replace(/_/g, ' ') || 'General';
+                      const dateVal = log.createdAt || log.createdat;
+                      return (
+                        <div
+                          key={log.id}
+                          className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl space-y-1 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-zinc-900 truncate">
+                              {logSubject}
+                            </span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                              log.status === 'sent' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+                            }`}>
+                              {log.status === 'sent' ? 'Sent' : 'Not delivered'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 line-clamp-2 leading-normal">
+                            {log.body}
+                          </p>
+                          <div className="text-[10px] text-zinc-400 pt-1 flex justify-between border-t border-zinc-200/60">
+                            <span>Group: {logGroup}</span>
+                            <span>{dateVal ? new Date(dateVal).toLocaleDateString() : ''}</span>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-zinc-500 line-clamp-2 leading-normal">
-                          {log.body}
-                        </p>
-                        <div className="text-[10px] text-zinc-400 pt-1 flex justify-between border-t border-zinc-200/60">
-                          <span>Group: {log.recipientGroup.replace(/_/g, ' ')}</span>
-                          <span>{new Date(log.createdAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -2356,48 +2548,167 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
       {/* CONFIRMATION MODAL BEFORE SENDING ANNOUNCEMENT */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div 
             onClick={() => setShowConfirmModal(false)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
           />
-          <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 animate-fade-in">
-            <div className="flex items-center space-x-2.5 pb-3 border-b border-[#EAE8E1]">
-              <AlertTriangle className="w-5 h-5 text-[#C59B27] shrink-0" />
-              <h4 className="text-base font-bold text-[#18181B]">Send this announcement?</h4>
+          <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col shadow-xl animate-fade-in my-auto overflow-hidden">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#EAE8E1] shrink-0 bg-[#FAF9F6]">
+              <div className="flex items-center space-x-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200/60 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-[#C59B27]" />
+                </div>
+                <h4 className="text-sm sm:text-base font-bold text-[#18181B] truncate">
+                  {isWhatsAppOnly ? 'Send WhatsApp announcement?' : 'Send announcement?'}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="space-y-2.5 text-xs text-zinc-600 leading-relaxed">
-              <p>
-                This will send your message to {activeGroupRecipients} recipient(s). Please confirm you want to proceed.
-              </p>
-              
-              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 space-y-1.5 text-xs">
-                <div>• Recipient group: <strong className="text-zinc-900">{selectedGroup.replace(/_/g, ' ')}</strong></div>
-                <div>• Delivery channels: <strong className="text-zinc-900">{selectedChannels.map(c => c === 'in_app' ? 'In-app' : c === 'push' ? 'Push notification' : c.toUpperCase()).join(', ')}</strong></div>
-                <div>• Estimated recipients: <strong className="text-emerald-700 font-bold">{activeGroupRecipients} recipient(s)</strong></div>
-                {subject && (
-                  <div>• Title / Subject: <strong className="text-zinc-900 truncate block">{subject}</strong></div>
+            {/* Scrollable Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs leading-relaxed text-zinc-600">
+
+              {/* Audience & Eligibility Summary */}
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="font-semibold text-zinc-900">
+                    {isSpecificParents
+                      ? `${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'} selected`
+                      : `${selectedGroup.replace(/_/g, ' ')} (${activeGroupRecipients} recipient${activeGroupRecipients === 1 ? '' : 's'})`
+                    }
+                  </span>
+                  {selectedChannels.includes('whatsapp') && (
+                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                      {whatsappEligibleCount} eligible for WhatsApp
+                    </span>
+                  )}
+                </div>
+
+                {/* If multiple channels selected, show channel eligibility breakdown */}
+                {selectedChannels.length > 1 && (
+                  <div className="pt-2 border-t border-[#EAE8E1] space-y-1 text-[11px] text-zinc-700">
+                    <div className="font-medium text-zinc-500 uppercase text-[10px] tracking-wider pb-0.5">Channel Eligibility</div>
+                    {selectedChannels.includes('in_app') && (
+                      <div className="flex justify-between">
+                        <span>In-app:</span>
+                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.inApp : activeGroupRecipients} recipients</span>
+                      </div>
+                    )}
+                    {selectedChannels.includes('push') && (
+                      <div className="flex justify-between">
+                        <span>Push notification:</span>
+                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.push : activeGroupRecipients} recipients</span>
+                      </div>
+                    )}
+                    {selectedChannels.includes('email') && (
+                      <div className="flex justify-between">
+                        <span>Email:</span>
+                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.email : activeGroupRecipients} recipients</span>
+                      </div>
+                    )}
+                    {selectedChannels.includes('whatsapp') && (
+                      <div className="flex justify-between">
+                        <span>WhatsApp:</span>
+                        <span className="font-semibold text-emerald-700">{whatsappEligibleCount} eligible</span>
+                      </div>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              {/* Recipients list for Specific Parents */}
+              {isSpecificParents && selectedParentsList.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Recipients</div>
+                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs space-y-1 text-zinc-800">
+                    {selectedParentsList.slice(0, 2).map(p => (
+                      <div key={p.id} className="font-medium flex items-center space-x-1.5">
+                        <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="truncate">{p.name || 'Unnamed Parent'}</span>
+                      </div>
+                    ))}
+                    {selectedParentsList.length > 2 && (
+                      <div className="text-[11px] text-zinc-500 font-medium pl-5">
+                        + {selectedParentsList.length - 2} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Delivery Channels */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Delivery</div>
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 font-medium">
+                  {selectedChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : c === 'in_app' ? 'In-app notification' : c === 'push' ? 'Push notification' : 'Email').join(', ')}
+                </div>
+              </div>
+
+              {/* Message Details & Resolved Preview */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Message</div>
+                  {resolvedRepresentativeName && (
+                    <span className="text-[10px] text-zinc-500 italic">
+                      Previewing as {resolvedRepresentativeName}
+                    </span>
+                  )}
+                </div>
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 space-y-2 text-xs">
+                  <div className="font-semibold text-zinc-900 border-b border-[#EAE8E1] pb-1.5">
+                    {resolvedPreviewSubject || subject || 'Announcement'}
+                  </div>
+                  <div className="text-zinc-600 text-[11px] whitespace-pre-wrap max-h-28 overflow-y-auto leading-relaxed">
+                    {resolvedPreviewBody || body}
+                  </div>
+                </div>
+              </div>
+
+              {/* Queued Notice */}
+              <div className="p-2.5 bg-amber-50/70 border border-amber-200/60 rounded-xl flex items-center space-x-2 text-[11px] text-amber-900">
+                <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>This message will be queued for delivery.</span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#EAE8E1]">
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end space-x-2 p-4 border-t border-[#EAE8E1] shrink-0 bg-white">
               <Button 
                 variant="outline" 
                 onClick={() => setShowConfirmModal(false)}
-                className="text-xs cursor-pointer"
+                disabled={actionLoading}
+                className="text-xs cursor-pointer px-3 py-2"
               >
                 Cancel
               </Button>
               <button
                 onClick={handleConfirmSend}
-                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-2xs"
+                disabled={actionLoading}
+                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>Send now</span>
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Queueing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Queue message</span>
+                  </>
+                )}
               </button>
             </div>
+
           </div>
         </div>
       )}

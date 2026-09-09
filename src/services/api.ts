@@ -1052,9 +1052,25 @@ export const api = {
     }) {
       return api.request<{
         success: boolean;
+        campaignId?: string;
         recipientsCount?: number;
         whatsappQueued?: number;
         whatsappSkipped?: number;
+        queued?: {
+          whatsapp: number;
+          email: number;
+          push: number;
+          inApp: number;
+        };
+        sent?: {
+          inApp: number;
+          push: number;
+          email: number;
+          whatsapp: number;
+        };
+        skipped?: {
+          whatsappNotEligible: number;
+        };
         summary: {
           requested: number;
           sent?: number;
@@ -1074,6 +1090,23 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+    },
+    async getCampaignStatus(campaignId: string) {
+      return api.request<{
+        success: boolean;
+        campaignId: string;
+        subject?: string;
+        channels?: string[];
+        recipientsCount?: number;
+        status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+        queued: number;
+        sent: number;
+        delivered: number;
+        read: number;
+        failed: number;
+        errorMessage?: string | null;
+        lastUpdated?: string;
+      }>(`/api/admin/messages/campaign-status/${campaignId}`);
     },
     async getMessagesSettings() {
       return api.request<{

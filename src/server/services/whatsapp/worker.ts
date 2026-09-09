@@ -262,6 +262,7 @@ export async function processQueuedWhatsAppJobs(
         const campaignMatch = candidate.idempotency_key?.match(/admin_message:([^:]+)/)
           || candidate.idempotency_key?.match(/campaign:([^:]+)/);
         const broadcastId = campaignMatch ? campaignMatch[1] : (candidate.rule_id || null);
+        const resolvedCampaignId = broadcastId || candidate.rule_id || 'broadcast';
 
         if (broadcastId) {
           const broadcastLog = await queryOne(`
@@ -269,10 +270,7 @@ export async function processQueuedWhatsAppJobs(
           `, [broadcastId]);
 
           if (broadcastLog && broadcastLog.body) {
-            const firstName = (parent.full_name || 'Parent').trim().split(/\s+/)[0];
-            messageBody = broadcastLog.body
-              .replace(/{Parent name}/g, firstName)
-              .replace(/{Event name}/g, 'The General Assembly');
+            messageBody = broadcastLog.body;
           }
         }
 
@@ -283,16 +281,29 @@ export async function processQueuedWhatsAppJobs(
           `, [candidate.rule_id]);
 
           if (eventRule && eventRule.message_template) {
-            const firstName = (parent.full_name || 'Parent').trim().split(/\s+/)[0];
-            messageBody = eventRule.message_template
-              .replace(/{Parent name}/g, firstName)
-              .replace(/{Event name}/g, 'The General Assembly');
+            messageBody = eventRule.message_template;
           }
         }
 
         if (!messageBody.trim()) {
           messageBody = 'Koinonia Children & Teens: You have an important update for The General Assembly.';
         }
+
+        let eventName = 'The General Assembly';
+        if (candidate.event_id) {
+          const ev = await queryOne(`SELECT title FROM events WHERE id = ?`, [candidate.event_id]);
+          if (ev && ev.title) eventName = ev.title;
+        }
+
+        // Resolve personalized placeholders per recipient parent
+        const parentDisplayName = (parent.full_name || '').trim() || 'Parent';
+        messageBody = messageBody
+          .replace(/\{Parent name\}/gi, parentDisplayName)
+          .replace(/\{Event name\}/gi, eventName)
+          .replace(/\{Child name\}/gi, 'your child')
+          .replace(/\{Review link\}/gi, 'https://koinonia.org/parent/status')
+          .replace(/\{Pickup time\}/gi, '4:00 PM')
+          .replace(/\{Support contact\}/gi, '+234 803 123 4567');
 
         const recipientPhone = eligibility.normalizedNumber!;
 
@@ -317,7 +328,7 @@ export async function processQueuedWhatsAppJobs(
 
           await logWhatsAppDelivery({
             jobId: candidate.id,
-            campaignId: candidate.rule_id || 'broadcast',
+            campaignId: resolvedCampaignId,
             parentProfileId: candidate.parent_id,
             childEventEntryId: candidate.child_id || null,
             recipientPhone,
@@ -350,7 +361,7 @@ export async function processQueuedWhatsAppJobs(
 
             await logWhatsAppDelivery({
               jobId: candidate.id,
-              campaignId: candidate.rule_id || 'broadcast',
+              campaignId: resolvedCampaignId,
               parentProfileId: candidate.parent_id,
               recipientPhone,
               provider: provider.name,
@@ -367,12 +378,12 @@ export async function processQueuedWhatsAppJobs(
                   failure_reason = ?,
                   last_error = ?,
                   updated_at = ?
-            WHERE id = ?
+              WHERE id = ?
             `, [errMsg, errMsg, dispatchTimestamp, candidate.id]);
 
             await logWhatsAppDelivery({
               jobId: candidate.id,
-              campaignId: candidate.rule_id || 'broadcast',
+              campaignId: resolvedCampaignId,
               parentProfileId: candidate.parent_id,
               recipientPhone,
               provider: provider.name,

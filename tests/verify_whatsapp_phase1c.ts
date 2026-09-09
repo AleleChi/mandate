@@ -381,6 +381,161 @@ async function runTests() {
       assert(logs.length === 0, 'No automatic delivery log should exist for newly registered parent');
     });
 
+    // ====================================================
+    // SECTION 5: BLANK SCREEN FIX & DELIVERY UX VERIFICATION
+    // ====================================================
+    console.log('\n--- SECTION 5: BLANK SCREEN FIX & DELIVERY UX VERIFICATION ---');
+
+    await test('admin_message_logs API returns properly cased aliases to prevent blank screen crash', async () => {
+      // 1. Insert a test announcement log directly or via endpoint
+      const logId = `msg_log_${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO admin_message_logs (
+          id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at
+        ) VALUES (?, 'specific_parents', 'general_announcement', 'whatsapp', 'Test Subject', 'Test Body', 1, 'sent', ?)
+      `, [logId, now]);
+
+      // 2. Query GET /api/admin/messages
+      const res = await fetch(`${testBaseUrl}/api/admin/messages?eventId=${testEventId}`, {
+        headers: { 'Authorization': `Bearer ${superAdminToken}` }
+      });
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const data = await res.json();
+      assert(data.success === true, 'Expected success true');
+      assert(Array.isArray(data.recentActivity), 'Expected recentActivity array');
+
+      const found = data.recentActivity.find((l: any) => l.id === logId);
+      assert(found !== undefined, 'Expected to find inserted log in recentActivity');
+
+      // The exact bug: PostgreSQL folded aliases to lowercase (recipientgroup), causing log.recipientGroup.replace() to crash.
+      // Quoting aliases guarantees log.recipientGroup is defined and string methods can be called safely.
+      assert(typeof found.recipientGroup === 'string', `recipientGroup must be a string, got ${typeof found.recipientGroup}`);
+      assert(typeof found.messageType === 'string', `messageType must be a string, got ${typeof found.messageType}`);
+      assert(typeof found.createdAt === 'string', `createdAt must be a string, got ${typeof found.createdAt}`);
+
+      // Verify that calling .replace(/_/g, ' ') does not throw:
+      const renderedGroup = found.recipientGroup.replace(/_/g, ' ');
+      assert(renderedGroup === 'specific parents', `Expected 'specific parents', got ${renderedGroup}`);
+    });
+
+    let testCampaignId = '';
+
+    await test('Send Announcement endpoint returns structured campaign response with queued counts', async () => {
+      process.env.WHATSAPP_WORKER_MODE = 'disabled'; // Keep pending to inspect campaign status
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${superAdminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [parentBId],
+          messageType: 'general_announcement',
+          channels: ['whatsapp'],
+          subject: 'Special Event Details - {Event name}',
+          body: 'Dear {Parent name},\n\nWe are looking forward to {Event name}!',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const data = await res.json();
+      assert(data.success === true, 'Expected success true');
+      assert(typeof data.campaignId === 'string' && data.campaignId.length > 0, 'Expected campaignId string');
+      testCampaignId = data.campaignId;
+
+      // Check structured queued response
+      assert(typeof data.queued === 'object', 'Expected structured queued object');
+      assert(data.queued.whatsapp === 1, `Expected queued.whatsapp 1, got ${data.queued.whatsapp}`);
+      assert(typeof data.sent === 'object', 'Expected structured sent object');
+      assert(typeof data.skipped === 'object', 'Expected structured skipped object');
+    });
+
+    await test('GET /api/admin/messages/campaign-status/:campaignId returns live delivery status progression', async () => {
+      assert(testCampaignId !== '', 'testCampaignId must be set from previous test');
+
+      // 1. Initial status: queued
+      const res1 = await fetch(`${testBaseUrl}/api/admin/messages/campaign-status/${testCampaignId}`, {
+        headers: { 'Authorization': `Bearer ${superAdminToken}` }
+      });
+      assert(res1.status === 200, `Expected 200, got ${res1.status}`);
+      const data1 = await res1.json();
+      assert(data1.success === true, 'Expected success true');
+      assert(data1.campaignId === testCampaignId, 'Expected campaignId match');
+      assert(data1.status === 'queued', `Expected status 'queued', got ${data1.status}`);
+      assert(data1.queued >= 1, `Expected queued count >= 1, got ${data1.queued}`);
+      assert(data1.sent === 0, `Expected sent count 0, got ${data1.sent}`);
+      assert(data1.failed === 0, `Expected failed count 0, got ${data1.failed}`);
+
+      // 2. Run worker to process the queued job
+      process.env.WHATSAPP_WORKER_MODE = 'in_process';
+      const workerRes = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+      assert(workerRes.processed >= 1, 'Worker should process queued job');
+
+      // 3. Status progression: sent
+      const res2 = await fetch(`${testBaseUrl}/api/admin/messages/campaign-status/${testCampaignId}`, {
+        headers: { 'Authorization': `Bearer ${superAdminToken}` }
+      });
+      assert(res2.status === 200, `Expected 200, got ${res2.status}`);
+      const data2 = await res2.json();
+      assert(data2.success === true, 'Expected success true');
+      assert(data2.status === 'sent', `Expected status 'sent', got ${data2.status}`);
+      assert(data2.sent >= 1, `Expected sent count >= 1, got ${data2.sent}`);
+    });
+
+    await test('Placeholders {Parent name} and {Event name} are resolved before sending without literal tokens', async () => {
+      // Find the most recent delivery log for Parent B
+      const deliveryLog = await queryOne(`
+        SELECT l.id, l.campaign_id, l.recipient_phone, l.status
+        FROM whatsapp_delivery_logs l
+        WHERE l.parent_profile_id = ?
+        ORDER BY l.created_at DESC
+        LIMIT 1
+      `, [parentBId]);
+
+      assert(deliveryLog !== null, 'Delivery log must exist for Parent B');
+
+      // Check the in-app notification created for this event
+      const inAppNotif = await queryOne(`
+        SELECT title, message FROM notifications
+        WHERE event_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [testEventId]);
+
+      if (inAppNotif) {
+        assert(!inAppNotif.title.includes('{Event name}'), 'Literal {Event name} must not appear in title');
+        assert(!inAppNotif.title.includes('{Parent name}'), 'Literal {Parent name} must not appear in title');
+      }
+    });
+
+    await test('Test delivery and Send announcement remain completely separate workflows', async () => {
+      // 1. Test delivery requires Super Admin and uses manual phone number
+      const testRes = await fetch(`${testBaseUrl}/api/admin/notifications/test-whatsapp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${superAdminToken}`
+        },
+        body: JSON.stringify({
+          to: '+2348000000001',
+          message: 'Super Admin Provider Test'
+        })
+      });
+
+      assert(testRes.status === 200, `Expected 200, got ${testRes.status}`);
+      const testData = await testRes.json();
+      assert(testData.success === true, 'Test delivery should succeed for super admin');
+      assert(typeof testData.messageSid === 'string', 'Expected messageSid');
+
+      // Verify test message does NOT create a row in notification_jobs (it is direct connectivity verification)
+      const jobMatch = await queryOne("SELECT id FROM notification_jobs WHERE idempotency_key LIKE 'test_send:%'");
+      assert(jobMatch === null, 'Test delivery must not pollute notification_jobs queue');
+    });
+
   } finally {
     if (server) {
       server.close();

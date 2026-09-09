@@ -4772,7 +4772,16 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
     // 3. Fetch recent broadcast activities
     const recentActivity = await query(`
-      SELECT id, recipient_group as recipientGroup, message_type as messageType, channel, subject, body, recipients_count as recipientsCount, status, created_at as createdAt
+      SELECT
+        id,
+        recipient_group as "recipientGroup",
+        message_type as "messageType",
+        channel,
+        subject,
+        body,
+        recipients_count as "recipientsCount",
+        status,
+        created_at as "createdAt"
       FROM admin_message_logs
       ORDER BY created_at DESC
       LIMIT 20
@@ -4780,7 +4789,12 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
     // 4. Fetch latest saved draft
     const latestDraft = await queryOne(`
-      SELECT recipient_group as recipientGroup, message_type as messageType, channel, subject, body
+      SELECT
+        recipient_group as "recipientGroup",
+        message_type as "messageType",
+        channel,
+        subject,
+        body
       FROM admin_message_drafts
       ORDER BY updated_at DESC
       LIMIT 1
@@ -5652,6 +5666,8 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     const eventId = req.body.eventId || 'event-ga-2026';
+    const eventRow = await queryOne(`SELECT title FROM events WHERE id = ?`, [eventId]);
+    const eventTitle = eventRow?.title || 'The General Assembly';
 
     // 1. Resolve recipients query based on group
     let rows: any[] = [];
@@ -5737,19 +5753,21 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     if (hasChildTokens) {
       for (const row of rows) {
+        const pName = (row.parent_name || '').trim() || 'Parent';
+        const cName = (row.child_name || '').trim() || 'your child';
         const renderedBody = body
-          .replace(/{Parent name}/g, row.parent_name || '')
-          .replace(/{Child name}/g, row.child_name || '')
-          .replace(/{Event name}/g, 'The General Assembly')
-          .replace(/{Pass link}/g, `https://koinonia.org/pass/${row.entry_id || 'sample'}`)
-          .replace(/{Review link}/g, 'https://koinonia.org/parent/status')
-          .replace(/{Pickup time}/g, '4:00 PM')
-          .replace(/{Support contact}/g, '+234 803 123 4567');
+          .replace(/{Parent name}/gi, pName)
+          .replace(/{Child name}/gi, cName)
+          .replace(/{Event name}/gi, eventTitle)
+          .replace(/{Pass link}/gi, `https://koinonia.org/pass/${row.entry_id || 'sample'}`)
+          .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
+          .replace(/{Pickup time}/gi, '4:00 PM')
+          .replace(/{Support contact}/gi, '+234 803 123 4567');
         
         const renderedSubject = (subject || '')
-          .replace(/{Parent name}/g, row.parent_name || '')
-          .replace(/{Child name}/g, row.child_name || '')
-          .replace(/{Event name}/g, 'The General Assembly');
+          .replace(/{Parent name}/gi, pName)
+          .replace(/{Child name}/gi, cName)
+          .replace(/{Event name}/gi, eventTitle);
 
         messagesToSend.push({
           parentName: row.parent_name,
@@ -5767,16 +5785,17 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         parentMap.set(key, row);
       }
       for (const [, parentRow] of parentMap.entries()) {
+        const pName = (parentRow.parent_name || '').trim() || 'Parent';
         const renderedBody = body
-          .replace(/{Parent name}/g, parentRow.parent_name || '')
-          .replace(/{Event name}/g, 'The General Assembly')
-          .replace(/{Review link}/g, 'https://koinonia.org/parent/status')
-          .replace(/{Pickup time}/g, '4:00 PM')
-          .replace(/{Support contact}/g, '+234 803 123 4567');
+          .replace(/{Parent name}/gi, pName)
+          .replace(/{Event name}/gi, eventTitle)
+          .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
+          .replace(/{Pickup time}/gi, '4:00 PM')
+          .replace(/{Support contact}/gi, '+234 803 123 4567');
 
         const renderedSubject = (subject || '')
-          .replace(/{Parent name}/g, parentRow.parent_name || '')
-          .replace(/{Event name}/g, 'The General Assembly');
+          .replace(/{Parent name}/gi, pName)
+          .replace(/{Event name}/gi, eventTitle);
 
         messagesToSend.push({
           parentName: parentRow.parent_name,
@@ -5997,15 +6016,32 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     res.json({
       success: true,
+      campaignId: logId,
       message: humanMessage,
       recipientsCount: messagesToSend.length,
       channels: activeChannels,
+      queued: {
+        whatsapp: whatsappQueuedCount,
+        email: 0,
+        push: 0,
+        inApp: 0
+      },
+      sent: {
+        inApp: inAppCreated ? messagesToSend.length : 0,
+        push: pushSentCount,
+        email: emailSentCount,
+        whatsapp: 0
+      },
+      skipped: {
+        whatsappNotEligible: whatsappSkippedCount
+      },
       emailSent: emailSentCount,
       whatsappQueued: whatsappQueuedCount,
       whatsappSkipped: whatsappSkippedCount,
       pushSent: pushSentCount,
       inAppSent: inAppCreated ? messagesToSend.length : 0,
       summary: {
+        campaignId: logId,
         requested: messagesToSend.length,
         recipients: messagesToSend.length,
         inAppCreated,
@@ -6025,6 +6061,105 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       code: 'MESSAGE_SEND_FAILED',
       message: err.message || 'We could not send this message right now.'
     });
+  }
+});
+
+// GET /api/admin/messages/campaign-status/:campaignId - Lightweight live delivery status for recent sends
+router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { campaignId } = req.params;
+    if (!campaignId) {
+      return res.status(400).json({ success: false, error: 'Campaign ID required' });
+    }
+
+    const log = await queryOne(`
+      SELECT id, subject, body, channel, recipients_count as "recipientsCount", status, created_at as "createdAt"
+      FROM admin_message_logs
+      WHERE id = ?
+    `, [campaignId]);
+
+    if (!log) {
+      return res.status(404).json({ success: false, error: 'Campaign not found' });
+    }
+
+    // Query delivery logs for this campaign
+    const deliveryLogs = await query(`
+      SELECT id, status, provider, error_code as "errorCode", error_message as "errorMessage", sent_at as "sentAt", delivered_at as "deliveredAt", read_at as "readAt", failed_at as "failedAt", created_at as "createdAt"
+      FROM whatsapp_delivery_logs
+      WHERE campaign_id = ?
+    `, [campaignId]);
+
+    // Query pending/processing jobs in notification_jobs for this campaign
+    const jobs = await query(`
+      SELECT id, status, attempt_count as "attemptCount", failure_reason as "failureReason", last_error as "lastError"
+      FROM notification_jobs
+      WHERE idempotency_key LIKE ?
+    `, [`campaign:${campaignId}:%`]);
+
+    let queuedCount = 0;
+    let sentCount = 0;
+    let deliveredCount = 0;
+    let readCount = 0;
+    let failedCount = 0;
+    let latestErrorMessage: string | null = null;
+
+    for (const j of jobs) {
+      if (j.status === 'pending' || j.status === 'processing') {
+        queuedCount++;
+      } else if (j.status === 'failed') {
+        failedCount++;
+        if (j.failureReason || j.lastError) latestErrorMessage = j.failureReason || j.lastError;
+      }
+    }
+
+    for (const dl of deliveryLogs) {
+      if (dl.status === 'queued') {
+        queuedCount++;
+      } else if (dl.status === 'sent') {
+        sentCount++;
+      } else if (dl.status === 'delivered') {
+        deliveredCount++;
+      } else if (dl.status === 'read') {
+        readCount++;
+      } else if (dl.status === 'failed') {
+        failedCount++;
+        if (dl.errorMessage) latestErrorMessage = dl.errorMessage;
+      }
+    }
+
+    // Determine overall status progression
+    let overallStatus: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' = 'queued';
+    if (failedCount > 0 && sentCount === 0 && deliveredCount === 0 && readCount === 0) {
+      overallStatus = 'failed';
+    } else if (readCount > 0) {
+      overallStatus = 'read';
+    } else if (deliveredCount > 0) {
+      overallStatus = 'delivered';
+    } else if (sentCount > 0) {
+      overallStatus = 'sent';
+    } else {
+      overallStatus = 'queued';
+    }
+
+    res.json({
+      success: true,
+      campaignId,
+      subject: log.subject,
+      channels: String(log.channel || '').split(',').map(c => c.trim()).filter(Boolean),
+      recipientsCount: Number(log.recipientsCount || 0),
+      status: overallStatus,
+      queued: queuedCount,
+      sent: sentCount,
+      delivered: deliveredCount,
+      read: readCount,
+      failed: failedCount,
+      errorMessage: latestErrorMessage,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error('[Campaign Status Error]:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve campaign status' });
   }
 });
 
