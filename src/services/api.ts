@@ -265,10 +265,10 @@ export const api = {
         if (res.token) api.setToken(res.token);
         return res;
       },
-      async verifyAction(credential: any, actionName: string) {
+      async verifyAction(credential: any, actionName: string, childId?: string) {
         return api.request<any>('/api/auth/passkeys/verify-action', {
           method: 'POST',
-          body: JSON.stringify({ credential, actionName })
+          body: JSON.stringify({ credential, actionName, childId })
         });
       }
     }
@@ -291,7 +291,11 @@ export const api = {
       });
     },
     async getHome() {
-      return api.request<any>('/api/parent/home');
+      const headers: Record<string, string> = {};
+      if (typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true') {
+        headers['x-biometric-protected'] = 'true';
+      }
+      return api.request<any>('/api/parent/home', { headers });
     },
     async getPasses() {
       return api.request<any>('/api/parent/passes');
@@ -300,7 +304,11 @@ export const api = {
       return api.request<any>(`/api/parent/passes/${passId}`);
     },
     async getChildren() {
-      return api.request<any[]>('/api/parent/children');
+      const headers: Record<string, string> = {};
+      if (typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true') {
+        headers['x-biometric-protected'] = 'true';
+      }
+      return api.request<any[]>('/api/parent/children', { headers });
     },
     async saveChildDraft(draft: any, childId?: string) {
       const endpoint = childId ? `/api/parent/children/${childId}/draft` : '/api/parent/children/draft';
@@ -318,8 +326,16 @@ export const api = {
     async getChildStatus(childId: string) {
       return api.request<any>(`/api/parent/children/${childId}/status`);
     },
-    async getChildPass(childId: string) {
-      return api.request<any>(`/api/parent/children/${childId}/pass`);
+    async getChildPass(childId: string, passToken?: string) {
+      const headers: Record<string, string> = {};
+      const isBio = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+      if (isBio) {
+        headers['x-biometric-protected'] = 'true';
+        if (passToken) {
+          headers['x-pass-token'] = passToken;
+        }
+      }
+      return api.request<any>(`/api/parent/children/${childId}/pass`, { headers });
     },
     async deleteChild(childId: string) {
       return api.request<any>(`/api/parent/children/${childId}`, {

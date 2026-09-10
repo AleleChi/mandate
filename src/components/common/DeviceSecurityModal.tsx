@@ -9,8 +9,9 @@ import { isWebAuthnSupported, base64URLToBuffer, bufferToBase64URL } from '../..
 interface DeviceSecurityModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (credentialId?: string) => void;
+  onSuccess: (credentialId?: string, passToken?: string) => void;
   actionName: string;
+  childId?: string;
   isRegistration?: boolean; // If registering a new device passkey
   emailForLogin?: string; // If logging in via passkey (optional)
   challengeKey?: string; // For login verify
@@ -22,6 +23,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
   onClose,
   onSuccess,
   actionName,
+  childId = '',
   isRegistration = false,
   emailForLogin = '',
   challengeKey = '',
@@ -220,11 +222,11 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           throw new Error("Device verification was not completed.");
         }
 
-        const verifyRes = await api.auth.passkeys.verifyAction({ id: assertion.id }, actionName);
+        const verifyRes = await api.auth.passkeys.verifyAction({ id: assertion.id }, actionName, childId || undefined);
         if (verifyRes.success) {
           setMode('success');
           setTimeout(() => {
-            onSuccess(assertion.id);
+            onSuccess(assertion.id, verifyRes.passToken);
             onClose();
           }, 1200);
         } else {

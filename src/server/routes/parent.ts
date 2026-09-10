@@ -4,7 +4,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } from '../utils/validation';
-import { getPassesForParent, issuePassForChild } from '../services/passService';
+import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -104,24 +104,43 @@ async function mapProfileToFrontend(row: any) {
   };
 }
 
-async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) {
+async function mapChildToFrontend(
+  childRow: any,
+  entryRow: any,
+  pickupRow: any,
+  parentProfileId?: string,
+  isBiometricProtected: boolean = false
+) {
   const status = entryRow ? entryRow.status : 'incomplete';
   let frontendStatus: any = 'Incomplete';
   let statusNote = 'Continue entering child details';
   let passReference = undefined;
   let passObject = undefined;
+  let isPassLocked = false;
 
   if (entryRow) {
     const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
     if (pass) {
-      passReference = pass.pass_reference;
-      passObject = {
-        id: pass.id,
-        status: pass.status,
-        passCode: pass.pass_reference,
-        qrPayload: pass.pass_reference,
-        issuedAt: pass.issued_at
-      };
+      if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
+        isPassLocked = true;
+        passReference = undefined;
+        passObject = {
+          id: pass.id,
+          status: pass.status,
+          issuedAt: pass.issued_at,
+          passLocked: true,
+          requiresBiometric: true
+        };
+      } else {
+        passReference = pass.pass_reference;
+        passObject = {
+          id: pass.id,
+          status: pass.status,
+          passCode: pass.pass_reference,
+          qrPayload: pass.pass_reference,
+          issuedAt: pass.issued_at
+        };
+      }
     }
   }
 
@@ -133,7 +152,7 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     const first_name = childRow.full_name ? childRow.full_name.split(' ')[0] : 'your child';
     statusNote = `The event team has reopened the review for ${first_name}. We will share an update when a new decision is made.`;
   } else if (status === 'selected' || status === 'pass_ready') {
-    if (passReference) {
+    if (passReference || isPassLocked) {
       frontendStatus = 'Pass ready';
       statusNote = 'Event pass is available';
     } else {
@@ -230,18 +249,19 @@ async function mapChildToFrontend(childRow: any, entryRow: any, pickupRow: any) 
     photoUrl: resolvedChildPhoto,
     submittedAt: entryRow?.submitted_at || undefined,
     passReference,
+    passLocked: isPassLocked,
     pass: passObject,
     draftData
   };
 }
 
-async function getFullChildrenList(parentProfileId: string) {
+async function getFullChildrenList(parentProfileId: string, isBiometricProtected: boolean = false) {
   const children = await query('SELECT * FROM children WHERE parent_profile_id = ? ORDER BY created_at DESC', [parentProfileId]);
   const list = [];
   for (const c of children) {
     const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, REAL_EVENT_ID]);
     const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
-    list.push(await mapChildToFrontend(c, entry, pickup));
+    list.push(await mapChildToFrontend(c, entry, pickup, parentProfileId, isBiometricProtected));
   }
   return list;
 }
@@ -448,7 +468,8 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     return res.status(404).json({ error: 'Parent profile not found' });
   }
 
-  const list = await getFullChildrenList(req.parentProfile.id);
+  const isBioProtected = req.headers['x-biometric-protected'] === 'true';
+  const list = await getFullChildrenList(req.parentProfile.id, isBioProtected);
   const childrenCount = list.length;
   const underReviewCount = list.filter(c => c.status === 'Under review').length;
   const passReadyCount = list.filter(c => c.status === 'Pass ready').length;
@@ -485,7 +506,8 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
 
 router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
-  const list = await getFullChildrenList(req.parentProfile.id);
+  const isBioProtected = req.headers['x-biometric-protected'] === 'true';
+  const list = await getFullChildrenList(req.parentProfile.id, isBioProtected);
   res.json(list);
 });
 
@@ -902,7 +924,22 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
 router.get('/passes', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
   try {
+    const isBioProtected = req.headers['x-biometric-protected'] === 'true';
     const result = await getPassesForParent(req.parentProfile.id, REAL_EVENT_ID);
+    if (isBioProtected) {
+      result.passes = await Promise.all(result.passes.map(async p => {
+        if (!(await isChildPassAuthorized(req.parentProfile.id, p.childId))) {
+          return {
+            ...p,
+            passCode: undefined,
+            qrPayload: undefined,
+            passLocked: true,
+            requiresBiometric: true
+          };
+        }
+        return p;
+      }));
+    }
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch passes' });
@@ -928,8 +965,19 @@ router.get('/passes/:passId', async (req: AuthenticatedRequest, res: Response) =
     if (c.parent_profile_id !== req.parentProfile.id) {
       return res.status(403).json({ error: 'You are not authorized to view this pass' });
     }
+
+    const isBiometricProtected = req.headers['x-biometric-protected'] === 'true' || req.query.biometric === 'true';
+    const passToken = (req.headers['x-pass-token'] as string) || (req.query.passToken as string);
+    if (isBiometricProtected && !(await isChildPassAuthorized(req.parentProfile.id, c.id, passToken))) {
+      return res.status(403).json({
+        error: 'Biometric authorization required to access secure pass',
+        passLocked: true,
+        requiresBiometric: true
+      });
+    }
+
     const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
-    const mappedChild = await mapChildToFrontend(c, entry, pickup);
+    const mappedChild = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false);
     res.json({
       success: true,
       passReference: pass.pass_reference,
@@ -960,7 +1008,7 @@ router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: R
   const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
   const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
 
-  res.json(await mapChildToFrontend(c, entry, pickup));
+  res.json(await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, req.headers['x-biometric-protected'] === 'true'));
 });
 
 router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Response) => {
@@ -983,6 +1031,16 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
     return res.status(403).json({ error: 'Event pass is not ready yet', status: entry?.status || 'incomplete' });
   }
 
+  const isBiometricProtected = req.headers['x-biometric-protected'] === 'true' || req.query.biometric === 'true';
+  const passToken = (req.headers['x-pass-token'] as string) || (req.query.passToken as string);
+  if (isBiometricProtected && !(await isChildPassAuthorized(req.parentProfile.id, childId, passToken))) {
+    return res.status(403).json({
+      error: 'Biometric authorization required to access secure pass',
+      passLocked: true,
+      requiresBiometric: true
+    });
+  }
+
   let pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [entry.id]);
   if (!pass) {
     const passId = crypto.randomUUID();
@@ -999,13 +1057,14 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   }
 
   const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
-  const mappedChild = await mapChildToFrontend(c, entry, pickup);
+  const mappedChild = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false);
 
   res.json({
     passReference: pass.pass_reference,
     status: pass.status,
     issuedAt: pass.issued_at,
-    child: mappedChild
+    child: mappedChild,
+    authorized: true
   });
 });
 

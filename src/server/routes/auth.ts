@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { queryOne, execute, transaction, query } from '../db';
-import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest } from '../auth';
+import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { buildPublicAppUrl } from '../utils/urlHelper';
+import { authorizeChildPass, revokeChildPassAuthorizations } from '../services/passService';
 
 const router = Router();
 
@@ -529,8 +530,17 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
-router.post('/sign-out', (req, res) => {
-  res.json({ success: true });
+// POST /api/auth/sign-out - revokes server-side session authorizations
+router.post('/sign-out', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const parentId = req.parentProfile?.id || (req.user?.id ? (await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [req.user.id]))?.id : null);
+    if (parentId) {
+      await revokeChildPassAuthorizations(parentId);
+    }
+  } catch (err) {
+    console.warn('Error during pass authorization revocation on sign-out:', err);
+  }
+  res.json({ success: true, message: 'Signed out successfully' });
 });
 
 // POST /api/auth/switch-experience - Safely switch active experience after server-side verification
@@ -921,7 +931,7 @@ router.post('/passkeys/verify-action', authMiddleware, async (req: Authenticated
       });
     }
 
-    const { credential, actionName } = req.body;
+    const { credential, actionName, childId } = req.body;
     if (!credential || !credential.id) {
       return res.status(400).json({ success: false, error: 'Verification credentials are required' });
     }
@@ -939,11 +949,36 @@ router.post('/passkeys/verify-action', authMiddleware, async (req: Authenticated
       VALUES (?, ?, ?, ?, 'device_verification', ?, ?)
     `, [crypto.randomUUID(), req.user.id, req.user.role, 'device_secure_confirm', `Verified action: ${actionName || 'Sensitive Action'}`, now]);
 
-    res.json({ success: true, message: 'Verification completed successfully' });
+    let passAuth: { passToken: string; expiresAt: number } | null = null;
+    if (childId && req.parentProfile) {
+      const child = await queryOne('SELECT id FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile.id]);
+      if (!child) {
+        return res.status(403).json({ success: false, error: 'Unauthorized child context for biometric pass unlock' });
+      }
+      passAuth = await authorizeChildPass(req.parentProfile.id, childId, 15 * 60 * 1000, req.user.id);
+    }
+
+    res.json({
+      success: true,
+      message: 'Verification completed successfully',
+      passToken: passAuth?.passToken,
+      expiresAt: passAuth?.expiresAt
+    });
   } catch (err) {
     console.error('Verify action error:', err);
     res.status(500).json({ error: 'Internal server error during device security verification' });
   }
+});
+
+
+
+// POST /api/auth/passkeys/revoke-pass-auth - explicitly revokes pass authorization
+router.post('/passkeys/revoke-pass-auth', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { childId } = req.body || {};
+  if (req.parentProfile) {
+    await revokeChildPassAuthorizations(req.parentProfile.id, childId);
+  }
+  res.json({ success: true, message: 'Pass authorization revoked' });
 });
 
 export default router;

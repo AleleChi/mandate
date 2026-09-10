@@ -114,8 +114,40 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
+  const [unlockedPassReferences, setUnlockedPassReferences] = useState<Record<string, string>>({});
   const [passUnlockedChildId, setPassUnlockedChildId] = useState<string | null>(null);
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
+
+  const isPassUnlockedForChild = (childId: string | undefined | null): boolean => {
+    if (!childId) return false;
+    const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+    if (!isBiometricRequired) return true;
+    return !!unlockedPassReferences[childId];
+  };
+
+  useEffect(() => {
+    if (!selectedDetailChild?.id) return;
+    const childId = selectedDetailChild.id;
+    const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+    if (!isBiometricRequired) return;
+
+    const hasSessionFlag = typeof window !== 'undefined' && window.sessionStorage && sessionStorage.getItem(`koinonia_pass_unlocked_${childId}`) === 'true';
+    if (hasSessionFlag && !unlockedPassReferences[childId]) {
+      api.parent.getChildPass(childId)
+        .then(res => {
+          if (res && res.passReference) {
+            setUnlockedPassReferences(prev => ({ ...prev, [childId]: res.passReference }));
+            setPassUnlockedChildId(childId);
+          } else {
+            try { sessionStorage.removeItem(`koinonia_pass_unlocked_${childId}`); } catch {}
+          }
+        })
+        .catch(() => {
+          try { sessionStorage.removeItem(`koinonia_pass_unlocked_${childId}`); } catch {}
+        });
+    }
+  }, [selectedDetailChild?.id]);
+
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
   const [pushStatus, setPushStatus] = useState<GranularPushStatus>('needed');
@@ -1784,6 +1816,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         <button
           type="button"
           onClick={() => {
+            setUnlockedPassReferences({});
+            try {
+              if (typeof window !== 'undefined' && window.sessionStorage) {
+                Object.keys(sessionStorage).forEach((key) => {
+                  if (key.startsWith('koinonia_pass_unlocked_')) {
+                    sessionStorage.removeItem(key);
+                  }
+                });
+              }
+            } catch {}
+            api.request('/api/auth/sign-out', { method: 'POST' }).catch(() => {});
             if (onSignOut) {
               onSignOut();
             } else {
@@ -2336,7 +2379,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             {/* QR Code */}
             <div className="flex flex-col items-center justify-center space-y-2 py-1">
               {(() => {
-                const requiresUnlock = localStorage.getItem('koinonia_pass_biometric_unlock') === 'true' && passUnlockedChildId !== selectedDetailChild.id;
+                const isBiometricRequired = localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+                const passCode = unlockedPassReferences[selectedDetailChild.id] || (!isBiometricRequired ? selectedDetailChild.passReference : null);
+                const requiresUnlock = isBiometricRequired && (!isPassUnlockedForChild(selectedDetailChild.id) || !passCode);
                 if (requiresUnlock) {
                   return (
                     <div 
@@ -2350,18 +2395,26 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   );
                 }
                 return (
-                  <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
-                    <div className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#C59B27]/40 pointer-events-none" />
-                    <div className="absolute top-1.5 right-1.5 w-2 h-2 border-t border-r border-[#C59B27]/40 pointer-events-none" />
-                    <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
-                    <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(selectedDetailChild.passReference || selectedDetailChild.id)}`}
-                      alt="QR Code"
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
+                  <>
+                    <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
+                      <div className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#C59B27]/40 pointer-events-none" />
+                      <div className="absolute top-1.5 right-1.5 w-2 h-2 border-t border-r border-[#C59B27]/40 pointer-events-none" />
+                      <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
+                      <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(passCode || selectedDetailChild.id)}`}
+                        alt="QR Code"
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    {isBiometricRequired && (
+                      <span className="text-[9px] font-semibold text-emerald-700 flex items-center justify-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                        Unlocked for this session
+                      </span>
+                    )}
+                  </>
                 );
               })()}
               <span className="text-[9px] font-mono font-bold tracking-[0.2em] text-[#C59B27] uppercase">
@@ -2451,10 +2504,29 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       <DeviceSecurityModal
         isOpen={unlockModalOpen}
         onClose={() => setUnlockModalOpen(false)}
-        onSuccess={() => {
-          if (selectedDetailChild) {
-            setPassUnlockedChildId(selectedDetailChild.id);
-            showSuccess('Pass unlocked', 'Security verified successfully.');
+        childId={selectedDetailChild?.id || selectedChildId || undefined}
+        onSuccess={async (credentialId?: string, passToken?: string) => {
+          const targetChildId = selectedDetailChild?.id || selectedChildId;
+          if (targetChildId) {
+            try {
+              const passRes = await api.parent.getChildPass(targetChildId, passToken);
+              if (passRes && passRes.passReference) {
+                setUnlockedPassReferences(prev => ({
+                  ...prev,
+                  [targetChildId]: passRes.passReference
+                }));
+                if (typeof window !== 'undefined' && window.sessionStorage) {
+                  sessionStorage.setItem(`koinonia_pass_unlocked_${targetChildId}`, 'true');
+                }
+                setPassUnlockedChildId(targetChildId);
+                showSuccess('Pass unlocked', 'Security verified for this session.');
+              } else {
+                showError('Pass locked', 'Could not verify pass authorization from server.');
+              }
+            } catch (err: any) {
+              console.warn('Failed to retrieve authorized pass:', err);
+              showError('Unlock failed', err?.message || 'Biometric authorization could not be verified.');
+            }
           }
         }}
         actionName="Unlocking secure child pass"

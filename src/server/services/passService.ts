@@ -187,3 +187,175 @@ export async function validatePassForScan(passCode: string) {
     child
   };
 }
+
+const SECRET_KEY = process.env.JWT_SECRET || 'koinonia-secret-key-default-2026';
+
+// In-memory cache for active pass authorizations (parentProfileId:childId -> expiresAt)
+const activePassAuthorizations = new Map<string, number>();
+// In-memory cache for parent revocation timestamps (parentProfileId -> revokedAt)
+const revokedParentTimestamps = new Map<string, number>();
+
+function getPassTokenHash(parentProfileId: string, childId: string): string {
+  return crypto.createHash('sha256').update(`child_pass_auth:${parentProfileId}:${childId}`).digest('hex');
+}
+
+/**
+ * Authorizes short-lived pass access for a specific child under a parent.
+ * Default lifetime: 15 minutes (900,000 ms).
+ * Backed by both HMAC-SHA256 signature and persistent DB storage in `auth_tokens`
+ * to survive server/Render process restarts without requiring schema migrations.
+ */
+export async function authorizeChildPass(
+  parentProfileId: string,
+  childId: string,
+  ttlMs: number = 15 * 60 * 1000,
+  userId?: string
+): Promise<{ passToken: string; expiresAt: number }> {
+  const now = Date.now();
+  const expiresAt = now + ttlMs;
+  const key = `${parentProfileId}:${childId}`;
+  if (expiresAt > now) {
+    activePassAuthorizations.set(key, expiresAt);
+  }
+
+  const payload = Buffer.from(JSON.stringify({
+    parentProfileId,
+    childId,
+    iat: now,
+    exp: expiresAt,
+    nonce: crypto.randomUUID()
+  })).toString('base64url');
+
+  const signature = crypto.createHmac('sha256', SECRET_KEY).update(payload).digest('base64url');
+  const passToken = `${payload}.${signature}`;
+
+  // Persist to existing auth_tokens table for durability across Render restarts
+  try {
+    let resolvedUserId = userId;
+    if (!resolvedUserId) {
+      const parent = await queryOne('SELECT user_id FROM parent_profiles WHERE id = ?', [parentProfileId]);
+      resolvedUserId = parent?.user_id;
+    }
+    if (resolvedUserId && expiresAt > now) {
+      const tokenHash = getPassTokenHash(parentProfileId, childId);
+      const nowIso = new Date(now).toISOString();
+      const expIso = new Date(expiresAt).toISOString();
+
+      await execute('DELETE FROM auth_tokens WHERE token_hash = ?', [tokenHash]);
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'child_pass_authorization', ?, ?)
+      `, [crypto.randomUUID(), resolvedUserId, tokenHash, expIso, nowIso]);
+    }
+  } catch (err) {
+    console.warn('[PassAuth] Error persisting pass authorization to auth_tokens:', err);
+  }
+
+  return { passToken, expiresAt };
+}
+
+/**
+ * Verifies if pass access is currently authorized for a given child under a parent.
+ * Validates:
+ * 1. Fast in-memory cache (if present and unexpired)
+ * 2. Cryptographic HMAC token (if provided in header/param)
+ * 3. Persistent auth_tokens record in DB (survives Render restarts)
+ */
+export async function isChildPassAuthorized(
+  parentProfileId: string,
+  childId: string,
+  passToken?: string
+): Promise<boolean> {
+  const key = `${parentProfileId}:${childId}`;
+  const now = Date.now();
+
+  // 1. Check in-memory store
+  const memoryExpiresAt = activePassAuthorizations.get(key);
+  if (memoryExpiresAt) {
+    if (now < memoryExpiresAt) {
+      return true;
+    }
+    activePassAuthorizations.delete(key);
+  }
+
+  // 2. Check signed token fallback
+  if (passToken && typeof passToken === 'string') {
+    try {
+      const [payload, sig] = passToken.split('.');
+      if (payload && sig) {
+        const expectedSig = crypto.createHmac('sha256', SECRET_KEY).update(payload).digest('base64url');
+        if (sig === expectedSig) {
+          const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+          if (data.parentProfileId === parentProfileId && data.childId === childId && now < data.exp) {
+            const revokedAt = revokedParentTimestamps.get(parentProfileId);
+            if (!revokedAt || !data.iat || data.iat > revokedAt) {
+              activePassAuthorizations.set(key, data.exp);
+              return true;
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall through to DB check
+    }
+  }
+
+  // 3. Persistent DB check in existing auth_tokens table
+  try {
+    const tokenHash = getPassTokenHash(parentProfileId, childId);
+    const dbToken = await queryOne(`
+      SELECT expires_at, used_at FROM auth_tokens
+      WHERE token_hash = ? AND token_type = 'child_pass_authorization'
+    `, [tokenHash]);
+
+    if (dbToken && !dbToken.used_at) {
+      const dbExpTime = new Date(dbToken.expires_at).getTime();
+      if (now < dbExpTime) {
+        activePassAuthorizations.set(key, dbExpTime);
+        return true;
+      } else {
+        await execute('DELETE FROM auth_tokens WHERE token_hash = ?', [tokenHash]);
+      }
+    }
+  } catch (err) {
+    console.warn('[PassAuth] Error verifying pass authorization from auth_tokens:', err);
+  }
+
+  return false;
+}
+
+export async function revokeChildPassAuthorizations(parentProfileId: string, childId?: string): Promise<void> {
+  if (childId) {
+    activePassAuthorizations.delete(`${parentProfileId}:${childId}`);
+    try {
+      const tokenHash = getPassTokenHash(parentProfileId, childId);
+      const nowIso = new Date().toISOString();
+      await execute("UPDATE auth_tokens SET used_at = 'revoked', revoked_at = ? WHERE token_hash = ?", [nowIso, tokenHash]);
+    } catch {}
+  } else {
+    revokedParentTimestamps.set(parentProfileId, Date.now());
+    for (const key of Array.from(activePassAuthorizations.keys())) {
+      if (key.startsWith(`${parentProfileId}:`)) {
+        activePassAuthorizations.delete(key);
+      }
+    }
+    try {
+      const parent = await queryOne('SELECT user_id FROM parent_profiles WHERE id = ?', [parentProfileId]);
+      if (parent?.user_id) {
+        const nowIso = new Date().toISOString();
+        await execute(`
+          UPDATE auth_tokens SET used_at = 'revoked', revoked_at = ?
+          WHERE user_id = ? AND token_type = 'child_pass_authorization' AND used_at IS NULL
+        `, [nowIso, parent.user_id]);
+      }
+    } catch {}
+  }
+}
+
+/**
+ * Test helper to simulate process memory reset (e.g. Render restart).
+ */
+export function _clearInMemoryPassCache(): void {
+  activePassAuthorizations.clear();
+  revokedParentTimestamps.clear();
+}

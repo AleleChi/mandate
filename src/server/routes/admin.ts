@@ -6418,7 +6418,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           ? (pushSentCount > 0
             ? ` Push delivered to ${pushSentCount} device${pushSentCount === 1 ? '' : 's'}.`
             : totalPushFailures > 0
-              ? (pushNoSubCount > 0 ? ' Push could not be delivered — selected parent has no active device subscription.' : ' Push delivery failed.')
+              ? (pushNoSubCount > 0 ? ' Push could not be delivered — selected parent has no active device subscription.' : ' Push notification could not be sent.')
               : '')
           : '';
         humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}${queueFailNote}.${pushNote}`;
@@ -6435,7 +6435,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       } else if (totalPushFailures > 0) {
         humanMessage = pushNoSubCount > 0
           ? `Update sent. However, push could not be delivered — the selected parent has no active device subscription. Ask them to enable push notifications from their device.`
-          : `Update sent. However, push delivery failed for the selected device.`;
+          : `Update sent. However, push notification could not be sent for the selected device.`;
       }
     }
 

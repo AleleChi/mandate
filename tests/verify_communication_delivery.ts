@@ -4,6 +4,8 @@ import { query, queryOne, execute } from '../src/server/db';
 import { generateToken } from '../src/server/auth';
 import adminRoutes from '../src/server/routes/admin';
 import notificationRoutes from '../src/server/routes/notifications';
+import authRoutes from '../src/server/routes/auth';
+import parentRoutes from '../src/server/routes/parent';
 import webpush from 'web-push';
 import { sendWebPush } from '../src/server/services/push';
 import {
@@ -19,6 +21,7 @@ import {
   enqueueWhatsAppJob,
   buildIdempotencyKey
 } from '../src/server/services/whatsapp';
+import { authorizeChildPass, _clearInMemoryPassCache } from '../src/server/services/passService';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -46,11 +49,13 @@ async function runTests() {
     }
   }
 
-  // Setup express test server for admin and notification routes
+  // Setup express test server for admin, notification, auth, and parent routes
   const app = express();
   app.use(express.json());
   app.use('/api/admin', adminRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/auth', authRoutes);
+  app.use('/api/parent', parentRoutes);
 
   let server: any;
   let testBaseUrl = '';
@@ -999,6 +1004,374 @@ async function runTests() {
         WHERE parent_id = ? AND title = 'Channel Independence Test'
       `, [testParentId]);
       assert(inAppRow !== null, 'In-app notification must be present in database');
+    });
+
+    // -------------------------------------------------------------
+    // SUITE 7: PUSH REPAIR & PASS BIOMETRIC UNLOCK VERIFICATION
+    // -------------------------------------------------------------
+    console.log('\n--- 7. Push Failure Classification & Pass Biometric Unlock ---');
+
+    await test('Push: stale 410 + valid subscription -> stale removed, valid succeeds', async () => {
+      const uId = `user-mixed-${crypto.randomUUID()}`;
+      const sStale = `sub-stale-${crypto.randomUUID()}`;
+      const sValid = `sub-valid-${crypto.randomUUID()}`;
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+        VALUES (?, ?, 'hash', 'parent', ?, ?)
+      `, [uId, `mixed-${crypto.randomUUID()}@test.koinonia`, now, now]);
+
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at)
+        VALUES (?, ?, 'https://fcm.googleapis.com/fcm/send/mixed-stale', 'key1', 'auth1', 'Old Browser', '2026-09-10T10:00:00Z')
+      `, [sStale, uId]);
+
+      await execute(`
+        INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at)
+        VALUES (?, ?, 'https://fcm.googleapis.com/fcm/send/mixed-valid', 'key2', 'auth2', 'New Browser', '2026-09-09T10:00:00Z')
+      `, [sValid, uId]);
+
+      const originalSend = (webpush as any).sendNotification;
+      (webpush as any).sendNotification = async (sub: any) => {
+        if (sub.endpoint.includes('mixed-stale')) {
+          const err: any = new Error('Subscription expired');
+          err.statusCode = 410;
+          err.body = 'Gone';
+          throw err;
+        }
+        return { statusCode: 201 };
+      };
+
+      try {
+        const res = await sendWebPush(uId, {
+          title: 'Mixed test',
+          body: 'Mixed test body'
+        });
+
+        assert(res.success === true, 'Expected push success === true when valid subscription exists');
+        assert(res.sentCount === 1, `Expected sentCount === 1, got ${res.sentCount}`);
+        assert(res.staleCount === 1, `Expected staleCount === 1, got ${res.staleCount}`);
+
+        const checkStale = await queryOne('SELECT id FROM push_subscriptions WHERE id = ?', [sStale]);
+        assert(checkStale === null, 'Stale subscription must be removed');
+
+        const checkValid = await queryOne('SELECT id FROM push_subscriptions WHERE id = ?', [sValid]);
+        assert(checkValid !== null, 'Valid subscription must be kept');
+      } finally {
+        (webpush as any).sendNotification = originalSend;
+      }
+    });
+
+    await test('Push: child-specific push targets /parent/children/:childId/pass and metadata childId', async () => {
+      const pId = `p-target-${crypto.randomUUID()}`;
+      const uId = `u-target-${crypto.randomUUID()}`;
+      const cId = `c-target-${crypto.randomUUID()}`;
+      const sId = `s-target-${crypto.randomUUID()}`;
+
+      await execute(`INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, 'hash', 'parent', ?, ?)`, [uId, `target-${crypto.randomUUID()}@koinonia.test`, now, now]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, created_at, updated_at) VALUES (?, ?, 'Target Parent', ?, '+2348000000000', ?, ?)`, [pId, uId, `target-${crypto.randomUUID()}@koinonia.test`, now, now]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, created_at, updated_at) VALUES (?, ?, 'Baby Livina Target', 'Female', '2022-01-01', ?, ?)`, [cId, pId, now, now]);
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'pass_ready', ?, ?)`, [`entry-target-${crypto.randomUUID()}`, cId, testEventId, now, now]);
+      await execute(`INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, 'https://fcm.googleapis.com/fcm/send/child-ctx', 'key', 'auth', ?)`, [sId, uId, now]);
+
+      let capturedPayload: any = null;
+      const originalSend = (webpush as any).sendNotification;
+      (webpush as any).sendNotification = async (sub: any, payloadStr: string) => {
+        capturedPayload = JSON.parse(payloadStr);
+        return { statusCode: 201 };
+      };
+
+      try {
+        const sendRes = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({
+            recipientGroup: 'specific_parents',
+            selectedParentIds: [pId],
+            selectedChildIds: [cId],
+            messageType: 'pass_update',
+            channels: ['push'],
+            subject: 'Pass Update for {Child name}',
+            body: 'Pass details for {Child name}',
+            confirmed: true,
+            eventId: testEventId
+          })
+        });
+
+        assert(sendRes.status === 200, 'Send must succeed');
+        assert(capturedPayload !== null, 'Push payload must be sent');
+        assert(capturedPayload.metadata?.targetUrl === `/parent/children/${cId}/pass`, `Target URL must be /parent/children/${cId}/pass, got ${capturedPayload.metadata?.targetUrl}`);
+        assert(capturedPayload.metadata?.childId === cId, `ChildId metadata must be ${cId}, got ${capturedPayload.metadata?.childId}`);
+      } finally {
+        (webpush as any).sendNotification = originalSend;
+      }
+    });
+
+    await test('Push + WhatsApp: WhatsApp queueing succeeds independently even when push fails with VAPID error', async () => {
+      const pId = `p-wa-push-${crypto.randomUUID()}`;
+      const uId = `u-wa-push-${crypto.randomUUID()}`;
+      const cId = `c-wa-push-${crypto.randomUUID()}`;
+      const sId = `s-wa-push-${crypto.randomUUID()}`;
+
+      await execute(`INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, 'hash', 'parent', ?, ?)`, [uId, `wapush-${crypto.randomUUID()}@koinonia.test`, now, now]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, whatsapp_number, whatsapp_consent_status, created_at, updated_at) VALUES (?, ?, 'WhatsApp Push Parent', ?, '+2348000000000', '+2348000000000', 'opted_in', ?, ?)`, [pId, uId, `wapush-${crypto.randomUUID()}@koinonia.test`, now, now]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, created_at, updated_at) VALUES (?, ?, 'Child WA Push', 'Female', '2022-01-01', ?, ?)`, [cId, pId, now, now]);
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'pass_ready', ?, ?)`, [`entry-wapush-${crypto.randomUUID()}`, cId, testEventId, now, now]);
+      await execute(`INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, 'https://fcm.googleapis.com/fcm/send/wapush-fail', 'key', 'auth', ?)`, [sId, uId, now]);
+
+      const originalSend = (webpush as any).sendNotification;
+      (webpush as any).sendNotification = async () => {
+        const err: any = new Error('Unauthorized');
+        err.statusCode = 403;
+        err.body = 'Auth error';
+        throw err;
+      };
+
+      try {
+        const sendRes = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({
+            recipientGroup: 'specific_parents',
+            selectedParentIds: [pId],
+            selectedChildIds: [cId],
+            messageType: 'pass_update',
+            channels: ['push', 'whatsapp'],
+            subject: 'Pass Update',
+            body: 'Pass Update message',
+            confirmed: true,
+            eventId: testEventId
+          })
+        });
+
+        const data = await sendRes.json();
+        assert(sendRes.status === 200, 'Send must return 200');
+        assert(data.queued.whatsapp === 1, `WhatsApp must be queued (1), got ${data.queued.whatsapp}`);
+        assert(data.sent.push === 0, `Push sent must be 0, got ${data.sent.push}`);
+        assert(data.message.includes('Push notification could not be sent'), `Human copy must show 'Push notification could not be sent', got: ${data.message}`);
+        assert(!data.message.includes('403') && !data.message.includes('VAPID'), 'Human copy must not leak technical details');
+      } finally {
+        (webpush as any).sendNotification = originalSend;
+      }
+    });
+
+    await test('Pass Unlock: initial locked state, session-scoped unlock, multi-child isolation', () => {
+      const mockSessionStorage: Record<string, string> = {};
+      const mockLocalStorage: Record<string, string> = {
+        koinonia_pass_biometric_unlock: 'true'
+      };
+
+      const childA = 'child-livina-123';
+      const childB = 'child-love-456';
+
+      const isPassUnlockedForChild = (childId: string): boolean => {
+        return mockSessionStorage[`koinonia_pass_unlocked_${childId}`] === 'true';
+      };
+
+      const isPassLocked = (childId: string): boolean => {
+        const isBiometricRequired = mockLocalStorage['koinonia_pass_biometric_unlock'] === 'true';
+        return isBiometricRequired && !isPassUnlockedForChild(childId);
+      };
+
+      // 1. Initial state: Both passes locked
+      assert(isPassLocked(childA) === true, 'Child A pass must be locked initially');
+      assert(isPassLocked(childB) === true, 'Child B pass must be locked initially');
+
+      // 2. Biometric authentication failure or cancel: remains locked
+      assert(isPassLocked(childA) === true, 'Child A pass must remain locked on failure/cancel');
+
+      // 3. Biometric authentication success for Child A
+      mockSessionStorage[`koinonia_pass_unlocked_${childA}`] = 'true';
+      assert(isPassLocked(childA) === false, 'Child A pass must be unlocked after successful biometric authentication');
+
+      // 4. Multi-child isolation: Child B MUST still be locked
+      assert(isPassLocked(childB) === true, 'Child B pass must remain locked when Child A is unlocked');
+
+      // 5. Survives re-renders and navigation in same session
+      assert(isPassUnlockedForChild(childA) === true, 'Child A unlock must persist across component re-renders');
+
+      // 6. Session reset / sign-out re-locks pass
+      delete mockSessionStorage[`koinonia_pass_unlocked_${childA}`];
+      assert(isPassLocked(childA) === true, 'Child A pass must re-lock when session ends or is cleared');
+    });
+
+    await test('Pass Security: Server enforces biometric authorization for child pass independently of sessionStorage', async () => {
+      const bioUserId = `u-bio-${crypto.randomUUID()}`;
+      const bioParentId = `p-bio-${crypto.randomUUID()}`;
+      const bioChildA = `c-bio-livina-${crypto.randomUUID()}`;
+      const bioChildB = `c-bio-love-${crypto.randomUUID()}`;
+      const credId = `cred-${crypto.randomUUID()}`;
+
+      await execute(`INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, 'hash', 'parent', ?, ?)`, [bioUserId, `bio-${crypto.randomUUID()}@koinonia.test`, now, now]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, created_at, updated_at) VALUES (?, ?, 'Tochukwu Ogunaka', ?, '+2348000000000', ?, ?)`, [bioParentId, bioUserId, `bio-${crypto.randomUUID()}@koinonia.test`, now, now]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, created_at, updated_at) VALUES (?, ?, 'Baby Livina', 'Female', '2022-01-01', 'photo-1', ?, ?)`, [bioChildA, bioParentId, now, now]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, created_at, updated_at) VALUES (?, ?, 'Baby Love', 'Female', '2023-01-01', 'photo-2', ?, ?)`, [bioChildB, bioParentId, now, now]);
+
+      const entryA = `entry-a-${crypto.randomUUID()}`;
+      const entryB = `entry-b-${crypto.randomUUID()}`;
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'pass_ready', ?, ?)`, [entryA, bioChildA, testEventId, now, now]);
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'pass_ready', ?, ?)`, [entryB, bioChildB, testEventId, now, now]);
+
+      const passRefA = `KOI-2026-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      const passRefB = `KOI-2026-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      await execute(`INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at) VALUES (?, ?, ?, 'hash1', 'active', ?, ?, ?)`, [`pass-a-${crypto.randomUUID()}`, entryA, passRefA, now, now, now]);
+      await execute(`INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at) VALUES (?, ?, ?, 'hash2', 'active', ?, ?, ?)`, [`pass-b-${crypto.randomUUID()}`, entryB, passRefB, now, now, now]);
+
+      const parentAuthToken = generateToken(bioUserId);
+
+      // 1. Manually setting sessionStorage alone cannot obtain protected pass data from server
+      // Under biometric protection, GET /home redacts passReference
+      const homeRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      assert(homeRes.status === 200, 'Home request should succeed');
+      const homeData = await homeRes.json();
+      const livinaHome = homeData.childrenList.find((c: any) => c.id === bioChildA);
+      assert(livinaHome && livinaHome.passLocked === true, 'Child A must be marked passLocked on server');
+      assert(livinaHome.passReference === undefined, 'Child A passReference must NOT be exposed before biometric unlock');
+
+      // 2. Direct fetch without biometric authorization returns 403 Forbidden
+      const unauthPassRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildA}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      assert(unauthPassRes.status === 403, 'Pass fetch without authorization must return 403');
+      const unauthErr = await unauthPassRes.json();
+      assert(unauthErr.passLocked === true, 'Response must indicate passLocked');
+
+      // 3. Failed/invalid WebAuthn assertion never authorizes pass
+      const failAuthRes = await fetch(`${testBaseUrl}/api/auth/passkeys/verify-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${parentAuthToken}`
+        },
+        body: JSON.stringify({
+          credential: { id: 'invalid-cred-id' },
+          actionName: 'Unlocking secure child pass',
+          childId: bioChildA
+        })
+      });
+      assert(failAuthRes.status === 401, 'Invalid credential must fail with 401');
+
+      // 4. Register passkey for user
+      await execute(`
+        INSERT INTO user_passkeys (id, user_id, role, credential_id, public_key, counter, device_name, created_at)
+        VALUES (?, ?, 'parent', ?, 'pubkey', 0, 'Test Phone', ?)
+      `, [`pk-${crypto.randomUUID()}`, bioUserId, credId, now]);
+
+      // 5. Successful WebAuthn verification authorizes exact child
+      const successAuthRes = await fetch(`${testBaseUrl}/api/auth/passkeys/verify-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${parentAuthToken}`
+        },
+        body: JSON.stringify({
+          credential: { id: credId },
+          actionName: 'Unlocking secure child pass',
+          childId: bioChildA
+        })
+      });
+      assert(successAuthRes.status === 200, 'Verify action with registered passkey must return 200');
+      const authData = await successAuthRes.json();
+      assert(authData.success === true, 'Verify action must succeed');
+      assert(typeof authData.passToken === 'string', 'Must issue signed passToken');
+
+      // 6. Child A is now authorized and returns pass reference
+      const authPassRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildA}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true',
+          'X-Pass-Token': authData.passToken
+        }
+      });
+      assert(authPassRes.status === 200, 'Authorized pass fetch must return 200');
+      const passData = await authPassRes.json();
+      assert(passData.passReference === passRefA, `Must return actual passReference, expected ${passRefA} got ${passData.passReference}`);
+
+      // 7. Multi-child isolation: Child A authorization does NOT unlock Child B
+      const childBPassRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildB}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true',
+          'X-Pass-Token': authData.passToken
+        }
+      });
+      assert(childBPassRes.status === 403, 'Child A token must NOT authorize Child B');
+
+      // 8. Sign-out revokes authorization
+      const signOutRes = await fetch(`${testBaseUrl}/api/auth/sign-out`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`
+        }
+      });
+      assert(signOutRes.status === 200, 'Sign-out must succeed');
+
+      const afterLogoutRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildA}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      const afterLogoutText = await afterLogoutRes.text();
+      assert(afterLogoutRes.status === 403, `Pass must be locked again after sign out, got ${afterLogoutRes.status}: ${afterLogoutText}`);
+
+      // 9. Expired authorization requires authentication again
+      const expiredAuth = await authorizeChildPass(bioParentId, bioChildA, -1000);
+      const expiredPassRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildA}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true',
+          'X-Pass-Token': expiredAuth.passToken
+        }
+      });
+      assert(expiredPassRes.status === 403, 'Expired authorization must return 403 and require authentication again');
+
+      // 10. Render restart resilience: process-memory wipe retains persistent server authorization in auth_tokens
+      const persistentAuth = await authorizeChildPass(bioParentId, bioChildA, 15 * 60 * 1000, bioUserId);
+      assert(typeof persistentAuth.passToken === 'string', 'Must issue persistent token');
+
+      // Simulate Render restart by wiping all in-memory caches
+      _clearInMemoryPassCache();
+
+      // Pass fetch WITHOUT passing X-Pass-Token header succeeds via DB auth_tokens lookup
+      const afterRestartRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildA}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      assert(afterRestartRes.status === 200, 'Pass authorization must survive server process memory restart via auth_tokens DB table');
+      const afterRestartData = await afterRestartRes.json();
+      assert(afterRestartData.passReference === passRefA, 'Pass reference must match after restart');
+
+      // Signing out revokes persistent auth in DB
+      await fetch(`${testBaseUrl}/api/auth/sign-out`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${parentAuthToken}` }
+      });
+      _clearInMemoryPassCache();
+
+      const afterLogoutDbRes = await fetch(`${testBaseUrl}/api/parent/children/${bioChildA}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAuthToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      assert(afterLogoutDbRes.status === 403, 'Pass must remain locked after sign-out even with process restart');
     });
 
   } finally {

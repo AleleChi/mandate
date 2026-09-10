@@ -548,6 +548,16 @@ export default function App() {
     setActiveExperience(null);
     safeStorage.removeItem('koinonia_active_draft_id');
     safeStorage.removeItem('koinonia_active_experience');
+    api.request('/api/auth/sign-out', { method: 'POST' }).catch(() => {});
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        Object.keys(sessionStorage).forEach((key) => {
+          if (key.startsWith('koinonia_pass_unlocked_')) {
+            sessionStorage.removeItem(key);
+          }
+        });
+      }
+    } catch {}
     navigate('/');
     showSuccess('Signed out', 'You have been successfully signed out.');
   };
