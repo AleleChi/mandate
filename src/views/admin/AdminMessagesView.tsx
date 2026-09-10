@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { 
   MessageSquare, 
   Send, 
@@ -71,6 +71,10 @@ const DEFAULT_TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: 'Your Entry Pass is Ready - {Event name}',
     body: 'Dear {Parent name},\n\nGood news! The entry pass for {Child name} is ready for {Event name}. You can view the pass here:\n{Pass link}\n\nFor any questions or support, contact our team at {Support contact}. We look forward to welcoming you!'
   },
+  pass_update: {
+    subject: 'Important Pass Update - {Event name}',
+    body: 'Dear {Parent name},\n\nGood news! {Child name}\'s event pass is ready for {Event name}. You can view the pass here:\n{Pass link}\n\nFor any questions or support, contact our team at {Support contact}. We look forward to welcoming you!'
+  },
   review_update: {
     subject: 'Review Status Update - {Event name}',
     body: 'Dear {Parent name},\n\nYour details for {Child name} are currently under active review by the team. You can check the status on Parent Access:\n{Review link}\n\nThank you for your patience and support!'
@@ -78,8 +82,36 @@ const DEFAULT_TEMPLATES: Record<string, { subject: string; body: string }> = {
   waiting_list_update: {
     subject: 'Waiting List Status - {Event name}',
     body: 'Dear {Parent name},\n\nWe have received your details for {Child name}. Due to capacity limits for {Event name}, your child has been placed on our waiting list. We will notify you immediately if a spot opens up.\n\nThank you for your understanding.'
+  },
+  selection_update: {
+    subject: 'Selection Status Update - {Event name}',
+    body: 'Dear {Parent name},\n\nWe have an update regarding {Child name}\'s selection status for {Event name}. You can view the details here:\n{Review link}\n\nWarm regards,\nThe Koinonia Team'
+  },
+  application_status: {
+    subject: 'Application Status Update - {Event name}',
+    body: 'Dear {Parent name},\n\nHere is an update on {Child name}\'s registration status for {Event name}. You can view the details here:\n{Review link}\n\nWarm regards,\nThe Koinonia Team'
   }
 };
+
+export function isChildSpecificMessageType(messageType?: string, body?: string, subject?: string): boolean {
+  const childTypes = [
+    'pass_ready',
+    'pass_update',
+    'review_update',
+    'review_status',
+    'waiting_list_update',
+    'waitlist_update',
+    'selection_update',
+    'application_status',
+    'pickup_reminder'
+  ];
+  if (messageType && childTypes.includes(messageType)) {
+    return true;
+  }
+  const hasChildTokens = /\{Child name\}|\{Pass link\}|\{Review link\}/i.test(body || '') ||
+    (subject ? /\{Child name\}|\{Pass link\}|\{Review link\}/i.test(subject) : false);
+  return Boolean(hasChildTokens);
+}
 
 const TOKENS = [
   { key: '{Parent name}', label: 'Parent Name' },
@@ -208,6 +240,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     childCount: number;
   }>>([]);
   const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
+  const [activePreviewChildId, setActivePreviewChildId] = useState<string | null>(null);
   const [parentSearchQuery, setParentSearchQuery] = useState('');
   const [previewRepresentativeParent, setPreviewRepresentativeParent] = useState<string | null>(null);
   const [channelEligibility, setChannelEligibility] = useState<{
@@ -601,7 +635,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         channel: selectedChannels.includes('email') ? 'email' : (selectedChannels.includes('whatsapp') ? 'whatsapp' : 'in_app'),
         subject,
         body,
-        selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined
+        selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
+        selectedChildId: activePreviewChildId || undefined
       });
       if (res.success && res.preview) {
         setPreviewSubject(res.preview.subject);
@@ -620,7 +655,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       generateLivePreview();
     }, 400);
     return () => clearTimeout(timer);
-  }, [body, subject, selectedGroup, selectedType, selectedChannels, selectedParentIds]);
+  }, [body, subject, selectedGroup, selectedType, selectedChannels, selectedParentIds, activePreviewChildId]);
 
   useEffect(() => {
     if (!selectedChannels.includes(previewTab)) {
@@ -749,6 +784,19 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       setSubject(template.subject);
       setBody(template.body);
     }
+    // If switching to a child-specific type, preselect single children for selected parents
+    if (isChildSpecificMessageType(type, template?.body, template?.subject)) {
+      const autoChildIds: string[] = [];
+      for (const pId of selectedParentIds) {
+        const parentObj = eventParents.find(p => p.id === pId);
+        if (parentObj && (parentObj.children || []).length === 1) {
+          autoChildIds.push(parentObj.children[0].id);
+        }
+      }
+      if (autoChildIds.length > 0) {
+        setSelectedChildIds(prev => Array.from(new Set([...prev, ...autoChildIds])));
+      }
+    }
   };
 
   const handleInsertToken = (token: string) => {
@@ -812,14 +860,24 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         return;
       }
 
-      // Multi-child safety check: ambiguous child tokens are prohibited when targeting parents with multiple children
-      const hasChildTokens = /\{Child name\}|\{Pass link\}/i.test(body) || (subject && /\{Child name\}|\{Pass link\}/i.test(subject));
-      if (hasChildTokens) {
+      const isCurrentChildSpecific = isChildSpecificMessageType(selectedType, body, subject);
+      if (isCurrentChildSpecific) {
         const selectedParentObjects = eventParents.filter(p => selectedParentIds.includes(p.id));
-        const multiChildParent = selectedParentObjects.find(p => (p.children || []).length > 1);
-        if (multiChildParent) {
-          showError(`Cannot send: "${multiChildParent.name}" has multiple registered children. Please remove {Child name} or {Pass link} tokens, or target a child-specific group.`);
-          return;
+        for (const parent of selectedParentObjects) {
+          const parentChildren = parent.children || [];
+          if (parentChildren.length === 0) {
+            showError(`"${parent.name}" has no registered children for this event.`);
+            return;
+          }
+          const hasSelectedChild = parentChildren.some(c => selectedChildIds.includes(c.id));
+          if (!hasSelectedChild) {
+            if (parentChildren.length > 1) {
+              showError(`Choose which child this update is for. "${parent.name}" has ${parentChildren.length} children.`);
+            } else {
+              showError(`Choose a child: This update is linked to a child's registration. Select the child you want to send it for.`);
+            }
+            return;
+          }
         }
       }
     } else {
@@ -837,6 +895,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     setShowConfirmModal(false);
     setActionLoading(true);
     try {
+      const isCurrentChildSpecific = isChildSpecificMessageType(selectedType, body, subject);
       const res = await api.admin.sendMessage({
         recipientGroup: selectedGroup,
         messageType: selectedType,
@@ -846,7 +905,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         body,
         confirmed: true,
         eventId: selectedEventId,
-        selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined
+        selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
+        selectedChildIds: (selectedGroup === 'specific_parents' && isCurrentChildSpecific) ? selectedChildIds : undefined
       });
       
       if (res.success) {
@@ -929,7 +989,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   };
 
   const isSpecificParents = selectedGroup === 'specific_parents';
+  const isChildSpecific = isChildSpecificMessageType(selectedType, body, subject);
   const selectedParentsList = eventParents.filter(p => selectedParentIds.includes(p.id));
+
+  // Linked children for selected parents that are selected
+  const selectedChildrenList = selectedParentsList.flatMap(p =>
+    (p.children || []).filter(c => selectedChildIds.includes(c.id))
+  );
 
   const effectiveEligibility = isSpecificParents ? {
     inApp: selectedParentsList.filter(p => !!p.userId).length,
@@ -940,27 +1006,90 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   } : channelEligibility;
 
   const activeGroupRecipients = isSpecificParents
-    ? selectedParentIds.length
+    ? (isChildSpecific ? selectedChildrenList.length : selectedParentIds.length)
     : (recipientGroups.find(g => g.key === selectedGroup)?.count ?? 0);
 
   const isWhatsAppOnly = selectedChannels.length === 1 && selectedChannels[0] === 'whatsapp';
   const whatsappEligibleCount = effectiveEligibility?.whatsappOptedIn ?? 0;
+
+  const childDeliveryBreakdown = useMemo(() => {
+    if (!isChildSpecific || !isSpecificParents) return null;
+    let whatsapp = 0;
+    let push = 0;
+    let inApp = 0;
+    let email = 0;
+    for (const p of selectedParentsList) {
+      const pChildrenCount = (p.children || []).filter(c => selectedChildIds.includes(c.id)).length;
+      if (pChildrenCount === 0) continue;
+      if (whatsappEnabled && p.whatsappConsentStatus === 'opted_in' && (p.whatsappNumber || p.phone)) {
+        whatsapp += pChildrenCount;
+      }
+      if (Number(p.pushCount || 0) > 0) {
+        push += pChildrenCount;
+      }
+      if (p.userId) {
+        inApp += pChildrenCount;
+      }
+      if (p.email && p.email.includes('@')) {
+        email += pChildrenCount;
+      }
+    }
+    return { whatsapp, push, inApp, email };
+  }, [isChildSpecific, isSpecificParents, selectedParentsList, selectedChildIds, whatsappEnabled]);
+
+  const confirmModalTitle = useMemo(() => {
+    if (isChildSpecific && isSpecificParents && selectedChildrenList.length > 0) {
+      const formattedType = selectedType === 'pass_update' || selectedType === 'pass_ready'
+        ? 'pass update'
+        : selectedType === 'review_update'
+        ? 'review update'
+        : selectedType === 'waiting_list_update'
+        ? 'waiting list update'
+        : selectedType.replace(/_/g, ' ');
+      if (selectedChildrenList.length === 1) {
+        return `Send ${formattedType}?`;
+      }
+      return `Send ${selectedChildrenList.length} ${formattedType}s?`;
+    }
+    return isWhatsAppOnly ? 'Send WhatsApp announcement?' : 'Send announcement?';
+  }, [isChildSpecific, isSpecificParents, selectedChildrenList.length, selectedType, isWhatsAppOnly]);
+
   const representativeParent = isSpecificParents
     ? selectedParentsList[0]
     : (eventParents.length > 0 ? eventParents[0] : null);
-  const resolvedRepresentativeName = previewRepresentativeParent || representativeParent?.name || (isSpecificParents && selectedParentsList.length > 0 ? selectedParentsList[0].name : 'Stephanie Keenam');
+
+  // Active child context for preview
+  const activeChild = selectedChildrenList.find(c => c.id === activePreviewChildId)
+    || (selectedChildrenList.length > 0 ? selectedChildrenList[0] : null)
+    || (selectedParentsList.length > 0 && (selectedParentsList[0].children || []).length > 0 ? selectedParentsList[0].children[0] : null)
+    || (eventParents.length > 0 && (eventParents[0].children || []).length > 0 ? eventParents[0].children[0] : null);
+
+  const parentForActiveChild = activeChild
+    ? eventParents.find(p => (p.children || []).some(c => c.id === activeChild.id))
+    : representativeParent;
+
+  const resolvedRepresentativeName = previewRepresentativeParent
+    || parentForActiveChild?.name
+    || representativeParent?.name
+    || (isSpecificParents && selectedParentsList.length > 0 ? selectedParentsList[0].name : 'Tochukwu Ogunaka');
+
   const resolvedEventName = events.find(e => e.id === selectedEventId)?.title || 'The General Assembly';
+  const resolvedChildName = activeChild?.name || 'your child';
+  const resolvedChildId = activeChild?.id;
 
   const resolvedPreviewSubject = (previewSubject || subject || '')
     .replace(/{Parent name}/gi, resolvedRepresentativeName)
-    .replace(/{Event name}/gi, resolvedEventName);
+    .replace(/{Child name}/gi, resolvedChildName)
+    .replace(/{Event name}/gi, resolvedEventName)
+    .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
+    .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId));
 
   const resolvedPreviewBody = (previewBody || body || '')
     .replace(/{Parent name}/gi, resolvedRepresentativeName)
+    .replace(/{Child name}/gi, resolvedChildName)
     .replace(/{Event name}/gi, resolvedEventName)
-    .replace(/{Child name}/gi, representativeParent?.children?.[0]?.name || 'your child')
-    .replace(/{Review link}/gi, buildFrontendParentStatusUrl(representativeParent?.children?.[0]?.id))
-    .replace(/{Pass link}/gi, buildFrontendParentPassUrl(representativeParent?.children?.[0]?.id))
+    .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId))
+    .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
     .replace(/{Pickup time}/gi, '4:00 PM')
     .replace(/{Support contact}/gi, '+234 803 123 4567');
 
@@ -975,18 +1104,52 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   });
 
   const toggleSelectParent = (id: string) => {
-    setSelectedParentIds(prev =>
-      prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
-    );
+    setSelectedParentIds(prev => {
+      const willSelect = !prev.includes(id);
+      const nextParentIds = willSelect ? [...prev, id] : prev.filter(pId => pId !== id);
+
+      const parentObj = eventParents.find(p => p.id === id);
+      const parentChildIds = (parentObj?.children || []).map(c => c.id);
+
+      setSelectedChildIds(prevChildIds => {
+        if (!willSelect) {
+          return prevChildIds.filter(cId => !parentChildIds.includes(cId));
+        } else if (isChildSpecific && parentObj && (parentObj.children || []).length === 1) {
+          const singleChildId = parentObj.children[0].id;
+          return prevChildIds.includes(singleChildId) ? prevChildIds : [...prevChildIds, singleChildId];
+        }
+        return prevChildIds;
+      });
+
+      return nextParentIds;
+    });
+  };
+
+  const toggleSelectChild = (parentId: string, childId: string) => {
+    setSelectedChildIds(prev => {
+      const exists = prev.includes(childId);
+      const next = exists ? prev.filter(id => id !== childId) : [...prev, childId];
+      if (!exists && !selectedParentIds.includes(parentId)) {
+        setSelectedParentIds(pPrev => [...pPrev, parentId]);
+      }
+      return next;
+    });
   };
 
   const selectAllFilteredParents = () => {
     const idsToAdd = filteredParents.map(p => p.id);
     setSelectedParentIds(prev => Array.from(new Set([...prev, ...idsToAdd])));
+    if (isChildSpecific) {
+      const singleChildIds = filteredParents
+        .filter(p => (p.children || []).length === 1)
+        .map(p => p.children[0].id);
+      setSelectedChildIds(prev => Array.from(new Set([...prev, ...singleChildIds])));
+    }
   };
 
   const clearSelectedParents = () => {
     setSelectedParentIds([]);
+    setSelectedChildIds([]);
   };
 
   const isFiltersActive = priorityFilter !== 'all' || statusFilter !== 'all' || typeFilter !== 'all' || senderRoleFilter !== 'all' || searchFilter || dateFrom || dateTo;
@@ -1941,46 +2104,96 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                         const isOptedOut = parent.whatsappConsentStatus === 'opted_out';
 
                         return (
-                          <label
+                          <div
                             key={parent.id}
-                            className={`flex items-center justify-between p-2.5 hover:bg-zinc-50 cursor-pointer transition-colors ${
+                            className={`p-2.5 hover:bg-zinc-50 transition-colors ${
                               isSelected ? 'bg-amber-50/40' : ''
                             }`}
                           >
-                            <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSelectParent(parent.id)}
-                                className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <span className="text-xs font-semibold text-[#18181B] block truncate">
-                                  {parent.name || 'Unnamed parent'}
-                                </span>
-                                <span className="text-[11px] text-zinc-500 block truncate">
-                                  {childSummary}
-                                </span>
+                            <div className="flex items-center justify-between">
+                              <label className="flex items-center space-x-2.5 min-w-0 flex-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectParent(parent.id)}
+                                  className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-xs font-semibold text-[#18181B] block truncate">
+                                    {parent.name || 'Unnamed parent'}
+                                  </span>
+                                  <span className="text-[11px] text-zinc-500 block truncate">
+                                    {childSummary}
+                                  </span>
+                                </div>
+                              </label>
+
+                              <div className="flex items-center space-x-2 shrink-0 ml-2">
+                                {isOptedIn ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1">
+                                    <Check className="w-2.5 h-2.5 inline" />
+                                    <span>WhatsApp enabled</span>
+                                  </span>
+                                ) : isOptedOut ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500">
+                                    WhatsApp off
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500">
+                                    WhatsApp not enabled
+                                  </span>
+                                )}
                               </div>
                             </div>
 
-                            <div className="flex items-center space-x-2 shrink-0 ml-2">
-                              {isOptedIn ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1">
-                                  <Check className="w-2.5 h-2.5 inline" />
-                                  <span>WhatsApp enabled</span>
-                                </span>
-                              ) : isOptedOut ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500">
-                                  WhatsApp off
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500">
-                                  WhatsApp not enabled
-                                </span>
-                              )}
-                            </div>
-                          </label>
+                            {/* Child selection subsection when parent is selected AND isChildSpecific */}
+                            {isSelected && isChildSpecific && (
+                              <div className="mt-2.5 ml-6 pl-3 border-l-2 border-amber-300 bg-white/90 rounded-r-lg p-2.5 space-y-2 border border-amber-200/50">
+                                {(parent.children || []).length === 1 ? (
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-1.5 text-xs text-zinc-800">
+                                      <span className="text-zinc-500 text-[11px]">Sending for:</span>
+                                      <span className="font-semibold text-[#18181B]">{parent.children[0].name}</span>
+                                    </div>
+                                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                      Preselected
+                                    </span>
+                                  </div>
+                                ) : (parent.children || []).length > 1 ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[11px] font-bold text-[#18181B]">Choose child</span>
+                                      <span className="text-[10px] text-zinc-500">
+                                        {parent.name} has {parent.children.length} children
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      {parent.children.map(child => {
+                                        const isChildChecked = selectedChildIds.includes(child.id);
+                                        return (
+                                          <label key={child.id} className="flex items-center space-x-2 text-xs text-zinc-800 cursor-pointer hover:text-zinc-950">
+                                            <input
+                                              type="checkbox"
+                                              checked={isChildChecked}
+                                              onChange={() => toggleSelectChild(parent.id, child.id)}
+                                              className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                            />
+                                            <span className={`font-medium ${isChildChecked ? 'text-zinc-950 font-semibold' : 'text-zinc-700'}`}>
+                                              {child.name}
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[11px] text-zinc-400 italic">
+                                    No registered children for this event
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         );
                       })
                     )}
@@ -2198,11 +2411,39 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 </div>
 
                 {isSpecificParents && (
-                  <div className="px-3 py-2 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-center space-x-2">
-                    <User className="w-4 h-4 text-amber-700 shrink-0" />
-                    <div className="min-w-0 flex-1 font-semibold truncate">
-                      Preview for {previewRepresentativeParent || selectedParentsList[0]?.name || 'Selected parent'}
+                  <div className="space-y-2">
+                    <div className="px-3 py-2 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-center space-x-2">
+                      <User className="w-4 h-4 text-amber-700 shrink-0" />
+                      <div className="min-w-0 flex-1 font-semibold truncate">
+                        Preview for {parentForActiveChild?.name || previewRepresentativeParent || selectedParentsList[0]?.name || 'Selected parent'}
+                        {isChildSpecific && activeChild?.name ? ` · ${activeChild.name}` : ''}
+                      </div>
                     </div>
+
+                    {isChildSpecific && selectedChildrenList.length > 1 && (
+                      <div className="flex items-center space-x-2 overflow-x-auto pb-1">
+                        <span className="text-[11px] text-zinc-500 font-medium shrink-0">Child preview:</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {selectedChildrenList.map(c => {
+                            const isCurrentActive = (activePreviewChildId === c.id) || (!activePreviewChildId && selectedChildrenList[0]?.id === c.id);
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => setActivePreviewChildId(c.id)}
+                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all cursor-pointer ${
+                                  isCurrentActive
+                                    ? 'bg-[#C59B27] text-white shadow-2xs font-semibold'
+                                    : 'bg-white text-zinc-700 border border-[#EAE8E1] hover:bg-zinc-100'
+                                }`}
+                              >
+                                {c.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2225,11 +2466,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                         <span className="text-zinc-400 text-[10px]">Now</span>
                       </div>
                       <div className="text-xs font-bold text-[#18181B]">
-                        {subject.trim() || 'Important Event Details — The General Assembly'}
+                        {resolvedPreviewSubject || subject.trim() || 'Important Event Details — The General Assembly'}
                       </div>
                       <div className="text-xs text-zinc-600 leading-relaxed">
-                        {body.trim()
-                          ? (body.length > 140 ? body.slice(0, 140) + '…' : body)
+                        {resolvedPreviewBody
+                          ? (resolvedPreviewBody.length > 140 ? resolvedPreviewBody.slice(0, 140) + '…' : resolvedPreviewBody)
                           : 'You have a new update for The General Assembly.'}
                       </div>
                       <div className="text-[10px] text-zinc-400 pt-2 border-t border-[#EAE8E1] flex items-center justify-between">
@@ -2243,23 +2484,23 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                         <span className="text-[10px] font-semibold bg-[#C59B27]/10 text-[#C59B27] px-2 py-0.5 rounded">Announcement</span>
                         <span className="text-[10px] text-zinc-400">Just now</span>
                       </div>
-                      <h4 className="text-xs font-bold text-[#18181B]">{subject.trim() || 'Important Event Details — The General Assembly'}</h4>
-                      <p className="text-xs text-zinc-600 line-clamp-4 leading-relaxed whitespace-pre-line">{body || 'You have a new update for The General Assembly.'}</p>
+                      <h4 className="text-xs font-bold text-[#18181B]">{resolvedPreviewSubject || subject.trim() || 'Important Event Details — The General Assembly'}</h4>
+                      <p className="text-xs text-zinc-600 line-clamp-4 leading-relaxed whitespace-pre-line">{resolvedPreviewBody || body || 'You have a new update for The General Assembly.'}</p>
                     </div>
                   ) : previewTab === 'email' ? (
                     <div className="space-y-3 text-xs font-sans">
                       <div className="bg-[#FFFDF9] border border-[#EAE8E1] rounded-lg p-3 text-zinc-600 space-y-1">
                         <div><strong>From:</strong> {providerStatus.senderName || 'Koinonia Global'}</div>
-                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{previewSubject || subject || 'Important Event Details — The General Assembly'}</span></div>
+                        <div><strong>Subject:</strong> <span className="text-[#18181B] font-medium">{resolvedPreviewSubject || previewSubject || subject || 'Important Event Details — The General Assembly'}</span></div>
                       </div>
                       <div className="bg-[#FFFDF9] border border-[#EAE8E1] rounded-lg p-3.5 text-zinc-800 leading-relaxed whitespace-pre-line min-h-[120px]">
-                        {previewBody || body || 'You have a new update for The General Assembly.'}
+                        {resolvedPreviewBody || previewBody || body || 'You have a new update for The General Assembly.'}
                       </div>
                     </div>
                   ) : (
                     <div className="flex justify-end font-sans">
                       <div className="bg-[#F0F7F4] border border-[#D1E7DD] rounded-2xl rounded-tr-none p-3.5 text-xs text-zinc-800 leading-relaxed max-w-[90%] whitespace-pre-line shadow-2xs">
-                        {previewBody || body || 'Important Event Details — The General Assembly\n\nYou have a new update for The General Assembly.'}
+                        {resolvedPreviewBody || previewBody || body || 'Important Event Details — The General Assembly\n\nYou have a new update for The General Assembly.'}
                         <div className="text-[10px] text-zinc-400 text-right mt-2">
                           12:00 PM · WhatsApp
                         </div>
@@ -2681,7 +2922,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <AlertTriangle className="w-4 h-4 text-[#C59B27]" />
                 </div>
                 <h4 className="text-sm sm:text-base font-bold text-[#18181B] truncate">
-                  {isWhatsAppOnly ? 'Send WhatsApp announcement?' : 'Send announcement?'}
+                  {confirmModalTitle}
                 </h4>
               </div>
               <button
@@ -2701,43 +2942,53 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 <div className="flex items-center justify-between flex-wrap gap-1">
                   <span className="font-semibold text-zinc-900">
                     {isSpecificParents
-                      ? `${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'} selected`
+                      ? (isChildSpecific
+                          ? `${selectedChildrenList.length} child update${selectedChildrenList.length === 1 ? '' : 's'} across ${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'}`
+                          : `${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'} selected`)
                       : `${selectedGroup.replace(/_/g, ' ')} (${activeGroupRecipients} recipient${activeGroupRecipients === 1 ? '' : 's'})`
                     }
                   </span>
                   {selectedChannels.includes('whatsapp') && (
                     <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                      {whatsappEligibleCount} available for WhatsApp
+                      {childDeliveryBreakdown ? childDeliveryBreakdown.whatsapp : whatsappEligibleCount} available for WhatsApp
                     </span>
                   )}
                 </div>
 
-                {/* If multiple channels selected, show channel eligibility breakdown */}
-                {selectedChannels.length > 1 && (
+                {/* If multiple channels selected or child-specific, show channel eligibility breakdown */}
+                {(selectedChannels.length > 1 || isChildSpecific) && (
                   <div className="pt-2 border-t border-[#EAE8E1] space-y-1 text-[11px] text-zinc-700">
                     <div className="font-medium text-zinc-500 uppercase text-[10px] tracking-wider pb-0.5">Channel Eligibility</div>
                     {selectedChannels.includes('in_app') && (
                       <div className="flex justify-between">
                         <span>In-app:</span>
-                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.inApp : activeGroupRecipients} available</span>
+                        <span className="font-semibold text-zinc-900">
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.inApp} notification${childDeliveryBreakdown.inApp === 1 ? '' : 's'}` : `${isSpecificParents ? effectiveEligibility?.inApp : activeGroupRecipients} available`}
+                        </span>
                       </div>
                     )}
                     {selectedChannels.includes('push') && (
                       <div className="flex justify-between">
                         <span>Push notification:</span>
-                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.push : activeGroupRecipients} available</span>
+                        <span className="font-semibold text-zinc-900">
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.push} notification${childDeliveryBreakdown.push === 1 ? '' : 's'}` : `${isSpecificParents ? effectiveEligibility?.push : activeGroupRecipients} available`}
+                        </span>
                       </div>
                     )}
                     {selectedChannels.includes('email') && (
                       <div className="flex justify-between">
                         <span>Email:</span>
-                        <span className="font-semibold text-zinc-900">{isSpecificParents ? effectiveEligibility?.email : activeGroupRecipients} available</span>
+                        <span className="font-semibold text-zinc-900">
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.email} email${childDeliveryBreakdown.email === 1 ? '' : 's'}` : `${isSpecificParents ? effectiveEligibility?.email : activeGroupRecipients} available`}
+                        </span>
                       </div>
                     )}
                     {selectedChannels.includes('whatsapp') && (
                       <div className="flex justify-between">
                         <span>WhatsApp:</span>
-                        <span className="font-semibold text-emerald-700">{whatsappEligibleCount} available</span>
+                        <span className="font-semibold text-emerald-700">
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.whatsapp} message${childDeliveryBreakdown.whatsapp === 1 ? '' : 's'}` : `${whatsappEligibleCount} available`}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -2748,16 +2999,30 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               {isSpecificParents && selectedParentsList.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Recipients</div>
-                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs space-y-1 text-zinc-800">
-                    {selectedParentsList.slice(0, 2).map(p => (
-                      <div key={p.id} className="font-medium flex items-center space-x-1.5">
-                        <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span className="truncate">{p.name || 'Unnamed Parent'}</span>
-                      </div>
-                    ))}
-                    {selectedParentsList.length > 2 && (
+                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs space-y-2 text-zinc-800">
+                    {selectedParentsList.slice(0, 5).map(p => {
+                      const pSelectedChildren = (p.children || []).filter(c => selectedChildIds.includes(c.id));
+                      return (
+                        <div key={p.id} className="space-y-1">
+                          <div className="font-medium flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <span className="truncate">{p.name || 'Unnamed Parent'}</span>
+                          </div>
+                          {isChildSpecific && pSelectedChildren.length > 0 && (
+                            <div className="pl-5 flex flex-wrap gap-1">
+                              {pSelectedChildren.map(c => (
+                                <span key={c.id} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#C59B27]/15 text-[#8A6A14] border border-[#C59B27]/30">
+                                  {c.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {selectedParentsList.length > 5 && (
                       <div className="text-[11px] text-zinc-500 font-medium pl-5">
-                        + {selectedParentsList.length - 2} more
+                        + {selectedParentsList.length - 5} more
                       </div>
                     )}
                   </div>
@@ -2768,7 +3033,24 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               <div className="space-y-1.5">
                 <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Delivery</div>
                 <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 font-medium">
-                  {selectedChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : c === 'in_app' ? 'In-app notification' : c === 'push' ? 'Push notification' : 'Email').join(', ')}
+                  {isChildSpecific && childDeliveryBreakdown ? (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {selectedChannels.includes('whatsapp') && (
+                        <span>WhatsApp · {childDeliveryBreakdown.whatsapp} message{childDeliveryBreakdown.whatsapp === 1 ? '' : 's'}</span>
+                      )}
+                      {selectedChannels.includes('push') && (
+                        <span>Push · {childDeliveryBreakdown.push} notification{childDeliveryBreakdown.push === 1 ? '' : 's'}</span>
+                      )}
+                      {selectedChannels.includes('in_app') && (
+                        <span>In-app · {childDeliveryBreakdown.inApp} notification{childDeliveryBreakdown.inApp === 1 ? '' : 's'}</span>
+                      )}
+                      {selectedChannels.includes('email') && (
+                        <span>Email · {childDeliveryBreakdown.email} email{childDeliveryBreakdown.email === 1 ? '' : 's'}</span>
+                      )}
+                    </div>
+                  ) : (
+                    selectedChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : c === 'in_app' ? 'In-app notification' : c === 'push' ? 'Push notification' : 'Email').join(', ')
+                  )}
                 </div>
               </div>
 
@@ -2817,12 +3099,18 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 {actionLoading ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Queueing...</span>
+                    <span>Sending...</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-3.5 h-3.5" />
-                    <span>Queue message</span>
+                    <span>
+                      {isChildSpecific && isSpecificParents && selectedChildrenList.length > 1
+                        ? `Send ${selectedChildrenList.length} updates`
+                        : isChildSpecific && isSpecificParents && selectedChildrenList.length === 1
+                        ? 'Send update'
+                        : 'Queue message'}
+                    </span>
                   </>
                 )}
               </button>

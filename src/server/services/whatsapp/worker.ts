@@ -215,6 +215,18 @@ export async function processQueuedWhatsAppJobs(
       const currentAttempt = (candidate.attempt_count || 0) + 1;
 
       try {
+        let resolvedEntryId: string | null = null;
+        if (candidate.child_id) {
+          const entryRow = await queryOne(`
+            SELECT id FROM child_event_entries
+            WHERE child_id = ? AND event_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+            LIMIT 1
+          `, [candidate.child_id, candidate.event_id || 'event-ga-2026']);
+          if (entryRow) {
+            resolvedEntryId = entryRow.id;
+          }
+        }
+
         // 3. Resolve parent profile & verify consent eligibility
         const parent = await queryOne(`
           SELECT id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email
@@ -243,7 +255,7 @@ export async function processQueuedWhatsAppJobs(
             jobId: candidate.id,
             campaignId: candidate.rule_id || 'manual_broadcast',
             parentProfileId: candidate.parent_id,
-            childEventEntryId: candidate.child_id || null,
+            childEventEntryId: resolvedEntryId || null,
             recipientPhone: parent.whatsapp_number || parent.phone_number || 'unknown',
             provider: provider.name,
             status: 'failed',
@@ -296,14 +308,38 @@ export async function processQueuedWhatsAppJobs(
           if (ev && ev.title) eventName = ev.title;
         }
 
+        let childName = 'your child';
+        let passUrl = buildParentPassUrl();
+        let reviewUrl = buildParentStatusUrl();
+        if (candidate.child_id) {
+          const childRow = await queryOne(`SELECT id, full_name FROM children WHERE id = ?`, [candidate.child_id]);
+          if (childRow) {
+            childName = (childRow.full_name || '').trim() || 'your child';
+            passUrl = buildParentPassUrl(childRow.id);
+            reviewUrl = buildParentStatusUrl(childRow.id);
+          }
+        }
+
+        // If an in-app notification exists for this campaign and child, use its exact pre-rendered body
+        if (broadcastId) {
+          const childNotif = await queryOne(`
+            SELECT message FROM notifications
+            WHERE parent_id = ? AND (child_id = ? OR (? IS NULL AND child_id IS NULL)) AND metadata_json LIKE ?
+            ORDER BY created_at DESC LIMIT 1
+          `, [candidate.parent_id, candidate.child_id || null, candidate.child_id || null, `%"campaignId":"${broadcastId}"%`]);
+          if (childNotif && childNotif.message) {
+            messageBody = childNotif.message;
+          }
+        }
+
         // Resolve personalized placeholders per recipient parent using canonical URL helper
         const parentDisplayName = (parent.full_name || '').trim() || 'Parent';
         messageBody = resolveMessageTokens(messageBody, {
           parentName: parentDisplayName,
           eventName,
-          childName: 'your child',
-          reviewUrl: buildParentStatusUrl(),
-          passUrl: buildParentPassUrl(),
+          childName,
+          reviewUrl,
+          passUrl,
           pickupTime: '4:00 PM',
           supportContact: '+234 803 123 4567'
         });
@@ -333,7 +369,7 @@ export async function processQueuedWhatsAppJobs(
             jobId: candidate.id,
             campaignId: resolvedCampaignId,
             parentProfileId: candidate.parent_id,
-            childEventEntryId: candidate.child_id || null,
+            childEventEntryId: resolvedEntryId || null,
             recipientPhone,
             provider: provider.name,
             providerMessageId: sendResult.messageId || null,

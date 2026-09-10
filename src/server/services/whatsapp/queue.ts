@@ -23,12 +23,16 @@ export function buildIdempotencyKey(scope: {
   type: 'campaign' | 'child_event' | 'test';
   campaignId?: string;
   parentId?: string;
+  childId?: string;
   eventType?: string;
   entryId?: string;
   version?: string | number;
   adminUserId?: string;
 }): string {
   if (scope.type === 'campaign') {
+    if (scope.childId) {
+      return `campaign:${scope.campaignId || 'general'}:parent:${scope.parentId || 'unknown'}:child:${scope.childId}:whatsapp`;
+    }
     return `campaign:${scope.campaignId || 'general'}:parent:${scope.parentId || 'unknown'}:whatsapp`;
   }
   if (scope.type === 'child_event') {

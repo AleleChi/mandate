@@ -262,6 +262,346 @@ async function runTests() {
       assert(insertedNotif.message.includes('Tochukwu Ogunaka'), `Message missing parent name: ${insertedNotif.message}`);
     });
 
+    await test('Pass update to multi-child parent without selected child is blocked with plain error', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Important Pass Update - {Event name}',
+          body: 'Dear {Parent name},\n\nGood news! {Child name}\'s event pass is ready for {Event name}. You can view the pass here:\n{Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 400, `Expected HTTP 400, got ${res.status}`);
+      assert(data.code === 'CHILD_TOKEN_AMBIGUITY', `Expected CHILD_TOKEN_AMBIGUITY, got ${data.code}`);
+      assert(data.message.includes('multiple registered children'), 'Expected helpful plain explanation');
+      assert(!data.message.includes('CHILD_TOKEN_AMBIGUITY'), 'Technical error code should not be in user message');
+    });
+
+    await test('Pass update with one selected child creates 1 communication for that specific child', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [child1Id],
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Important Pass Update - {Event name}',
+          body: 'Dear {Parent name},\n\nGood news! {Child name}\'s event pass is ready for {Event name}. View pass: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 200, `Expected HTTP 200, got ${res.status}: ${data.message}`);
+      assert(data.recipientsCount === 1, `Expected 1 recipient message, got ${data.recipientsCount}`);
+
+      const notif = await queryOne(`
+        SELECT title, message, child_id FROM notifications
+        WHERE parent_id = ? AND child_id = ?
+        ORDER BY created_at DESC LIMIT 1
+      `, [testParentId, child1Id]);
+
+      assert(notif !== null, 'Notification for child 1 not found');
+      assert(notif.child_id === child1Id, `Expected child_id ${child1Id}, got ${notif.child_id}`);
+      assert(notif.message.includes('Baby Livina'), 'Message should contain Baby Livina');
+      assert(!notif.message.includes('Baby Love'), 'Message should NOT contain Baby Love');
+      assert(notif.message.includes(`/#/parent/children/${child1Id}/pass`), 'Pass link must target selected child');
+      assert(!notif.message.includes('{Child name}'), 'Message contains unparsed {Child name}');
+      assert(!notif.message.includes('{Pass link}'), 'Message contains unparsed {Pass link}');
+    });
+
+    await test('Pass update with two selected siblings creates 2 distinct child-specific messages with individual pass links', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [child1Id, child2Id],
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Important Pass Update - {Event name}',
+          body: 'Dear {Parent name},\n\nGood news! {Child name}\'s event pass is ready for {Event name}. View pass: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 200, `Expected HTTP 200, got ${res.status}: ${data.message}`);
+      assert(data.recipientsCount === 2, `Expected 2 recipient messages, got ${data.recipientsCount}`);
+
+      const campaignNotifs = await query(`
+        SELECT title, message, child_id FROM notifications
+        WHERE parent_id = ? AND metadata_json LIKE ?
+        ORDER BY created_at ASC
+      `, [testParentId, `%"campaignId":"${data.campaignId}"%`]);
+
+      assert(campaignNotifs.length === 2, `Expected 2 campaign notifications, got ${campaignNotifs.length}`);
+
+      const livinaNotif = campaignNotifs.find((n: any) => n.child_id === child1Id);
+      const loveNotif = campaignNotifs.find((n: any) => n.child_id === child2Id);
+
+      assert(livinaNotif !== undefined, 'Baby Livina notification not found');
+      assert(loveNotif !== undefined, 'Baby Love notification not found');
+
+      assert(livinaNotif.message.includes('Baby Livina'), 'Livina notification missing Livina name');
+      assert(livinaNotif.message.includes(`/#/parent/children/${child1Id}/pass`), 'Livina notification wrong pass link');
+      assert(!livinaNotif.message.includes('Baby Love'), 'Livina notification leaked Baby Love');
+
+      assert(loveNotif.message.includes('Baby Love'), 'Love notification missing Love name');
+      assert(loveNotif.message.includes(`/#/parent/children/${child2Id}/pass`), 'Love notification wrong pass link');
+      assert(!loveNotif.message.includes('Baby Livina'), 'Love notification leaked Baby Livina');
+    });
+
+    await test('Backend safety: Rejects child belonging to another parent', async () => {
+      const otherUserId = `user-other-${crypto.randomUUID()}`;
+      const otherParentId = `parent-other-${crypto.randomUUID()}`;
+      const otherChildId = `child-other-${crypto.randomUUID()}`;
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+        VALUES (?, ?, 'hash', 'parent', ?, ?)
+      `, [otherUserId, `other-${Date.now()}@test.koinonia`, now, now]);
+
+      await execute(`
+        INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, created_at, updated_at)
+        VALUES (?, ?, 'Other Parent', 'other@test.koinonia', '+2348099887766', ?, ?)
+      `, [otherParentId, otherUserId, now, now]);
+
+      await execute(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, created_at, updated_at)
+        VALUES (?, ?, 'Other Child', 'female', '2021-01-01', ?, ?)
+      `, [otherChildId, otherParentId, now, now]);
+
+      await execute(`
+        INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'selected', ?, ?)
+      `, [`entry-${otherChildId}`, testEventId, otherChildId, now, now]);
+
+      // Attempt to send for otherChildId under testParentId
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [otherChildId],
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Pass Update',
+          body: 'Pass for {Child name}: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 400, `Expected HTTP 400, got ${res.status}`);
+      assert(data.code === 'INVALID_CHILD', `Expected INVALID_CHILD, got ${data.code}`);
+      assert(data.message.includes('do not belong to the selected parents'), 'Expected plain ownership error message');
+    });
+
+    await test('Backend safety: Rejects deleted child under selected parent', async () => {
+      const deletedChildId = `child-del-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, is_deleted, created_at, updated_at)
+        VALUES (?, ?, 'Deleted Child', 'male', '2020-05-05', 1, ?, ?)
+      `, [deletedChildId, testParentId, now, now]);
+
+      await execute(`
+        INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'selected', ?, ?)
+      `, [`entry-${deletedChildId}`, testEventId, deletedChildId, now, now]);
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [deletedChildId],
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Pass Update',
+          body: 'Pass for {Child name}: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 400, `Expected HTTP 400 for deleted child, got ${res.status}`);
+      assert(data.code === 'INVALID_CHILD', `Expected INVALID_CHILD, got ${data.code}`);
+    });
+
+    await test('Backend safety: Rejects child not registered for the target event', async () => {
+      const nonEventChildId = `child-nonevent-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, is_deleted, created_at, updated_at)
+        VALUES (?, ?, 'Non Event Child', 'male', '2020-05-05', 0, ?, ?)
+      `, [nonEventChildId, testParentId, now, now]);
+
+      // Notice: NO child_event_entries created for testEventId
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [nonEventChildId],
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Pass Update',
+          body: 'Pass for {Child name}: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 400, `Expected HTTP 400 for child not registered in event, got ${res.status}`);
+      assert(data.code === 'INVALID_CHILD', `Expected INVALID_CHILD, got ${data.code}`);
+    });
+
+    await test('WhatsApp queue: Preserves child context and creates distinct jobs for siblings without deduplication', async () => {
+      // Opt-in testParentId for WhatsApp
+      await execute(`
+        UPDATE parent_profiles
+        SET whatsapp_consent_status = 'opted_in',
+            whatsapp_number = '+2348011223344'
+        WHERE id = ?
+      `, [testParentId]);
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [child1Id, child2Id],
+          messageType: 'pass_update',
+          channel: 'both',
+          channels: ['in_app', 'whatsapp'],
+          subject: 'Pass Ready - {Event name}',
+          body: 'Hello {Parent name}, {Child name}\'s pass is ready: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 200, `Expected HTTP 200, got ${res.status}: ${data.message}`);
+      assert(data.queued?.whatsapp === 2 || data.summary?.whatsappQueued === 2, 'Expected 2 WhatsApp messages queued');
+
+      const jobs = await query(`
+        SELECT id, parent_id, child_id, idempotency_key, status
+        FROM notification_jobs
+        WHERE parent_id = ? AND channel = 'whatsapp'
+        ORDER BY created_at DESC LIMIT 2
+      `, [testParentId]);
+
+      assert(jobs.length === 2, `Expected 2 distinct WhatsApp jobs, got ${jobs.length}`);
+
+      const livinaJob = jobs.find((j: any) => j.child_id === child1Id);
+      const loveJob = jobs.find((j: any) => j.child_id === child2Id);
+
+      assert(livinaJob !== undefined, 'Baby Livina WhatsApp job missing');
+      assert(loveJob !== undefined, 'Baby Love WhatsApp job missing');
+      assert(livinaJob.id !== loveJob.id, 'Sibling WhatsApp jobs must have distinct IDs');
+      assert(livinaJob.idempotency_key !== loveJob.idempotency_key, 'Sibling WhatsApp jobs must have distinct idempotency keys');
+      assert(livinaJob.idempotency_key.includes(`child:${child1Id}`), 'Livina idempotency key missing child ID');
+      assert(loveJob.idempotency_key.includes(`child:${child2Id}`), 'Love idempotency key missing child ID');
+    });
+
+    await test('All delivery channels resolve the exact same child context', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [child1Id],
+          messageType: 'pass_update',
+          channel: 'both',
+          channels: ['in_app', 'whatsapp'],
+          subject: 'Pass Update for {Child name}',
+          body: 'Dear {Parent name}, pass for {Child name}: {Pass link}',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 200, `Expected HTTP 200, got ${res.status}`);
+
+      // Check in-app notification
+      const notif = await queryOne(`
+        SELECT child_id, message FROM notifications
+        WHERE parent_id = ? AND metadata_json LIKE ?
+      `, [testParentId, `%"campaignId":"${data.campaignId}"%`]);
+
+      assert(notif !== null, 'In-app notification not found');
+      assert(notif.child_id === child1Id, 'In-app notification child mismatch');
+      assert(notif.message.includes('Baby Livina'), 'In-app notification must resolve Baby Livina');
+      assert(!notif.message.includes('Baby Love'), 'In-app notification must not mention Baby Love');
+
+      // Check WhatsApp job
+      const waJob = await queryOne(`
+        SELECT child_id, idempotency_key FROM notification_jobs
+        WHERE parent_id = ? AND channel = 'whatsapp' AND idempotency_key LIKE ?
+      `, [testParentId, `%campaign:${data.campaignId}%`]);
+
+      assert(waJob !== null, 'WhatsApp job not found');
+      assert(waJob.child_id === child1Id, 'WhatsApp job child mismatch');
+      assert(waJob.idempotency_key.includes(`child:${child1Id}`), 'WhatsApp job idempotency key child mismatch');
+
+      // Clean up test jobs so other test suites (e.g. phase1c) start with clean queue
+      await execute("DELETE FROM notification_jobs WHERE parent_id = ?", [testParentId]);
+    });
+
     // -------------------------------------------------------------
     // SUITE 4: WEB PUSH TRANSPORT & SUBSCRIPTION LIFECYCLE
     // -------------------------------------------------------------

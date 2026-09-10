@@ -1021,6 +1021,7 @@ export const api = {
       subject?: string;
       body: string;
       selectedParentIds?: string[];
+      selectedChildId?: string;
     }) {
       return api.request<{ success: boolean; preview: { subject: string; body: string; representativeParentName?: string } }>('/api/admin/messages/preview', {
         method: 'POST',
@@ -1050,6 +1051,7 @@ export const api = {
       confirmed: boolean;
       eventId?: string;
       selectedParentIds?: string[];
+      selectedChildIds?: string[];
     }) {
       return api.request<{
         success: boolean;

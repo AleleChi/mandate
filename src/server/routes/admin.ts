@@ -4763,10 +4763,12 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
     const messageTypes = [
       { key: 'general_announcement', label: 'General announcement' },
-      { key: 'pickup_reminder', label: 'Pickup reminder' },
-      { key: 'pass_ready', label: 'Pass ready update' },
+      { key: 'pickup_reminder', label: 'Dismissal and pickup reminder' },
+      { key: 'pass_ready', label: 'Pass update' },
       { key: 'review_update', label: 'Review update' },
-      { key: 'waiting_list_update', label: 'Waiting list update' },
+      { key: 'waiting_list_update', label: 'Waitlist update' },
+      { key: 'selection_update', label: 'Selection update' },
+      { key: 'application_status', label: 'Application status' },
       { key: 'safety_alert', label: 'Safety alert' }
     ];
 
@@ -5645,16 +5647,44 @@ router.post('/team/remove-access', async (req: AuthenticatedRequest, res: Respon
   }
 });
 
+/**
+ * Determines whether a message type requires child-specific registration context.
+ * Classified into:
+ * PARENT-LEVEL: general announcements, event reminders, operational updates, safety alerts.
+ * CHILD-SPECIFIC: pass ready / pass update, application status, selection update, waitlist update, review update, pickup reminders.
+ */
+function isChildSpecificMessageType(messageType?: string, body?: string, subject?: string): boolean {
+  const childTypes = [
+    'pass_ready',
+    'pass_update',
+    'review_update',
+    'review_status',
+    'waiting_list_update',
+    'waitlist_update',
+    'selection_update',
+    'application_status',
+    'pickup_reminder'
+  ];
+  if (messageType && childTypes.includes(messageType)) {
+    return true;
+  }
+  const hasChildTokens = /\{Child name\}|\{Pass link\}|\{Review link\}/i.test(body || '') ||
+    (subject ? /\{Child name\}|\{Pass link\}|\{Review link\}/i.test(subject) : false);
+  return Boolean(hasChildTokens);
+}
+
 // POST message preview
 router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const { recipientGroup, messageType, channel, subject, body } = req.body;
+    const { recipientGroup, messageType, channel, subject, body, selectedChildId } = req.body;
     if (!body) {
       return res.status(400).json({ success: false, error: 'Message body is required for preview.' });
     }
 
-    const eventId = 'event-ga-2026';
+    const eventId = req.body.eventId || 'event-ga-2026';
+    const evRow = await queryOne('SELECT title FROM events WHERE id = ?', [eventId]);
+    const eventName = evRow?.title || 'The General Assembly';
 
     // Build the query based on the selected recipientGroup
     let groupCondition = '';
@@ -5670,10 +5700,19 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       groupCondition = "e.status = 'pass_ready'";
     }
 
-    let sampleParent = null;
-    if (recipientGroup === 'specific_parents' && Array.isArray(req.body.selectedParentIds) && req.body.selectedParentIds.length > 0) {
+    let sampleParent: any = null;
+    if (selectedChildId) {
       sampleParent = await queryOne(`
-        SELECT p.full_name as parent_name, c.full_name as child_name, e.id as entry_id
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
+        FROM children c
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        WHERE c.id = ? AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        LIMIT 1
+      `, [eventId, selectedChildId]);
+    } else if (recipientGroup === 'specific_parents' && Array.isArray(req.body.selectedParentIds) && req.body.selectedParentIds.length > 0) {
+      sampleParent = await queryOne(`
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
         FROM parent_profiles p
         LEFT JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
         LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
@@ -5682,7 +5721,7 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       `, [eventId, req.body.selectedParentIds[0]]);
     } else if (groupCondition) {
       sampleParent = await queryOne(`
-        SELECT p.full_name as parent_name, c.full_name as child_name, e.id as entry_id
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -5691,7 +5730,7 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       `, [eventId]);
     } else {
       sampleParent = await queryOne(`
-        SELECT p.full_name as parent_name, c.full_name as child_name, e.id as entry_id
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -5700,17 +5739,17 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       `, [eventId]);
     }
 
-    const parentName = sampleParent?.parent_name || 'Sarah';
-    const childName = sampleParent?.child_name || 'Mary';
-    const entryId = sampleParent?.entry_id || 'sample-entry-123';
+    const parentName = (sampleParent?.parent_name || '').trim() || 'Parent';
+    const childName = (sampleParent?.child_name || '').trim() || 'your child';
+    const childId = sampleParent?.child_id;
 
-    // Safely replace templates using canonical URL helpers
+    // Safely replace templates using canonical URL helpers with exact childId
     const renderedBody = resolveMessageTokens(body, {
       parentName,
       childName,
-      eventName: 'The General Assembly',
-      passUrl: buildParentPassUrl(sampleParent?.child_id || entryId),
-      reviewUrl: buildParentStatusUrl(sampleParent?.child_id),
+      eventName,
+      passUrl: buildParentPassUrl(childId),
+      reviewUrl: buildParentStatusUrl(childId),
       pickupTime: '4:00 PM',
       supportContact: '+234 803 123 4567'
     });
@@ -5718,7 +5757,9 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
     const renderedSubject = resolveMessageTokens(subject || '', {
       parentName,
       childName,
-      eventName: 'The General Assembly'
+      eventName,
+      passUrl: buildParentPassUrl(childId),
+      reviewUrl: buildParentStatusUrl(childId)
     });
 
     res.json({
@@ -5726,7 +5767,8 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       preview: {
         subject: renderedSubject,
         body: renderedBody,
-        representativeParentName: parentName
+        representativeParentName: parentName,
+        representativeChildName: childName
       }
     });
   } catch (err: any) {
@@ -5843,16 +5885,86 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           message: 'Please select at least one parent recipient.'
         });
       }
-      const placeholders = deduplicatedParentIds.map(() => '?').join(',');
-      rows = await query(`
-        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
-        FROM parent_profiles p
-        JOIN users u ON u.id = p.user_id
-        LEFT JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
-        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
-        WHERE p.id IN (${placeholders})
-          AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
-      `, [eventId, ...deduplicatedParentIds]);
+
+      const rawSelectedChildIds = Array.isArray(req.body.selectedChildIds) ? req.body.selectedChildIds : [];
+      const deduplicatedChildIds = Array.from(new Set(rawSelectedChildIds)).filter(Boolean) as string[];
+      const isChildSpecific = isChildSpecificMessageType(messageType, body, subject);
+      const parentPlaceholders = deduplicatedParentIds.map(() => '?').join(',');
+
+      if (isChildSpecific) {
+        // Query active children linked to selected parents for this event
+        const activeChildren = await query(`
+          SELECT c.id as child_id, c.parent_profile_id, c.full_name as child_name, e.id as entry_id
+          FROM children c
+          JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          WHERE c.parent_profile_id IN (${parentPlaceholders})
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        `, [eventId, ...deduplicatedParentIds]);
+
+        if (deduplicatedChildIds.length > 0) {
+          // Explicit child selection provided - strictly validate parentage, active status and event relationship
+          const activeChildMap = new Map<string, any>(activeChildren.map((c: any) => [c.child_id, c]));
+          for (const cId of deduplicatedChildIds) {
+            if (!activeChildMap.has(cId)) {
+              return res.status(400).json({
+                success: false,
+                code: 'INVALID_CHILD',
+                message: 'One or more selected children do not belong to the selected parents or are no longer active.'
+              });
+            }
+          }
+
+          const childPlaceholders = deduplicatedChildIds.map(() => '?').join(',');
+          rows = await query(`
+            SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
+            FROM parent_profiles p
+            JOIN users u ON u.id = p.user_id
+            JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+            WHERE p.id IN (${parentPlaceholders})
+              AND c.id IN (${childPlaceholders})
+              AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+          `, [eventId, ...deduplicatedParentIds, ...deduplicatedChildIds]);
+        } else {
+          // No explicit child selection provided - inspect parent children count for ambiguity
+          const parentChildrenMap = new Map<string, any[]>();
+          for (const c of activeChildren) {
+            if (!parentChildrenMap.has(c.parent_profile_id)) {
+              parentChildrenMap.set(c.parent_profile_id, []);
+            }
+            parentChildrenMap.get(c.parent_profile_id)!.push(c);
+          }
+
+          const multiChildParents = Array.from(parentChildrenMap.entries()).filter(([, children]) => children.length > 1);
+          if (multiChildParents.length > 0) {
+            return res.status(400).json({
+              success: false,
+              code: 'CHILD_TOKEN_AMBIGUITY',
+              message: 'One or more selected parents have multiple registered children. Please choose which child this update is for.'
+            });
+          }
+
+          // Single-child parents: automatically resolve without ambiguity
+          rows = await query(`
+            SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
+            FROM parent_profiles p
+            JOIN users u ON u.id = p.user_id
+            JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+            WHERE p.id IN (${parentPlaceholders})
+              AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+          `, [eventId, ...deduplicatedParentIds]);
+        }
+      } else {
+        // Parent-level message: 1 communication context per parent
+        rows = await query(`
+          SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, NULL as child_id, NULL as child_name, NULL as entry_id
+          FROM parent_profiles p
+          JOIN users u ON u.id = p.user_id
+          WHERE p.id IN (${parentPlaceholders})
+            AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        `, deduplicatedParentIds);
+      }
     } else {
       let queryStr = `
         SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
@@ -5888,26 +6000,18 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     // 2. Build personalized messages
-    const hasChildTokens = /\{Child name\}|\{Pass link\}/i.test(body) || (subject && /\{Child name\}|\{Pass link\}/i.test(subject));
+    const isChildSpecific = isChildSpecificMessageType(messageType, body, subject);
 
-    // Multi-child parent token safety check
-    if (hasChildTokens && recipientGroup === 'specific_parents') {
+    // Final multi-child parent safety guard (defensive fallback for any group)
+    if (isChildSpecific && recipientGroup === 'specific_parents') {
       const parentChildrenMap = new Map<string, Set<string>>();
       for (const r of rows) {
-        if (r.child_name) {
+        if (r.child_id) {
           if (!parentChildrenMap.has(r.parent_id)) {
             parentChildrenMap.set(r.parent_id, new Set());
           }
-          parentChildrenMap.get(r.parent_id)!.add(r.child_name);
+          parentChildrenMap.get(r.parent_id)!.add(r.child_id);
         }
-      }
-      const multiChildParents = Array.from(parentChildrenMap.entries()).filter(([, children]) => children.size > 1);
-      if (multiChildParents.length > 0) {
-        return res.status(400).json({
-          success: false,
-          code: 'CHILD_TOKEN_AMBIGUITY',
-          message: 'One or more selected parents have multiple registered children. Please remove {Child name} or {Pass link} tokens, or target a child-specific recipient group instead of a general parent broadcast.'
-        });
       }
     }
 
@@ -5922,11 +6026,11 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       body: string;
     }> = [];
 
-    if (hasChildTokens) {
+    if (isChildSpecific) {
       for (const row of rows) {
         const pName = (row.parent_name || '').trim() || 'Parent';
         const cName = (row.child_name || '').trim() || 'your child';
-        const passUrl = buildParentPassUrl(row.child_id || row.entry_id);
+        const passUrl = buildParentPassUrl(row.child_id);
         const reviewUrl = buildParentStatusUrl(row.child_id);
 
         const renderedBody = resolveMessageTokens(body, {
@@ -6059,31 +6163,24 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     let lastPushErrorReason: string | undefined;
 
     if (activeChannels.includes('push')) {
-      const uniqueUserIds = Array.from(
-        new Set(messagesToSend.map(m => m.userId).filter(Boolean))
-      ) as string[];
+      for (const msg of messagesToSend) {
+        if (!msg.userId) continue;
+        const pushTitle = msg.subject?.trim() || 'Event Update';
+        const pushBody = msg.body;
+        const targetDestination = msg.childId
+          ? `/parent/children/${msg.childId}/pass`
+          : (audienceRole === 'volunteer'
+            ? '/volunteer/event'
+            : (audienceRole === 'staff' ? '/volunteer/team-alerts' : '/notifications'));
 
-      const safeBody = messageType === 'safety_alert'
-        ? 'Urgent team update — Open Koinonia Children & Teens to view the alert.'
-        : (eventTitle
-            ? `You have a new update for ${eventTitle}. Open Koinonia to view.`
-            : 'You have a new update from Koinonia Children & Teens.');
-
-      const targetDestination = audienceRole === 'volunteer'
-        ? '/volunteer/event'
-        : (audienceRole === 'staff' ? '/volunteer/team-alerts' : '/notifications');
-
-      for (const uid of uniqueUserIds) {
         try {
-          const userMsg = messagesToSend.find(m => m.userId === uid);
-          const pushTitle = userMsg?.subject?.trim() || 'Event Update';
-
-          const pushRes = await sendWebPush(uid, {
+          const pushRes = await sendWebPush(msg.userId, {
             title: pushTitle,
-            body: safeBody,
+            body: pushBody.length > 140 ? pushBody.slice(0, 140) + '…' : pushBody,
             metadata: {
               targetUrl: targetDestination,
-              type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast'
+              type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+              childId: msg.childId || undefined
             }
           });
 
@@ -6092,16 +6189,16 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           } else if (pushRes.noSubscriptions) {
             pushNoSubCount++;
             lastPushErrorReason = pushRes.failureReason || 'no_subscription';
-            console.warn(`[Admin Push] No active push subscriptions for userId=${uid.slice(0, 8)}`);
+            console.warn(`[Admin Push] No active push subscriptions for userId=${msg.userId.slice(0, 8)}`);
           } else {
             pushFailCount++;
             lastPushErrorReason = pushRes.failureReason;
             if (pushRes.error) {
-              console.error(`[Admin Push Error for userId=${uid.slice(0, 8)}]:`, pushRes.error);
+              console.error(`[Admin Push Error for userId=${msg.userId.slice(0, 8)}]:`, pushRes.error);
             }
           }
         } catch (pushErr) {
-          console.warn(`[Admin Push Error for user ${uid}]:`, pushErr);
+          console.warn(`[Admin Push Error for user ${msg.userId}]:`, pushErr);
           pushFailCount++;
         }
       }
@@ -6216,36 +6313,72 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
     let whatsappQueuedCount = 0;
     if (activeChannels.includes('whatsapp')) {
-      // GENERAL BROADCAST RULE:
-      // Parent with multiple children: general announcement -> ONE WhatsApp message.
-      // Filter strictly for eligible parents: active parent + current event + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
-      const parentIdsInGroup = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
+      if (isChildSpecific) {
+        // Child-specific messages: each selected child gets a distinct communication context
+        for (const msg of messagesToSend) {
+          if (!msg.parentId) continue;
+          const pProfile = await queryOne(`
+            SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+            FROM parent_profiles
+            WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+          `, [msg.parentId]);
 
-      for (const pid of parentIdsInGroup) {
-        const pProfile = await queryOne(`
-          SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
-          FROM parent_profiles
-          WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
-        `, [pid]);
+          if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+            const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+            const normalized = normalizePhoneNumberToE164(rawPhone);
+            if (normalized) {
+              const idempotencyKey = buildIdempotencyKey({
+                type: 'campaign',
+                campaignId: logId,
+                parentId: msg.parentId,
+                childId: msg.childId || undefined
+              });
 
-        if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
-          const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
-          const normalized = normalizePhoneNumberToE164(rawPhone);
-          if (normalized) {
-            const idempotencyKey = buildIdempotencyKey({
-              type: 'campaign',
-              campaignId: logId,
-              parentId: pid
-            });
+              const enqueueRes = await enqueueWhatsAppJob({
+                eventId,
+                parentId: msg.parentId,
+                childId: msg.childId || null,
+                idempotencyKey
+              });
 
-            const enqueueRes = await enqueueWhatsAppJob({
-              eventId,
-              parentId: pid,
-              idempotencyKey
-            });
+              if (enqueueRes.queued || enqueueRes.duplicate) {
+                whatsappQueuedCount++;
+              }
+            }
+          }
+        }
+      } else {
+        // GENERAL BROADCAST RULE:
+        // Parent with multiple children: general announcement -> ONE WhatsApp message.
+        // Filter strictly for eligible parents: active parent + current event + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
+        const parentIdsInGroup = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
 
-            if (enqueueRes.queued || enqueueRes.duplicate) {
-              whatsappQueuedCount++;
+        for (const pid of parentIdsInGroup) {
+          const pProfile = await queryOne(`
+            SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+            FROM parent_profiles
+            WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+          `, [pid]);
+
+          if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+            const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+            const normalized = normalizePhoneNumberToE164(rawPhone);
+            if (normalized) {
+              const idempotencyKey = buildIdempotencyKey({
+                type: 'campaign',
+                campaignId: logId,
+                parentId: pid
+              });
+
+              const enqueueRes = await enqueueWhatsAppJob({
+                eventId,
+                parentId: pid,
+                idempotencyKey
+              });
+
+              if (enqueueRes.queued || enqueueRes.duplicate) {
+                whatsappQueuedCount++;
+              }
             }
           }
         }

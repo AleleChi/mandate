@@ -69,6 +69,9 @@ async function runTests() {
     VALUES (?, ?, 'super_admin', ?, ?)
   `, [testSuperAdminId, superAdminEmail, now, now]);
 
+  // Clean up any stale pending notification_jobs from previous interrupted test runs
+  await execute("DELETE FROM notification_jobs WHERE status = 'pending'");
+
   try {
     // ====================================================
     // SECTION 1: SPECIFIC PARENT TARGETING & DEDUPLICATION
