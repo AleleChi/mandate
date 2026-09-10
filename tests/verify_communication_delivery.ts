@@ -14,6 +14,11 @@ import {
   buildReviewUrl,
   resolveMessageTokens
 } from '../src/server/utils/urlHelper';
+import {
+  processQueuedWhatsAppJobs,
+  enqueueWhatsAppJob,
+  buildIdempotencyKey
+} from '../src/server/services/whatsapp';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -819,6 +824,181 @@ async function runTests() {
       // Crucial: The campaign status must NOT be masked as generic "Sent"
       assert(recentCampaign.status !== 'sent', `Campaign status must not be masked as generic 'sent', got ${recentCampaign.status}`);
       assert(recentCampaign.status === 'partial' || recentCampaign.status === 'failed', `Expected 'partial' or 'failed', got ${recentCampaign.status}`);
+    });
+
+    // -------------------------------------------------------------
+    // SUITE 6: POSTGRESQL 42P18 SAFE CHILD CONTEXT & QUEUE PROCESSING
+    // -------------------------------------------------------------
+    console.log('\n--- 6. PostgreSQL 42P18 Safe Child Context & Queue Processing ---');
+
+    await test('PostgreSQL-safe: Notification lookup query has no untyped ? IS NULL parameters for null child_id', async () => {
+      const testParentId = `p-42p18-${crypto.randomUUID()}`;
+      const broadcastId = `b-42p18-${crypto.randomUUID()}`;
+
+      // This query must NOT contain `? IS NULL` or untyped parameter comparisons
+      const res = await queryOne(`
+        SELECT message FROM notifications
+        WHERE parent_id = ? AND child_id IS NULL AND metadata_json LIKE ?
+        ORDER BY created_at DESC LIMIT 1
+      `, [testParentId, `%"campaignId":"${broadcastId}"%`]);
+
+      assert(res === null, 'Query executes cleanly without throwing 42P18');
+    });
+
+    await test('PostgreSQL-safe: Notification lookup query has typed parameters for populated child_id', async () => {
+      const testParentId = `p-42p18-${crypto.randomUUID()}`;
+      const testChildId = `c-42p18-${crypto.randomUUID()}`;
+      const broadcastId = `b-42p18-${crypto.randomUUID()}`;
+
+      const res = await queryOne(`
+        SELECT message FROM notifications
+        WHERE parent_id = ? AND child_id = ? AND metadata_json LIKE ?
+        ORDER BY created_at DESC LIMIT 1
+      `, [testParentId, testChildId, `%"campaignId":"${broadcastId}"%`]);
+
+      assert(res === null, 'Query executes cleanly without throwing 42P18');
+    });
+
+    await test('General WhatsApp job processing (child_id is null) succeeds without 42P18', async () => {
+      const uGen = `u-gen-${crypto.randomUUID()}`;
+      const pGen = `p-gen-${crypto.randomUUID()}`;
+      const genEmail = `gen-${crypto.randomUUID()}@test.koinonia`;
+      const nowStr = new Date().toISOString();
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+        VALUES (?, ?, 'hash', 'parent', ?, ?)
+      `, [uGen, genEmail, nowStr, nowStr]);
+
+      await execute(`
+        INSERT INTO parent_profiles (id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email, created_at, updated_at)
+        VALUES (?, ?, 'General Parent', '+2348039999001', '+2348039999001', 'opted_in', ?, ?, ?)
+      `, [pGen, uGen, genEmail, nowStr, nowStr]);
+
+      const campaignId = `camp-gen-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+        VALUES (?, 'specific_parents', 'general_announcement', 'whatsapp', 'General Announcement', 'Important update for {Event name}', 1, 'queued', ?)
+      `, [campaignId, nowStr]);
+
+      const idemp = `campaign:${campaignId}:parent:${pGen}:whatsapp`;
+      await enqueueWhatsAppJob({
+        eventId: testEventId,
+        parentId: pGen,
+        childId: null,
+        idempotencyKey: idemp
+      });
+
+      process.env.WHATSAPP_WORKER_MODE = 'in_process';
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const j = await queryOne('SELECT status FROM notification_jobs WHERE idempotency_key = ?', [idemp]);
+        if (j && j.status !== 'pending') break;
+        await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+        await new Promise(r => setTimeout(r, 60));
+      }
+
+      const job = await queryOne('SELECT status, failure_reason FROM notification_jobs WHERE idempotency_key = ?', [idemp]);
+      assert(job !== null, 'Job must exist');
+      assert(job.status === 'sent', `Job status must be sent, got: ${job.status}, failure_reason: ${job.failure_reason}`);
+    });
+
+    await test('Child-specific WhatsApp job processing (child_id populated e.g. Baby Livina) succeeds with child context', async () => {
+      const uChild = `u-child-${crypto.randomUUID()}`;
+      const pChild = `p-child-${crypto.randomUUID()}`;
+      const cChild = `c-child-${crypto.randomUUID()}`;
+      const childEmail = `child-${crypto.randomUUID()}@test.koinonia`;
+      const nowStr = new Date().toISOString();
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+        VALUES (?, ?, 'hash', 'parent', ?, ?)
+      `, [uChild, childEmail, nowStr, nowStr]);
+
+      await execute(`
+        INSERT INTO parent_profiles (id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email, created_at, updated_at)
+        VALUES (?, ?, 'Tochukwu Ogunaka Live', '+2348039999002', '+2348039999002', 'opted_in', ?, ?, ?)
+      `, [pChild, uChild, childEmail, nowStr, nowStr]);
+
+      await execute(`
+        INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, created_at, updated_at)
+        VALUES (?, ?, 'Baby Livina Live', 'female', '2020-01-01', ?, ?)
+      `, [cChild, pChild, nowStr, nowStr]);
+
+      const campaignId = `camp-child-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+        VALUES (?, 'specific_parents', 'pass_update', 'whatsapp', 'Pass Update', 'Pass for {Child name}: {Pass link}', 1, 'queued', ?)
+      `, [campaignId, nowStr]);
+
+      const idemp = `campaign:${campaignId}:parent:${pChild}:child:${cChild}:whatsapp`;
+      await enqueueWhatsAppJob({
+        eventId: testEventId,
+        parentId: pChild,
+        childId: cChild,
+        idempotencyKey: idemp
+      });
+
+      process.env.WHATSAPP_WORKER_MODE = 'in_process';
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const j = await queryOne('SELECT status FROM notification_jobs WHERE idempotency_key = ?', [idemp]);
+        if (j && j.status !== 'pending') break;
+        await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+        await new Promise(r => setTimeout(r, 60));
+      }
+
+      const job = await queryOne('SELECT status, failure_reason FROM notification_jobs WHERE idempotency_key = ?', [idemp]);
+      assert(job !== null, 'Job must exist');
+      assert(job.status === 'sent', `Job status must be sent, got: ${job.status}, failure_reason: ${job.failure_reason}`);
+    });
+
+    await test('Two sibling jobs remain distinct in notification_jobs with their respective child_ids', async () => {
+      const campKey = `camp-sibs-${crypto.randomUUID()}`;
+      const idemp1 = buildIdempotencyKey({ type: 'campaign', campaignId: campKey, parentId: testParentId, childId: child1Id });
+      const idemp2 = buildIdempotencyKey({ type: 'campaign', campaignId: campKey, parentId: testParentId, childId: child2Id });
+
+      assert(idemp1 !== idemp2, 'Idempotency keys must be distinct for siblings');
+
+      const j1 = await enqueueWhatsAppJob({ eventId: testEventId, parentId: testParentId, childId: child1Id, idempotencyKey: idemp1 });
+      const j2 = await enqueueWhatsAppJob({ eventId: testEventId, parentId: testParentId, childId: child2Id, idempotencyKey: idemp2 });
+
+      assert(j1.jobId !== j2.jobId, 'Sibling jobs must have distinct job IDs');
+      assert(j1.queued === true && j2.queued === true, 'Both sibling jobs must be queued');
+
+      const row1 = await queryOne('SELECT child_id FROM notification_jobs WHERE id = ?', [j1.jobId]);
+      const row2 = await queryOne('SELECT child_id FROM notification_jobs WHERE id = ?', [j2.jobId]);
+      assert(row1.child_id === child1Id, 'Job 1 child_id matches');
+      assert(row2.child_id === child2Id, 'Job 2 child_id matches');
+    });
+
+    await test('Channel independence: In-app notifications deliver successfully even if WhatsApp queueing or worker fails', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          messageType: 'general_announcement',
+          channels: ['in_app'],
+          subject: 'Channel Independence Test',
+          body: 'In-app notification independent delivery test.',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      assert(res.status === 200, 'In-app send must succeed');
+      const data = await res.json();
+      assert(data.success === true, 'Response must be success: true');
+      assert(data.sent.inApp === 1, 'In-app sent count must be 1');
+
+      const inAppRow = await queryOne(`
+        SELECT id, message FROM notifications
+        WHERE parent_id = ? AND title = 'Channel Independence Test'
+      `, [testParentId]);
+      assert(inAppRow !== null, 'In-app notification must be present in database');
     });
 
   } finally {

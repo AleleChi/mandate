@@ -322,11 +322,20 @@ export async function processQueuedWhatsAppJobs(
 
         // If an in-app notification exists for this campaign and child, use its exact pre-rendered body
         if (broadcastId) {
-          const childNotif = await queryOne(`
-            SELECT message FROM notifications
-            WHERE parent_id = ? AND (child_id = ? OR (? IS NULL AND child_id IS NULL)) AND metadata_json LIKE ?
-            ORDER BY created_at DESC LIMIT 1
-          `, [candidate.parent_id, candidate.child_id || null, candidate.child_id || null, `%"campaignId":"${broadcastId}"%`]);
+          let childNotif: { message?: string } | null = null;
+          if (candidate.child_id) {
+            childNotif = await queryOne(`
+              SELECT message FROM notifications
+              WHERE parent_id = ? AND child_id = ? AND metadata_json LIKE ?
+              ORDER BY created_at DESC LIMIT 1
+            `, [candidate.parent_id, candidate.child_id, `%"campaignId":"${broadcastId}"%`]);
+          } else {
+            childNotif = await queryOne(`
+              SELECT message FROM notifications
+              WHERE parent_id = ? AND child_id IS NULL AND metadata_json LIKE ?
+              ORDER BY created_at DESC LIMIT 1
+            `, [candidate.parent_id, `%"campaignId":"${broadcastId}"%`]);
+          }
           if (childNotif && childNotif.message) {
             messageBody = childNotif.message;
           }

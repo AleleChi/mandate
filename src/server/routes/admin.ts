@@ -6312,84 +6312,90 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
     let whatsappQueuedCount = 0;
+    let whatsappEnqueueError: string | null = null;
     if (activeChannels.includes('whatsapp')) {
-      if (isChildSpecific) {
-        // Child-specific messages: each selected child gets a distinct communication context
-        for (const msg of messagesToSend) {
-          if (!msg.parentId) continue;
-          const pProfile = await queryOne(`
-            SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
-            FROM parent_profiles
-            WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
-          `, [msg.parentId]);
+      try {
+        if (isChildSpecific) {
+          // Child-specific messages: each selected child gets a distinct communication context
+          for (const msg of messagesToSend) {
+            if (!msg.parentId) continue;
+            const pProfile = await queryOne(`
+              SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+              FROM parent_profiles
+              WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+            `, [msg.parentId]);
 
-          if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
-            const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
-            const normalized = normalizePhoneNumberToE164(rawPhone);
-            if (normalized) {
-              const idempotencyKey = buildIdempotencyKey({
-                type: 'campaign',
-                campaignId: logId,
-                parentId: msg.parentId,
-                childId: msg.childId || undefined
-              });
+            if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+              const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+              const normalized = normalizePhoneNumberToE164(rawPhone);
+              if (normalized) {
+                const idempotencyKey = buildIdempotencyKey({
+                  type: 'campaign',
+                  campaignId: logId,
+                  parentId: msg.parentId,
+                  childId: msg.childId || undefined
+                });
 
-              const enqueueRes = await enqueueWhatsAppJob({
-                eventId,
-                parentId: msg.parentId,
-                childId: msg.childId || null,
-                idempotencyKey
-              });
+                const enqueueRes = await enqueueWhatsAppJob({
+                  eventId,
+                  parentId: msg.parentId,
+                  childId: msg.childId || null,
+                  idempotencyKey
+                });
 
-              if (enqueueRes.queued || enqueueRes.duplicate) {
-                whatsappQueuedCount++;
+                if (enqueueRes.queued || enqueueRes.duplicate) {
+                  whatsappQueuedCount++;
+                }
+              }
+            }
+          }
+        } else {
+          // GENERAL BROADCAST RULE:
+          // Parent with multiple children: general announcement -> ONE WhatsApp message.
+          // Filter strictly for eligible parents: active parent + current event + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
+          const parentIdsInGroup = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
+
+          for (const pid of parentIdsInGroup) {
+            const pProfile = await queryOne(`
+              SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+              FROM parent_profiles
+              WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+            `, [pid]);
+
+            if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+              const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+              const normalized = normalizePhoneNumberToE164(rawPhone);
+              if (normalized) {
+                const idempotencyKey = buildIdempotencyKey({
+                  type: 'campaign',
+                  campaignId: logId,
+                  parentId: pid
+                });
+
+                const enqueueRes = await enqueueWhatsAppJob({
+                  eventId,
+                  parentId: pid,
+                  idempotencyKey
+                });
+
+                if (enqueueRes.queued || enqueueRes.duplicate) {
+                  whatsappQueuedCount++;
+                }
               }
             }
           }
         }
-      } else {
-        // GENERAL BROADCAST RULE:
-        // Parent with multiple children: general announcement -> ONE WhatsApp message.
-        // Filter strictly for eligible parents: active parent + current event + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
-        const parentIdsInGroup = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
 
-        for (const pid of parentIdsInGroup) {
-          const pProfile = await queryOne(`
-            SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
-            FROM parent_profiles
-            WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
-          `, [pid]);
-
-          if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
-            const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
-            const normalized = normalizePhoneNumberToE164(rawPhone);
-            if (normalized) {
-              const idempotencyKey = buildIdempotencyKey({
-                type: 'campaign',
-                campaignId: logId,
-                parentId: pid
-              });
-
-              const enqueueRes = await enqueueWhatsAppJob({
-                eventId,
-                parentId: pid,
-                idempotencyKey
-              });
-
-              if (enqueueRes.queued || enqueueRes.duplicate) {
-                whatsappQueuedCount++;
-              }
-            }
-          }
+        // Trigger in-process queue worker only if in-process worker mode is active.
+        // In external or disabled mode, jobs safely remain queued for the external background worker.
+        if (isWhatsAppInProcessWorkerEnabled()) {
+          processQueuedWhatsAppJobs().catch(err => {
+            console.error('[Admin Messages] Async WhatsApp queue processing trigger error:', err);
+          });
         }
-      }
-
-      // Trigger in-process queue worker only if in-process worker mode is active.
-      // In external or disabled mode, jobs safely remain queued for the external background worker.
-      if (isWhatsAppInProcessWorkerEnabled()) {
-        processQueuedWhatsAppJobs().catch(err => {
-          console.error('[Admin Messages] Async WhatsApp queue processing trigger error:', err);
-        });
+      } catch (waErr: any) {
+        console.error('[Admin Messages] WhatsApp queue dispatch error:', waErr);
+        whatsappEnqueueError = waErr?.message || 'Failed to queue WhatsApp messages';
       }
     }
 
@@ -6405,6 +6411,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       const skippedNote = whatsappSkippedCount > 0
         ? `, ${whatsappSkippedCount} selected parent${whatsappSkippedCount === 1 ? '' : 's'} not eligible for WhatsApp`
         : '';
+      const queueFailNote = whatsappEnqueueError ? ' (WhatsApp queueing encountered an error)' : '';
       if (activeChannels.includes('in_app') || activeChannels.includes('push') || activeChannels.includes('email')) {
         // Mixed-channel: report each independently
         const pushNote = activeChannels.includes('push')
@@ -6414,9 +6421,11 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
               ? (pushNoSubCount > 0 ? ' Push could not be delivered — selected parent has no active device subscription.' : ' Push delivery failed.')
               : '')
           : '';
-        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.${pushNote}`;
+        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}${queueFailNote}.${pushNote}`;
       } else {
-        humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
+        humanMessage = whatsappEnqueueError
+          ? `Could not queue WhatsApp messages: ${whatsappEnqueueError}`
+          : `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
       }
     } else if (activeChannels.includes('push')) {
       if (pushSentCount > 0 && totalPushFailures > 0) {
