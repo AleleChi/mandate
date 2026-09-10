@@ -123,3 +123,73 @@ export function buildPublicAppUrl(path?: string): string {
   // Single SPA Hash route join
   return `${origin}/#${normalizedPath}`;
 }
+
+/**
+ * Builds the canonical public application URL for parent registration review / status.
+ * Route in App.tsx: '/parent/status' or '/parent/children/:childId/status'
+ */
+export function buildParentStatusUrl(childId?: string): string {
+  if (childId && childId.trim()) {
+    return buildPublicAppUrl(`/parent/children/${encodeURIComponent(childId.trim())}/status`);
+  }
+  return buildPublicAppUrl('/parent/status');
+}
+
+/**
+ * Builds the canonical public application URL for parent event passes.
+ * Route in App.tsx: '/parent/passes' or '/parent/children/:childId/pass'
+ */
+export function buildParentPassUrl(childId?: string): string {
+  if (childId && childId.trim()) {
+    return buildPublicAppUrl(`/parent/children/${encodeURIComponent(childId.trim())}/pass`);
+  }
+  return buildPublicAppUrl('/parent/passes');
+}
+
+/**
+ * Convenience alias for review status URL.
+ */
+export function buildReviewUrl(childId?: string): string {
+  return buildParentStatusUrl(childId);
+}
+
+export interface RecipientTokenContext {
+  parentName?: string;
+  childName?: string;
+  eventName?: string;
+  passUrl?: string;
+  reviewUrl?: string;
+  pickupTime?: string;
+  supportContact?: string;
+}
+
+/**
+ * Resolves all supported communication tokens against the recipient context.
+ * Supported tokens:
+ * - {Parent name}
+ * - {Child name}
+ * - {Event name}
+ * - {Pass link}
+ * - {Review link}
+ * - {Pickup time}
+ * - {Support contact}
+ */
+export function resolveMessageTokens(template: string, context: RecipientTokenContext): string {
+  if (!template) return '';
+  const pName = (context.parentName || '').trim() || 'Parent';
+  const cName = (context.childName || '').trim() || 'your child';
+  const eName = (context.eventName || '').trim() || 'The General Assembly';
+  const pLink = context.passUrl || buildParentPassUrl();
+  const rLink = context.reviewUrl || buildParentStatusUrl();
+  const pTime = (context.pickupTime || '').trim() || '4:00 PM';
+  const sContact = (context.supportContact || '').trim() || '+234 803 123 4567';
+
+  return template
+    .replace(/\{Parent name\}/gi, pName)
+    .replace(/\{Child name\}/gi, cName)
+    .replace(/\{Event name\}/gi, eName)
+    .replace(/\{Pass link\}/gi, pLink)
+    .replace(/\{Review link\}/gi, rLink)
+    .replace(/\{Pickup time\}/gi, pTime)
+    .replace(/\{Support contact\}/gi, sContact);
+}

@@ -3,6 +3,7 @@ import { query, queryOne, execute } from '../../db';
 import { getWhatsAppProvider } from './index';
 import { evaluateWhatsAppEligibility } from './consent';
 import { isTransientError } from './queue';
+import { resolveMessageTokens, buildParentStatusUrl, buildParentPassUrl } from '../../utils/urlHelper';
 
 export interface WhatsAppWorkerOptions {
   maxBatchSize?: number;
@@ -295,15 +296,17 @@ export async function processQueuedWhatsAppJobs(
           if (ev && ev.title) eventName = ev.title;
         }
 
-        // Resolve personalized placeholders per recipient parent
+        // Resolve personalized placeholders per recipient parent using canonical URL helper
         const parentDisplayName = (parent.full_name || '').trim() || 'Parent';
-        messageBody = messageBody
-          .replace(/\{Parent name\}/gi, parentDisplayName)
-          .replace(/\{Event name\}/gi, eventName)
-          .replace(/\{Child name\}/gi, 'your child')
-          .replace(/\{Review link\}/gi, 'https://koinonia.org/parent/status')
-          .replace(/\{Pickup time\}/gi, '4:00 PM')
-          .replace(/\{Support contact\}/gi, '+234 803 123 4567');
+        messageBody = resolveMessageTokens(messageBody, {
+          parentName: parentDisplayName,
+          eventName,
+          childName: 'your child',
+          reviewUrl: buildParentStatusUrl(),
+          passUrl: buildParentPassUrl(),
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        });
 
         const recipientPhone = eligibility.normalizedNumber!;
 

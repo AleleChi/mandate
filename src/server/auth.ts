@@ -130,3 +130,36 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   req.volunteerProfile = volProfile || undefined;
   next();
 }
+
+export async function optionalAuthMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  let token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token && req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+  }
+  if (!token && req.query && req.query.token) {
+    token = req.query.token as string;
+  }
+
+  if (!token) {
+    return next();
+  }
+
+  const userId = verifyToken(token);
+  if (!userId) {
+    return next();
+  }
+
+  const user = await queryOne('SELECT id, email, role, email_verified, status FROM users WHERE id = ?', [userId]);
+  if (!user || user.status === 'suspended' || user.status === 'revoked') {
+    return next();
+  }
+
+  const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [userId]);
+  const volProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+
+  req.user = user;
+  req.parentProfile = profile || undefined;
+  req.volunteerProfile = volProfile || undefined;
+  next();
+}

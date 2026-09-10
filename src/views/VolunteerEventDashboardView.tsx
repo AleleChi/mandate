@@ -634,6 +634,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [locationScannerError, setLocationScannerError] = useState<string | null>(null);
   const [scannedLocationData, setScannedLocationData] = useState<any | null>(null);
   const [scannedTokenStr, setScannedTokenStr] = useState<string | null>(null);
+  const [showDutyLocationDetailsModal, setShowDutyLocationDetailsModal] = useState<boolean>(false);
 
   const fetchCurrentDutyLocation = async () => {
     try {
@@ -645,6 +646,32 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err) {
       console.error('Error fetching current duty location:', err);
+    }
+  };
+
+  const handleConfirmArrival = async () => {
+    if (!currentDutyLocation?.locationId && !currentDutyLocation?.id) return;
+    setPresenceActionLoading(true);
+    try {
+      const locId = currentDutyLocation.locationId || currentDutyLocation.id;
+      const data = await api.request<any>('/api/duty/current-location', {
+        method: 'POST',
+        body: JSON.stringify({ locationId: locId, source: 'manual' })
+      });
+      if (data && data.success) {
+        showSuccess("Checked in for duty", `Confirmed at ${data.presence?.name || currentDutyLocation.name}`);
+        setCurrentDutyLocation(data.presence || {
+          ...currentDutyLocation,
+          isPresent: true,
+          presentSince: new Date().toISOString()
+        });
+      } else {
+        showError("Check-in error", data?.error || "Could not confirm presence.");
+      }
+    } catch (err: any) {
+      showError("Check-in error", err?.message || "Failed to confirm duty presence.");
+    } finally {
+      setPresenceActionLoading(false);
     }
   };
 
@@ -2735,11 +2762,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* 3. My Duty Location Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                  <h2 className="text-sm font-sans font-semibold text-[#18181B]">Your duty location</h2>
+                  <h2 className="text-xs font-sans font-bold tracking-wider uppercase text-zinc-500">YOUR DUTY LOCATION</h2>
                 </div>
                 {currentDutyLocation && !currentDutyLocation.isAssignedByAdmin && (
                   <button
@@ -2757,34 +2784,76 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {currentDutyLocation ? (
                 /* Assigned/Confirmed Duty Location State */
-                <div className="space-y-1">
-                  <div className="text-base font-serif font-bold text-[#18181B]">
-                    {currentDutyLocation.name}
-                  </div>
-                  {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey || currentDutyLocation.location_type || currentDutyLocation.type) && (
-                    <div className="text-xs text-zinc-600 font-sans">
-                      {[
-                        currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
-                        currentDutyLocation.team || currentDutyLocation.teamKey,
-                        !currentDutyLocation.ageGroup && !currentDutyLocation.ageGroupKey && !currentDutyLocation.team && !currentDutyLocation.teamKey ? (currentDutyLocation.type || currentDutyLocation.location_type) : null
-                      ].filter(Boolean).join(' · ')}
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base sm:text-lg font-serif font-bold text-[#18181B]">
+                          {currentDutyLocation.name || currentDutyLocation.locationName}
+                        </div>
+                        {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey) && (
+                          <div className="text-xs text-zinc-600 font-sans mt-0.5">
+                            {[
+                              currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
+                              currentDutyLocation.team || currentDutyLocation.teamKey
+                            ].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDutyLocationDetailsModal(true)}
+                        className="px-2.5 py-1 text-xs text-zinc-600 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 font-sans font-medium rounded-lg transition-colors cursor-pointer shrink-0"
+                      >
+                        View details
+                      </button>
                     </div>
-                  )}
-                  <div className="text-xs text-zinc-500 font-sans pt-0.5">
-                    {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
+
+                    {currentDutyLocation.instructions && (
+                      <p className="text-xs text-zinc-600 font-sans pt-1 leading-relaxed line-clamp-2">
+                        {currentDutyLocation.instructions}
+                      </p>
+                    )}
                   </div>
-                  {currentDutyLocation.instructions && (
-                    <p className="text-xs text-zinc-600 font-sans pt-1 leading-relaxed">
-                      {currentDutyLocation.instructions}
-                    </p>
+
+                  {/* Presence Status & Arrival Confirmation */}
+                  {currentDutyLocation.isPresent ? (
+                    <div className="pt-2 border-t border-[#F4F3EF] flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-xs font-sans font-semibold text-emerald-700">On duty</span>
+                        {currentDutyLocation.presentSince && (
+                          <span className="text-xs font-sans text-zinc-500">
+                            · Since {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pt-2 border-t border-[#F4F3EF] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <p className="text-xs font-sans text-zinc-500">
+                        Confirm your arrival to let your team know you're here.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={presenceActionLoading}
+                        onClick={handleConfirmArrival}
+                        className="py-2 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer shrink-0 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{presenceActionLoading ? 'Checking in...' : "I'm here"}</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
                 /* Unassigned Location State */
                 <div className="space-y-3">
-                  <p className="text-xs text-zinc-600 font-sans leading-relaxed">
-                    Your location has not been assigned yet.
-                    <br className="hidden sm:inline" /> We'll show it here once it is confirmed.
+                  <p className="text-sm font-sans font-medium text-zinc-800">
+                    No location assigned yet.
+                  </p>
+                  <p className="text-xs text-zinc-500 font-sans leading-relaxed">
+                    Choose where you'll serve
                   </p>
 
                   <div className="pt-0.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -7538,6 +7607,96 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         </div>
       )}
 
+      {/* DUTY LOCATION DETAILS MODAL */}
+      {showDutyLocationDetailsModal && currentDutyLocation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div
+            onClick={() => setShowDutyLocationDetailsModal(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#C59B27]" />
+                <h3 className="font-serif font-bold text-base text-[#18181B]">
+                  Duty Location Details
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDutyLocationDetailsModal(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-1 text-left">
+              <div>
+                <h4 className="text-lg font-serif font-bold text-zinc-900">
+                  {currentDutyLocation.name || currentDutyLocation.locationName}
+                </h4>
+                <p className="text-xs text-zinc-500 font-sans mt-0.5">
+                  {[
+                    currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
+                    currentDutyLocation.type || currentDutyLocation.location_type || 'Room',
+                    currentDutyLocation.capacity ? `Capacity ${currentDutyLocation.capacity}` : null
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+
+              {currentDutyLocation.instructions && (
+                <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-3.5 space-y-1">
+                  <div className="text-xs font-semibold text-zinc-700 font-sans">Instructions & Guidelines</div>
+                  <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                    {currentDutyLocation.instructions}
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 text-xs font-sans">
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                  <div className="text-zinc-400 text-[11px]">Assignment</div>
+                  <div className="font-medium text-zinc-800 mt-0.5">
+                    {currentDutyLocation.isAssignedByAdmin ? 'Assigned by Admin' : 'Self-selected'}
+                  </div>
+                </div>
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                  <div className="text-zinc-400 text-[11px]">Duty Presence</div>
+                  <div className="font-medium text-zinc-800 mt-0.5">
+                    {currentDutyLocation.isPresent ? 'On duty' : 'Not confirmed yet'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-[#F4F3EF] flex gap-2">
+              {!currentDutyLocation.isPresent && (
+                <button
+                  type="button"
+                  disabled={presenceActionLoading}
+                  onClick={async () => {
+                    await handleConfirmArrival();
+                    setShowDutyLocationDetailsModal(false);
+                  }}
+                  className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer text-center disabled:opacity-50"
+                >
+                  I'm here
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowDutyLocationDetailsModal(false)}
+                className="flex-1 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* LOCATION QR SCANNER MODAL */}
       {showLocationQRModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" data-view-version="event-location-qr-scanner-v1">
@@ -7581,14 +7740,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     {scannedLocationData.location.name}
                   </h3>
                   <p className="text-xs text-zinc-400 font-medium">
-                    {scannedLocationData.location.pathLabel}
+                    {scannedLocationData.location.ageGroup || scannedLocationData.location.pathLabel || 'Event Duty Location'}
                   </p>
                 </div>
 
                 {/* Operational Summary Grid */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl space-y-0.5">
-                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Responders On Duty</span>
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Volunteers On Duty</span>
                     <span className="text-sm font-bold text-white flex items-center gap-1.5">
                       <Users className="w-4 h-4 text-[#C59B27]" />
                       {scannedLocationData.operationalSummary?.onDutyCount ?? 0} Active
@@ -7607,11 +7766,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 {/* Assignment Info */}
                 <div className="bg-zinc-900/90 border border-zinc-800 p-3.5 rounded-xl space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">Duty Role Match</span>
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">Duty Assignment</span>
                     <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                       scannedLocationData.assignment?.assigned ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-zinc-800 text-zinc-400'
                     }`}>
-                      {scannedLocationData.assignment?.shiftStatus || 'On Duty'}
+                      {scannedLocationData.assignment?.shiftStatus || 'Active'}
                     </span>
                   </div>
                   <p className="text-xs font-bold text-white">
@@ -7636,7 +7795,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     className="w-full py-3 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-50"
                   >
                     {presenceActionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    <span>Confirm Arrival &amp; Set Active Duty Location</span>
+                    <span>Confirm I'm here</span>
                   </button>
 
                   <div className="grid grid-cols-2 gap-2">

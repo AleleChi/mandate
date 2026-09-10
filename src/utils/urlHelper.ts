@@ -60,3 +60,25 @@ export function buildApiUrl(endpoint: string): string {
 
   return `${baseUrl}${cleanEndpoint}`;
 }
+
+/**
+ * Canonical helper for frontend parent status URL (HashRouter)
+ */
+export function buildFrontendParentStatusUrl(childId?: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  if (childId && childId.trim()) {
+    return `${origin}/#/parent/children/${encodeURIComponent(childId.trim())}/status`;
+  }
+  return `${origin}/#/parent/status`;
+}
+
+/**
+ * Canonical helper for frontend parent passes URL (HashRouter)
+ */
+export function buildFrontendParentPassUrl(childId?: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  if (childId && childId.trim()) {
+    return `${origin}/#/parent/children/${encodeURIComponent(childId.trim())}/pass`;
+  }
+  return `${origin}/#/parent/passes`;
+}

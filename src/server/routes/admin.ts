@@ -15,7 +15,7 @@ import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
 import { adminDutyRouter } from './duty';
-import { buildPublicAppUrl } from '../utils/urlHelper';
+import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
 import {
   getWhatsAppProvider,
   getWhatsAppProviderReadiness,
@@ -4793,7 +4793,27 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
     const recentActivity = await Promise.all(rawRecentActivity.map(async (log: any) => {
       let resolvedStatus = log.status || 'sent';
 
-      // For WhatsApp campaigns, verify live progression from delivery logs and queue jobs
+      // Look up delivery summary stored in notifications.metadata_json for this campaign
+      const notifMeta = await queryOne(`
+        SELECT metadata_json FROM notifications WHERE id = ?
+      `, [`notif-${log.id}`]);
+      let savedMeta: any = null;
+      if (notifMeta?.metadata_json) {
+        try {
+          savedMeta = JSON.parse(notifMeta.metadata_json);
+        } catch {
+          // Ignore parse error
+        }
+      }
+
+      // Live progression for WhatsApp campaigns from delivery logs and queue jobs
+      let waStatus: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' = 'queued';
+      let hasPending = false;
+      let hasFailed = false;
+      let hasSent = false;
+      let hasDelivered = false;
+      let hasRead = false;
+
       if (String(log.channel || '').includes('whatsapp')) {
         const delivLogs = await query(`
           SELECT status FROM whatsapp_delivery_logs WHERE campaign_id = ?
@@ -4802,12 +4822,6 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         const pendingJobs = await query(`
           SELECT status FROM notification_jobs WHERE idempotency_key LIKE ?
         `, [`campaign:${log.id}:%`]);
-
-        let hasPending = false;
-        let hasFailed = false;
-        let hasSent = false;
-        let hasDelivered = false;
-        let hasRead = false;
 
         for (const j of pendingJobs) {
           if (j.status === 'pending' || j.status === 'processing') hasPending = true;
@@ -4822,32 +4836,97 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
           if (dl.status === 'failed') hasFailed = true;
         }
 
-        if (hasRead) resolvedStatus = 'read';
-        else if (hasDelivered) resolvedStatus = 'delivered';
-        else if (hasSent) resolvedStatus = 'sent';
-        else if (hasFailed && !hasSent && !hasDelivered && !hasRead) resolvedStatus = 'failed';
-        else if (hasPending) resolvedStatus = 'queued';
+        if (hasRead) waStatus = 'read';
+        else if (hasDelivered) waStatus = 'delivered';
+        else if (hasSent) waStatus = 'sent';
+        else if (hasFailed && !hasSent && !hasDelivered && !hasRead) waStatus = 'failed';
+        else if (hasPending) waStatus = 'queued';
+        else if (log.status === 'sent') waStatus = 'sent';
+
+        resolvedStatus = waStatus;
       }
 
-      // Remove raw placeholders from history
-      const cleanSubject = (log.subject || '')
-        .replace(/\{Event name\}/gi, eventName)
-        .replace(/\{Parent name\}/gi, '')
-        .trim();
+      // Build independent channel status badges
+      const channelList = String(log.channel || '').split(',').map((c: string) => c.trim().toLowerCase()).filter(Boolean);
+      const channelStatuses: Array<{
+        channel: string;
+        label: string;
+        status: string;
+      }> = [];
 
-      const cleanBody = (log.body || '')
-        .replace(/\{Event name\}/gi, eventName)
-        .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
-        .replace(/\{Parent name\}/gi, 'Parent')
-        .replace(/\{Child name\}/gi, 'your child')
-        .replace(/\{Review link\}/gi, 'https://koinonia.org/parent/status')
-        .replace(/\{Pass link\}/gi, 'https://koinonia.org/pass')
-        .replace(/\{Pickup time\}/gi, '4:00 PM')
-        .replace(/\{Support contact\}/gi, '+234 803 123 4567');
+      for (const ch of channelList) {
+        if (ch === 'whatsapp') {
+          const capStatus = waStatus.charAt(0).toUpperCase() + waStatus.slice(1);
+          channelStatuses.push({
+            channel: 'whatsapp',
+            label: 'WhatsApp',
+            status: capStatus
+          });
+        } else if (ch === 'push') {
+          let pStatus = 'Sent';
+          if (savedMeta?.push) {
+            if (savedMeta.push.status === 'failed' || (savedMeta.push.failedCount > 0 && savedMeta.push.sentCount === 0)) {
+              pStatus = 'Failed';
+            } else if (savedMeta.push.sentCount > 0) {
+              pStatus = 'Sent';
+            }
+          }
+          channelStatuses.push({
+            channel: 'push',
+            label: 'Push',
+            status: pStatus
+          });
+        } else if (ch === 'in_app') {
+          channelStatuses.push({
+            channel: 'in_app',
+            label: 'In-app',
+            status: 'Sent'
+          });
+        } else if (ch === 'email') {
+          const eStatus = savedMeta?.email?.status === 'failed' ? 'Failed' : 'Sent';
+          channelStatuses.push({
+            channel: 'email',
+            label: 'Email',
+            status: eStatus
+          });
+        }
+      }
+
+      // If push failed while other channels were sent, ensure campaign reflects channel breakdown
+      const pushChannelStatus = channelStatuses.find(cs => cs.channel === 'push');
+      if (pushChannelStatus?.status === 'Failed' && channelStatuses.length > 1) {
+        // Multi-channel with push failure: do not report whole campaign as generic "Sent"
+        if (resolvedStatus === 'sent') {
+          resolvedStatus = 'partial';
+        }
+      }
+
+      // Remove raw placeholders from history using canonical URLs
+      const cleanSubject = resolveMessageTokens(log.subject || '', {
+        eventName,
+        parentName: '',
+        reviewUrl: buildParentStatusUrl(),
+        passUrl: buildParentPassUrl()
+      }).replace(/\s+-\s*$/, '').trim();
+
+      const cleanBody = resolveMessageTokens(
+        (log.body || '')
+          .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
+          .replace(/\{Parent name\}/gi, 'Parent'),
+        {
+          eventName,
+          childName: 'your child',
+          reviewUrl: buildParentStatusUrl(),
+          passUrl: buildParentPassUrl(),
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        }
+      );
 
       return {
         ...log,
         status: resolvedStatus,
+        channelStatuses,
         subject: cleanSubject,
         body: cleanBody
       };
@@ -5625,20 +5704,22 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
     const childName = sampleParent?.child_name || 'Mary';
     const entryId = sampleParent?.entry_id || 'sample-entry-123';
 
-    // Safely replace templates
-    const renderedBody = body
-      .replace(/{Parent name}/g, parentName)
-      .replace(/{Child name}/g, childName)
-      .replace(/{Event name}/g, 'The General Assembly')
-      .replace(/{Pass link}/g, `https://koinonia.org/pass/${entryId}`)
-      .replace(/{Review link}/g, 'https://koinonia.org/parent/status')
-      .replace(/{Pickup time}/g, '4:00 PM')
-      .replace(/{Support contact}/g, '+234 803 123 4567');
+    // Safely replace templates using canonical URL helpers
+    const renderedBody = resolveMessageTokens(body, {
+      parentName,
+      childName,
+      eventName: 'The General Assembly',
+      passUrl: buildParentPassUrl(sampleParent?.child_id || entryId),
+      reviewUrl: buildParentStatusUrl(sampleParent?.child_id),
+      pickupTime: '4:00 PM',
+      supportContact: '+234 803 123 4567'
+    });
 
-    const renderedSubject = (subject || '')
-      .replace(/{Parent name}/g, parentName)
-      .replace(/{Child name}/g, childName)
-      .replace(/{Event name}/g, 'The General Assembly');
+    const renderedSubject = resolveMessageTokens(subject || '', {
+      parentName,
+      childName,
+      eventName: 'The General Assembly'
+    });
 
     res.json({
       success: true,
@@ -5764,7 +5845,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       }
       const placeholders = deduplicatedParentIds.map(() => '?').join(',');
       rows = await query(`
-        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.full_name as child_name, e.id as entry_id
+        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
         FROM parent_profiles p
         JOIN users u ON u.id = p.user_id
         LEFT JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
@@ -5774,7 +5855,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       `, [eventId, ...deduplicatedParentIds]);
     } else {
       let queryStr = `
-        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.full_name as child_name, e.id as entry_id
+        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -5807,8 +5888,32 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     // 2. Build personalized messages
-    const hasChildTokens = body.includes('{Child name}') || body.includes('{Pass link}');
+    const hasChildTokens = /\{Child name\}|\{Pass link\}/i.test(body) || (subject && /\{Child name\}|\{Pass link\}/i.test(subject));
+
+    // Multi-child parent token safety check
+    if (hasChildTokens && recipientGroup === 'specific_parents') {
+      const parentChildrenMap = new Map<string, Set<string>>();
+      for (const r of rows) {
+        if (r.child_name) {
+          if (!parentChildrenMap.has(r.parent_id)) {
+            parentChildrenMap.set(r.parent_id, new Set());
+          }
+          parentChildrenMap.get(r.parent_id)!.add(r.child_name);
+        }
+      }
+      const multiChildParents = Array.from(parentChildrenMap.entries()).filter(([, children]) => children.size > 1);
+      if (multiChildParents.length > 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'CHILD_TOKEN_AMBIGUITY',
+          message: 'One or more selected parents have multiple registered children. Please remove {Child name} or {Pass link} tokens, or target a child-specific recipient group instead of a general parent broadcast.'
+        });
+      }
+    }
+
     const messagesToSend: Array<{
+      parentId?: string;
+      childId?: string;
       parentName: string;
       email: string;
       phone: string;
@@ -5821,21 +5926,30 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       for (const row of rows) {
         const pName = (row.parent_name || '').trim() || 'Parent';
         const cName = (row.child_name || '').trim() || 'your child';
-        const renderedBody = body
-          .replace(/{Parent name}/gi, pName)
-          .replace(/{Child name}/gi, cName)
-          .replace(/{Event name}/gi, eventTitle)
-          .replace(/{Pass link}/gi, `https://koinonia.org/pass/${row.entry_id || 'sample'}`)
-          .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
-          .replace(/{Pickup time}/gi, '4:00 PM')
-          .replace(/{Support contact}/gi, '+234 803 123 4567');
-        
-        const renderedSubject = (subject || '')
-          .replace(/{Parent name}/gi, pName)
-          .replace(/{Child name}/gi, cName)
-          .replace(/{Event name}/gi, eventTitle);
+        const passUrl = buildParentPassUrl(row.child_id || row.entry_id);
+        const reviewUrl = buildParentStatusUrl(row.child_id);
+
+        const renderedBody = resolveMessageTokens(body, {
+          parentName: pName,
+          childName: cName,
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl,
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        });
+
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          parentName: pName,
+          childName: cName,
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl
+        });
 
         messagesToSend.push({
+          parentId: row.parent_id,
+          childId: row.child_id,
           parentName: row.parent_name,
           email: row.email,
           phone: row.phone_number,
@@ -5848,22 +5962,35 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       const parentMap = new Map<string, any>();
       for (const row of rows) {
         const key = row.user_id || row.parent_id;
-        parentMap.set(key, row);
+        if (!parentMap.has(key)) {
+          parentMap.set(key, row);
+        }
       }
       for (const [, parentRow] of parentMap.entries()) {
         const pName = (parentRow.parent_name || '').trim() || 'Parent';
-        const renderedBody = body
-          .replace(/{Parent name}/gi, pName)
-          .replace(/{Event name}/gi, eventTitle)
-          .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
-          .replace(/{Pickup time}/gi, '4:00 PM')
-          .replace(/{Support contact}/gi, '+234 803 123 4567');
+        const passUrl = buildParentPassUrl();
+        const reviewUrl = buildParentStatusUrl();
 
-        const renderedSubject = (subject || '')
-          .replace(/{Parent name}/gi, pName)
-          .replace(/{Event name}/gi, eventTitle);
+        const renderedBody = resolveMessageTokens(body, {
+          parentName: pName,
+          childName: 'your child',
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl,
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        });
+
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          parentName: pName,
+          childName: 'your child',
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl
+        });
 
         messagesToSend.push({
+          parentId: parentRow.parent_id,
           parentName: parentRow.parent_name,
           email: parentRow.email,
           phone: parentRow.phone_number,
@@ -5875,45 +6002,52 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     const notifNow = new Date().toISOString();
-    const notifId = `notif-${crypto.randomUUID()}`;
+    const logId = crypto.randomUUID();
     const audienceRole = recipientGroup === 'volunteers' 
       ? 'volunteer' 
       : (recipientGroup === 'all_event_team' ? 'staff' : 'parent');
 
-    // 3. IN-APP NOTIFICATION (Canonical source of truth)
+    // 3. IN-APP NOTIFICATIONS (Canonical source of truth)
     let inAppCreated = false;
     if (activeChannels.includes('in_app')) {
-      await execute(`
-        INSERT INTO notifications (
-          id, title, message, type, audience_role, audience_scope, event_id,
-          created_by_user_id, visible_to_event_team, created_at, priority, channel
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        notifId,
-        subject?.trim() || 'Event Update',
-        body,
-        messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
-        audienceRole,
-        recipientGroup,
-        eventId,
-        req.user?.id || null,
-        audienceRole === 'parent' ? 0 : 1,
-        notifNow,
-        messageType === 'safety_alert' ? 'high' : 'normal',
-        'in-app'
-      ]);
-
-      try {
-        broadcastSSEEvent('notification', {
-          id: notifId,
-          title: subject?.trim() || 'Event Update',
-          message: body,
-          type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+      for (const msg of messagesToSend) {
+        const msgNotifId = `notif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id,
+            child_id, parent_id, created_by_user_id, visible_to_event_team, created_at, priority, channel, metadata_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          msgNotifId,
+          msg.subject.trim() || 'Event Update',
+          msg.body,
+          messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
           audienceRole,
-          createdAt: notifNow
-        });
-      } catch (sseErr) {
-        console.warn('[Admin SSE broadcast warning]:', sseErr);
+          recipientGroup,
+          eventId,
+          msg.childId || null,
+          msg.parentId || null,
+          req.user?.id || null,
+          audienceRole === 'parent' ? 0 : 1,
+          notifNow,
+          messageType === 'safety_alert' ? 'high' : 'normal',
+          'in-app',
+          JSON.stringify({ campaignId: logId })
+        ]);
+
+        try {
+          broadcastSSEEvent('notification', {
+            id: msgNotifId,
+            title: msg.subject.trim() || 'Event Update',
+            message: msg.body,
+            type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+            audienceRole,
+            parentId: msg.parentId || null,
+            createdAt: notifNow
+          });
+        } catch (sseErr) {
+          console.warn('[Admin SSE broadcast warning]:', sseErr);
+        }
       }
       inAppCreated = true;
     }
@@ -5921,19 +6055,19 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     // 4. PUSH NOTIFICATIONS
     let pushSentCount = 0;
     let pushFailCount = 0;
+    let pushNoSubCount = 0;
+    let lastPushErrorReason: string | undefined;
+
     if (activeChannels.includes('push')) {
       const uniqueUserIds = Array.from(
-        new Set(rows.map((r: any) => r.user_id).filter(Boolean))
+        new Set(messagesToSend.map(m => m.userId).filter(Boolean))
       ) as string[];
 
-      // Push Privacy Rules:
-      // Never expose medical notes, safeguarding details, pickup secrets, passwords on lock screen.
-      const safeTitle = 'Koinonia Children & Teens';
       const safeBody = messageType === 'safety_alert'
         ? 'Urgent team update — Open Koinonia Children & Teens to view the alert.'
-        : (subject?.trim()
-            ? `${subject.trim()} — You have a new update for The General Assembly.`
-            : 'You have a new update for The General Assembly. Open Koinonia to view.');
+        : (eventTitle
+            ? `You have a new update for ${eventTitle}. Open Koinonia to view.`
+            : 'You have a new update from Koinonia Children & Teens.');
 
       const targetDestination = audienceRole === 'volunteer'
         ? '/volunteer/event'
@@ -5941,11 +6075,13 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
       for (const uid of uniqueUserIds) {
         try {
+          const userMsg = messagesToSend.find(m => m.userId === uid);
+          const pushTitle = userMsg?.subject?.trim() || 'Event Update';
+
           const pushRes = await sendWebPush(uid, {
-            title: safeTitle,
+            title: pushTitle,
             body: safeBody,
             metadata: {
-              alertId: notifId,
               targetUrl: targetDestination,
               type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast'
             }
@@ -5953,12 +6089,14 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
           if (pushRes.sentCount > 0) {
             pushSentCount += pushRes.sentCount;
+          } else if (pushRes.noSubscriptions) {
+            pushNoSubCount++;
+            lastPushErrorReason = pushRes.failureReason || 'no_subscription';
+            console.warn(`[Admin Push] No active push subscriptions for userId=${uid.slice(0, 8)}`);
           } else {
-            // Count as failure whether no subscription found or send error
             pushFailCount++;
-            if (pushRes.noSubscriptions) {
-              console.warn(`[Admin Push] No active push subscriptions for userId=${uid.slice(0, 8)}`);
-            } else if (pushRes.error) {
+            lastPushErrorReason = pushRes.failureReason;
+            if (pushRes.error) {
               console.error(`[Admin Push Error for userId=${uid.slice(0, 8)}]:`, pushRes.error);
             }
           }
@@ -5971,10 +6109,9 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     // 5. EMAIL & WHATSAPP (if selected)
     let emailSentCount = 0;
-    let whatsappSentCount = 0;
     let externalFailCount = 0;
 
-    if (activeChannels.includes('email') || activeChannels.includes('whatsapp')) {
+    if (activeChannels.includes('email')) {
       const settings = await queryOne(`
         SELECT sender_name as senderName, reply_to_email as replyToEmail
         FROM admin_message_settings
@@ -5984,49 +6121,97 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       const customReplyTo = settings?.replyToEmail || undefined;
 
       for (const msg of messagesToSend) {
-        if (activeChannels.includes('email')) {
-          if (msg.email) {
-            try {
-              const res = await sendEmail({
-                to: msg.email,
-                subject: msg.subject,
-                text: msg.body,
-                html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
-                fromName: customFromName,
-                replyTo: customReplyTo
-              });
-              if (res.success) emailSentCount++;
-              else externalFailCount++;
-            } catch (err) {
-              console.error('[Admin sendEmail failed]:', err);
-              externalFailCount++;
-            }
+        if (msg.email) {
+          try {
+            const res = await sendEmail({
+              to: msg.email,
+              subject: msg.subject,
+              text: msg.body,
+              html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
+              fromName: customFromName,
+              replyTo: customReplyTo
+            });
+            if (res.success) emailSentCount++;
+            else externalFailCount++;
+          } catch (err) {
+            console.error('[Admin sendEmail failed]:', err);
+            externalFailCount++;
           }
         }
-
-        // Note: WhatsApp delivery is processed asynchronously via notification_jobs below
       }
     }
 
-    // 6. Log sending outcome in admin_message_logs
-    const logId = crypto.randomUUID();
+    // 6. Log sending outcome in admin_message_logs & save master campaign notification
     const logChannelsStr = activeChannels.join(',');
     const initialStatus = activeChannels.includes('whatsapp') ? 'queued' : 'sent';
 
-    const cleanLogSubject = (subject || '')
-      .replace(/\{Event name\}/gi, eventTitle)
-      .replace(/\{Parent name\}/gi, '')
-      .trim();
+    const cleanLogSubject = resolveMessageTokens(subject || '', {
+      eventName: eventTitle,
+      parentName: '',
+      reviewUrl: buildParentStatusUrl(),
+      passUrl: buildParentPassUrl()
+    }).replace(/\s+-\s*$/, '').trim() || 'Event Update';
 
-    const cleanLogBody = body
-      .replace(/\{Event name\}/gi, eventTitle)
-      .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
-      .replace(/\{Parent name\}/gi, 'Parent');
+    const cleanLogBody = resolveMessageTokens(
+      (body || '')
+        .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
+        .replace(/\{Parent name\}/gi, 'Parent'),
+      {
+        eventName: eventTitle,
+        childName: 'your child',
+        reviewUrl: buildParentStatusUrl(),
+        passUrl: buildParentPassUrl(),
+        pickupTime: '4:00 PM',
+        supportContact: '+234 803 123 4567'
+      }
+    );
 
     await execute(
       'INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [logId, recipientGroup, messageType, logChannelsStr, cleanLogSubject, cleanLogBody, messagesToSend.length, initialStatus, notifNow]
     );
+
+    // Save campaign master summary record in notifications table so GET /messages can read delivery metadata
+    const campaignMasterMeta = JSON.stringify({
+      campaignId: logId,
+      push: {
+        status: pushSentCount > 0 ? 'sent' : ((pushFailCount > 0 || pushNoSubCount > 0) ? 'failed' : 'none'),
+        sentCount: pushSentCount,
+        failedCount: pushFailCount + pushNoSubCount,
+        noSubscriptions: pushNoSubCount > 0,
+        failureReason: lastPushErrorReason
+      },
+      email: {
+        status: emailSentCount > 0 ? 'sent' : (externalFailCount > 0 ? 'failed' : 'none'),
+        sentCount: emailSentCount,
+        failedCount: externalFailCount
+      },
+      in_app: {
+        status: inAppCreated ? 'sent' : 'none',
+        count: inAppCreated ? messagesToSend.length : 0
+      }
+    });
+
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id,
+        created_by_user_id, visible_to_event_team, created_at, priority, channel, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      `notif-${logId}`,
+      cleanLogSubject,
+      cleanLogBody,
+      'campaign_master',
+      'admin',
+      recipientGroup,
+      eventId,
+      req.user?.id || null,
+      0,
+      notifNow,
+      'normal',
+      logChannelsStr,
+      campaignMasterMeta
+    ]);
 
     // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
     let whatsappQueuedCount = 0;
@@ -6081,6 +6266,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       ? Math.max(0, parentIdsInAudience.length - whatsappQueuedCount)
       : 0;
 
+    const totalPushFailures = pushFailCount + pushNoSubCount;
     let humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'}.`;
     if (activeChannels.includes('whatsapp')) {
       const skippedNote = whatsappSkippedCount > 0
@@ -6091,19 +6277,23 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         const pushNote = activeChannels.includes('push')
           ? (pushSentCount > 0
             ? ` Push delivered to ${pushSentCount} device${pushSentCount === 1 ? '' : 's'}.`
-            : pushFailCount > 0 ? ' Push could not be delivered — no active device subscription found.' : '')
+            : totalPushFailures > 0
+              ? (pushNoSubCount > 0 ? ' Push could not be delivered — selected parent has no active device subscription.' : ' Push delivery failed.')
+              : '')
           : '';
         humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.${pushNote}`;
       } else {
         humanMessage = `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
       }
     } else if (activeChannels.includes('push')) {
-      if (pushSentCount > 0 && pushFailCount > 0) {
-        humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${pushFailCount} selected parent${pushFailCount === 1 ? '' : 's'} had no active device subscription.`;
+      if (pushSentCount > 0 && totalPushFailures > 0) {
+        humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${totalPushFailures} selected parent${totalPushFailures === 1 ? '' : 's'} had no active device subscription.`;
       } else if (pushSentCount > 0) {
         humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'} (${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received push).`;
-      } else if (pushFailCount > 0) {
-        humanMessage = `Update sent. However, push could not be delivered — the selected parent has no active device subscription. Ask them to enable push notifications from their device.`;
+      } else if (totalPushFailures > 0) {
+        humanMessage = pushNoSubCount > 0
+          ? `Update sent. However, push could not be delivered — the selected parent has no active device subscription. Ask them to enable push notifications from their device.`
+          : `Update sent. However, push delivery failed for the selected device.`;
       }
     }
 
@@ -6139,12 +6329,12 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         recipients: messagesToSend.length,
         inAppCreated,
         pushSent: pushSentCount,
-        pushFailed: pushFailCount,
+        pushFailed: totalPushFailures,
         emailSent: emailSentCount,
         whatsappSent: 0,
         whatsappQueued: whatsappQueuedCount,
         whatsappSkipped: whatsappSkippedCount,
-        failed: externalFailCount + pushFailCount
+        failed: externalFailCount + totalPushFailures
       }
     });
   } catch (err: any) {
@@ -10086,7 +10276,86 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
       return pathParts.join(' › ');
     };
 
+    // Operational metrics calculation
+    const totalLocations = allLocations.filter(l => l.is_active === 1 && !l.archived_at).length;
+
+    // Volunteers assigned to locations for this event
+    const assignedRow = await queryOne(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM event_duty_assignments
+      WHERE event_id = ? AND status != 'cancelled' AND assigned_location_id IS NOT NULL AND assigned_location_id != ''
+    `, [eventId]);
+    const volunteersAssigned = Number(assignedRow?.count || 0);
+
+    // Currently on duty (active presence sessions right now)
+    const onDutyRow = await queryOne(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM event_duty_location_presence
+      WHERE event_id = ? AND ended_at IS NULL
+    `, [eventId]);
+    const currentlyOnDuty = Number(onDutyRow?.count || 0);
+
+    // Volunteers needing assignment
+    const totalVolunteersRow = await queryOne(`
+      SELECT COUNT(DISTINCT u.id) as count
+      FROM users u
+      LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+      WHERE (vp.status = 'approved' OR vp.status = 'active' OR u.role IN ('volunteer', 'staff'))
+    `);
+    const totalVols = Number(totalVolunteersRow?.count || 0);
+    const needAssignment = Math.max(0, totalVols - volunteersAssigned);
+
+    // Per-location assignments count
+    const locAssignmentCounts = await query(`
+      SELECT assigned_location_id, COUNT(DISTINCT user_id) as assigned_count
+      FROM event_duty_assignments
+      WHERE event_id = ? AND status != 'cancelled' AND assigned_location_id IS NOT NULL
+      GROUP BY assigned_location_id
+    `, [eventId]);
+    const locAssignMap = new Map<string, number>();
+    for (const r of locAssignmentCounts) {
+      locAssignMap.set(r.assigned_location_id, Number(r.assigned_count));
+    }
+
+    // Per-location presence count
+    const presenceCounts = await query(`
+      SELECT event_location_id, COUNT(DISTINCT user_id) as present_count
+      FROM event_duty_location_presence
+      WHERE event_id = ? AND ended_at IS NULL
+      GROUP BY event_location_id
+    `, [eventId]);
+    const locPresenceMap = new Map<string, number>();
+    for (const r of presenceCounts) {
+      locPresenceMap.set(r.event_location_id, Number(r.present_count));
+    }
+
+    // Per-location active alerts count
+    const alertCounts = await query(`
+      SELECT location_id, COUNT(*) as alert_count
+      FROM event_safety_alerts
+      WHERE event_id = ? AND status IN ('open', 'acknowledged')
+      GROUP BY location_id
+    `, [eventId]);
+    const locAlertMap = new Map<string, number>();
+    for (const r of alertCounts) {
+      locAlertMap.set(r.location_id, Number(r.alert_count));
+    }
+
+    let locationsNeedingAttention = 0;
+    for (const loc of allLocations) {
+      if (loc.is_active === 1 && !loc.archived_at) {
+        const assigned = locAssignMap.get(loc.id) || 0;
+        const alerts = locAlertMap.get(loc.id) || 0;
+        if (assigned === 0 || alerts > 0) {
+          locationsNeedingAttention++;
+        }
+      }
+    }
+
     let items = allLocations.map(loc => {
+      const assignedCount = locAssignMap.get(loc.id) || 0;
+      const presentCount = locPresenceMap.get(loc.id) || 0;
+      const alertCount = locAlertMap.get(loc.id) || 0;
       return {
         id: loc.id,
         eventId: loc.event_id,
@@ -10103,7 +10372,11 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
         sortOrder: loc.sort_order,
         isActive: !!loc.is_active,
         archivedAt: loc.archived_at,
-        pathLabel: getFullPath(loc.id)
+        pathLabel: getFullPath(loc.id),
+        assignedCount,
+        presentCount,
+        alertCount,
+        needsAttention: assignedCount === 0 || alertCount > 0
       };
     });
 
@@ -10123,12 +10396,6 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
       return a.pathLabel.localeCompare(b.pathLabel);
     });
 
-    const totalLocations = allLocations.length;
-    const activeLocations = allLocations.filter(l => l.is_active === 1).length;
-    const gates = allLocations.filter(l => l.location_type === 'gate' || l.location_type === 'check_in_point' || l.location_type === 'pickup_point').length;
-    const rooms = allLocations.filter(l => l.location_type === 'room').length;
-    const zones = allLocations.filter(l => l.location_type === 'zone').length;
-
     const total = items.length;
     const totalPages = Math.ceil(total / limit);
     const startIdx = (page - 1) * limit;
@@ -10137,16 +10404,21 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
     return res.json({
       success: true,
       summary: {
+        locations: totalLocations,
         totalLocations,
-        activeLocations,
-        gates,
-        rooms,
-        zones
+        volunteersAssigned,
+        currentlyOnDuty,
+        needAssignment,
+        locationsNeedingAttention,
+        activeLocations: totalLocations,
+        gates: allLocations.filter(l => ['gate', 'check_in_point', 'pickup_point'].includes(l.location_type)).length,
+        rooms: allLocations.filter(l => l.location_type === 'room').length,
+        zones: allLocations.filter(l => l.location_type === 'zone').length
       },
       locations: items,
       items: paginatedItems,
       filters: {
-        types: ['room', 'zone', 'gate', 'pickup_point', 'check_in_point', 'first_aid_point']
+        types: ['room', 'hall', 'gate', 'pickup_point', 'check_in_point']
       },
       pagination: {
         page,
@@ -10472,22 +10744,25 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
       return res.status(404).json({ success: false, error: 'Location not found' });
     }
 
-    // Active present responders
+    // Active present responders (from both volunteer_profiles and parent_profiles)
     const activePresence = await query(`
-      SELECT p.*, u.role, pr.full_name, pr.phone_number
+      SELECT p.*, u.role, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, COALESCE(vp.phone, pr.phone_number) as phone_number
       FROM event_duty_location_presence p
       JOIN users u ON p.user_id = u.id
-      JOIN parent_profiles pr ON u.id = pr.user_id
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pr ON u.id = pr.user_id
       WHERE p.event_location_id = ? AND p.ended_at IS NULL
     `, [locationId]);
 
-    // Assigned scheduled responders
+    // Assigned responders (status != cancelled)
     const assignedResponders = await query(`
-      SELECT a.*, pr.full_name, u.role
+      SELECT a.*, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, u.role,
+             (SELECT p2.started_at FROM event_duty_location_presence p2 WHERE p2.user_id = a.user_id AND p2.event_location_id = a.assigned_location_id AND p2.ended_at IS NULL ORDER BY p2.started_at DESC LIMIT 1) as present_since
       FROM event_duty_assignments a
       JOIN users u ON a.user_id = u.id
-      JOIN parent_profiles pr ON u.id = pr.user_id
-      WHERE a.event_id = ? AND a.assigned_location_id = ? AND a.status = 'scheduled'
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pr ON u.id = pr.user_id
+      WHERE a.event_id = ? AND a.assigned_location_id = ? AND a.status != 'cancelled'
     `, [eventId, locationId]);
 
     let coverageStatus = 'Not covered';
@@ -10511,7 +10786,12 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
         locationName: loc.name,
         coverageStatus,
         activePresence: activePresence.map(p => ({
-          userId: p.user_id,          fullName: p.full_name,          role: p.role,          phone: p.phone_number,          source: p.source,          startedAt: p.started_at
+          userId: p.user_id,
+          fullName: p.full_name,
+          role: p.role,
+          phone: p.phone_number,
+          source: p.source,
+          startedAt: p.started_at
         })),
         assignedResponders: assignedResponders.map(a => ({
           id: a.id,
@@ -10520,7 +10800,9 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
           role: a.role,
           responsibilityKey: a.responsibility_key,
           startsAt: a.starts_at,
-          endsAt: a.ends_at
+          endsAt: a.ends_at,
+          isPresent: !!a.present_since,
+          presentSince: a.present_since
         })),
         activeAlertsCount: activeAlerts.length,
         activeAlerts

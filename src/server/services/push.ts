@@ -87,26 +87,54 @@ export async function getVapidPublicKey(): Promise<string> {
   return currentPublicKey || process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || '';
 }
 
-export async function sendWebPush(userId: string, payload: { title: string; body: string; metadata?: any }): Promise<{ success: boolean; sentCount: number; noSubscriptions?: boolean; error?: string }> {
+export interface PushSendResult {
+  success: boolean;
+  sentCount: number;
+  failedCount: number;
+  staleCount: number;
+  noSubscriptions?: boolean;
+  error?: string;
+  failureReason?: 'no_subscription' | 'stale_subscription' | 'vapid_auth_error' | 'rate_limited' | 'network_error';
+}
+
+export async function sendWebPush(userId: string, payload: { title: string; body: string; metadata?: any }): Promise<PushSendResult> {
   const isConfigured = await ensureVapidKeysLoaded();
   if (!isConfigured) {
     console.error(`[WebPush] VAPID keys not initialized for userId=${userId.slice(0, 8)}`);
-    return { success: false, sentCount: 0, error: 'WebPush is not configured and key initialization failed' };
+    return {
+      success: false,
+      sentCount: 0,
+      failedCount: 1,
+      staleCount: 0,
+      error: 'Push notification service is not configured',
+      failureReason: 'vapid_auth_error'
+    };
   }
 
-  // Retrieve subscriptions for this user that are not revoked
-  const subscriptions = await query('SELECT * FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL', [userId]);
+  // Retrieve active subscriptions for this user, newest first
+  const subscriptions = await query('SELECT * FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC', [userId]);
 
   if (subscriptions.length === 0) {
     console.warn(`[WebPush] No active subscriptions found for userId=${userId.slice(0, 8)}`);
-    // noSubscriptions=true distinguishes this from a send failure
-    return { success: false, sentCount: 0, noSubscriptions: true };
+    return {
+      success: false,
+      sentCount: 0,
+      failedCount: 0,
+      staleCount: 0,
+      noSubscriptions: true,
+      error: 'Push unavailable — no active subscription found for this parent',
+      failureReason: 'no_subscription'
+    };
   }
 
   console.log(`[WebPush] Attempting push to ${subscriptions.length} subscription(s) for userId=${userId.slice(0, 8)}`);
 
   let sentCount = 0;
-  let failures: string[] = [];
+  let staleCount = 0;
+  let vapidAuthErrors = 0;
+  let rateLimitErrors = 0;
+  let otherErrors = 0;
+  const failureDetails: string[] = [];
 
   for (const sub of subscriptions) {
     try {
@@ -127,29 +155,62 @@ export async function sendWebPush(userId: string, payload: { title: string; body
 
       if (statusCode === 404 || statusCode === 410) {
         // FCM/VAPID: subscription is unsubscribed or expired — remove safely
+        staleCount++;
         console.warn(`[WebPush] Subscription ${sub.id.slice(0, 12)} expired (${statusCode}): ${errBody}. Removing.`);
-        await execute('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
+        try {
+          await execute('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
+        } catch (delErr) {
+          console.error(`[WebPush] Failed to remove expired subscription ${sub.id}:`, delErr);
+        }
+        failureDetails.push('Device subscription expired');
       } else if (statusCode === 401 || statusCode === 403) {
         // VAPID or auth mismatch — do NOT delete subscription
+        vapidAuthErrors++;
         console.error(`[WebPush] Auth/VAPID error (${statusCode}) for subscription ${sub.id.slice(0, 12)}: ${errBody}`);
-        failures.push(`VAPID_AUTH_ERROR(${statusCode}): ${err.message}`);
+        failureDetails.push('Push service configuration error');
       } else if (statusCode === 429) {
+        rateLimitErrors++;
         console.error(`[WebPush] Rate limited (429) for subscription ${sub.id.slice(0, 12)}`);
-        failures.push(`RATE_LIMITED(429): ${err.message}`);
+        failureDetails.push('Push service rate limit reached');
       } else {
+        otherErrors++;
         console.error(`[WebPush] Failed (${statusCode || 'no-status'}) for subscription ${sub.id.slice(0, 12)}: ${err.message}`);
-        failures.push(`ERROR(${statusCode || 'network'}): ${err.message}`);
+        failureDetails.push('Network or delivery failure');
       }
     }
   }
 
-  const hasFailures = failures.length > 0;
-  const result = {
-    success: sentCount > 0,
+  const failedCount = staleCount + vapidAuthErrors + rateLimitErrors + otherErrors;
+  const isSuccess = sentCount > 0;
+
+  let failureReason: PushSendResult['failureReason'];
+  let errorSummary: string | undefined;
+
+  if (!isSuccess) {
+    if (staleCount > 0 && vapidAuthErrors === 0 && otherErrors === 0) {
+      failureReason = 'stale_subscription';
+      errorSummary = 'Device subscription has expired. Please enable notifications on your device.';
+    } else if (vapidAuthErrors > 0) {
+      failureReason = 'vapid_auth_error';
+      errorSummary = 'Push configuration error. Please contact the administrator.';
+    } else if (rateLimitErrors > 0) {
+      failureReason = 'rate_limited';
+      errorSummary = 'Push notifications temporarily rate limited. Please retry in a few moments.';
+    } else {
+      failureReason = 'network_error';
+      errorSummary = failureDetails[0] || 'Push delivery could not be completed.';
+    }
+  }
+
+  const result: PushSendResult = {
+    success: isSuccess,
     sentCount,
-    error: hasFailures ? failures.join('; ') : undefined
+    failedCount,
+    staleCount,
+    error: errorSummary,
+    failureReason
   };
 
-  console.log(`[WebPush] Result for userId=${userId.slice(0, 8)}: sent=${sentCount}, failures=${failures.length}`);
+  console.log(`[WebPush] Result for userId=${userId.slice(0, 8)}: sent=${sentCount}, failed=${failedCount}, stale=${staleCount}`);
   return result;
 }

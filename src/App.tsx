@@ -25,6 +25,7 @@ const VolunteerResetPasswordView = React.lazy(() => import('./views/VolunteerRes
 const VolunteerPendingReviewView = React.lazy(() => import('./views/VolunteerPendingReviewView').then(m => ({ default: m.VolunteerPendingReviewView })));
 const VolunteerEventDashboardView = React.lazy(() => import('./views/VolunteerEventDashboardView').then(m => ({ default: m.VolunteerEventDashboardView })));
 const VolunteerRequestView = React.lazy(() => import('./views/VolunteerRequestView').then(m => ({ default: m.VolunteerRequestView })));
+const LocationScanView = React.lazy(() => import('./views/LocationScanView').then(m => ({ default: m.LocationScanView })));
 import { AddChildStep1View } from './views/AddChildStep1View';
 import { AddChildStep2View } from './views/AddChildStep2View';
 import { AddChildStep3View } from './views/AddChildStep3View';
@@ -482,6 +483,9 @@ export default function App() {
     if (cleanRoute.startsWith('/admin/')) return true;
     if (cleanRoute === '/admin') return true;
     if (cleanRoute === '/parent/volunteer-request') return true;
+    if (cleanRoute.startsWith('/duty/location/')) return true;
+    if (cleanRoute.startsWith('/duty/scan/')) return true;
+    if (cleanRoute.startsWith('/event-duty/location-access/')) return true;
     const validRoutes: string[] = [
       '/',
       '/parent/create-account',
@@ -1204,6 +1208,17 @@ export default function App() {
           </AdminProtectedRoute>
         );
       }
+    }
+
+    if (cleanRoute.startsWith('/duty/location/') || cleanRoute.startsWith('/duty/scan/') || cleanRoute.startsWith('/event-duty/location-access/')) {
+      const scanToken = cleanRoute.split('/').pop()?.split('?')[0] || '';
+      return (
+        <LocationScanView
+          token={scanToken}
+          user={user}
+          onNavigate={navigate}
+        />
+      );
     }
 
     switch (cleanRoute) {

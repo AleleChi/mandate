@@ -212,6 +212,12 @@ async function startServer() {
   app.use('/api/volunteer/safety-alerts', alertResponsesRouter);
   app.use('/api/volunteer', alertResponsesRouter);
 
+  // Physical Event Location QR Code redirect to client SPA scan route
+  app.get(['/event-duty/location-access/:token', '/duty/scan/:token'], (req, res) => {
+    const token = req.params.token;
+    return res.redirect(302, `/#/duty/location/${encodeURIComponent(token)}`);
+  });
+
   // GET secure /uploads/:filename
   app.get('/uploads/:filename', (req, res) => {
     // data-component-version="backend-upload-serving-v2-secure"

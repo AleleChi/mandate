@@ -30,6 +30,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { safeStorage } from '../../utils/storage';
+import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl } from '../../utils/urlHelper';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
@@ -810,6 +811,17 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         showError('Please select at least one parent recipient.');
         return;
       }
+
+      // Multi-child safety check: ambiguous child tokens are prohibited when targeting parents with multiple children
+      const hasChildTokens = /\{Child name\}|\{Pass link\}/i.test(body) || (subject && /\{Child name\}|\{Pass link\}/i.test(subject));
+      if (hasChildTokens) {
+        const selectedParentObjects = eventParents.filter(p => selectedParentIds.includes(p.id));
+        const multiChildParent = selectedParentObjects.find(p => (p.children || []).length > 1);
+        if (multiChildParent) {
+          showError(`Cannot send: "${multiChildParent.name}" has multiple registered children. Please remove {Child name} or {Pass link} tokens, or target a child-specific group.`);
+          return;
+        }
+      }
     } else {
       const currentGroup = recipientGroups.find(g => g.key === selectedGroup);
       if (currentGroup && currentGroup.count === 0) {
@@ -947,8 +959,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     .replace(/{Parent name}/gi, resolvedRepresentativeName)
     .replace(/{Event name}/gi, resolvedEventName)
     .replace(/{Child name}/gi, representativeParent?.children?.[0]?.name || 'your child')
-    .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
-    .replace(/{Pass link}/gi, 'https://koinonia.org/pass/sample')
+    .replace(/{Review link}/gi, buildFrontendParentStatusUrl(representativeParent?.children?.[0]?.id))
+    .replace(/{Pass link}/gi, buildFrontendParentPassUrl(representativeParent?.children?.[0]?.id))
     .replace(/{Pickup time}/gi, '4:00 PM')
     .replace(/{Support contact}/gi, '+234 803 123 4567');
 
@@ -2510,8 +2522,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                         .replace(/{Event name}/gi, resolvedEventName)
                         .replace(/{Parent name}/gi, 'Parent')
                         .replace(/{Child name}/gi, 'your child')
-                        .replace(/{Review link}/gi, 'https://koinonia.org/parent/status')
-                        .replace(/{Pass link}/gi, 'https://koinonia.org/pass')
+                        .replace(/{Review link}/gi, buildFrontendParentStatusUrl())
+                        .replace(/{Pass link}/gi, buildFrontendParentPassUrl())
                         .replace(/{Pickup time}/gi, '4:00 PM')
                         .replace(/{Support contact}/gi, '+234 803 123 4567');
 
@@ -2524,12 +2536,37 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                             <span className="font-semibold text-zinc-900 truncate">
                               {logSubject}
                             </span>
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge.class}`}>
-                              {statusBadge.text}
-                            </span>
+                            {log.channelStatuses && log.channelStatuses.length > 0 ? (
+                              <div className="flex items-center gap-1 flex-wrap justify-end">
+                                {log.channelStatuses.map((cs: any) => {
+                                  const sLower = (cs.status || '').toLowerCase();
+                                  const csClass = sLower === 'read'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : sLower === 'delivered'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : sLower === 'sent'
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                    : sLower === 'failed'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200';
+                                  return (
+                                    <span
+                                      key={cs.channel}
+                                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${csClass}`}
+                                    >
+                                      {cs.label} · {cs.status}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge.class}`}>
+                                {statusBadge.text}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-zinc-500 font-medium">
-                            {logGroup} · {logChannel} · {recipientCount} {recipientCount === 1 ? 'recipient' : 'recipients'}
+                            {logGroup} · {recipientCount} {recipientCount === 1 ? 'recipient' : 'recipients'}
                             {log.deliverySummary ? ` · ${log.deliverySummary}` : ''}
                           </div>
                           <p className="text-[11px] text-zinc-600 line-clamp-2 leading-relaxed">

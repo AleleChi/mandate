@@ -1,33 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { 
-  MapPin, 
-  Plus, 
-  Search, 
-  RefreshCw, 
-  Edit, 
-  QrCode, 
-  Printer, 
-  AlertTriangle, 
-  ShieldAlert, 
-  Users, 
-  Check, 
-  X, 
-  Archive,
-  DoorClosed,
-  DoorOpen,
-  Layers,
+import {
+  MapPin,
+  Plus,
+  Search,
+  RefreshCw,
+  Edit,
+  QrCode,
+  Printer,
+  AlertTriangle,
+  Users,
+  Check,
+  X,
   CheckCircle2,
-  Building2,
-  Phone,
+  Clock,
+  Download,
+  AlertCircle,
+  FileText,
   Shield,
-  FileText
+  Phone,
+  Pause,
+  Play
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
 import { buildApiUrl } from '../../../utils/urlHelper';
 
 interface AdminEventLocationsTabProps {
   eventId?: string;
+  triggerCreateLocation?: number;
+  triggerPrintAllCodes?: number;
+  onNavigateTab?: (tab: string) => void;
 }
 
 interface EventLocation {
@@ -46,15 +48,25 @@ interface EventLocation {
   sortOrder: number;
   isActive: boolean;
   pathLabel: string;
+  assignedCount?: number;
+  presentCount?: number;
+  alertCount?: number;
+  needsAttention?: boolean;
 }
 
 interface LocationCoverage {
   locationId: string;
   activeResponders: any[];
+  assignedResponders: any[];
   activeAlerts: any[];
 }
 
-export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: AdminEventLocationsTabProps) {
+export default function AdminEventLocationsTab({
+  eventId = 'event-ga-2026',
+  triggerCreateLocation = 0,
+  triggerPrintAllCodes = 0,
+  onNavigateTab
+}: AdminEventLocationsTabProps) {
   const [locations, setLocations] = useState<EventLocation[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,17 +76,16 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
 
   // Summary counts
   const [summary, setSummary] = useState({
-    totalLocations: 0,
-    activeLocations: 0,
-    gates: 0,
-    rooms: 0,
-    zones: 0
+    locations: 0,
+    volunteersAssigned: 0,
+    currentlyOnDuty: 0,
+    needAssignment: 0,
+    locationsNeedingAttention: 0
   });
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterType, setFilterType] = useState<string>('');
-  const [showArchived, setShowArchived] = useState<boolean>(false);
+  const [filterType, setFilterType] = useState<string>('all');
 
   // Selection
   const [selectedLocation, setSelectedLocation] = useState<EventLocation | null>(null);
@@ -86,16 +97,13 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [formId, setFormId] = useState<string>('');
   const [formName, setFormName] = useState<string>('');
-  const [formShortName, setFormShortName] = useState<string>('');
   const [formType, setFormType] = useState<string>('room');
-  const [formParentId, setFormParentId] = useState<string>('');
   const [formCapacity, setFormCapacity] = useState<string>('');
-  const [formAgeGroup, setFormAgeGroup] = useState<string>('all');
+  const [formAgeGroup, setFormAgeGroup] = useState<string>('Ages 4 to 6');
   const [formTeamKey, setFormTeamKey] = useState<string>('General Response');
   const [formDescription, setFormDescription] = useState<string>('');
   const [formInstructions, setFormInstructions] = useState<string>('');
   const [formEmergencyLabel, setFormEmergencyLabel] = useState<string>('');
-  const [formSortOrder, setFormSortOrder] = useState<number>(0);
   const [savingLocation, setSavingLocation] = useState<boolean>(false);
 
   // QR Code Modal State
@@ -103,16 +111,39 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState<boolean>(false);
-  const [confirmActionModal, setConfirmActionModal] = useState<'rotate' | 'disable' | null>(null);
+  const [confirmReplaceModal, setConfirmReplaceModal] = useState<boolean>(false);
+
+  // Batch Print Posters Modal
+  const [showBatchPrintModal, setShowBatchPrintModal] = useState<boolean>(false);
+  const [batchQRMap, setBatchQRMap] = useState<Record<string, string>>({});
+  const [batchLoading, setBatchLoading] = useState<boolean>(false);
+
+  // External trigger for Create Location
+  const lastCreateTrigger = useRef(triggerCreateLocation);
+  useEffect(() => {
+    if (triggerCreateLocation > 0 && triggerCreateLocation !== lastCreateTrigger.current) {
+      lastCreateTrigger.current = triggerCreateLocation;
+      openCreateModal();
+    }
+  }, [triggerCreateLocation]);
+
+  // External trigger for Batch Print Location Codes
+  const lastPrintTrigger = useRef(triggerPrintAllCodes);
+  useEffect(() => {
+    if (triggerPrintAllCodes > 0 && triggerPrintAllCodes !== lastPrintTrigger.current) {
+      lastPrintTrigger.current = triggerPrintAllCodes;
+      handleOpenBatchPrint();
+    }
+  }, [triggerPrintAllCodes]);
 
   // Generate real QR code matrix image whenever qrToken updates
   useEffect(() => {
     if (qrToken) {
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia.church';
-      const accessUrl = `${origin}/event-duty/location-access/${qrToken}`;
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia12.netlify.app';
+      const accessUrl = `${origin}/duty/scan/${qrToken}`;
       QRCode.toDataURL(accessUrl, {
         margin: 2,
-        width: 320,
+        width: 340,
         color: { dark: '#18181B', light: '#FFFFFF' },
         errorCorrectionLevel: 'M'
       })
@@ -122,6 +153,28 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       setQrDataUrl(null);
     }
   }, [qrToken]);
+
+  // Format time display helper
+  const formatDisplayTime = (isoString?: string | null) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return isoString;
+    }
+  };
+
+  // Format type label helper
+  const formatTypeLabel = (type?: string) => {
+    if (!type) return 'Location';
+    if (type === 'room') return 'Room';
+    if (type === 'hall') return 'Hall';
+    if (type === 'gate' || type === 'check_in_point') return 'Entry Point';
+    if (type === 'pickup_point') return 'Pickup Point';
+    if (type === 'zone') return 'Zone';
+    return type.replace(/_/g, ' ');
+  };
 
   // Fetch Locations
   const fetchLocations = async () => {
@@ -135,13 +188,15 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
       }
 
       const queryParams = new URLSearchParams();
-      if (filterType) queryParams.append('type', filterType);
-      if (searchTerm) queryParams.append('search', searchTerm);
+      if (filterType && filterType !== 'all') {
+        queryParams.append('type', filterType);
+      }
+      if (searchTerm) {
+        queryParams.append('search', searchTerm);
+      }
 
-      // Call primary endpoint
       let res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations?${queryParams.toString()}`), { headers });
       if (!res.ok) {
-        // Fallback endpoint
         res = await fetch(buildApiUrl(`/api/admin/locations?${queryParams.toString()}`), { headers });
       }
 
@@ -164,31 +219,29 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
             emergencyLabel: loc.emergencyLabel || loc.emergency_label || null,
             sortOrder: loc.sortOrder ?? loc.sort_order ?? 0,
             isActive: loc.isActive !== undefined ? Boolean(loc.isActive) : loc.is_active === 1 || loc.is_active === true,
-            pathLabel: loc.pathLabel || loc.name
+            pathLabel: loc.pathLabel || loc.name,
+            assignedCount: loc.assignedCount || 0,
+            presentCount: loc.presentCount || 0,
+            alertCount: loc.alertCount || 0,
+            needsAttention: !!loc.needsAttention
           }));
 
           setLocations(normItems);
 
           if (data.summary) {
             setSummary({
-              totalLocations: data.summary.totalLocations || normItems.length,
-              activeLocations: data.summary.activeLocations || normItems.filter(l => l.isActive).length,
-              gates: data.summary.gates || normItems.filter(l => ['gate', 'check_in_point', 'pickup_point'].includes(l.type)).length,
-              rooms: data.summary.rooms || normItems.filter(l => l.type === 'room').length,
-              zones: data.summary.zones || normItems.filter(l => l.type === 'zone').length
-            });
-          } else {
-            setSummary({
-              totalLocations: normItems.length,
-              activeLocations: normItems.filter(l => l.isActive).length,
-              gates: normItems.filter(l => ['gate', 'check_in_point', 'pickup_point'].includes(l.type)).length,
-              rooms: normItems.filter(l => l.type === 'room').length,
-              zones: normItems.filter(l => l.type === 'zone').length
+              locations: data.summary.locations || data.summary.totalLocations || normItems.length,
+              volunteersAssigned: data.summary.volunteersAssigned || 0,
+              currentlyOnDuty: data.summary.currentlyOnDuty || 0,
+              needAssignment: data.summary.needAssignment || 0,
+              locationsNeedingAttention: data.summary.locationsNeedingAttention || 0
             });
           }
 
-          // If a location was selected, refresh its object reference
-          if (selectedLocation) {
+          // Select first location by default if none selected or refreshed
+          if (!selectedLocation && normItems.length > 0) {
+            setSelectedLocation(normItems[0]);
+          } else if (selectedLocation) {
             const found = normItems.find(l => l.id === selectedLocation.id);
             if (found) setSelectedLocation(found);
           }
@@ -226,6 +279,7 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
           setSelectedCoverage({
             locationId: locId,
             activeResponders: coverage.activePresence || data.responders || [],
+            assignedResponders: coverage.assignedResponders || [],
             activeAlerts: coverage.activeAlerts || data.alerts || []
           });
         }
@@ -242,7 +296,7 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
   }, [eventId, filterType]);
 
   useEffect(() => {
-    if (showFormModal || showQRModal || locToToggleActive || confirmActionModal) {
+    if (showFormModal || showQRModal || locToToggleActive || confirmReplaceModal || showBatchPrintModal) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -250,7 +304,8 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
           if (showFormModal) setShowFormModal(false);
           if (showQRModal) setShowQRModal(false);
           if (locToToggleActive) setLocToToggleActive(null);
-          if (confirmActionModal) setConfirmActionModal(null);
+          if (confirmReplaceModal) setConfirmReplaceModal(false);
+          if (showBatchPrintModal) setShowBatchPrintModal(false);
         }
       };
       window.addEventListener('keydown', handleKeyDown);
@@ -259,13 +314,13 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
         window.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [showFormModal, showQRModal, locToToggleActive, confirmActionModal]);
+  }, [showFormModal, showQRModal, locToToggleActive, confirmReplaceModal, showBatchPrintModal]);
 
   useEffect(() => {
     if (selectedLocation) {
       fetchLocationCoverage(selectedLocation.id);
-      
-      // Also fetch active QR token for the selected location detail view
+
+      // Load active QR token for the selected location
       const fetchQR = async () => {
         try {
           const token = safeStorage.getItem('koinonia_token');
@@ -293,43 +348,19 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
     }
   }, [selectedLocation?.id]);
 
-  const handleSelectLocation = (loc: EventLocation) => {
-    setSelectedLocation(loc);
-  };
-
-  // Circular reference check
-  const wouldBeCircular = (locId: string, parentId: string): boolean => {
-    if (!parentId) return false;
-    if (locId === parentId) return true;
-    
-    let currentParentId: string | null = parentId;
-    const visited = new Set<string>();
-    while (currentParentId) {
-      if (visited.has(currentParentId)) return true;
-      visited.add(currentParentId);
-      if (currentParentId === locId) return true;
-      
-      const parentLoc = locations.find(l => l.id === currentParentId);
-      currentParentId = parentLoc ? parentLoc.parentLocationId : null;
-    }
-    return false;
-  };
-
   // Open Form Modal
   const openCreateModal = () => {
     setIsEditing(false);
     setFormId('');
     setFormName('');
-    setFormShortName('');
     setFormType('room');
-    setFormParentId('');
     setFormCapacity('');
-    setFormAgeGroup('all');
+    setFormAgeGroup('Ages 4 to 6');
     setFormTeamKey('General Response');
     setFormDescription('');
     setFormInstructions('');
     setFormEmergencyLabel('');
-    setFormSortOrder(0);
+    setFormError(null);
     setShowFormModal(true);
   };
 
@@ -337,1289 +368,1180 @@ export default function AdminEventLocationsTab({ eventId = 'event-ga-2026' }: Ad
     setIsEditing(true);
     setFormId(loc.id);
     setFormName(loc.name);
-    setFormShortName(loc.shortName || '');
     setFormType(loc.type);
-    setFormParentId(loc.parentLocationId || '');
     setFormCapacity(loc.capacity ? String(loc.capacity) : '');
-    setFormAgeGroup(loc.ageGroupKey || 'all');
+    setFormAgeGroup(loc.ageGroupKey || 'Ages 4 to 6');
     setFormTeamKey(loc.teamKey || 'General Response');
     setFormDescription(loc.description || '');
     setFormInstructions(loc.instructions || '');
     setFormEmergencyLabel(loc.emergencyLabel || '');
-    setFormSortOrder(loc.sortOrder || 0);
+    setFormError(null);
     setShowFormModal(true);
   };
 
-  // Handle Save Location
+  // Submit Form
   const handleSaveLocation = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
     if (!formName.trim()) {
-      setFormError('Add a location name.');
+      setFormError('Please enter a location name.');
       return;
     }
-
-    if (isEditing && formParentId && wouldBeCircular(formId, formParentId)) {
-      setFormError('A location cannot be placed inside itself or one of its sub-areas.');
-      return;
-    }
-
-    const payload = {
-      name: formName.trim(),
-      shortName: formShortName.trim() || null,
-      type: formType,
-      locationType: formType,
-      parentLocationId: formParentId || null,
-      capacity: formCapacity ? parseInt(formCapacity) : null,
-      ageGroupKey: formAgeGroup || 'all',
-      teamKey: formTeamKey || 'General Response',
-      description: formDescription.trim() || null,
-      instructions: formInstructions.trim() || null,
-      emergencyLabel: formEmergencyLabel.trim() || null,
-      sortOrder: Number(formSortOrder) || 0
-    };
 
     setSavingLocation(true);
-    setFormError(null);
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const primaryUrl = isEditing 
-        ? `/api/admin/events/${eventId}/locations/${formId}` 
-        : `/api/admin/events/${eventId}/locations`;
-      const fallbackUrl = isEditing 
-        ? `/api/admin/locations/${formId}` 
-        : `/api/admin/locations`;
-      
-      const method = isEditing ? 'PATCH' : 'POST';
+      const payload = {
+        name: formName.trim(),
+        locationType: formType,
+        type: formType,
+        capacity: formCapacity ? parseInt(formCapacity, 10) : null,
+        ageGroupKey: formAgeGroup,
+        teamKey: formTeamKey,
+        description: formDescription.trim() || null,
+        instructions: formInstructions.trim() || null,
+        emergencyLabel: formEmergencyLabel.trim() || null
+      };
 
-      let res = await fetch(buildApiUrl(primaryUrl), { method, headers, body: JSON.stringify(payload) });
-      if (!res.ok && res.status === 404) {
-        res = await fetch(buildApiUrl(fallbackUrl), { method: isEditing ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) });
+      const url = isEditing
+        ? `/api/admin/events/${eventId}/locations/${formId}`
+        : `/api/admin/events/${eventId}/locations`;
+
+      let res = await fetch(buildApiUrl(url), {
+        method: isEditing ? 'PATCH' : 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const fallbackUrl = isEditing ? `/api/admin/locations/${formId}` : '/api/admin/locations';
+        res = await fetch(buildApiUrl(fallbackUrl), {
+          method: isEditing ? 'PUT' : 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
       }
 
       if (res.ok) {
         const data = await res.json();
         if (data.success !== false) {
-          setSuccess(isEditing ? 'Location updated.' : 'Location created.');
           setShowFormModal(false);
+          setSuccess(isEditing ? 'Location updated successfully.' : 'Location added successfully.');
+          setTimeout(() => setSuccess(null), 4000);
           await fetchLocations();
         } else {
-          setFormError(data.error || 'We couldn’t save this location. Try again');
+          setFormError(data.error || data.message || 'Failed to save location.');
         }
       } else {
-        setFormError('We couldn’t save this location. Try again');
+        setFormError('Failed to save location. Please check details.');
       }
     } catch (err) {
-      console.error(err);
-      setFormError('We couldn’t save this location. Try again');
+      console.error('Error saving location:', err);
+      setFormError('Network error saving location.');
     } finally {
       setSavingLocation(false);
     }
   };
 
-  // Toggle Active / Not in use
-  const executeToggleActive = async (loc: EventLocation) => {
-    const action = loc.isActive ? 'archive' : 'restore';
+  // Toggle Active / Pause Location
+  const handleToggleLocationActive = async (loc: EventLocation) => {
     try {
       const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${loc.id}/${action}`), { method: 'POST', headers });
+      const newActive = !loc.isActive;
+      const url = `/api/admin/events/${eventId}/locations/${loc.id}`;
+
+      let res = await fetch(buildApiUrl(url), {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ isActive: newActive })
+      });
+
       if (!res.ok) {
-        res = await fetch(buildApiUrl(`/api/admin/locations/${loc.id}/${action}`), { method: 'POST', headers });
+        res = await fetch(buildApiUrl(`/api/admin/locations/${loc.id}`), {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ isActive: newActive })
+        });
       }
 
       if (res.ok) {
-        setSuccess(loc.isActive ? 'Location set to not in use.' : 'Location activated.');
+        setLocToToggleActive(null);
+        setSuccess(newActive ? `${loc.name} is now open for duty.` : `${loc.name} has been paused.`);
+        setTimeout(() => setSuccess(null), 4000);
         await fetchLocations();
-      } else {
-        setError('We couldn’t update this location. Try again');
       }
     } catch (err) {
-      console.error(err);
-      setError('We couldn’t update this location. Try again');
-    } finally {
-      setLocToToggleActive(null);
+      console.error('Error toggling location status:', err);
     }
   };
 
-  // QR Code Modal Actions
-  const handleOpenQRModal = async (loc: EventLocation) => {
-    setSelectedLocation(loc);
-    setShowQRModal(true);
-    setQrLoading(true);
-    setQrToken(null);
-    try {
-      const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      let res = await fetch(buildApiUrl(`/api/admin/locations/${loc.id}/qr`), { headers });
-      if (!res.ok) {
-        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${loc.id}/code`), { headers });
-      }
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setQrToken(data.code?.token_hash || data.token || null);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setQrLoading(false);
-    }
-  };
-
-  const handleGenerateQR = async () => {
+  // Replace QR Code
+  const handleReplaceQR = async () => {
     if (!selectedLocation) return;
     setQrLoading(true);
     try {
       const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(buildApiUrl(`/api/admin/locations/${selectedLocation.id}/qr`), { method: 'POST', headers });
+      let res = await fetch(buildApiUrl(`/api/admin/locations/${selectedLocation.id}/qr`), {
+        method: 'POST',
+        headers
+      });
+
       if (!res.ok) {
-        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code`), { method: 'POST', headers });
+        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code/rotate`), {
+          method: 'POST',
+          headers
+        });
       }
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          setQrToken(data.token || data.code?.token_hash || null);
-          setSuccess('New check-in code generated.');
+        if (data.success && (data.token || data.code?.token_hash)) {
+          setQrToken(data.token || data.code?.token_hash);
+          setSuccess('QR code replaced. Previously printed physical codes will no longer work.');
+          setTimeout(() => setSuccess(null), 5000);
         }
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error replacing location QR code:', err);
     } finally {
       setQrLoading(false);
+      setConfirmReplaceModal(false);
     }
   };
 
-  const handleDisableQR = async () => {
-    if (!selectedLocation) return;
-    setQrLoading(true);
-    try {
-      const token = safeStorage.getItem('koinonia_token');
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      let res = await fetch(buildApiUrl(`/api/admin/locations/${selectedLocation.id}/qr`), { method: 'DELETE', headers });
-      if (!res.ok) {
-        res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/code/disable`), { method: 'POST', headers });
-      }
-
-      if (res.ok) {
-        setQrToken(null);
-        setSuccess('Check-in code disabled.');
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setQrLoading(false);
-    }
+  // Download QR Code Image
+  const handleDownloadQR = () => {
+    if (!qrDataUrl || !selectedLocation) return;
+    const a = document.createElement('a');
+    a.href = qrDataUrl;
+    a.download = `${selectedLocation.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-duty-qr.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
-  const handlePrintCard = () => {
+  // Print Single Location QR
+  const handlePrintSingleQR = () => {
     window.print();
   };
 
-  // Helper badge styling
-  const getTypeBadge = (type: string) => {
-    const classes: Record<string, string> = {
-      room: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-      zone: 'bg-amber-50 text-amber-700 border-amber-200',
-      gate: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      pickup_point: 'bg-rose-50 text-rose-700 border-rose-200',
-      check_in_point: 'bg-sky-50 text-sky-700 border-sky-200',
-      first_aid_point: 'bg-red-50 text-red-700 border-red-200',
-    };
-    const labels: Record<string, string> = {
-      room: 'Room',
-      zone: 'Zone',
-      gate: 'Gate',
-      pickup_point: 'Pickup Point',
-      check_in_point: 'Check-in Point',
-      first_aid_point: 'First Aid Point',
-    };
-    return (
-      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${classes[type] || 'bg-zinc-50 text-zinc-700 border-zinc-200'}`}>
-        {labels[type] || type}
-      </span>
-    );
+  // Open Batch Print Modal & load tokens for all active locations
+  const handleOpenBatchPrint = async () => {
+    setShowBatchPrintModal(true);
+    setBatchLoading(true);
+    try {
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia12.netlify.app';
+      const map: Record<string, string> = {};
+
+      for (const loc of locations.filter(l => l.isActive)) {
+        try {
+          const res = await fetch(buildApiUrl(`/api/admin/locations/${loc.id}/qr`), { headers });
+          if (res.ok) {
+            const data = await res.json();
+            const tokenStr = data.code?.token_hash || data.token;
+            if (tokenStr) {
+              const accessUrl = `${origin}/duty/scan/${tokenStr}`;
+              const dataUrl = await QRCode.toDataURL(accessUrl, {
+                margin: 2,
+                width: 320,
+                color: { dark: '#18181B', light: '#FFFFFF' }
+              });
+              map[loc.id] = dataUrl;
+            }
+          }
+        } catch (e) {}
+      }
+      setBatchQRMap(map);
+    } catch (err) {
+      console.error('Error preparing batch prints:', err);
+    } finally {
+      setBatchLoading(false);
+    }
   };
 
-  // Client filtering
+  // Filtered locations
   const filteredLocations = locations.filter(loc => {
-    const matchSearch = !searchTerm.trim() || 
-      loc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (loc.shortName && loc.shortName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      loc.pathLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      loc.type.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchType = !filterType || loc.type === filterType;
-    const matchArchive = showArchived ? !loc.isActive : loc.isActive;
-    return matchSearch && matchType && matchArchive;
+    if (filterType === 'rooms' && loc.type !== 'room') return false;
+    if (filterType === 'entry' && !['gate', 'check_in_point'].includes(loc.type)) return false;
+    if (filterType === 'pickup' && loc.type !== 'pickup_point') return false;
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      const matchName = loc.name.toLowerCase().includes(term);
+      const matchAge = (loc.ageGroupKey || '').toLowerCase().includes(term);
+      const matchTeam = (loc.teamKey || '').toLowerCase().includes(term);
+      return matchName || matchAge || matchTeam;
+    }
+    return true;
   });
 
   return (
-    <div 
-      data-view-version="admin-locations-v5"
-      className="space-y-5 animate-fade-in"
-    >
-      {/* 1. Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
-        <div>
-          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
-            Locations
-          </h2>
-          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
-            Manage the rooms and areas used during the event.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => {
-              setShowArchived(!showArchived);
-              setSelectedLocation(null);
-            }}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-all ${
-              showArchived 
-                ? 'bg-amber-50 border-amber-200 text-amber-700' 
-                : 'bg-white border-[#EAE8E1] text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
-            }`}
-          >
-            <span>{showArchived ? 'Viewing not in use' : 'View not in use'}</span>
-          </button>
-
-          <button
-            onClick={fetchLocations}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-[#EAE8E1] rounded-lg text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer text-xs font-medium"
-            title="Refresh Locations"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            onClick={openCreateModal}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-[#C59B27] text-white rounded-lg text-xs font-medium hover:bg-[#A37E1C] transition-all cursor-pointer shadow-2xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add location</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Success Notification */}
+    <div className="space-y-6" data-view-version="admin-event-locations-v6">
+      {/* Toast Alert */}
       {success && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs rounded-xl flex items-center justify-between shadow-2xs font-medium">
-          <div className="flex items-center space-x-2">
-            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{success}</span>
-          </div>
-          <button onClick={() => setSuccess(null)} className="text-emerald-700 hover:text-emerald-900 p-1 cursor-pointer">
-            <X className="w-3.5 h-3.5" />
-          </button>
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-sans flex items-center space-x-2 animate-fade-in shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{success}</span>
         </div>
       )}
 
-      {/* Error Notification */}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 text-xs rounded-xl flex items-center justify-between shadow-2xs font-medium">
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-sans flex items-center justify-between animate-fade-in shadow-xs">
           <div className="flex items-center space-x-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{error}</span>
           </div>
-          <button 
-            onClick={fetchLocations}
-            className="px-2.5 py-1 bg-white border border-rose-200 text-rose-700 rounded-lg font-medium hover:bg-rose-50 transition-all cursor-pointer text-xs"
-          >
+          <button onClick={fetchLocations} className="text-xs font-semibold underline cursor-pointer">
             Try again
           </button>
         </div>
       )}
 
-      {/* Restrained Summary Strip */}
-      <div className="bg-white border border-[#EAE8E1] rounded-xl px-5 py-3.5 shadow-2xs">
-        <div className="flex items-center divide-x divide-[#EAE8E1] overflow-x-auto text-xs">
-          <div className="pr-6 shrink-0">
-            <span className="text-[11px] text-zinc-400 font-medium block">Total locations</span>
-            <span className="text-base font-bold text-zinc-900">{summary.totalLocations}</span>
+      {/* SUMMARY BAR: Clean operational metrics (Part 5) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+            Locations
+          </span>
+          <span
+            className="text-2xl font-bold text-[#18181B] block"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            {summary.locations}
+          </span>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+            Volunteers assigned
+          </span>
+          <span
+            className="text-2xl font-bold text-[#18181B] block"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            {summary.volunteersAssigned}
+          </span>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+            Currently on duty
+          </span>
+          <span
+            className="text-2xl font-bold text-emerald-700 block"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            {summary.currentlyOnDuty}
+          </span>
+        </div>
+
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+            Need assignment
+          </span>
+          <span
+            className="text-2xl font-bold text-[#A47E1F] block"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            {summary.needAssignment}
+          </span>
+        </div>
+
+        {summary.locationsNeedingAttention > 0 && (
+          <div className="col-span-2 sm:col-span-4 lg:col-span-1 bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-1 shadow-2xs">
+            <span className="text-[11px] font-sans font-medium text-amber-800 block">
+              Needing attention
+            </span>
+            <span
+              className="text-2xl font-bold text-amber-900 block"
+              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+            >
+              {summary.locationsNeedingAttention}
+            </span>
           </div>
-          <div className="px-6 shrink-0">
-            <span className="text-[11px] text-zinc-400 font-medium block">Rooms</span>
-            <span className="text-base font-bold text-zinc-800">{summary.rooms}</span>
-          </div>
-          <div className="px-6 shrink-0">
-            <span className="text-[11px] text-zinc-400 font-medium block">Gates & points</span>
-            <span className="text-base font-bold text-zinc-800">{summary.gates}</span>
-          </div>
-          <div className="px-6 shrink-0">
-            <span className="text-[11px] text-zinc-400 font-medium block">Zones</span>
-            <span className="text-base font-bold text-zinc-800">{summary.zones}</span>
-          </div>
-          <div className="pl-6 shrink-0">
-            <span className="text-[11px] text-zinc-400 font-medium block">Active</span>
-            <span className="text-base font-bold text-emerald-700">{summary.activeLocations}</span>
-          </div>
+        )}
+      </div>
+
+      {/* FILTER & SEARCH BAR (Part 7) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            type="button"
+            onClick={() => setFilterType('all')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
+              filterType === 'all'
+                ? 'bg-[#18181B] text-white shadow-2xs'
+                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            All locations
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('rooms')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
+              filterType === 'rooms'
+                ? 'bg-[#18181B] text-white shadow-2xs'
+                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            Rooms
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('entry')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
+              filterType === 'entry'
+                ? 'bg-[#18181B] text-white shadow-2xs'
+                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            Entry points
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('pickup')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
+              filterType === 'pickup'
+                ? 'bg-[#18181B] text-white shadow-2xs'
+                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            Pickup points
+          </button>
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search locations"
+            className="w-full pl-9 pr-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-xs font-sans text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] shadow-2xs"
+          />
         </div>
       </div>
 
-      {/* Main Grid Layout: Directory (Left) + Location Details (Right) */}
+      {/* TWO-COLUMN WORKFLOW: Location List (Left) & Location Detail (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-        {/* LEFT PANEL: Directory List */}
-        <div className="lg:col-span-5 bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs space-y-0">
-          
-          {/* Search & Filter Controls */}
-          <div className="p-4 border-b border-[#EAE8E1] bg-zinc-50/50 space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search locations, rooms, gates or zones..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white pl-9 pr-8 py-2 border border-[#EAE8E1] rounded-xl text-xs focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none"
-              />
-              {searchTerm && (
-                <button 
-                  onClick={() => setSearchTerm('')} 
-                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-600 p-0.5"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+        {/* LEFT PANEL: Clean Location List (Part 6) */}
+        <div className="lg:col-span-5 bg-white border border-[#EAE8E1] rounded-2xl divide-y divide-[#EAE8E1] overflow-hidden shadow-xs">
+          {loading && locations.length === 0 ? (
+            <div className="p-8 text-center space-y-2 text-xs text-zinc-400">
+              <RefreshCw className="w-4 h-4 animate-spin mx-auto text-[#C59B27]" />
+              <span>Loading locations…</span>
             </div>
-
-            {/* Type Filter Chips */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              {[
-                { key: '', label: 'All' },
-                { key: 'room', label: 'Rooms' },
-                { key: 'zone', label: 'Zones' },
-                { key: 'gate', label: 'Gates' },
-                { key: 'pickup_point', label: 'Pickups' },
-                { key: 'check_in_point', label: 'Check-ins' },
-                { key: 'first_aid_point', label: 'First Aid' },
-              ].map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => setFilterType(t.key)}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold shrink-0 border cursor-pointer transition-all ${
-                    filterType === t.key 
-                      ? 'bg-[#C59B27] text-white border-[#C59B27]' 
-                      : 'bg-white border-[#EAE8E1] text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
+          ) : filteredLocations.length === 0 ? (
+            <div className="p-8 text-center space-y-3">
+              <MapPin className="w-6 h-6 text-zinc-300 mx-auto" />
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-zinc-800">No duty locations yet</p>
+                <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">
+                  Add rooms, entry points or pickup areas volunteers will use during this event.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="mt-2 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"
+              >
+                Add first location
+              </button>
+            </div>
+          ) : (
+            filteredLocations.map((loc) => {
+              const isSelected = selectedLocation?.id === loc.id;
+              return (
+                <div
+                  key={loc.id}
+                  onClick={() => setSelectedLocation(loc)}
+                  className={`p-4 transition-all cursor-pointer select-none space-y-1.5 ${
+                    isSelected
+                      ? 'bg-[#FAF9F6] border-l-4 border-l-[#C59B27]'
+                      : 'hover:bg-zinc-50/80 border-l-4 border-l-transparent'
                   }`}
                 >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Location List Items */}
-          <div className="divide-y divide-[#EAE8E1] max-h-[580px] overflow-y-auto">
-            {loading && locations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-zinc-400 space-y-2">
-                <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C59B27]" />
-                <p className="font-semibold text-zinc-600">Loading directory...</p>
-              </div>
-            ) : error && locations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-zinc-500 space-y-3">
-                <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
-                <p className="font-bold text-zinc-800 text-sm">{error}</p>
-                <p className="text-[11px] max-w-xs mx-auto text-zinc-500">
-                  Please check your connection or try loading locations again.
-                </p>
-                <button 
-                  onClick={fetchLocations}
-                  className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 rounded-xl text-xs font-medium hover:bg-zinc-50 mt-1 cursor-pointer shadow-2xs"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : filteredLocations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-zinc-400 space-y-2">
-                <MapPin className="w-6 h-6 mx-auto text-zinc-300" />
-                <p className="font-bold text-zinc-700">No event locations found</p>
-                <p className="text-[11px] max-w-xs mx-auto text-zinc-400">
-                  {searchTerm || filterType 
-                    ? 'No locations match your filter settings. Try clearing your search.' 
-                    : 'Click "Add Location" to register your first room, gate, or zone.'}
-                </p>
-                {searchTerm || filterType ? (
-                  <button 
-                    onClick={() => { setSearchTerm(''); setFilterType(''); }}
-                    className="px-3 py-1 bg-zinc-100 text-zinc-700 rounded-lg text-[11px] font-bold hover:bg-zinc-200 mt-2"
-                  >
-                    Clear Filters
-                  </button>
-                ) : (
-                  <button 
-                    onClick={openCreateModal}
-                    className="px-3 py-1 bg-[#C59B27] text-white rounded-lg text-[11px] font-bold hover:bg-[#A37E1C] mt-2"
-                  >
-                    Add Location
-                  </button>
-                )}
-              </div>
-            ) : (
-              filteredLocations.map(loc => {
-                const isSelected = selectedLocation?.id === loc.id;
-                return (
-                  <div
-                    key={loc.id}
-                    onClick={() => handleSelectLocation(loc)}
-                    className={`p-4 text-left cursor-pointer transition-all ${
-                      isSelected 
-                        ? 'bg-[#C59B27]/5 border-l-4 border-[#C59B27]' 
-                        : 'hover:bg-zinc-50 border-l-4 border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-semibold text-xs text-zinc-900 truncate">
-                            {loc.name}
-                          </span>
-                          {loc.shortName && (
-                            <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.2 rounded font-mono border border-zinc-200">
-                              {loc.shortName}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-zinc-500 truncate mt-0.5">
-                          {loc.pathLabel || 'Event root level'}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-sans font-semibold text-[#18181B]">
+                        {loc.name}
+                      </h3>
+                      {loc.ageGroupKey && (
+                        <p className="text-xs font-sans text-[#A47E1F] font-medium mt-0.5">
+                          {loc.ageGroupKey}
                         </p>
-                      </div>
-                      <div className="shrink-0 flex items-center space-x-1.5">
-                        {getTypeBadge(loc.type)}
-                      </div>
+                      )}
                     </div>
-
-                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-zinc-500">
-                      <div className="flex items-center space-x-2">
-                        {loc.capacity ? (
-                          <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded font-medium text-[10px]">
-                            Cap: <strong>{loc.capacity}</strong>
-                          </span>
-                        ) : (
-                          <span className="text-zinc-400 text-[10px]">No cap set</span>
-                        )}
-
-                        {loc.teamKey && (
-                          <span className="bg-[#C59B27]/10 text-[#A37E1C] px-2 py-0.5 rounded text-[10px] font-semibold">
-                            {loc.teamKey}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-1 text-[10px]">
-                        <span className={`w-2 h-2 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
-                        <span className="text-zinc-500">{loc.isActive ? 'Active' : 'Not in use'}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT PANEL: Selected Location Detail View */}
-        <div className="lg:col-span-7 space-y-6">
-          {selectedLocation ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-xs space-y-6">
-              
-              {/* SECTION A — Header & Quick Actions */}
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-[#EAE8E1] pb-5">
-                <div className="min-w-0 space-y-1.5">
-                  <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
-                    <h3 className="text-xl font-serif font-bold text-zinc-900 tracking-tight">
-                      {selectedLocation.name}
-                    </h3>
-                    {getTypeBadge(selectedLocation.type)}
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                      selectedLocation.isActive 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                        : 'bg-zinc-100 text-zinc-600 border-zinc-200'
-                    }`}>
-                      {selectedLocation.isActive ? 'Active' : 'Not in use'}
+                    <span className="text-[10px] font-sans font-medium text-zinc-500 uppercase tracking-wider bg-zinc-100 px-2 py-0.5 rounded-md shrink-0">
+                      {formatTypeLabel(loc.type)}
                     </span>
                   </div>
 
-                  <p className="text-xs text-zinc-500 font-medium flex items-center space-x-1">
-                    <span>Hierarchy Path:</span>
-                    <strong className="text-zinc-800">{selectedLocation.pathLabel}</strong>
-                  </p>
+                  <div className="flex items-center justify-between text-xs font-sans text-zinc-500 pt-1">
+                    <span>
+                      {loc.capacity ? `${loc.capacity} capacity` : 'No capacity set'}
+                      {loc.assignedCount !== undefined ? ` · ${loc.assignedCount} volunteers assigned` : ''}
+                    </span>
+
+                    <span className="flex items-center space-x-1.5 shrink-0 text-[11px]">
+                      <span className={`w-1.5 h-1.5 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                      <span className={loc.isActive ? 'text-zinc-700 font-medium' : 'text-zinc-400'}>
+                        {loc.isActive ? 'Open for duty' : 'Paused'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* RIGHT PANEL: Clean Location Detail (Part 8, 9, 10, 11) */}
+        <div className="lg:col-span-7">
+          {selectedLocation ? (
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 space-y-6 shadow-xs">
+
+              {/* DETAIL HEADER */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-[#EAE8E1]">
+                <div className="space-y-1">
+                  <h2
+                    className="text-2xl font-bold text-[#18181B] tracking-tight"
+                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  >
+                    {selectedLocation.name}
+                  </h2>
+                  <div className="flex items-center space-x-2 text-xs font-sans text-zinc-500">
+                    <span>{formatTypeLabel(selectedLocation.type)}</span>
+                    <span>•</span>
+                    <span className={`font-medium ${selectedLocation.isActive ? 'text-emerald-700' : 'text-zinc-500'}`}>
+                      {selectedLocation.isActive ? 'Open for duty' : 'Paused'}
+                    </span>
+                  </div>
+                  <div className="text-xs font-sans text-zinc-600 pt-0.5">
+                    {selectedLocation.ageGroupKey || 'All ages'}
+                    {selectedLocation.capacity ? ` · Capacity ${selectedLocation.capacity}` : ''}
+                  </div>
                 </div>
 
-                <div className="flex items-center space-x-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
+                    type="button"
                     onClick={() => openEditModal(selectedLocation)}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-xs font-bold text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer"
+                    className="px-3 py-1.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
                     <Edit className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>Edit</span>
+                    <span>Edit location</span>
                   </button>
 
                   <button
-                    onClick={() => handleOpenQRModal(selectedLocation)}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-xs font-bold text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer"
+                    type="button"
+                    onClick={() => setShowQRModal(true)}
+                    className="px-3 py-1.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
-                    <QrCode className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>QR Code</span>
+                    <Printer className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Print QR</span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setLocToToggleActive(selectedLocation)}
-                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
-                      selectedLocation.isActive 
-                        ? 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200' 
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                    className={`px-3 py-1.5 border rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs ${
+                      selectedLocation.isActive
+                        ? 'bg-zinc-50 border-[#EAE8E1] hover:bg-zinc-100 text-zinc-700'
+                        : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-emerald-800'
                     }`}
                   >
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>{selectedLocation.isActive ? 'Set to not in use' : 'Activate'}</span>
+                    {selectedLocation.isActive ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Pause location</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Open for duty</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
 
-              {/* SECTION B — Operational Summary Cards (4 Cards) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
-                  <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
-                    Capacity
-                  </span>
-                  <span className="text-sm font-bold text-zinc-900 block">
-                    {selectedLocation.capacity ? `${selectedLocation.capacity} persons` : 'No limit set'}
-                  </span>
+              {/* VOLUNTEERS SECTION (Part 11) */}
+              <div className="space-y-3 pb-5 border-b border-[#EAE8E1]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                      Volunteers
+                    </h3>
+                    <div className="flex items-center space-x-3 text-xs font-sans text-zinc-500 mt-0.5">
+                      <span><strong>{selectedCoverage?.activeResponders?.length || 0}</strong> here now</span>
+                      <span>•</span>
+                      <span><strong>{selectedCoverage?.assignedResponders?.length || 0}</strong> assigned</span>
+                    </div>
+                  </div>
+
+                  {onNavigateTab && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTab('event_team')}
+                      className="text-xs text-[#C59B27] hover:text-[#A47E1F] font-sans font-medium transition-colors cursor-pointer"
+                    >
+                      Manage assignments
+                    </button>
+                  )}
                 </div>
 
-                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
-                  <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
-                    Age Target
-                  </span>
-                  <span className="text-sm font-bold text-[#C59B27] block capitalize">
-                    {selectedLocation.ageGroupKey || 'All ages'}
-                  </span>
-                </div>
+                {coverageLoading ? (
+                  <div className="p-4 text-center text-xs text-zinc-400 space-y-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto text-[#C59B27]" />
+                    <span>Loading team presence…</span>
+                  </div>
+                ) : (selectedCoverage?.assignedResponders?.length || 0) === 0 && (selectedCoverage?.activeResponders?.length || 0) === 0 ? (
+                  <div className="p-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center space-y-2">
+                    <p className="text-xs text-zinc-500 font-sans">No volunteers assigned yet.</p>
+                    {onNavigateTab && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigateTab('event_team')}
+                        className="text-xs font-sans font-semibold text-[#C59B27] hover:underline cursor-pointer"
+                      >
+                        Assign volunteers
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl overflow-hidden">
+                    {/* Render assigned volunteers with real presence indicators */}
+                    {(selectedCoverage?.assignedResponders || []).map((resp: any) => (
+                      <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white hover:bg-zinc-50/50">
+                        <div>
+                          <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
+                          <div className="text-[11px] text-zinc-500">{resp.responsibilityKey || resp.role || 'General'}</div>
+                        </div>
+                        <div>
+                          {resp.isPresent ? (
+                            <span className="inline-flex items-center space-x-1.5 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                              <span>Here since {formatDisplayTime(resp.presentSince)}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center space-x-1.5 text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full text-[11px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
+                              <span>Not here yet</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
 
-                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
-                  <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
-                    Assigned Team
-                  </span>
-                  <span className="text-sm font-bold text-zinc-900 block truncate">
-                    {selectedLocation.teamKey || 'General'}
-                  </span>
-                </div>
-
-                <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3.5 rounded-xl space-y-1">
-                  <span className="text-zinc-400 block text-[10px] uppercase font-bold tracking-wider">
-                    On Duty Present
-                  </span>
-                  <span className="text-sm font-bold text-emerald-700 block">
-                    {selectedCoverage?.activeResponders?.length || 0} active
-                  </span>
-                </div>
+                    {/* Also show unassigned volunteers who scanned in here */}
+                    {(selectedCoverage?.activeResponders || [])
+                      .filter((p: any) => !(selectedCoverage?.assignedResponders || []).some((a: any) => a.userId === p.userId))
+                      .map((resp: any) => (
+                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-amber-50/30 hover:bg-amber-50/60">
+                          <div>
+                            <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
+                            <div className="text-[11px] text-zinc-500">Joined at venue</div>
+                          </div>
+                          <span className="inline-flex items-center space-x-1.5 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                            <span>Here since {formatDisplayTime(resp.startedAt)}</span>
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
 
-              {/* SECTION C — Descriptions & Directives */}
-              <div className="space-y-4 text-xs border-t border-[#EAE8E1] pt-5">
+              {/* LOCATION DETAILS SECTION (Part 8) */}
+              <div className="space-y-3 pb-5 border-b border-[#EAE8E1]">
+                <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                  Location details
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
+                  <div>
+                    <span className="text-zinc-500 block">Age group</span>
+                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                      {selectedLocation.ageGroupKey || 'All ages'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-zinc-500 block">Capacity</span>
+                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                      {selectedLocation.capacity ? `${selectedLocation.capacity} persons` : 'No limit set'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-zinc-500 block">Team</span>
+                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                      {selectedLocation.teamKey || 'General Response'}
+                    </span>
+                  </div>
+
+                  {selectedLocation.emergencyLabel && (
+                    <div>
+                      <span className="text-zinc-500 block">Emergency identifier</span>
+                      <span className="font-semibold text-rose-700 mt-0.5 block">
+                        {selectedLocation.emergencyLabel}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 {selectedLocation.description && (
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-zinc-800 flex items-center space-x-1.5">
-                      <FileText className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>Description</span>
-                    </h4>
-                    <p className="text-zinc-600 bg-zinc-50 p-3 rounded-xl border border-zinc-200/60 text-xs">
+                  <div className="pt-2">
+                    <span className="text-zinc-500 text-xs block">Description</span>
+                    <p className="text-xs text-zinc-700 font-sans mt-1 leading-relaxed bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
                       {selectedLocation.description}
                     </p>
                   </div>
                 )}
 
                 {selectedLocation.instructions && (
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-zinc-800 flex items-center space-x-1.5">
-                      <Shield className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Special Instructions</span>
-                    </h4>
-                    <p className="text-amber-900 bg-amber-50/50 p-3 rounded-xl border border-amber-200/60 whitespace-pre-line text-xs">
+                  <div className="pt-1">
+                    <span className="text-zinc-500 text-xs block">Special instructions</span>
+                    <p className="text-xs text-zinc-700 font-sans mt-1 leading-relaxed bg-amber-50/50 p-3 rounded-xl border border-amber-200/60 whitespace-pre-line">
                       {selectedLocation.instructions}
                     </p>
                   </div>
                 )}
-
-                {selectedLocation.emergencyLabel && (
-                  <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
-                    <span className="font-bold text-rose-800 flex items-center space-x-1.5 text-xs">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>Emergency location name</span>
-                    </span>
-                    <p className="text-rose-900 font-semibold text-xs">
-                      {selectedLocation.emergencyLabel}
-                    </p>
-                  </div>
-                )}
               </div>
 
-              {/* SECTION D — Printable QR Code Card Section */}
-              <div className="border-t border-[#EAE8E1] pt-5 space-y-3">
+              {/* QR CODE SECTION (Part 9) */}
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                      Printable QR Access Card
-                    </h4>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      Display or print this QR card at the physical location entry point.
-                    </p>
-                  </div>
+                  <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                    Location QR code
+                  </h3>
+                </div>
 
+                <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                  Volunteers can scan this code when they arrive at {selectedLocation.name} to confirm their duty location.
+                </p>
+
+                <div className="pt-2 flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => handleOpenQRModal(selectedLocation)}
-                    className="px-3 py-1.5 bg-[#C59B27]/10 text-[#C59B27] hover:bg-[#C59B27]/20 border border-[#C59B27]/30 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5"
+                    type="button"
+                    onClick={() => setShowQRModal(true)}
+                    className="px-3.5 py-2 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-xs"
                   >
                     <QrCode className="w-3.5 h-3.5" />
-                    <span>Manage Card & Token</span>
+                    <span>View QR</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintSingleQR}
+                    className="px-3.5 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Print</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReplaceModal(true)}
+                    className="px-3.5 py-2 text-zinc-500 hover:text-zinc-800 text-xs font-medium rounded-xl transition-all cursor-pointer"
+                  >
+                    Replace QR code
                   </button>
                 </div>
-
-                <div className="bg-[#FAF9F6] border-2 border-dashed border-[#EAE8E1] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-20 h-20 bg-white border border-[#EAE8E1] rounded-xl flex items-center justify-center p-2 shadow-xs shrink-0">
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="Location QR Access Pass" className="w-full h-full object-contain" />
-                      ) : (
-                        <QrCode className="w-12 h-12 text-zinc-300 animate-pulse" />
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] font-bold uppercase text-[#C59B27] tracking-wider block">
-                          KOINONIA EVENT ACCESS
-                        </span>
-                        {qrToken && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Active Pass
-                          </span>
-                        )}
-                      </div>
-                      <h5 className="font-bold text-sm text-zinc-900">{selectedLocation.name}</h5>
-                      <p className="text-[11px] text-zinc-500">
-                        Scan to confirm your location and open the permitted Event Duty tools.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <button
-                      onClick={handlePrintCard}
-                      className="px-3.5 py-2 bg-white border border-[#EAE8E1] text-zinc-700 hover:text-zinc-900 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shadow-xs"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-zinc-500" />
-                      <span>Print Label</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION E — On-Duty Coverage & Active Responders Feed */}
-              <div className="border-t border-[#EAE8E1] pt-5 space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center justify-between">
-                  <span>Active Responders & Safety Feeds</span>
-                  <span className="text-[10px] text-zinc-400 font-normal">Real-time status</span>
-                </h4>
-
-                {coverageLoading ? (
-                  <div className="p-4 text-center text-xs text-zinc-400 space-y-2">
-                    <RefreshCw className="w-4 h-4 animate-spin mx-auto text-[#C59B27]" />
-                    <span>Loading active coverage...</span>
-                  </div>
-                ) : selectedCoverage ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    
-                    {/* Active Responders */}
-                    <div className="border border-[#EAE8E1] rounded-xl p-4 bg-zinc-50/50 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-zinc-800 flex items-center space-x-1.5">
-                          <Users className="w-4 h-4 text-zinc-500" />
-                          <span>Responders Present</span>
-                        </span>
-                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold">
-                          {selectedCoverage.activeResponders.length} active
-                        </span>
-                      </div>
-
-                      {selectedCoverage.activeResponders.length === 0 ? (
-                        <p className="text-[11px] text-zinc-400 italic">
-                          No responders currently logged present at this location.
-                        </p>
-                      ) : (
-                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                          {selectedCoverage.activeResponders.map((resp: any, idx: number) => (
-                            <div key={resp.id || idx} className="bg-white border border-[#EAE8E1] p-2.5 rounded-lg flex items-center justify-between text-xs">
-                              <div>
-                                <span className="font-bold text-zinc-800 block">{resp.fullName || resp.full_name}</span>
-                                <span className="text-[10px] text-zinc-400">{resp.role}</span>
-                              </div>
-                              {resp.phone && (
-                                <a href={`tel:${resp.phone}`} className="text-[10px] text-[#C59B27] font-bold flex items-center space-x-1 bg-[#C59B27]/10 px-2 py-1 rounded">
-                                  <Phone className="w-3 h-3" />
-                                  <span>{resp.phone}</span>
-                                </a>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Active Safety Alerts */}
-                    <div className="border border-[#EAE8E1] rounded-xl p-4 bg-zinc-50/50 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-zinc-800 flex items-center space-x-1.5">
-                          <ShieldAlert className="w-4 h-4 text-zinc-500" />
-                          <span>Active Location Alerts</span>
-                        </span>
-                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded text-[10px] font-bold">
-                          {selectedCoverage.activeAlerts.length} open
-                        </span>
-                      </div>
-
-                      {selectedCoverage.activeAlerts.length === 0 ? (
-                        <p className="text-[11px] text-zinc-400 italic">
-                          Clear. No open safety alerts for this location.
-                        </p>
-                      ) : (
-                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                          {selectedCoverage.activeAlerts.map((alert: any, idx: number) => (
-                            <div key={alert.id || idx} className="bg-white border border-rose-200 p-2.5 rounded-lg text-xs space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-zinc-900">{alert.title}</span>
-                                <span className="text-[9px] font-bold uppercase bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded">
-                                  {alert.severity}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                ) : null}
               </div>
 
             </div>
           ) : (
-            /* EMPTY STATE when no location is selected */
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center text-xs text-zinc-400 space-y-4 shadow-xs">
-              <div className="w-16 h-16 bg-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center mx-auto">
-                <MapPin className="w-8 h-8" />
+            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center space-y-3">
+              <MapPin className="w-8 h-8 text-zinc-300 mx-auto" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-zinc-800">Select a location</h3>
+                <p className="text-xs text-zinc-500">Choose a location from the left to view details and manage QR codes.</p>
               </div>
-              <div className="space-y-1 max-w-md mx-auto">
-                <h3 className="text-base font-bold text-zinc-800">No Location Selected</h3>
-                <p className="text-xs text-zinc-500">
-                  Select a room, zone, or gate from the directory list on the left to review occupancy capacity, print QR scanning cards, and track active responders.
-                </p>
-              </div>
-              <button
-                onClick={openCreateModal}
-                className="px-4 py-2 bg-[#C59B27] text-white rounded-xl text-xs font-bold hover:bg-[#A37E1C] transition-all cursor-pointer inline-flex items-center space-x-1.5 shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add location</span>
-              </button>
             </div>
           )}
         </div>
-
       </div>
 
-      {/* MODAL 1: ADD / EDIT LOCATION FORM */}
+      {/* MODAL 1: EDIT / ADD LOCATION FORM */}
       {showFormModal && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="location-modal-title"
-        >
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
-            <div className="flex items-start justify-between border-b border-[#EAE8E1] px-6 py-4 shrink-0">
-              <div>
-                <h3 id="location-modal-title" className="text-base font-bold text-[#18181B]">
-                  {isEditing ? 'Edit location' : 'Add location'}
-                </h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  Add a room or area used during this event.
-                </p>
-              </div>
-              <button 
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-lg shadow-xl space-y-5">
+            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
+              <h3
+                className="text-xl font-bold text-[#18181B] tracking-tight"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {isEditing ? 'Edit location' : 'Add location'}
+              </h3>
+              <button
                 type="button"
                 onClick={() => setShowFormModal(false)}
-                className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors"
-                aria-label="Close dialog"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveLocation} className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                {formError && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl text-xs font-medium flex items-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{formError}</span>
-                  </div>
-                )}
-
-                {/* Section 1: Location identity */}
-                <div className="space-y-3.5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-zinc-800">Location name</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Grace Hall, Gate A"
-                        value={formName}
-                        onChange={(e) => setFormName(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-medium text-zinc-800">Location code</label>
-                        <span className="text-[11px] text-zinc-400">Optional</span>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="e.g. GH-101 or Gate A"
-                        value={formShortName}
-                        onChange={(e) => setFormShortName(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-zinc-800">Type</label>
-                      <select
-                        value={formType}
-                        onChange={(e) => setFormType(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
-                      >
-                        <option value="room">Room</option>
-                        <option value="zone">Zone</option>
-                        <option value="gate">Gate</option>
-                        <option value="pickup_point">Pickup point</option>
-                        <option value="check_in_point">Check-in point</option>
-                        <option value="first_aid_point">First aid point</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-zinc-800">Located within</label>
-                      <select
-                        value={formParentId}
-                        onChange={(e) => setFormParentId(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
-                      >
-                        <option value="">None</option>
-                        {locations
-                          .filter(l => l.id !== formId && l.isActive)
-                          .map(l => (
-                            <option key={l.id} value={l.id}>
-                              {l.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 2: Event use */}
-                <div className="pt-3 border-t border-[#EAE8E1] space-y-3">
-                  <span className="block text-xs font-semibold text-zinc-900">Event use</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-medium text-zinc-800">Capacity</label>
-                        <span className="text-[11px] text-zinc-400">Optional</span>
-                      </div>
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="e.g. 50"
-                        value={formCapacity}
-                        onChange={(e) => setFormCapacity(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
-                      />
-                      <p className="text-[11px] text-zinc-400">Maximum number of people for this area.</p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-zinc-800">Age group</label>
-                      <select
-                        value={formAgeGroup}
-                        onChange={(e) => setFormAgeGroup(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
-                      >
-                        <option value="all">All ages</option>
-                        <option value="nursery">Nursery & infants</option>
-                        <option value="toddlers">Toddlers</option>
-                        <option value="preschool">Preschool</option>
-                        <option value="elementary">Elementary</option>
-                        <option value="teens">Teens</option>
-                        <option value="adults">Adults</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-zinc-800">Assigned team</label>
-                    <select
-                      value={formTeamKey}
-                      onChange={(e) => setFormTeamKey(e.target.value)}
-                      className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
-                    >
-                      <option value="General Response">General Response</option>
-                      <option value="Child Check-in">Child Check-in</option>
-                      <option value="Medical / First Aid">Medical / First Aid</option>
-                      <option value="Security / Safety">Security / Safety</option>
-                      <option value="Facilities">Facilities</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Section 3: Emergency information */}
-                <div className="pt-3 border-t border-[#EAE8E1] space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-medium text-zinc-800">Emergency location name</label>
-                    <span className="text-[11px] text-zinc-400">Optional</span>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Sector 2 emergency point"
-                    value={formEmergencyLabel}
-                    onChange={(e) => setFormEmergencyLabel(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
-                  />
-                  <p className="text-[11px] text-zinc-400">
-                    Shown in urgent alerts so the team can identify this location quickly.
-                  </p>
-                </div>
-
-                {/* Section 4: Details */}
-                <div className="pt-3 border-t border-[#EAE8E1] space-y-3.5">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-medium text-zinc-800">About this location</label>
-                      <span className="text-[11px] text-zinc-400">Optional</span>
-                    </div>
-                    <textarea
-                      rows={2}
-                      placeholder="Briefly describe this room or area."
-                      value={formDescription}
-                      onChange={(e) => setFormDescription(e.target.value)}
-                      className="w-full p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-medium text-zinc-800">Team instructions</label>
-                      <span className="text-[11px] text-zinc-400">Optional</span>
-                    </div>
-                    <textarea
-                      rows={2}
-                      placeholder="Add anything the team should know about this location."
-                      value={formInstructions}
-                      onChange={(e) => setFormInstructions(e.target.value)}
-                      className="w-full p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] bg-white shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowFormModal(false)}
-                  disabled={savingLocation}
-                  className="min-h-[44px] px-4 py-2 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingLocation}
-                  className="min-h-[44px] px-5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
-                >
-                  {savingLocation && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{savingLocation ? (isEditing ? 'Saving…' : 'Adding location…') : isEditing ? 'Save changes' : 'Add location'}</span>
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 2: PRINT / MANAGE QR CARD */}
-      {showQRModal && selectedLocation && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-md shadow-xl space-y-5">
-            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
-              <h3 className="text-base font-bold text-zinc-900 tracking-tight flex items-center space-x-2">
-                <QrCode className="w-5 h-5 text-[#C59B27]" />
-                <span>Location QR Access Label</span>
-              </h3>
-              <button 
-                onClick={() => setShowQRModal(false)}
                 className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4 text-center">
-              {/* QR Card Preview */}
-              <div className="bg-[#FAF9F6] border-2 border-[#EAE8E1] p-6 rounded-2xl space-y-3 max-w-xs mx-auto shadow-xs">
-                <div className="text-[10px] font-bold uppercase text-[#C59B27] tracking-widest">
-                  KOINONIA CHURCH EVENT
-                </div>
-                
-                <h4 className="font-serif font-bold text-lg text-zinc-900">{selectedLocation.name}</h4>
-                <p className="text-[11px] text-zinc-500 font-medium">{selectedLocation.pathLabel}</p>
+            {formError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-sans">
+                {formError}
+              </div>
+            )}
 
-                <div className="w-44 h-44 bg-white border border-[#EAE8E1] rounded-2xl mx-auto flex items-center justify-center p-2 shadow-xs">
-                  {qrLoading ? (
-                    <RefreshCw className="w-6 h-6 animate-spin text-[#C59B27]" />
-                  ) : qrDataUrl ? (
-                    <img src={qrDataUrl} alt="Scannable Location Access QR Code" className="w-full h-full object-contain" />
-                  ) : (
-                    <span className="text-[10px] text-zinc-400 italic">No active QR code generated</span>
-                  )}
-                </div>
-
-                {qrToken ? (
-                  <div className="space-y-1">
-                    <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                      QR Access Active
-                    </span>
-                    <p className="text-[10px] text-zinc-500 font-medium leading-tight pt-1">
-                      Scan to confirm location &amp; open permitted Event Duty tools.
-                    </p>
-                  </div>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                    QR Access Disabled
-                  </span>
-                )}
+            <form onSubmit={handleSaveLocation} className="space-y-4 text-xs font-sans">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-700 block">
+                  Location name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. Grace Hall Primary"
+                  className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  required
+                />
               </div>
 
-              {/* Actions */}
-              <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-700 block">Type</label>
+                  <select
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                  >
+                    <option value="room">Room</option>
+                    <option value="hall">Hall</option>
+                    <option value="gate">Entry point</option>
+                    <option value="pickup_point">Pickup point</option>
+                    <option value="zone">Zone</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-700 block">Capacity</label>
+                  <input
+                    type="number"
+                    value={formCapacity}
+                    onChange={(e) => setFormCapacity(e.target.value)}
+                    placeholder="e.g. 40"
+                    min="1"
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-700 block">Age group</label>
+                  <input
+                    type="text"
+                    value={formAgeGroup}
+                    onChange={(e) => setFormAgeGroup(e.target.value)}
+                    placeholder="e.g. Ages 4 to 6"
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-700 block">Team</label>
+                  <input
+                    type="text"
+                    value={formTeamKey}
+                    onChange={(e) => setFormTeamKey(e.target.value)}
+                    placeholder="e.g. Protocol"
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-700 block">Description</label>
+                <textarea
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  placeholder="Brief description for volunteers arriving at this area"
+                  rows={2}
+                  className="w-full px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-700 block">Special instructions</label>
+                <textarea
+                  value={formInstructions}
+                  onChange={(e) => setFormInstructions(e.target.value)}
+                  placeholder="Specific instructions shown to volunteers on duty"
+                  rows={2}
+                  className="w-full px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-4 border-t border-[#EAE8E1]">
                 <button
-                  onClick={handlePrintCard}
-                  disabled={!qrToken || qrLoading}
-                  className="w-full py-2.5 bg-[#C59B27] text-white rounded-xl text-xs font-bold hover:bg-[#A37E1C] transition-all cursor-pointer shadow-xs flex items-center justify-center space-x-1.5 disabled:opacity-50"
+                  type="button"
+                  onClick={() => setShowFormModal(false)}
+                  className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl text-xs transition-all cursor-pointer"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Print Location Label</span>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingLocation}
+                  className="px-5 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-semibold rounded-xl text-xs transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {savingLocation ? 'Saving…' : isEditing ? 'Save changes' : 'Add location'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CLEAN QR MODAL (Part 10) */}
+      {showQRModal && selectedLocation && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-7 w-full max-w-sm shadow-xl space-y-5 text-center">
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowQRModal(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <h3
+                className="text-2xl font-bold text-[#18181B] tracking-tight"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {selectedLocation.name}
+              </h3>
+              <p className="text-xs text-zinc-500 font-sans">
+                The General Assembly {selectedLocation.ageGroupKey ? `· ${selectedLocation.ageGroupKey}` : ''}
+              </p>
+            </div>
+
+            {/* Clean High-Contrast QR Code */}
+            <div className="w-56 h-56 bg-white border border-[#EAE8E1] rounded-2xl mx-auto flex items-center justify-center p-3 shadow-2xs">
+              {qrLoading ? (
+                <RefreshCw className="w-6 h-6 animate-spin text-[#C59B27]" />
+              ) : qrDataUrl ? (
+                <img src={qrDataUrl} alt={`${selectedLocation.name} QR Code`} className="w-full h-full object-contain" />
+              ) : (
+                <span className="text-xs text-zinc-400 italic">Generating QR code…</span>
+              )}
+            </div>
+
+            <p className="text-xs text-zinc-500 font-sans">
+              Scan to open this duty location.
+            </p>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handlePrintSingleQR}
+                className="w-full py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center space-x-2"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadQR}
+                  disabled={!qrDataUrl}
+                  className="py-2.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Download</span>
                 </button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setConfirmActionModal('rotate')}
-                    disabled={qrLoading}
-                    className="py-2 bg-white border border-[#EAE8E1] text-zinc-700 hover:text-zinc-900 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center space-x-1 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${qrLoading ? 'animate-spin' : ''}`} />
-                    <span>Rotate Token</span>
-                  </button>
-
-                  <button
-                    onClick={() => setConfirmActionModal('disable')}
-                    disabled={!qrToken || qrLoading}
-                    className="py-2 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    Disable Code
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQRModal(false)}
+                  className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
-
             </div>
           </div>
         </div>
       )}
 
-      {/* CONFIRMATION MODAL FOR ROTATE / DISABLE */}
-      {confirmActionModal && selectedLocation && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-center">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${confirmActionModal === 'rotate' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
-              {confirmActionModal === 'rotate' ? <RefreshCw className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+      {/* MODAL 3: CONFIRM REPLACE QR CODE (Part 3, Part 9) */}
+      {confirmReplaceModal && selectedLocation && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
+            <div className="w-11 h-11 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-5 h-5" />
             </div>
 
             <div className="space-y-1.5">
-              <h4 className="font-bold text-base text-zinc-900">
-                {confirmActionModal === 'rotate' ? 'Rotate QR Code Token?' : 'Disable Location QR Access?'}
+              <h4
+                className="text-xl font-bold text-[#18181B] tracking-tight"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                Replace QR code?
               </h4>
-              <p className="text-xs text-zinc-600 leading-relaxed">
-                {confirmActionModal === 'rotate'
-                  ? 'Rotating this code will immediately invalidate previously printed physical labels. Duty volunteers will need to scan the newly printed code to register presence.'
-                  : 'Disabling QR access will prevent volunteers from scanning this location label until a new code is generated by an administrator.'}
+              <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                Previously printed physical codes for <strong>{selectedLocation.name}</strong> will stop working immediately.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
               <button
                 type="button"
-                onClick={() => setConfirmActionModal(null)}
-                className="py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-bold cursor-pointer transition-all"
+                onClick={() => setConfirmReplaceModal(false)}
+                className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer transition-all"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (confirmActionModal === 'rotate') {
-                    handleGenerateQR();
-                  } else {
-                    handleDisableQR();
-                  }
-                  setConfirmActionModal(null);
-                }}
-                className={`py-2 text-white rounded-xl text-xs font-bold cursor-pointer transition-all ${confirmActionModal === 'rotate' ? 'bg-[#C59B27] hover:bg-[#A37E1C]' : 'bg-rose-600 hover:bg-rose-700'}`}
+                onClick={handleReplaceQR}
+                disabled={qrLoading}
+                className="py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs disabled:opacity-50"
               >
-                {confirmActionModal === 'rotate' ? 'Confirm Rotation' : 'Disable Access'}
+                {qrLoading ? 'Replacing…' : 'Replace QR code'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* PRINTABLE PHYSICAL LOCATION ACCESS LABEL */}
-      {selectedLocation && (
-        <>
-          <style>{`
-            @media print {
-              body * {
-                visibility: hidden !important;
-              }
-              #printable-location-label, #printable-location-label * {
-                visibility: visible !important;
-              }
-              #printable-location-label {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                display: block !important;
-                margin: 0 !important;
-                box-shadow: none !important;
-              }
-            }
-          `}</style>
-          <div id="printable-location-label" className="hidden print:block p-8 bg-white text-zinc-900 font-sans max-w-lg mx-auto border-4 border-zinc-900 rounded-3xl space-y-6 text-center">
-            <div className="border-b-2 border-zinc-900 pb-4 space-y-1">
-              <div className="text-[12px] font-bold uppercase tracking-widest text-[#C59B27]">
-                KOINONIA CHURCH EVENT DUTY
-              </div>
-              <h1 className="text-3xl font-serif font-black tracking-tight text-zinc-950">{selectedLocation.name}</h1>
-              <p className="text-sm font-semibold text-zinc-600">{selectedLocation.pathLabel}</p>
+      {/* MODAL 4: CONFIRM PAUSE / RESUME LOCATION */}
+      {locToToggleActive && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
+            <div className="w-11 h-11 rounded-full bg-zinc-100 text-zinc-700 flex items-center justify-center mx-auto">
+              {locToToggleActive.isActive ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 text-emerald-600" />}
             </div>
 
-            <div className="w-64 h-64 mx-auto bg-white border-2 border-zinc-900 p-3 rounded-2xl flex items-center justify-center shadow-md">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt="Location Access QR Code" className="w-full h-full object-contain" />
-              ) : (
-                <div className="text-xs text-zinc-400 italic">QR Code Not Generated</div>
+            <div className="space-y-1.5">
+              <h4
+                className="text-xl font-bold text-[#18181B] tracking-tight"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {locToToggleActive.isActive ? 'Pause location?' : 'Open location for duty?'}
+              </h4>
+              <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                {locToToggleActive.isActive
+                  ? `Pausing ${locToToggleActive.name} will deactivate the location and prevent volunteer check-ins.`
+                  : `Opening ${locToToggleActive.name} will allow volunteers to check in and serve.`}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setLocToToggleActive(null)}
+                className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleLocationActive(locToToggleActive)}
+                className="py-2.5 bg-[#18181B] hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs"
+              >
+                {locToToggleActive.isActive ? 'Pause location' : 'Open for duty'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: BATCH PRINT VENUE POSTERS */}
+      {showBatchPrintModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-md shadow-xl space-y-4 text-center">
+            <div className="space-y-1">
+              <h3
+                className="text-2xl font-bold text-[#18181B] tracking-tight"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                Print location codes
+              </h3>
+              <p className="text-xs text-zinc-500 font-sans">
+                Print physical venue posters for all active duty locations.
+              </p>
+            </div>
+
+            {batchLoading ? (
+              <div className="py-8 space-y-2 text-xs text-zinc-500">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#C59B27]" />
+                <p>Generating location codes…</p>
+              </div>
+            ) : (
+              <div className="space-y-3 py-2 text-left">
+                <p className="text-xs text-zinc-600 font-sans">
+                  Ready to print posters for {locations.filter(l => l.isActive).length} active locations:
+                </p>
+                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl">
+                  {locations.filter(l => l.isActive).map(loc => (
+                    <div key={loc.id} className="p-2.5 flex items-center justify-between text-xs">
+                      <span className="font-medium text-zinc-800">{loc.name}</span>
+                      <span className="text-[11px] text-zinc-500">{loc.ageGroupKey || 'All ages'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#EAE8E1]">
+              <button
+                type="button"
+                onClick={() => setShowBatchPrintModal(false)}
+                className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                disabled={batchLoading}
+                className="py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs flex items-center justify-center space-x-1.5 disabled:opacity-50"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print all posters</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT-ONLY VENUE POSTER LAYOUT (Part 10) */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #venue-print-container, #venue-print-container * {
+            visibility: visible !important;
+          }
+          #venue-print-container {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          .venue-poster-page {
+            page-break-after: always;
+            break-after: page;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 3rem 2rem;
+            box-sizing: border-box;
+          }
+        }
+      `}</style>
+
+      <div id="venue-print-container" className="hidden print:block text-zinc-950 font-sans">
+        {/* Single print poster if only selectedLocation is active */}
+        {selectedLocation && !showBatchPrintModal && (
+          <div className="venue-poster-page text-center">
+            <div className="space-y-3 pt-6">
+              <div className="text-sm font-bold uppercase tracking-[0.25em] text-zinc-700">
+                KOINONIA CHILDREN &amp; TEENS
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-serif font-black uppercase tracking-tight text-zinc-950">
+                {selectedLocation.name}
+              </h1>
+              {selectedLocation.ageGroupKey && (
+                <p className="text-lg font-medium text-zinc-700">
+                  {selectedLocation.ageGroupKey}
+                </p>
               )}
             </div>
 
-            <div className="space-y-2 border-t-2 border-zinc-900 pt-4">
-              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
-                Event Duty Volunteers: Scan to Register Active Presence
-              </p>
-              <p className="text-[11px] text-zinc-600 max-w-sm mx-auto leading-relaxed">
-                Point your mobile terminal camera at this QR label to confirm active duty location presence and access permitted operational controls.
-              </p>
+            <div className="w-80 h-80 my-auto p-4 border-4 border-zinc-950 rounded-3xl flex items-center justify-center">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt={`${selectedLocation.name} QR Code`} className="w-full h-full object-contain" />
+              ) : (
+                <div className="text-sm text-zinc-400 italic">Code not available</div>
+              )}
             </div>
 
-            <div className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest pt-2 border-t border-zinc-200">
-              Official Ministry Location Pass • Do Not Cover, Obscure or Alter
+            <div className="space-y-1 pb-8">
+              <div className="text-xl font-bold uppercase tracking-wider text-zinc-950">
+                VOLUNTEERS
+              </div>
+              <p className="text-base text-zinc-700">
+                Scan when you arrive.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        )}
 
-      {/* CONFIRMATION MODAL FOR TOGGLE ACTIVE / NOT IN USE */}
-      {locToToggleActive && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-9 h-9 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-4 h-4" />
+        {/* Batch print posters for all active locations */}
+        {showBatchPrintModal && locations.filter(l => l.isActive).map((loc) => {
+          const locQR = batchQRMap[loc.id] || (selectedLocation?.id === loc.id ? qrDataUrl : null);
+          return (
+            <div key={loc.id} className="venue-poster-page text-center">
+              <div className="space-y-3 pt-6">
+                <div className="text-sm font-bold uppercase tracking-[0.25em] text-zinc-700">
+                  KOINONIA CHILDREN &amp; TEENS
+                </div>
+                <h1 className="text-4xl sm:text-5xl font-serif font-black uppercase tracking-tight text-zinc-950">
+                  {loc.name}
+                </h1>
+                {loc.ageGroupKey && (
+                  <p className="text-lg font-medium text-zinc-700">
+                    {loc.ageGroupKey}
+                  </p>
+                )}
               </div>
-              <div className="space-y-0.5 pr-4">
-                <h3 className="text-base font-bold text-[#18181B]">
-                  {locToToggleActive.isActive ? 'Set location to not in use?' : 'Activate location?'}
-                </h3>
-                <p className="text-xs text-zinc-500">
-                  {locToToggleActive.isActive
-                    ? 'This location will no longer be available for event duties.'
-                    : 'This location will become active and available for event duties.'}
+
+              <div className="w-80 h-80 my-auto p-4 border-4 border-zinc-950 rounded-3xl flex items-center justify-center">
+                {locQR ? (
+                  <img src={locQR} alt={`${loc.name} QR Code`} className="w-full h-full object-contain" />
+                ) : (
+                  <div className="text-sm text-zinc-400 italic">Code not available</div>
+                )}
+              </div>
+
+              <div className="space-y-1 pb-8">
+                <div className="text-xl font-bold uppercase tracking-wider text-zinc-950">
+                  VOLUNTEERS
+                </div>
+                <p className="text-base text-zinc-700">
+                  Scan when you arrive.
                 </p>
               </div>
-              <button
-                onClick={() => setLocToToggleActive(null)}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
-
-            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-3.5 space-y-1 text-xs">
-              <span className="text-zinc-500 font-medium">Location</span>
-              <p className="font-semibold text-zinc-900">{locToToggleActive.name}</p>
-            </div>
-
-            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1]">
-              <button
-                type="button"
-                onClick={() => setLocToToggleActive(null)}
-                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => executeToggleActive(locToToggleActive)}
-                className="px-3.5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+          );
+        })}
+      </div>
     </div>
   );
 }
-

@@ -1,11 +1,212 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
-import { authMiddleware, AuthenticatedRequest } from '../auth';
+import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
 
 const dutyRouter = Router();
+
+// Verify a scanned QR token (supporting both unauthenticated and authenticated flows)
+const handleVerifyLocationToken = async (rawToken: string, userId: string | undefined, res: Response) => {
+  try {
+    if (!rawToken) {
+      return res.status(400).json({ success: false, error: 'Location token is required.' });
+    }
+
+    // Extract token if full URL was scanned
+    let token = rawToken.trim();
+    if (token.includes('/location-access/')) {
+      token = token.split('/location-access/').pop()?.split('?')[0] || token;
+    } else if (token.includes('/location/')) {
+      token = token.split('/location/').pop()?.split('?')[0] || token;
+    } else if (token.includes('/scan/')) {
+      token = token.split('/scan/').pop()?.split('?')[0] || token;
+    } else if (token.includes('loc_code_')) {
+      const match = token.match(/loc_code_[a-zA-Z0-9_-]+/i);
+      if (match) token = match[0];
+    }
+
+    // Lookup token in DB
+    const code = await queryOne('SELECT * FROM event_location_codes WHERE token_hash = ?', [token]);
+    if (!code) {
+      return res.status(404).json({
+        success: false,
+        error: 'code_not_found',
+        message: "We couldn't recognize this location code. Please ask your team lead or try scanning again."
+      });
+    }
+    if (!code.is_active) {
+      return res.status(403).json({
+        success: false,
+        error: 'location_paused',
+        message: 'This location is currently paused from active duty. Please contact your team lead.'
+      });
+    }
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [code.event_location_id, REAL_EVENT_ID]);
+    if (!loc) {
+      const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ?', [code.event_location_id, REAL_EVENT_ID]);
+      if (existingLoc && (!existingLoc.is_active || existingLoc.archived_at)) {
+        return res.status(403).json({
+          success: false,
+          error: 'location_paused',
+          message: 'This location is currently paused from active duty. Please contact your team lead.'
+        });
+      }
+      return res.status(404).json({
+        success: false,
+        error: 'location_inactive',
+        message: "We couldn't recognize this location code. Please ask your team lead or try scanning again."
+      });
+    }
+
+    // Hierarchy path
+    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
+    const locMap = new Map<string, any>();
+    for (const l of allLocations) {
+      locMap.set(l.id, l);
+    }
+
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    // Unauthenticated state (State E)
+    if (!userId) {
+      return res.json({
+        success: true,
+        authenticated: false,
+        requiresAuth: true,
+        state: 'unauthenticated',
+        token,
+        location: {
+          id: loc.id,
+          name: loc.name,
+          type: loc.location_type,
+          shortName: loc.short_name,
+          description: loc.description,
+          instructions: loc.instructions,
+          emergencyLabel: loc.emergency_label,
+          capacity: loc.capacity || 0,
+          ageGroupKey: loc.age_group_key,
+          teamKey: loc.team_key,
+          pathLabel: getFullPath(loc.id),
+          status: 'Open for duty'
+        }
+      });
+    }
+
+    // Authenticated state (A, B, C, D)
+    const userAssignment = await queryOne(`
+      SELECT a.*, el.name as assigned_location_name, el.id as assigned_location_id
+      FROM event_duty_assignments a
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled'
+      ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
+      LIMIT 1
+    `, [userId, REAL_EVENT_ID]);
+
+    const activePresence = await queryOne(`
+      SELECT * FROM event_duty_location_presence
+      WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?
+      ORDER BY started_at DESC
+      LIMIT 1
+    `, [userId, loc.id, REAL_EVENT_ID]);
+
+    let state = 'unassigned_can_join';
+    let assignedLocationName: string | null = null;
+    let assignedLocationId: string | null = null;
+
+    if (userAssignment && userAssignment.assigned_location_id) {
+      if (userAssignment.assigned_location_id === loc.id) {
+        state = activePresence ? 'assigned_here_present' : 'assigned_here_not_present';
+      } else {
+        state = 'assigned_elsewhere';
+        assignedLocationName = userAssignment.assigned_location_name || 'Another location';
+        assignedLocationId = userAssignment.assigned_location_id;
+      }
+    } else {
+      // Unassigned volunteer - self-selection allowed
+      const allowSelfSelect = true;
+      state = allowSelfSelect ? 'unassigned_can_join' : 'unassigned_cannot_join';
+    }
+
+    // Audit log scan event
+    try {
+      const auditId = 'audit-' + crypto.randomBytes(8).toString('hex');
+      const now = new Date().toISOString();
+      await execute(`
+        INSERT INTO event_audit_logs (id, event_id, user_id, action, entity_type, entity_id, details, created_at)
+        VALUES (?, ?, ?, 'LOCATION_QR_SCANNED', 'LOCATION', ?, ?, ?)
+      `, [auditId, REAL_EVENT_ID, userId, loc.id, JSON.stringify({ locationName: loc.name, state }), now]);
+    } catch (auditErr) {}
+
+    return res.json({
+      success: true,
+      authenticated: true,
+      state,
+      token,
+      location: {
+        id: loc.id,
+        name: loc.name,
+        type: loc.location_type,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        emergencyLabel: loc.emergency_label,
+        capacity: loc.capacity || 0,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        pathLabel: getFullPath(loc.id),
+        status: 'Open for duty'
+      },
+      assignedLocationName,
+      assignedLocationId,
+      canConfirmPresence: state === 'assigned_here_not_present',
+      isPresent: !!activePresence,
+      presentSince: activePresence ? activePresence.started_at : null
+    });
+  } catch (err: any) {
+    console.error('Error in location token verification:', err);
+    return res.status(500).json({ success: false, error: 'Internal error verifying location code.' });
+  }
+};
+
+// Public / Optional-Auth Location Code routes
+dutyRouter.get('/location-code/:token', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  return handleVerifyLocationToken(req.params.token, req.user?.id, res);
+});
+
+dutyRouter.post('/location-code/verify', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const token = req.body.token || req.body.code || req.body.scannedToken;
+  return handleVerifyLocationToken(token, req.user?.id, res);
+});
+
+dutyRouter.get('/location-access/:token', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  return handleVerifyLocationToken(req.params.token, req.user?.id, res);
+});
+
+dutyRouter.post('/location-access/verify', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const token = req.body.token || req.body.code || req.body.scannedToken;
+  return handleVerifyLocationToken(token, req.user?.id, res);
+});
+
+// Protect remaining duty routes
 dutyRouter.use(authMiddleware);
 
 // GET /api/duty/readiness
@@ -2359,6 +2560,10 @@ export async function resolveUserDutyLocation(userId: string, eventId: string = 
     };
 
     if (assignment) {
+      const activePres = await queryOne(
+        'SELECT started_at FROM event_duty_location_presence WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ? LIMIT 1',
+        [userId, assignment.location_id, eventId]
+      );
       return {
         id: assignment.assignment_id,
         locationId: assignment.location_id,
@@ -2372,6 +2577,8 @@ export async function resolveUserDutyLocation(userId: string, eventId: string = 
         description: assignment.description,
         source: 'admin',
         isAssignedByAdmin: true,
+        isPresent: !!activePres,
+        presentSince: activePres ? activePres.started_at : null,
         pathLabel: getFullPath(assignment.location_id)
       };
     }
@@ -2400,6 +2607,8 @@ export async function resolveUserDutyLocation(userId: string, eventId: string = 
         description: presence.description,
         source: presence.source || 'selected',
         isAssignedByAdmin: false,
+        isPresent: true,
+        presentSince: presence.started_at,
         startedAt: presence.started_at,
         pathLabel: getFullPath(presence.event_location_id)
       };
@@ -2567,6 +2776,23 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       return res.status(400).json({ success: false, error: 'The selected location is invalid or no longer active.' });
     }
 
+    // Check if user has an Admin assignment to a DIFFERENT location (cannot be overridden)
+    const adminAssignment = await queryOne(`
+      SELECT a.*, el.name as assigned_location_name
+      FROM event_duty_assignments a
+      JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled' AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
+      LIMIT 1
+    `, [userId, REAL_EVENT_ID]);
+
+    if (adminAssignment && adminAssignment.assigned_location_id !== resolvedLocationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'assigned_elsewhere',
+        message: `You are assigned to ${adminAssignment.assigned_location_name}. Admin assignments cannot be overridden.`
+      });
+    }
+
     const now = new Date().toISOString();
 
     // End previous active presence sessions for this user
@@ -2580,10 +2806,17 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       ) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?)
     `, [presenceId, REAL_EVENT_ID, userId, resolvedLocationId, resolvedSource, now, now]);
 
+    // Update assignment status to 'on_duty' if assigned to this location
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'on_duty', updated_at = ?
+      WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status != 'cancelled'
+    `, [now, userId, REAL_EVENT_ID, resolvedLocationId]);
+
     // Update assignment assigned_location_id if active assignment exists without location
     await execute(`
       UPDATE event_duty_assignments
-      SET assigned_location_id = ?, updated_at = ?
+      SET assigned_location_id = ?, status = 'on_duty', updated_at = ?
       WHERE user_id = ? AND event_id = ? AND status != 'cancelled' AND (assigned_location_id IS NULL OR assigned_location_id = '')
     `, [resolvedLocationId, now, userId, REAL_EVENT_ID]);
 
@@ -2605,7 +2838,9 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
         description: loc.description,
         source: resolvedSource,
         startedAt: now,
-        isAssignedByAdmin: false
+        isPresent: true,
+        presentSince: now,
+        isAssignedByAdmin: !!adminAssignment
       }
     });
   } catch (err: any) {
@@ -2630,165 +2865,6 @@ dutyRouter.delete('/current-location', async (req: AuthenticatedRequest, res: Re
     console.error('Error clearing current duty location:', err);
     return res.status(500).json({ error: 'Failed to clear current duty location' });
   }
-});
-
-// 5. Verify a scanned QR token (and support canonical /api/event-duty/location-access endpoints)
-const handleVerifyLocationToken = async (rawToken: string, userId: string | undefined, res: Response) => {
-  try {
-    if (!rawToken) {
-      return res.status(400).json({ success: false, error: 'Location token is required.' });
-    }
-
-    // Extract token if full URL was scanned
-    let token = rawToken.trim();
-    if (token.includes('/location-access/')) {
-      token = token.split('/location-access/').pop()?.split('?')[0] || token;
-    } else if (token.includes('loc_code_')) {
-      const match = token.match(/loc_code_[a-f0-9]+/i);
-      if (match) token = match[0];
-    }
-
-    // Lookup token in DB
-    const code = await queryOne('SELECT * FROM event_location_codes WHERE token_hash = ?', [token]);
-    if (!code) {
-      return res.status(404).json({
-        success: false,
-        error: 'Code not recognised',
-        message: 'This QR code does not match any registered Event Duty location.'
-      });
-    }
-
-    if (!code.is_active) {
-      return res.status(403).json({
-        success: false,
-        error: 'Code disabled',
-        message: 'QR access has been disabled for this location. Please contact a ministry administrator.'
-      });
-    }
-
-    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ?', [code.event_location_id, REAL_EVENT_ID]);
-    if (!loc || !loc.is_active) {
-      return res.status(404).json({
-        success: false,
-        error: 'Location inactive',
-        message: 'This location is no longer active for the current event.'
-      });
-    }
-
-    // Hierarchy path
-    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
-    const locMap = new Map<string, any>();
-    for (const l of allLocations) {
-      locMap.set(l.id, l);
-    }
-
-    const getFullPath = (locId: string): string => {
-      const pathParts: string[] = [];
-      let currentId: string | null = locId;
-      const visited = new Set<string>();
-      while (currentId) {
-        if (visited.has(currentId)) break;
-        visited.add(currentId);
-        const current = locMap.get(currentId);
-        if (current) {
-          pathParts.unshift(current.name);
-          currentId = current.parent_location_id;
-        } else {
-          break;
-        }
-      }
-      return pathParts.join(' › ');
-    };
-
-    // Active presence / on-duty count
-    const activeResponders = await query(`
-      SELECT p.*, pr.full_name, u.role
-      FROM event_duty_location_presence p
-      JOIN users u ON p.user_id = u.id
-      JOIN parent_profiles pr ON u.id = pr.user_id
-      WHERE p.event_location_id = ? AND p.ended_at IS NULL
-    `, [loc.id]);
-
-    // User's specific assignment
-    let assignment = {
-      assigned: false,
-      responsibility: loc.team_key || 'General Duty',
-      shiftStatus: 'Unassigned volunteer'
-    };
-
-    if (userId) {
-      const userAssignment = await queryOne(`
-        SELECT * FROM event_duty_assignments
-        WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status = 'scheduled'
-      `, [userId, REAL_EVENT_ID, loc.id]);
-
-      if (userAssignment) {
-        assignment = {
-          assigned: true,
-          responsibility: userAssignment.responsibility_key || loc.team_key || 'Assigned Duty',
-          shiftStatus: 'Scheduled'
-        };
-      }
-    }
-
-    // Active alerts at location
-    const activeAlerts = await query(`
-      SELECT id, title, severity FROM event_safety_alerts
-      WHERE event_id = ? AND location_id = ? AND status IN ('open', 'acknowledged')
-    `, [REAL_EVENT_ID, loc.id]);
-
-    // Audit log scan event (opaque reference, no raw token/child info)
-    const auditId = 'audit-' + crypto.randomBytes(8).toString('hex');
-    const now = new Date().toISOString();
-    await execute(`
-      INSERT INTO event_audit_logs (id, event_id, user_id, action, entity_type, entity_id, details, created_at)
-      VALUES (?, ?, ?, 'LOCATION_QR_SCANNED', 'LOCATION', ?, ?, ?)
-    `, [auditId, REAL_EVENT_ID, userId || 'anonymous', loc.id, JSON.stringify({ locationName: loc.name }), now]);
-
-    return res.json({
-      success: true,
-      token: token,
-      location: {
-        id: loc.id,
-        name: loc.name,
-        type: loc.location_type,
-        shortName: loc.short_name,
-        description: loc.description,
-        instructions: loc.instructions,
-        emergencyLabel: loc.emergency_label,
-        capacity: loc.capacity || 0,
-        ageGroupKey: loc.age_group_key,
-        teamKey: loc.team_key,
-        pathLabel: getFullPath(loc.id),
-        status: 'Active'
-      },
-      assignment,
-      operationalSummary: {
-        onDutyCount: activeResponders.length,
-        deviceReadiness: 'Ready',
-        activeAlertsCount: activeAlerts.length,
-        attentionRequired: activeAlerts.length > 0 || activeResponders.length === 0
-      },
-      allowedActions: ['confirm_arrival', 'view_assignment', 'report_issue']
-    });
-  } catch (err: any) {
-    console.error('Error in location token verification:', err);
-    return res.status(500).json({ success: false, error: 'Internal server error verifying location code.' });
-  }
-};
-
-dutyRouter.post('/location-code/verify', async (req: AuthenticatedRequest, res: Response) => {
-  const token = req.body.token || req.body.code || req.body.scannedToken;
-  return handleVerifyLocationToken(token, req.user?.id, res);
-});
-
-dutyRouter.get('/location-access/:token', async (req: AuthenticatedRequest, res: Response) => {
-  return handleVerifyLocationToken(req.params.token, req.user?.id, res);
-});
-
-dutyRouter.post('/location-access/verify', async (req: AuthenticatedRequest, res: Response) => {
-  const token = req.body.token || req.body.code || req.body.scannedToken;
-  return handleVerifyLocationToken(token, req.user?.id, res);
 });
 
 export { dutyRouter, adminDutyRouter };

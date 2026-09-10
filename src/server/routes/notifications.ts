@@ -44,6 +44,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
         SELECT * FROM notifications 
         WHERE (audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR audience_role IS NULL)
           AND (created_by_user_id IS NULL OR created_by_user_id != ?)
+          AND (type != 'campaign_master' OR type IS NULL)
         ORDER BY created_at DESC
       `, [userId]);
       notifications = rawNotifs.map((n: any) => ({
