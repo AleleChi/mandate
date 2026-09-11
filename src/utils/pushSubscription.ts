@@ -108,6 +108,57 @@ export async function getPushNotificationStatus(): Promise<PushNotificationDetai
 
     if (permission === 'granted') {
       if (subscription && subscription.endpoint) {
+        let isKeyMismatch = false;
+        try {
+          const keyRes = await api.parent.getVapidPublicKey();
+          const publicKey = keyRes?.publicKey;
+          if (publicKey) {
+            const appServerKey = urlBase64ToUint8Array(publicKey);
+            const existingKeyBuf = subscription.options?.applicationServerKey;
+            if (existingKeyBuf) {
+              const existingKeyArr = new Uint8Array(existingKeyBuf);
+              if (existingKeyArr.length !== appServerKey.length || !existingKeyArr.every((b, i) => b === appServerKey[i])) {
+                isKeyMismatch = true;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[PushNotificationStatus] Error checking VAPID key:', err);
+        }
+
+        if (isKeyMismatch) {
+          console.log('[PushNotificationStatus] VAPID key mismatch detected. Auto-recovering subscription...');
+          try {
+            const repairRes = await subscribeUserToPush();
+            if (repairRes.success) {
+              const newSub = await registration.pushManager.getSubscription();
+              return {
+                status: 'enabled',
+                permission: 'granted',
+                isSupported: true,
+                hasServiceWorker: true,
+                hasPushManager: true,
+                subscription: newSub,
+                serverSubscribed: true,
+                message: 'Push notifications recovered with current server key.'
+              };
+            }
+          } catch (repairErr) {
+            console.warn('[PushNotificationStatus] Auto-recovery encountered an error:', repairErr);
+          }
+
+          return {
+            status: 'needs_attention',
+            permission: 'granted',
+            isSupported: true,
+            hasServiceWorker: true,
+            hasPushManager: true,
+            subscription,
+            serverSubscribed: false,
+            message: 'Push subscription has key mismatch and needs repair.'
+          };
+        }
+
         let serverSubscribed = false;
         try {
           const res = await api.parent.getPushStatus(subscription.endpoint);
@@ -129,6 +180,23 @@ export async function getPushNotificationStatus(): Promise<PushNotificationDetai
             message: 'Push notifications are active on this device.'
           };
         } else {
+          // If browser has valid subscription with matching key but server record missing, auto-persist
+          try {
+            const repairRes = await subscribeUserToPush();
+            if (repairRes.success) {
+              return {
+                status: 'enabled',
+                permission: 'granted',
+                isSupported: true,
+                hasServiceWorker: true,
+                hasPushManager: true,
+                subscription,
+                serverSubscribed: true,
+                message: 'Push notifications are active on this device.'
+              };
+            }
+          } catch (_) {}
+
           return {
             status: 'needs_attention',
             permission: 'granted',
@@ -141,6 +209,24 @@ export async function getPushNotificationStatus(): Promise<PushNotificationDetai
           };
         }
       } else {
+        // Permission granted, but no subscription in PushManager -> auto-subscribe
+        try {
+          const repairRes = await subscribeUserToPush();
+          if (repairRes.success) {
+            const newSub = await registration.pushManager.getSubscription();
+            return {
+              status: 'enabled',
+              permission: 'granted',
+              isSupported: true,
+              hasServiceWorker: true,
+              hasPushManager: true,
+              subscription: newSub,
+              serverSubscribed: true,
+              message: 'Push notifications are active on this device.'
+            };
+          }
+        } catch (_) {}
+
         return {
           status: 'needs_attention',
           permission: 'granted',
@@ -242,8 +328,14 @@ export async function subscribeUserToPush(): Promise<{ success: boolean; error?:
 
     if (needsNewSubscription) {
       if (subscription) {
+        const oldEndpoint = subscription.endpoint;
         try {
           await subscription.unsubscribe();
+          if (oldEndpoint) {
+            try {
+              await api.parent.unsubscribePushSubscription(oldEndpoint);
+            } catch (_) {}
+          }
         } catch (e) {
           console.warn('[PushSubscription] Could not unsubscribe old subscription:', e);
         }
