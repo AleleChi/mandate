@@ -1117,12 +1117,17 @@ export const api = {
         subject?: string;
         channels?: string[];
         recipientsCount?: number;
-        status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+        status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'partially_sent' | 'partial';
         queued: number;
         sent: number;
         delivered: number;
         read: number;
         failed: number;
+        channelStatuses?: Array<{
+          channel: string;
+          label: string;
+          status: string;
+        }>;
         errorMessage?: string | null;
         lastUpdated?: string;
       }>(`/api/admin/messages/campaign-status/${campaignId}`);

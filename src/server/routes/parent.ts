@@ -238,11 +238,15 @@ async function mapChildToFrontend(
     relationship: childRow.relationship_to_child || ''
   };
 
+  const { calculatedAge, ageGroup: calcAgeGroup } = calculateAgeAndGroup(childRow.date_of_birth);
+  const effectiveAgeGroup = childRow.age_group || calcAgeGroup;
+  const effectiveAge = childRow.calculated_age !== null && childRow.calculated_age !== undefined ? childRow.calculated_age : calculatedAge;
+
   return {
     id: childRow.id,
     name: childRow.full_name || '',
-    age: childRow.calculated_age !== null ? childRow.calculated_age : 0,
-    ageGroup: childRow.age_group || '',
+    age: effectiveAge,
+    ageGroup: effectiveAgeGroup,
     status: frontendStatus,
     statusNote,
     photoFileId: childRow.photo_file_id || '',
@@ -256,10 +260,10 @@ async function mapChildToFrontend(
 }
 
 async function getFullChildrenList(parentProfileId: string, isBiometricProtected: boolean = false) {
-  const children = await query('SELECT * FROM children WHERE parent_profile_id = ? ORDER BY created_at DESC', [parentProfileId]);
+  const children = await query('SELECT * FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at DESC', [parentProfileId]);
   const list = [];
   for (const c of children) {
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, REAL_EVENT_ID]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY (CASE WHEN event_id = ? THEN 0 ELSE 1 END), created_at DESC LIMIT 1', [c.id, REAL_EVENT_ID]);
     const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
     list.push(await mapChildToFrontend(c, entry, pickup, parentProfileId, isBiometricProtected));
   }
@@ -472,7 +476,14 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
   const list = await getFullChildrenList(req.parentProfile.id, isBioProtected);
   const childrenCount = list.length;
   const underReviewCount = list.filter(c => c.status === 'Under review').length;
-  const passReadyCount = list.filter(c => c.status === 'Pass ready').length;
+  const passReadyCount = list.filter(c =>
+    c.status === 'Pass ready' ||
+    c.status === 'Checked in' ||
+    c.status === 'Inside' ||
+    c.status === 'Picked up' ||
+    c.status === 'Checked out' ||
+    Boolean(c.passReference || (c.pass && (c.pass.passCode || c.pass.passLocked)))
+  ).length;
 
   const event = await queryOne('SELECT * FROM events WHERE id = ?', [REAL_EVENT_ID]);
   const activeEvent = event ? {
@@ -1027,7 +1038,9 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   if (!c) return res.status(404).json({ error: 'Child not found' });
 
   const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
-  if (!entry || entry.status !== 'pass_ready') {
+  const allowedPassStatuses = ['pass_ready', 'selected', 'checked_in', 'inside', 'picked_up', 'checked_out'];
+  const existingPass = entry ? await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']) : null;
+  if (!entry || (!existingPass && !allowedPassStatuses.includes(entry.status))) {
     return res.status(403).json({ error: 'Event pass is not ready yet', status: entry?.status || 'incomplete' });
   }
 

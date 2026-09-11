@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
-import { queryOne } from './db';
+import { query, queryOne, execute } from './db';
 
 const SECRET_KEY = process.env.JWT_SECRET || 'koinonia-secret-key-default-2026';
 
@@ -122,13 +122,80 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     return res.status(403).json({ error: 'Access Denied: Your account has been suspended or revoked.' });
   }
 
-  const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [userId]);
+  const profile = await resolveParentProfileForUser(userId, user.email);
   const volProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
 
   req.user = user;
   req.parentProfile = profile || undefined;
   req.volunteerProfile = volProfile || undefined;
   next();
+}
+
+export async function resolveParentProfileForUser(userId: string, userEmail?: string): Promise<any | null> {
+  // 1. Direct ownership: profiles explicitly linked to this authenticated user
+  const directProfiles = await query(
+    'SELECT * FROM parent_profiles WHERE user_id = ? ORDER BY updated_at DESC, created_at DESC',
+    [userId]
+  );
+
+  if (directProfiles && directProfiles.length > 0) {
+    if (directProfiles.length === 1) {
+      return directProfiles[0];
+    }
+    // Duplicate profiles for the SAME authenticated parent (all have user_id = userId).
+    // Safely pick the primary one: prefer profile with active children, then most recently updated.
+    for (const dp of directProfiles) {
+      const childCountRow = await queryOne(
+        'SELECT COUNT(*) as count FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+        [dp.id]
+      );
+      if (parseInt(childCountRow?.count || '0', 10) > 0) {
+        return dp;
+      }
+    }
+    return directProfiles[0];
+  }
+
+  // 2. Unlinked legacy profile fallback:
+  // Only if no profile is directly linked to this user_id yet, and user has an email.
+  const normalizedEmail = (userEmail || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  // Check if any profile with this email is already owned by ANOTHER user — MUST NEVER claim or expose
+  const otherUserClaimed = await queryOne(
+    'SELECT id FROM parent_profiles WHERE LOWER(TRIM(email)) = ? AND user_id IS NOT NULL AND user_id != ? LIMIT 1',
+    [normalizedEmail, userId]
+  );
+  if (otherUserClaimed) {
+    // Another user account owns this profile — FAIL CLOSED
+    return null;
+  }
+
+  // Exact, normalized email match on unlinked legacy profiles ONLY (user_id IS NULL)
+  const matchingUnlinked = await query(
+    'SELECT * FROM parent_profiles WHERE LOWER(TRIM(email)) = ? AND user_id IS NULL ORDER BY created_at ASC',
+    [normalizedEmail]
+  );
+
+  if (!matchingUnlinked || matchingUnlinked.length === 0) {
+    return null;
+  }
+
+  if (matchingUnlinked.length === 1) {
+    const legacyProfile = matchingUnlinked[0];
+    // Atomically claim the unlinked profile for this authenticated user
+    await execute(
+      'UPDATE parent_profiles SET user_id = ?, updated_at = ? WHERE id = ? AND user_id IS NULL',
+      [userId, new Date().toISOString(), legacyProfile.id]
+    );
+    legacyProfile.user_id = userId;
+    return legacyProfile;
+  }
+
+  // Multiple unlinked profiles with the same email -> AMBIGUOUS MATCH -> FAIL CLOSED
+  return null;
 }
 
 export async function optionalAuthMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -155,7 +222,7 @@ export async function optionalAuthMiddleware(req: AuthenticatedRequest, res: Res
     return next();
   }
 
-  const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [userId]);
+  const profile = await resolveParentProfileForUser(userId, user.email);
   const volProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
 
   req.user = user;

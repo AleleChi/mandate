@@ -407,13 +407,7 @@ export default function App() {
   };
 
   const fetchBackendData = async () => {
-    if (api.getToken() && user) {
-      const isParentRoute = currentRoute.startsWith('/parent');
-      const hasParentRole = user.role === 'parent';
-      if (!hasParentRole && !isParentRoute) {
-        return;
-      }
-
+    if (api.getToken()) {
       try {
         const homeData = await api.parent.getHome();
         if (homeData && homeData.parentProfile) {
@@ -1002,6 +996,7 @@ export default function App() {
       setParentProfile(normalizeParentProfile(profileData));
       setParentEmail(profileData.email || '');
     }
+    fetchBackendData();
   };
 
   const renderCurrentRoute = () => {

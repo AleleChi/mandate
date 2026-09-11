@@ -75,7 +75,7 @@ export async function getPassForChild(childId: string, eventId: string = REAL_EV
  */
 export async function getPassesForParent(parentId: string, eventId: string = REAL_EVENT_ID) {
   // Query only essential columns for parent children
-  const children = await query('SELECT id, full_name, photo_file_id FROM children WHERE parent_profile_id = ?', [parentId]);
+  const children = await query('SELECT id, full_name, photo_file_id FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [parentId]);
   
   const passesList = [];
   const pendingList = [];
@@ -84,28 +84,19 @@ export async function getPassesForParent(parentId: string, eventId: string = REA
     const entry = await queryOne('SELECT id, status FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, eventId]);
     if (!entry) continue;
 
-    if (entry.status === 'pass_ready') {
-      const pass = await queryOne('SELECT id, pass_reference, issued_at, status FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
-      if (pass) {
-        passesList.push({
-          id: pass.id,
-          childId: c.id,
-          childName: c.full_name,
-          eventName: 'Koinonia Children and Teens Event 2026',
-          status: 'ready',
-          passCode: pass.pass_reference,
-          qrPayload: pass.pass_reference,
-          issuedAt: pass.issued_at
-        });
-      } else {
-        pendingList.push({
-          childId: c.id,
-          childName: c.full_name,
-          eventName: 'Koinonia Children and Teens Event 2026',
-          status: 'pending'
-        });
-      }
-    } else if (entry.status === 'selected') {
+    const pass = await queryOne('SELECT id, pass_reference, issued_at, status FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
+    if (pass) {
+      passesList.push({
+        id: pass.id,
+        childId: c.id,
+        childName: c.full_name,
+        eventName: 'Koinonia Children and Teens Event 2026',
+        status: 'ready',
+        passCode: pass.pass_reference,
+        qrPayload: pass.pass_reference,
+        issuedAt: pass.issued_at
+      });
+    } else if (entry.status === 'pass_ready' || entry.status === 'selected') {
       pendingList.push({
         childId: c.id,
         childName: c.full_name,

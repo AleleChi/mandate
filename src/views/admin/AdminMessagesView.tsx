@@ -48,12 +48,17 @@ interface RecentSendState {
   campaignId: string;
   subject: string;
   channels: string[];
-  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+  status: 'queued' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'partial' | 'partially_sent';
   queued: number;
   sent: number;
   delivered: number;
   read: number;
   failed: number;
+  channelStatuses?: Array<{
+    channel: string;
+    label: string;
+    status: string;
+  }>;
   errorMessage?: string | null;
   lastUpdated?: string;
 }
@@ -390,7 +395,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   // Polling effect for campaign delivery status
   useEffect(() => {
     if (!recentSend?.campaignId) return;
-    if (recentSend.status === 'delivered' || recentSend.status === 'read' || recentSend.status === 'failed') return;
+    if (recentSend.status === 'delivered' || recentSend.status === 'read' || recentSend.status === 'failed' || recentSend.status === 'partially_sent' || recentSend.status === 'partial') return;
 
     let pollCount = 0;
     const maxPolls = 15;
@@ -411,10 +416,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
             delivered: res.delivered,
             read: res.read,
             failed: res.failed,
+            channelStatuses: res.channelStatuses || prev.channelStatuses,
             errorMessage: res.errorMessage || null,
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           } : null);
-          if (res.status === 'delivered' || res.status === 'read' || res.status === 'failed') {
+          if (res.status === 'delivered' || res.status === 'read' || res.status === 'failed' || res.status === 'partially_sent' || res.status === 'partial') {
             clearInterval(interval);
           }
         }
@@ -1870,6 +1876,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <span className={`w-2 h-2 rounded-full ${
                     recentSend.status === 'delivered' || recentSend.status === 'read'
                       ? 'bg-emerald-500'
+                      : (recentSend.status === 'partial' || recentSend.status === 'partially_sent')
+                      ? 'bg-amber-500'
                       : recentSend.status === 'failed'
                       ? 'bg-rose-500'
                       : recentSend.status === 'sent'
@@ -1882,13 +1890,15 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                     recentSend.status === 'delivered' || recentSend.status === 'read'
                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : (recentSend.status === 'partial' || recentSend.status === 'partially_sent')
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
                       : recentSend.status === 'failed'
                       ? 'bg-rose-50 text-rose-700 border border-rose-200'
                       : recentSend.status === 'sent'
                       ? 'bg-sky-50 text-sky-700 border border-sky-200'
                       : 'bg-amber-50 text-amber-700 border border-amber-200'
                   }`}>
-                    {recentSend.status === 'delivered' ? 'Delivered' : recentSend.status === 'read' ? 'Read' : recentSend.status === 'sent' ? 'Sent' : recentSend.status === 'failed' ? 'Failed' : 'Queued'}
+                    {recentSend.status === 'delivered' ? 'Delivered' : recentSend.status === 'read' ? 'Read' : (recentSend.status === 'partial' || recentSend.status === 'partially_sent') ? 'Partially sent' : recentSend.status === 'sent' ? 'Sent' : recentSend.status === 'failed' ? 'Could not be sent' : 'Sending'}
                   </span>
                   <button
                     onClick={() => setRecentSend(null)}
@@ -1899,6 +1909,36 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   </button>
                 </div>
               </div>
+
+              {(recentSend.status === 'partial' || recentSend.status === 'partially_sent') && (
+                <div className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
+                  Some messages were sent
+                </div>
+              )}
+
+              {/* Channel badges breakdown */}
+              {recentSend.channelStatuses && recentSend.channelStatuses.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  {recentSend.channelStatuses.map((cs: any) => {
+                    const sLower = (cs.status || '').toLowerCase();
+                    const csClass = (sLower === 'delivered' || sLower === 'read')
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : sLower === 'sent'
+                      ? 'bg-sky-50 text-sky-700 border-sky-200'
+                      : (sLower === 'partial' || sLower === 'partially_sent' || sLower === 'partially sent')
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : (sLower === 'failed' || sLower === 'could not be sent')
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200';
+                    const displayStatus = (sLower === 'failed' || sLower === 'could not be sent') ? 'Could not be sent' : (sLower === 'queued' ? 'Sending' : cs.status);
+                    return (
+                      <span key={cs.channel} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${csClass}`}>
+                        {cs.label} · {displayStatus}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs gap-1 border-b border-[#EAE8E1] pb-2.5">
                 <div className="font-semibold text-zinc-900 truncate">
@@ -2750,14 +2790,16 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       const recipientCount = log.recipientCount || log.recipient_count || 1;
                       const status = log.status || 'queued';
                       const statusBadge = status === 'read'
-                        ? { text: 'Read', class: 'bg-blue-50 text-blue-700 border-blue-200' }
+                        ? { text: 'Read', class: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                         : status === 'delivered'
                         ? { text: 'Delivered', class: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                         : status === 'sent'
                         ? { text: 'Sent', class: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+                        : (status === 'partial' || status === 'partially_sent')
+                        ? { text: 'Partially sent', class: 'bg-amber-50 text-amber-700 border-amber-200' }
                         : status === 'failed'
-                        ? { text: 'Failed', class: 'bg-rose-50 text-rose-700 border-rose-200' }
-                        : { text: 'Queued', class: 'bg-amber-50 text-amber-700 border-amber-200' };
+                        ? { text: 'Could not be sent', class: 'bg-rose-50 text-rose-700 border-rose-200' }
+                        : { text: 'Sending', class: 'bg-amber-50 text-amber-700 border-amber-200' };
 
                       const cleanBody = String(log.body || '')
                         .replace(/{Event name}/gi, resolvedEventName)
@@ -2781,21 +2823,22 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                               <div className="flex items-center gap-1 flex-wrap justify-end">
                                 {log.channelStatuses.map((cs: any) => {
                                   const sLower = (cs.status || '').toLowerCase();
-                                  const csClass = sLower === 'read'
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                    : sLower === 'delivered'
+                                  const csClass = (sLower === 'read' || sLower === 'delivered')
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                     : sLower === 'sent'
                                     ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                    : sLower === 'failed'
+                                    : (sLower === 'partial' || sLower === 'partially_sent' || sLower === 'partially sent')
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : (sLower === 'failed' || sLower === 'could not be sent')
                                     ? 'bg-rose-50 text-rose-700 border-rose-200'
                                     : 'bg-amber-50 text-amber-700 border-amber-200';
+                                  const displayStatus = (sLower === 'failed' || sLower === 'could not be sent') ? 'Could not be sent' : (sLower === 'queued' ? 'Sending' : cs.status);
                                   return (
                                     <span
                                       key={cs.channel}
                                       className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${csClass}`}
                                     >
-                                      {cs.label} · {cs.status}
+                                      {cs.label} · {displayStatus}
                                     </span>
                                   );
                                 })}

@@ -828,7 +828,7 @@ async function runTests() {
 
       // Crucial: The campaign status must NOT be masked as generic "Sent"
       assert(recentCampaign.status !== 'sent', `Campaign status must not be masked as generic 'sent', got ${recentCampaign.status}`);
-      assert(recentCampaign.status === 'partial' || recentCampaign.status === 'failed', `Expected 'partial' or 'failed', got ${recentCampaign.status}`);
+      assert(recentCampaign.status === 'partial' || recentCampaign.status === 'partially_sent' || recentCampaign.status === 'failed', `Expected 'partial', 'partially_sent' or 'failed', got ${recentCampaign.status}`);
     });
 
     // -------------------------------------------------------------
@@ -1372,6 +1372,241 @@ async function runTests() {
         }
       });
       assert(afterLogoutDbRes.status === 403, 'Pass must remain locked after sign-out even with process restart');
+    });
+
+    await test('Regression: Parent with 2 children receives both on /parent/home, dashboard count=2, and pass security preserved', async () => {
+      const regNow = new Date().toISOString();
+      const parentAUserId = `u-parentA-${crypto.randomUUID()}`;
+      const parentAProfileId = `p-parentA-${crypto.randomUUID()}`;
+      const parentBUserId = `u-parentB-${crypto.randomUUID()}`;
+      const parentBProfileId = `p-parentB-${crypto.randomUUID()}`;
+
+      // Parent A
+      await execute(`INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, 'hash', 'parent', ?, ?)`, [parentAUserId, `parentA-${crypto.randomUUID()}@koinonia.test`, regNow, regNow]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, created_at, updated_at) VALUES (?, ?, 'Tochukwu Ogunaka Test', ?, '+2348011111111', ?, ?)`, [parentAProfileId, parentAUserId, `parentA-${crypto.randomUUID()}@koinonia.test`, regNow, regNow]);
+
+      // Parent B
+      await execute(`INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, 'hash', 'parent', ?, ?)`, [parentBUserId, `parentB-${crypto.randomUUID()}@koinonia.test`, regNow, regNow]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, created_at, updated_at) VALUES (?, ?, 'Other Parent', ?, '+2348022222222', ?, ?)`, [parentBProfileId, parentBUserId, `parentB-${crypto.randomUUID()}@koinonia.test`, regNow, regNow]);
+
+      // 2 children for Parent A (one checked_in, one picked_up)
+      const childA1 = `c-reg-1-${crypto.randomUUID()}`;
+      const childA2 = `c-reg-2-${crypto.randomUUID()}`;
+      // 1 deleted child for Parent A
+      const childADel = `c-reg-del-${crypto.randomUUID()}`;
+      // 1 child for Parent B
+      const childB1 = `c-reg-b-${crypto.randomUUID()}`;
+
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, is_deleted, created_at, updated_at) VALUES (?, ?, 'Baby Livina Test', 'Female', '2022-01-01', 'p1', 0, ?, ?)`, [childA1, parentAProfileId, regNow, regNow]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, is_deleted, created_at, updated_at) VALUES (?, ?, 'Baby Love Test', 'Female', '2023-01-01', 'p2', 0, ?, ?)`, [childA2, parentAProfileId, regNow, regNow]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, is_deleted, created_at, updated_at) VALUES (?, ?, 'Removed Child', 'Female', '2024-01-01', 'p3', 1, ?, ?)`, [childADel, parentAProfileId, regNow, regNow]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, is_deleted, created_at, updated_at) VALUES (?, ?, 'Parent B Child', 'Male', '2021-01-01', 'p4', 0, ?, ?)`, [childB1, parentBProfileId, regNow, regNow]);
+
+      const entryA1 = `entry-reg-1-${crypto.randomUUID()}`;
+      const entryA2 = `entry-reg-2-${crypto.randomUUID()}`;
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'checked_in', ?, ?)`, [entryA1, childA1, testEventId, regNow, regNow]);
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'picked_up', ?, ?)`, [entryA2, childA2, testEventId, regNow, regNow]);
+
+      const passRefA1 = `KOI-2026-REG1-${crypto.randomUUID().slice(0, 8)}`;
+      const passRefA2 = `KOI-2026-REG2-${crypto.randomUUID().slice(0, 8)}`;
+      await execute(`INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at) VALUES (?, ?, ?, 'hash1', 'active', ?, ?, ?)`, [`pass-reg-1-${crypto.randomUUID()}`, entryA1, passRefA1, regNow, regNow, regNow]);
+      await execute(`INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at) VALUES (?, ?, ?, 'hash2', 'active', ?, ?, ?)`, [`pass-reg-2-${crypto.randomUUID()}`, entryA2, passRefA2, regNow, regNow, regNow]);
+
+      const parentAToken = generateToken(parentAUserId);
+      const parentBToken = generateToken(parentBUserId);
+
+      // Test 1: Parent with 2 children receives both children from /parent/home without biometric
+      const homeRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: { 'Authorization': `Bearer ${parentAToken}` }
+      });
+      assert(homeRes.status === 200, 'GET /parent/home must return 200');
+      const homeData = await homeRes.json();
+      assert(homeData.childrenCount === 2, `Expected childrenCount=2, got ${homeData.childrenCount}`);
+      assert(homeData.passReadyCount === 2, `Expected passReadyCount=2, got ${homeData.passReadyCount}`);
+      assert(homeData.childrenList.length === 2, `Expected childrenList length=2, got ${homeData.childrenList.length}`);
+      assert(homeData.childrenList.some((c: any) => c.id === childA1 && c.name === 'Baby Livina Test'), 'Must contain Baby Livina Test');
+      assert(homeData.childrenList.some((c: any) => c.id === childA2 && c.name === 'Baby Love Test'), 'Must contain Baby Love Test');
+
+      // Test 2: Removed/deleted child is excluded
+      assert(!homeData.childrenList.some((c: any) => c.id === childADel), 'Deleted child must NOT be present in /parent/home');
+
+      // Test 3: GET /parent/children returns both
+      const childrenRes = await fetch(`${testBaseUrl}/api/parent/children`, {
+        headers: { 'Authorization': `Bearer ${parentAToken}` }
+      });
+      assert(childrenRes.status === 200, 'GET /parent/children must return 200');
+      const childrenList = await childrenRes.json();
+      assert(childrenList.length === 2, `Expected /parent/children length=2, got ${childrenList.length}`);
+
+      // Test 4: Locked pass does NOT remove child from parent response, but redacts passReference
+      const lockedHomeRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: {
+          'Authorization': `Bearer ${parentAToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      assert(lockedHomeRes.status === 200, 'GET /parent/home under biometric lock must return 200');
+      const lockedHomeData = await lockedHomeRes.json();
+      assert(lockedHomeData.childrenList.length === 2, 'Both children must remain present even when pass is locked');
+      for (const c of lockedHomeData.childrenList) {
+        assert(c.passLocked === true, 'Child pass must be marked locked under biometric protection');
+        assert(c.passReference === undefined, 'Child passReference must be redacted while locked');
+        assert(Boolean(c.name && c.ageGroup && c.status), 'Child name, ageGroup, and status must NOT be redacted');
+      }
+
+      // Test 5: /parent/passes returns passes for checked_in/picked_up children
+      const passesRes = await fetch(`${testBaseUrl}/api/parent/passes`, {
+        headers: { 'Authorization': `Bearer ${parentAToken}` }
+      });
+      assert(passesRes.status === 200, 'GET /parent/passes must return 200');
+      const passesData = await passesRes.json();
+      assert(passesData.passes.length === 2, `Expected 2 ready passes in /parent/passes, got ${passesData.passes.length}`);
+
+      // Test 6: Authorized pass endpoint returns protected pass only after authorization
+      const unauthPassRes = await fetch(`${testBaseUrl}/api/parent/children/${childA1}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAToken}`,
+          'X-Biometric-Protected': 'true'
+        }
+      });
+      assert(unauthPassRes.status === 403, 'Unlocking pass without auth must return 403');
+
+      // Authorize childA1
+      const authResult = await authorizeChildPass(parentAProfileId, childA1, 15 * 60 * 1000, parentAUserId);
+      const authPassRes = await fetch(`${testBaseUrl}/api/parent/children/${childA1}/pass`, {
+        headers: {
+          'Authorization': `Bearer ${parentAToken}`,
+          'X-Biometric-Protected': 'true',
+          'X-Pass-Token': authResult.passToken
+        }
+      });
+      assert(authPassRes.status === 200, 'Authorized pass fetch must return 200');
+      const authPassData = await authPassRes.json();
+      assert(authPassData.passReference === passRefA1, `Must return passReference, got ${authPassData.passReference}`);
+
+      // Test 7: Parent A cannot see Parent B's children, and Parent B cannot see Parent A's children
+      const crossHomeRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: { 'Authorization': `Bearer ${parentBToken}` }
+      });
+      const crossHomeData = await crossHomeRes.json();
+      assert(crossHomeData.childrenCount === 1, `Parent B must only see 1 child, got ${crossHomeData.childrenCount}`);
+      assert(!crossHomeData.childrenList.some((c: any) => c.id === childA1 || c.id === childA2), 'Parent B must NOT see Parent A children');
+
+      const crossPassRes = await fetch(`${testBaseUrl}/api/parent/children/${childA1}/pass`, {
+        headers: { 'Authorization': `Bearer ${parentBToken}` }
+      });
+      assert(crossPassRes.status === 403 || crossPassRes.status === 404, 'Parent B must NOT access Parent A child pass');
+
+      // Test 8: Admin children listing remains unaffected
+      const adminChildrenRes = await fetch(`${testBaseUrl}/api/admin/children?eventId=${testEventId}&limit=500`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert(adminChildrenRes.status === 200, 'Admin children listing must return 200');
+      const adminChildrenData = await adminChildrenRes.json();
+      assert(Array.isArray(adminChildrenData.children), 'Admin children must return children array');
+      assert(adminChildrenData.children.some((c: any) => c.id === childA1 || c.childId === childA1), 'Admin must see Child A1');
+      assert(adminChildrenData.children.some((c: any) => c.id === childA2 || c.childId === childA2), 'Admin must see Child A2');
+    });
+
+    await test('Regression: Multi-channel campaign with Push failure and WhatsApp success reports partially_sent, NOT failed', async () => {
+      const campId = `camp-test-${crypto.randomUUID()}`;
+      const nowTime = new Date().toISOString();
+
+      // Create admin message log with in_app,push,whatsapp
+      await execute(`
+        INSERT INTO admin_message_logs (id, message_type, subject, body, channel, recipient_group, recipients_count, status, created_at)
+        VALUES (?, 'general_announcement', 'Test Partial Delivery Campaign', 'Body', 'in_app,push,whatsapp', 'all_parents', 2, 'queued', ?)
+      `, [campId, nowTime]);
+
+      // Save metadata showing push failed, in_app sent
+      const masterMeta = JSON.stringify({
+        campaignId: campId,
+        push: { status: 'failed', sentCount: 0, failedCount: 2, failureReason: 'vapid_auth_error' },
+        email: { status: 'none', sentCount: 0, failedCount: 0 },
+        in_app: { status: 'sent', count: 2 }
+      });
+      await execute(`
+        INSERT INTO notifications (id, title, message, type, audience_role, audience_scope, event_id, created_at, channel, metadata_json)
+        VALUES (?, 'Title', 'Message', 'campaign_master', 'admin', 'all_parents', ?, ?, 'in_app,push,whatsapp', ?)
+      `, [`notif-${campId}`, testEventId, nowTime, masterMeta]);
+
+      // WhatsApp delivery log showing delivered
+      await execute(`
+        INSERT INTO whatsapp_delivery_logs (id, campaign_id, recipient_phone, status, provider, provider_message_id, delivered_at, created_at, updated_at)
+        VALUES (?, ?, '+2348011223344', 'delivered', 'twilio', ?, ?, ?, ?)
+      `, [`wa-log-${crypto.randomUUID()}`, campId, `SM-test-${crypto.randomUUID()}`, nowTime, nowTime, nowTime]);
+
+      // Call campaign-status endpoint
+      const statusRes = await fetch(`${testBaseUrl}/api/admin/messages/campaign-status/${campId}`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert(statusRes.status === 200, 'Campaign status endpoint must return 200');
+      const statusData = await statusRes.json();
+      assert(statusData.status === 'partially_sent', `Overall status must be partially_sent when WhatsApp succeeded and Push failed, got "${statusData.status}"`);
+
+      // Check channel breakdown
+      assert(Array.isArray(statusData.channelStatuses), 'Must return channelStatuses breakdown');
+      const pushChannel = statusData.channelStatuses.find((c: any) => c.channel === 'push');
+      assert(pushChannel && pushChannel.status === 'Could not be sent', `Push status must be "Could not be sent", got "${pushChannel?.status}"`);
+      const waChannel = statusData.channelStatuses.find((c: any) => c.channel === 'whatsapp');
+      assert(waChannel && waChannel.status === 'Delivered', `WhatsApp status must be "Delivered", got "${waChannel?.status}"`);
+      const inAppChannel = statusData.channelStatuses.find((c: any) => c.channel === 'in_app');
+      assert(inAppChannel && inAppChannel.status === 'Sent', `In-app status must be "Sent", got "${inAppChannel?.status}"`);
+    });
+
+    await test('Regression: All channels fail marks overall status as failed', async () => {
+      const campId = `camp-fail-${crypto.randomUUID()}`;
+      const nowTime = new Date().toISOString();
+
+      await execute(`
+        INSERT INTO admin_message_logs (id, message_type, subject, body, channel, recipient_group, recipients_count, status, created_at)
+        VALUES (?, 'general_announcement', 'Test All Fail Campaign', 'Body', 'push,email', 'all_parents', 1, 'queued', ?)
+      `, [campId, nowTime]);
+
+      const masterMeta = JSON.stringify({
+        campaignId: campId,
+        push: { status: 'failed', sentCount: 0, failedCount: 1, failureReason: 'vapid_auth_error' },
+        email: { status: 'failed', sentCount: 0, failedCount: 1, failureReason: 'smtp_error' },
+        in_app: { status: 'none', count: 0 }
+      });
+      await execute(`
+        INSERT INTO notifications (id, title, message, type, audience_role, audience_scope, event_id, created_at, channel, metadata_json)
+        VALUES (?, 'Title', 'Message', 'campaign_master', 'admin', 'all_parents', ?, ?, 'push,email', ?)
+      `, [`notif-${campId}`, testEventId, nowTime, masterMeta]);
+
+      const statusRes = await fetch(`${testBaseUrl}/api/admin/messages/campaign-status/${campId}`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert(statusRes.status === 200, 'Campaign status endpoint must return 200');
+      const statusData = await statusRes.json();
+      assert(statusData.status === 'failed', `Overall status must be "failed" when all channels fail, got "${statusData.status}"`);
+      for (const cs of statusData.channelStatuses) {
+        assert(cs.status === 'Could not be sent', `Each failed channel status must be "Could not be sent", got "${cs.status}"`);
+      }
+    });
+
+    await test('Regression: Asynchronous WhatsApp queued marks status as queued/Sending', async () => {
+      const campId = `camp-queue-${crypto.randomUUID()}`;
+      const nowTime = new Date().toISOString();
+
+      await execute(`
+        INSERT INTO admin_message_logs (id, message_type, subject, body, channel, recipient_group, recipients_count, status, created_at)
+        VALUES (?, 'general_announcement', 'Test Queued Campaign', 'Body', 'whatsapp', 'all_parents', 1, 'queued', ?)
+      `, [campId, nowTime]);
+
+      await execute(`
+        INSERT INTO whatsapp_delivery_logs (id, campaign_id, recipient_phone, status, provider, created_at, updated_at)
+        VALUES (?, ?, '+2348011223344', 'queued', 'twilio', ?, ?)
+      `, [`wa-log-${crypto.randomUUID()}`, campId, nowTime, nowTime]);
+
+      const statusRes = await fetch(`${testBaseUrl}/api/admin/messages/campaign-status/${campId}`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert(statusRes.status === 200, 'Campaign status endpoint must return 200');
+      const statusData = await statusRes.json();
+      assert(statusData.status === 'queued', `Overall status must be "queued" while pending, got "${statusData.status}"`);
+      const waChannel = statusData.channelStatuses.find((c: any) => c.channel === 'whatsapp');
+      assert(waChannel && waChannel.status === 'Sending', `WhatsApp channel badge must be "Sending", got "${waChannel?.status}"`);
     });
 
   } finally {

@@ -803,7 +803,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       </p>
 
                     <div className="pt-1">
-                      {child.status === 'Pass ready' ? (
+                      {child.status === 'Pass ready' || child.status === 'Checked in' || child.status === 'Inside' || child.status === 'Picked up' || child.passReference ? (
                         <button
                           type="button"
                           onClick={() => {

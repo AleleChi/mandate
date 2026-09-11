@@ -1447,7 +1447,7 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const eventId = 'event-ga-2026';
+    const eventId = (typeof req.query.eventId === 'string' && req.query.eventId.trim()) ? req.query.eventId.trim() : 'event-ga-2026';
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = parseInt(req.query.limit as string, 10) || 25;
     const offset = (page - 1) * limit;
@@ -4818,7 +4818,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
       if (String(log.channel || '').includes('whatsapp')) {
         const delivLogs = await query(`
-          SELECT status FROM whatsapp_delivery_logs WHERE campaign_id = ?
+          SELECT status, provider_message_id, delivered_at, sent_at FROM whatsapp_delivery_logs WHERE campaign_id = ?
         `, [log.id]);
 
         const pendingJobs = await query(`
@@ -4827,15 +4827,17 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
         for (const j of pendingJobs) {
           if (j.status === 'pending' || j.status === 'processing') hasPending = true;
+          if (j.status === 'sent') hasSent = true;
+          if (j.status === 'delivered') hasDelivered = true;
           if (j.status === 'failed') hasFailed = true;
         }
 
         for (const dl of delivLogs) {
-          if (dl.status === 'queued') hasPending = true;
-          if (dl.status === 'sent') hasSent = true;
-          if (dl.status === 'delivered') hasDelivered = true;
           if (dl.status === 'read') hasRead = true;
-          if (dl.status === 'failed') hasFailed = true;
+          else if (dl.status === 'delivered' || dl.delivered_at) hasDelivered = true;
+          else if (dl.status === 'sent' || dl.sent_at || (dl.provider_message_id && dl.status !== 'failed')) hasSent = true;
+          else if (dl.status === 'queued') hasPending = true;
+          else if (dl.status === 'failed') hasFailed = true;
         }
 
         if (hasRead) waStatus = 'read';
@@ -4844,8 +4846,6 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         else if (hasFailed && !hasSent && !hasDelivered && !hasRead) waStatus = 'failed';
         else if (hasPending) waStatus = 'queued';
         else if (log.status === 'sent') waStatus = 'sent';
-
-        resolvedStatus = waStatus;
       }
 
       // Build independent channel status badges
@@ -4858,7 +4858,13 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
       for (const ch of channelList) {
         if (ch === 'whatsapp') {
-          const capStatus = waStatus.charAt(0).toUpperCase() + waStatus.slice(1);
+          let capStatus = 'Sending';
+          if (waStatus === 'read') capStatus = 'Read';
+          else if (waStatus === 'delivered') capStatus = 'Delivered';
+          else if (waStatus === 'sent') capStatus = 'Sent';
+          else if (waStatus === 'failed') capStatus = 'Failed';
+          else capStatus = 'Sending';
+
           channelStatuses.push({
             channel: 'whatsapp',
             label: 'WhatsApp',
@@ -4869,6 +4875,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
           if (savedMeta?.push) {
             if (savedMeta.push.status === 'failed' || (savedMeta.push.failedCount > 0 && savedMeta.push.sentCount === 0)) {
               pStatus = 'Failed';
+            } else if (savedMeta.push.sentCount > 0 && savedMeta.push.failedCount > 0) {
+              pStatus = 'Partially sent';
             } else if (savedMeta.push.sentCount > 0) {
               pStatus = 'Sent';
             }
@@ -4885,7 +4893,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
             status: 'Sent'
           });
         } else if (ch === 'email') {
-          const eStatus = savedMeta?.email?.status === 'failed' ? 'Failed' : 'Sent';
+          const eStatus = (savedMeta?.email?.status === 'failed' || (savedMeta?.email?.failedCount > 0 && savedMeta?.email?.sentCount === 0)) ? 'Failed' : 'Sent';
           channelStatuses.push({
             channel: 'email',
             label: 'Email',
@@ -4894,13 +4902,22 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         }
       }
 
-      // If push failed while other channels were sent, ensure campaign reflects channel breakdown
-      const pushChannelStatus = channelStatuses.find(cs => cs.channel === 'push');
-      if (pushChannelStatus?.status === 'Failed' && channelStatuses.length > 1) {
-        // Multi-channel with push failure: do not report whole campaign as generic "Sent"
-        if (resolvedStatus === 'sent') {
-          resolvedStatus = 'partial';
-        }
+      // Compute overall status according to Part 8 semantics
+      const hasAnySuccess = channelStatuses.some(cs => cs.status === 'Sent' || cs.status === 'Delivered' || cs.status === 'Read' || cs.status === 'Partially sent');
+      const hasAnyFailure = channelStatuses.some(cs => cs.status === 'Failed' || cs.status === 'Could not be sent');
+      const hasAnyQueued = channelStatuses.some(cs => cs.status === 'Sending' || cs.status === 'Queued');
+
+      if (channelStatuses.length > 0 && channelStatuses.every(cs => cs.status === 'Failed' || cs.status === 'Could not be sent')) {
+        resolvedStatus = 'failed';
+      } else if (hasAnySuccess && hasAnyFailure) {
+        resolvedStatus = 'partially_sent';
+      } else if (hasAnyQueued) {
+        resolvedStatus = 'queued';
+      } else if (hasAnySuccess) {
+        const allDelivered = channelStatuses.every(cs => cs.status === 'Delivered' || cs.status === 'Read');
+        resolvedStatus = allDelivered ? 'delivered' : 'sent';
+      } else {
+        resolvedStatus = log.status || 'sent';
       }
 
       // Remove raw placeholders from history using canonical URLs
@@ -6510,7 +6527,7 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
 
     // Query delivery logs for this campaign
     const deliveryLogs = await query(`
-      SELECT id, status, provider, error_code as "errorCode", error_message as "errorMessage", sent_at as "sentAt", delivered_at as "deliveredAt", read_at as "readAt", failed_at as "failedAt", created_at as "createdAt"
+      SELECT id, status, provider, provider_message_id as "providerMessageId", error_code as "errorCode", error_message as "errorMessage", sent_at as "sentAt", delivered_at as "deliveredAt", read_at as "readAt", failed_at as "failedAt", created_at as "createdAt"
       FROM whatsapp_delivery_logs
       WHERE campaign_id = ?
     `, [campaignId]);
@@ -6522,6 +6539,19 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
       WHERE idempotency_key LIKE ?
     `, [`campaign:${campaignId}:%`]);
 
+    // Look up delivery summary stored in notifications.metadata_json for this campaign
+    const notifMeta = await queryOne(`
+      SELECT metadata_json FROM notifications WHERE id = ?
+    `, [`notif-${campaignId}`]);
+    let savedMeta: any = null;
+    if (notifMeta?.metadata_json) {
+      try {
+        savedMeta = JSON.parse(notifMeta.metadata_json);
+      } catch {
+        // Ignore parse error
+      }
+    }
+
     let queuedCount = 0;
     let sentCount = 0;
     let deliveredCount = 0;
@@ -6532,6 +6562,10 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
     for (const j of jobs) {
       if (j.status === 'pending' || j.status === 'processing') {
         queuedCount++;
+      } else if (j.status === 'sent') {
+        sentCount++;
+      } else if (j.status === 'delivered') {
+        deliveredCount++;
       } else if (j.status === 'failed') {
         failedCount++;
         if (j.failureReason || j.lastError) latestErrorMessage = j.failureReason || j.lastError;
@@ -6539,30 +6573,89 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
     }
 
     for (const dl of deliveryLogs) {
-      if (dl.status === 'queued') {
-        queuedCount++;
-      } else if (dl.status === 'sent') {
-        sentCount++;
-      } else if (dl.status === 'delivered') {
-        deliveredCount++;
-      } else if (dl.status === 'read') {
+      if (dl.status === 'read' || dl.readAt) {
         readCount++;
+      } else if (dl.status === 'delivered' || dl.deliveredAt) {
+        deliveredCount++;
+      } else if (dl.status === 'sent' || dl.sentAt || (dl.providerMessageId && dl.status !== 'failed')) {
+        sentCount++;
+      } else if (dl.status === 'queued' && jobs.length === 0) {
+        queuedCount++;
       } else if (dl.status === 'failed') {
         failedCount++;
         if (dl.errorMessage) latestErrorMessage = dl.errorMessage;
       }
     }
 
-    // Determine overall status progression
-    let overallStatus: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' = 'queued';
-    if (failedCount > 0 && sentCount === 0 && deliveredCount === 0 && readCount === 0) {
+    // Build independent channel status badges
+    const channelList = String(log.channel || '').split(',').map((c: string) => c.trim().toLowerCase()).filter(Boolean);
+    const channelStatuses: Array<{
+      channel: string;
+      label: string;
+      status: string;
+    }> = [];
+
+    for (const ch of channelList) {
+      if (ch === 'whatsapp') {
+        let capStatus = 'Sending';
+        if (readCount > 0) capStatus = 'Read';
+        else if (deliveredCount > 0) capStatus = 'Delivered';
+        else if (sentCount > 0) capStatus = 'Sent';
+        else if (failedCount > 0 && sentCount === 0 && deliveredCount === 0) capStatus = 'Could not be sent';
+        else capStatus = 'Sending';
+
+        channelStatuses.push({
+          channel: 'whatsapp',
+          label: 'WhatsApp',
+          status: capStatus
+        });
+      } else if (ch === 'push') {
+        let pStatus = 'Sent';
+        if (savedMeta?.push) {
+          if (savedMeta.push.status === 'failed' || (savedMeta.push.failedCount > 0 && savedMeta.push.sentCount === 0)) {
+            pStatus = 'Could not be sent';
+          } else if (savedMeta.push.sentCount > 0 && savedMeta.push.failedCount > 0) {
+            pStatus = 'Partially sent';
+          } else if (savedMeta.push.sentCount > 0) {
+            pStatus = 'Sent';
+          }
+        }
+        channelStatuses.push({
+          channel: 'push',
+          label: 'Push',
+          status: pStatus
+        });
+      } else if (ch === 'in_app') {
+        channelStatuses.push({
+          channel: 'in_app',
+          label: 'In-app',
+          status: 'Sent'
+        });
+      } else if (ch === 'email') {
+        const eStatus = (savedMeta?.email?.status === 'failed' || (savedMeta?.email?.failedCount > 0 && savedMeta?.email?.sentCount === 0)) ? 'Could not be sent' : 'Sent';
+        channelStatuses.push({
+          channel: 'email',
+          label: 'Email',
+          status: eStatus
+        });
+      }
+    }
+
+    // Determine overall status progression using Part 8 semantics
+    const hasAnySuccess = channelStatuses.some(cs => cs.status === 'Sent' || cs.status === 'Delivered' || cs.status === 'Read' || cs.status === 'Partially sent');
+    const hasAnyFailure = channelStatuses.some(cs => cs.status === 'Could not be sent');
+    const hasAnyQueued = channelStatuses.some(cs => cs.status === 'Sending');
+
+    let overallStatus: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'partially_sent' = 'queued';
+    if (channelStatuses.length > 0 && channelStatuses.every(cs => cs.status === 'Could not be sent')) {
       overallStatus = 'failed';
-    } else if (readCount > 0) {
-      overallStatus = 'read';
-    } else if (deliveredCount > 0) {
-      overallStatus = 'delivered';
-    } else if (sentCount > 0) {
-      overallStatus = 'sent';
+    } else if (hasAnySuccess && hasAnyFailure) {
+      overallStatus = 'partially_sent';
+    } else if (hasAnyQueued) {
+      overallStatus = 'queued';
+    } else if (hasAnySuccess) {
+      const allDelivered = channelStatuses.every(cs => cs.status === 'Delivered' || cs.status === 'Read');
+      overallStatus = allDelivered ? 'delivered' : 'sent';
     } else {
       overallStatus = 'queued';
     }
@@ -6579,6 +6672,7 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
       delivered: deliveredCount,
       read: readCount,
       failed: failedCount,
+      channelStatuses,
       errorMessage: latestErrorMessage,
       lastUpdated: new Date().toISOString()
     });
