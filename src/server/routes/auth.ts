@@ -5,7 +5,7 @@ import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAu
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { buildPublicAppUrl } from '../utils/urlHelper';
-import { authorizeChildPass, revokeChildPassAuthorizations } from '../services/passService';
+import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
 
 const router = Router();
 
@@ -950,12 +950,40 @@ router.post('/passkeys/verify-action', authMiddleware, async (req: Authenticated
     `, [crypto.randomUUID(), req.user.id, req.user.role, 'device_secure_confirm', `Verified action: ${actionName || 'Sensitive Action'}`, now]);
 
     let passAuth: { passToken: string; expiresAt: number } | null = null;
-    if (childId && req.parentProfile) {
-      const child = await queryOne('SELECT id FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile.id]);
+    if (childId) {
+      // A pass-unlock action was requested — parentProfile and ownership are mandatory.
+      // Fail hard rather than silently returning success with passToken: undefined.
+      if (!req.parentProfile) {
+        console.error('[verify-action] childId provided but req.parentProfile is null', {
+          userId: req.user.id, childId
+        });
+        return res.status(403).json({
+          success: false,
+          error: 'Parent profile is required to unlock a child pass. Please sign in again.'
+        });
+      }
+
+      const child = await queryOne(
+        'SELECT id FROM children WHERE id = ? AND parent_profile_id = ?',
+        [childId, req.parentProfile.id]
+      );
       if (!child) {
         return res.status(403).json({ success: false, error: 'Unauthorized child context for biometric pass unlock' });
       }
+
       passAuth = await authorizeChildPass(req.parentProfile.id, childId, 15 * 60 * 1000, req.user.id);
+
+      // Immediately self-verify the generated token — defensive guarantee before returning.
+      const tokenValid = await isChildPassAuthorized(req.parentProfile.id, childId, passAuth.passToken);
+      if (!tokenValid) {
+        console.error('[verify-action] passToken failed immediate self-verification', {
+          parentProfileId: req.parentProfile.id, childId
+        });
+        return res.status(500).json({
+          success: false,
+          error: 'Pass authorization could not be established. Please try again.'
+        });
+      }
     }
 
     res.json({

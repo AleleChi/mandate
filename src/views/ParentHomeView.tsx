@@ -2514,26 +2514,22 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         childId={selectedDetailChild?.id || selectedChildId || undefined}
         onSuccess={async (credentialId?: string, passToken?: string) => {
           const targetChildId = selectedDetailChild?.id || selectedChildId;
-          if (targetChildId) {
-            try {
-              const passRes = await api.parent.getChildPass(targetChildId, passToken);
-              if (passRes && passRes.passReference) {
-                setUnlockedPassReferences(prev => ({
-                  ...prev,
-                  [targetChildId]: passRes.passReference
-                }));
-                if (typeof window !== 'undefined' && window.sessionStorage) {
-                  sessionStorage.setItem(`koinonia_pass_unlocked_${targetChildId}`, 'true');
-                }
-                setPassUnlockedChildId(targetChildId);
-                showSuccess('Pass unlocked', 'Security verified for this session.');
-              } else {
-                showError('Pass locked', 'Could not verify pass authorization from server.');
-              }
-            } catch (err: any) {
-              console.warn('Failed to retrieve authorized pass:', err);
-              showError('Unlock failed', err?.message || 'Biometric authorization could not be verified.');
+          if (!targetChildId) return;
+
+          const passRes = await api.parent.getChildPass(targetChildId, passToken);
+          if (passRes && passRes.passReference) {
+            setUnlockedPassReferences(prev => ({
+              ...prev,
+              [targetChildId]: passRes.passReference
+            }));
+            if (typeof window !== 'undefined' && window.sessionStorage) {
+              sessionStorage.setItem(`koinonia_pass_unlocked_${targetChildId}`, 'true');
             }
+            setPassUnlockedChildId(targetChildId);
+            showSuccess('Pass unlocked', 'Security verified for this session.');
+          } else {
+            // Pass endpoint returned 200 but no passReference — re-throw so modal stays open.
+            throw new Error('Pass not ready');
           }
         }}
         actionName="Unlocking secure child pass"

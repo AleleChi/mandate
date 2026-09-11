@@ -9,7 +9,7 @@ import { isWebAuthnSupported, base64URLToBuffer, bufferToBase64URL } from '../..
 interface DeviceSecurityModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (credentialId?: string, passToken?: string) => void;
+  onSuccess: (credentialId?: string, passToken?: string) => void | Promise<void>;
   actionName: string;
   childId?: string;
   isRegistration?: boolean; // If registering a new device passkey
@@ -224,11 +224,33 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
         const verifyRes = await api.auth.passkeys.verifyAction({ id: assertion.id }, actionName, childId || undefined);
         if (verifyRes.success) {
+          // Defensive guard: if this was a pass-unlock action and the server returned no token,
+          // do not proceed as though authorization succeeded.
+          if (childId && !verifyRes.passToken) {
+            throw new Error("Device verification succeeded but pass authorization was not established. Please try again.");
+          }
+
           setMode('success');
-          setTimeout(() => {
-            onSuccess(assertion.id, verifyRes.passToken);
+          // Wait for the success animation, then call onSuccess and only close after it completes.
+          await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+          try {
+            await onSuccess(assertion.id, verifyRes.passToken);
             onClose();
-          }, 1200);
+          } catch (successErr: any) {
+            // onSuccess (pass fetch) failed — stay on this modal in error state so user can retry.
+            console.error('[DeviceSecurityModal] onSuccess handler failed:', successErr);
+            setMode('error');
+            const isNetwork = successErr?.message === 'Connection problem' ||
+              (typeof successErr?.message === 'string' && (
+                successErr.message.includes('Failed to fetch') ||
+                successErr.message.includes('NetworkError') ||
+                successErr.message.includes('Load failed')
+              ));
+            setErrorMessage(isNetwork
+              ? "Check your connection and try again."
+              : "We couldn't open this pass. Please try again."
+            );
+          }
         } else {
           throw new Error(verifyRes.error || "Verification failed on server.");
         }
