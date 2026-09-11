@@ -114,6 +114,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
+  const [unlockedPassByChildId, setUnlockedPassByChildId] = useState<Record<string, { passReference: string; passLocked: boolean; pass?: any; child?: any }>>({});
   const [unlockedPassReferences, setUnlockedPassReferences] = useState<Record<string, string>>({});
   const [passUnlockedChildId, setPassUnlockedChildId] = useState<string | null>(null);
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
@@ -122,31 +123,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     if (!childId) return false;
     const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
     if (!isBiometricRequired) return true;
+    const unlocked = unlockedPassByChildId[childId];
+    if (unlocked && !unlocked.passLocked && !!unlocked.passReference) return true;
     return !!unlockedPassReferences[childId];
   };
-
-  useEffect(() => {
-    if (!selectedDetailChild?.id) return;
-    const childId = selectedDetailChild.id;
-    const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
-    if (!isBiometricRequired) return;
-
-    const hasSessionFlag = typeof window !== 'undefined' && window.sessionStorage && sessionStorage.getItem(`koinonia_pass_unlocked_${childId}`) === 'true';
-    if (hasSessionFlag && !unlockedPassReferences[childId]) {
-      api.parent.getChildPass(childId)
-        .then(res => {
-          if (res && res.passReference) {
-            setUnlockedPassReferences(prev => ({ ...prev, [childId]: res.passReference }));
-            setPassUnlockedChildId(childId);
-          } else {
-            try { sessionStorage.removeItem(`koinonia_pass_unlocked_${childId}`); } catch {}
-          }
-        })
-        .catch(() => {
-          try { sessionStorage.removeItem(`koinonia_pass_unlocked_${childId}`); } catch {}
-        });
-    }
-  }, [selectedDetailChild?.id]);
 
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const [isSoundOn, setIsSoundOn] = useState<boolean>(false);
@@ -333,11 +313,21 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       if (match) {
         setSelectedPassChild(match);
         if (match.passReference || match.passLocked || match.status === 'Pass ready' || match.status === 'Checked in' || match.status === 'Inside' || match.status === 'Picked up' || match.status === 'Checked out') {
-          setSelectedDetailChild(match);
+          const unlocked = unlockedPassByChildId[match.id];
+          if (unlocked) {
+            setSelectedDetailChild({
+              ...match,
+              passReference: unlocked.passReference,
+              passLocked: false,
+              pass: unlocked.pass || match.pass
+            });
+          } else {
+            setSelectedDetailChild(match);
+          }
         }
       }
     }
-  }, [selectedChildId, childrenList]);
+  }, [selectedChildId, childrenList, unlockedPassByChildId]);
 
   // New child form state
   const [newChild, setNewChild] = useState({
@@ -1136,7 +1126,19 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 {/* Gold Button */}
                 <button
                   type="button"
-                  onClick={() => setSelectedDetailChild(c)}
+                  onClick={() => {
+                    const unlocked = unlockedPassByChildId[c.id];
+                    if (unlocked) {
+                      setSelectedDetailChild({
+                        ...c,
+                        passReference: unlocked.passReference,
+                        passLocked: false,
+                        pass: unlocked.pass || c.pass
+                      });
+                    } else {
+                      setSelectedDetailChild(c);
+                    }
+                  }}
                   className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all shadow-2xs cursor-pointer focus:outline-none text-center"
                 >
                   View pass
@@ -2386,9 +2388,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             {/* QR Code */}
             <div className="flex flex-col items-center justify-center space-y-2 py-1">
               {(() => {
-                const isBiometricRequired = localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
-                const passCode = unlockedPassReferences[selectedDetailChild.id] || (!isBiometricRequired ? selectedDetailChild.passReference : null);
-                const requiresUnlock = isBiometricRequired && (!isPassUnlockedForChild(selectedDetailChild.id) || !passCode);
+                const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+                const unlocked = unlockedPassByChildId[selectedDetailChild.id];
+                const effectivePassCode = unlocked?.passReference || unlockedPassReferences[selectedDetailChild.id] || (!isBiometricRequired ? selectedDetailChild.passReference : null);
+                const isUnlocked = !isBiometricRequired || Boolean(
+                  (unlocked && !unlocked.passLocked && !!effectivePassCode) ||
+                  (!selectedDetailChild.passLocked && !!selectedDetailChild.passReference) ||
+                  (isPassUnlockedForChild(selectedDetailChild.id) && !!effectivePassCode)
+                );
+                const requiresUnlock = !isUnlocked;
                 if (requiresUnlock) {
                   return (
                     <div 
@@ -2409,7 +2417,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
                       <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
                       <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(passCode || selectedDetailChild.id)}`}
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(effectivePassCode || selectedDetailChild.id)}`}
                         alt="QR Code"
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
@@ -2518,14 +2526,46 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
           const passRes = await api.parent.getChildPass(targetChildId, passToken);
           if (passRes && passRes.passReference) {
+            const passRef = passRes.passReference;
+            const updatedChildData = passRes.child ? {
+              ...passRes.child,
+              passLocked: false,
+              passReference: passRef
+            } : null;
+
+            setUnlockedPassByChildId(prev => ({
+              ...prev,
+              [targetChildId]: {
+                passReference: passRef,
+                passLocked: false,
+                pass: passRes.child?.pass || {
+                  passCode: passRef,
+                  qrPayload: passRef,
+                  status: passRes.status,
+                  issuedAt: passRes.issuedAt
+                },
+                child: updatedChildData
+              }
+            }));
+
             setUnlockedPassReferences(prev => ({
               ...prev,
-              [targetChildId]: passRes.passReference
+              [targetChildId]: passRef
             }));
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-              sessionStorage.setItem(`koinonia_pass_unlocked_${targetChildId}`, 'true');
-            }
+
             setPassUnlockedChildId(targetChildId);
+
+            setSelectedDetailChild(prev => {
+              if (!prev || prev.id !== targetChildId) return prev;
+              return {
+                ...prev,
+                ...(updatedChildData || {}),
+                passReference: passRef,
+                passLocked: false,
+                pass: passRes.child?.pass || prev.pass
+              };
+            });
+
             showSuccess('Pass unlocked', 'Security verified for this session.');
           } else {
             // Pass endpoint returned 200 but no passReference — re-throw so modal stays open.

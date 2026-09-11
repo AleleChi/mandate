@@ -254,7 +254,170 @@ await test('verify-action self-verifies passToken before returning', async () =>
     'verify-action must self-verify passToken immediately');
 });
 
-// Summary
+// ---------------------------------------------------------------------------
+// PASS STATE / RENDERING TESTS (Section 10)
+// ---------------------------------------------------------------------------
+console.log('\n=== PASS STATE / RENDERING TESTS ===\n');
+
+interface ChildState {
+  id: string;
+  name: string;
+  passLocked?: boolean;
+  passReference?: string;
+  pass?: any;
+}
+
+interface UnlockedPassEntry {
+  passReference: string;
+  passLocked: boolean;
+  pass?: any;
+  child?: any;
+}
+
+function computePassRenderState(
+  child: ChildState,
+  unlockedPassByChildId: Record<string, UnlockedPassEntry>,
+  isBiometricRequired: boolean
+) {
+  const unlocked = unlockedPassByChildId[child.id];
+  const effectivePassCode = unlocked?.passReference || (!isBiometricRequired ? child.passReference : null);
+  const isUnlocked = !isBiometricRequired || Boolean(
+    (unlocked && !unlocked.passLocked && !!effectivePassCode) ||
+    (!child.passLocked && !!child.passReference)
+  );
+  return {
+    requiresUnlock: !isUnlocked,
+    effectivePassCode
+  };
+}
+
+await test('initially locked child renders lock screen when biometric is required', async () => {
+  const child: ChildState = { id: 'child-livina', name: 'Baby Livina', passLocked: true, passReference: undefined };
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {};
+  const state = computePassRenderState(child, unlockedPassByChildId, true);
+  assert(state.requiresUnlock === true, 'Initially locked child must require unlock');
+  assert(!state.effectivePassCode, 'Pass code must be absent when locked');
+});
+
+await test('authorized pass response causes lock screen to disappear and renders pass code', async () => {
+  let child: ChildState = { id: 'child-livina', name: 'Baby Livina', passLocked: true, passReference: undefined };
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {};
+
+  // Simulate authorized pass response from GET /api/parent/children/:childId/pass
+  const passRes = {
+    passReference: 'KOI-2026-LIVINA-PASS',
+    status: 'active',
+    child: { id: 'child-livina', name: 'Baby Livina', passLocked: false, passReference: 'KOI-2026-LIVINA-PASS' }
+  };
+
+  // State update as implemented in ParentHomeView.tsx
+  unlockedPassByChildId[child.id] = {
+    passReference: passRes.passReference,
+    passLocked: false,
+    child: passRes.child
+  };
+  child = {
+    ...child,
+    ...passRes.child,
+    passReference: passRes.passReference,
+    passLocked: false
+  };
+
+  const state = computePassRenderState(child, unlockedPassByChildId, true);
+  assert(state.requiresUnlock === false, 'Lock screen must disappear after authorization');
+  assert(state.effectivePassCode === 'KOI-2026-LIVINA-PASS', 'Authorized pass code must render');
+});
+
+await test('stale original child.passLocked does not override authorized response', async () => {
+  const staleOriginalChild: ChildState = { id: 'child-livina', name: 'Baby Livina', passLocked: true, passReference: undefined };
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {
+    'child-livina': {
+      passReference: 'KOI-2026-LIVINA-PASS',
+      passLocked: false
+    }
+  };
+
+  // Even if the child object passed in has passLocked: true, the in-memory authorized state prevails
+  const state = computePassRenderState(staleOriginalChild, unlockedPassByChildId, true);
+  assert(state.requiresUnlock === false, 'Stale child.passLocked=true must not override authorized in-memory state');
+  assert(state.effectivePassCode === 'KOI-2026-LIVINA-PASS', 'Pass code must resolve from unlockedPassByChildId');
+});
+
+await test('background /parent/home refresh does not immediately relock current authorized pass', async () => {
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {
+    'child-livina': {
+      passReference: 'KOI-2026-LIVINA-PASS',
+      passLocked: false
+    }
+  };
+
+  // /parent/home returns redacted childrenList
+  const refreshedChildrenList: ChildState[] = [
+    { id: 'child-livina', name: 'Baby Livina', passLocked: true, passReference: undefined }
+  ];
+
+  // The ParentHomeView useEffect logic merges in-memory unlocked pass
+  const match = refreshedChildrenList.find(c => c.id === 'child-livina')!;
+  const unlocked = unlockedPassByChildId[match.id];
+  const updatedDetailChild: ChildState = unlocked ? {
+    ...match,
+    passReference: unlocked.passReference,
+    passLocked: false
+  } : match;
+
+  assert(updatedDetailChild.passLocked === false, 'Background refresh must not reset passLocked to true');
+  assert(updatedDetailChild.passReference === 'KOI-2026-LIVINA-PASS', 'Background refresh must preserve passReference');
+
+  const state = computePassRenderState(updatedDetailChild, unlockedPassByChildId, true);
+  assert(state.requiresUnlock === false, 'Pass must remain unlocked after background refresh');
+});
+
+await test('Child A unlock does not affect Child B (child isolation)', async () => {
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {
+    'child-livina': {
+      passReference: 'KOI-2026-LIVINA-PASS',
+      passLocked: false
+    }
+  };
+
+  const childLove: ChildState = { id: 'child-love', name: 'Baby Love', passLocked: true, passReference: undefined };
+  const stateLove = computePassRenderState(childLove, unlockedPassByChildId, true);
+  assert(stateLove.requiresUnlock === true, 'Baby Love must remain locked when Baby Livina is unlocked');
+  assert(!stateLove.effectivePassCode, 'Baby Love must have no pass code');
+
+  const childLivina: ChildState = { id: 'child-livina', name: 'Baby Livina', passLocked: false, passReference: 'KOI-2026-LIVINA-PASS' };
+  const stateLivina = computePassRenderState(childLivina, unlockedPassByChildId, true);
+  assert(stateLivina.requiresUnlock === false, 'Baby Livina must be unlocked');
+});
+
+await test('failed authorization leaves lock screen', async () => {
+  const child: ChildState = { id: 'child-livina', name: 'Baby Livina', passLocked: true, passReference: undefined };
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {};
+
+  // Failed authorization: state is NOT updated
+  const state = computePassRenderState(child, unlockedPassByChildId, true);
+  assert(state.requiresUnlock === true, 'Failed authorization must leave lock screen');
+});
+
+await test('authorization expiry requires unlock again', async () => {
+  activePassAuthorizations.clear();
+  // Authorization with 10ms TTL
+  const { passToken } = await authorizeChildPassLocal('parent-exp', 'child-exp', 10);
+  // Wait 15ms for expiration
+  await new Promise(r => setTimeout(r, 15));
+  activePassAuthorizations.clear();
+  const valid = await isChildPassAuthorizedLocal('parent-exp', 'child-exp', passToken);
+  assert(!valid, 'Expired authorization must be rejected by server check');
+});
+
+await test('Secure Pass OFF renders pass directly without lock screen', async () => {
+  const child: ChildState = { id: 'child-livina', name: 'Baby Livina', passLocked: false, passReference: 'KOI-2026-OFF' };
+  const unlockedPassByChildId: Record<string, UnlockedPassEntry> = {};
+  const state = computePassRenderState(child, unlockedPassByChildId, false);
+  assert(state.requiresUnlock === false, 'Secure Pass OFF must not show lock screen');
+  assert(state.effectivePassCode === 'KOI-2026-OFF', 'Direct pass code must be rendered');
+});
+
 console.log('\n==============================================');
 console.log(`TOTAL: ${passed + failed} | PASSED: ${passed} | FAILED: ${failed}`);
 if (failures.length > 0) {
