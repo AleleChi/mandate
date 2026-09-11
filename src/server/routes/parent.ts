@@ -81,6 +81,7 @@ async function mapProfileToFrontend(row: any) {
   if (!row) return null;
   const resolvedPhoto = await resolvePhotoUrlAsync(row.photo_file_id);
   return {
+    id: row.id,
     fullName: row.full_name || '',
     email: row.email || '',
     phone: row.phone_number || '',

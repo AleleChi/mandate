@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import express from 'express';
 import { query, queryOne, execute } from '../src/server/db';
-import { generateToken } from '../src/server/auth';
+import { generateToken, hashPassword } from '../src/server/auth';
 import adminRoutes from '../src/server/routes/admin';
 import notificationRoutes from '../src/server/routes/notifications';
 import authRoutes from '../src/server/routes/auth';
@@ -1426,6 +1426,27 @@ async function runTests() {
       assert(homeData.childrenList.length === 2, `Expected childrenList length=2, got ${homeData.childrenList.length}`);
       assert(homeData.childrenList.some((c: any) => c.id === childA1 && c.name === 'Baby Livina Test'), 'Must contain Baby Livina Test');
       assert(homeData.childrenList.some((c: any) => c.id === childA2 && c.name === 'Baby Love Test'), 'Must contain Baby Love Test');
+      assert(homeData.parentProfile && homeData.parentProfile.id === parentAProfileId, `Parent A must resolve Parent A canonical profile (got ${homeData.parentProfile?.id}, expected ${parentAProfileId})`);
+      assert('photoFileId' in homeData.parentProfile && 'photoUrl' in homeData.parentProfile, 'Profile picture fields must remain present');
+
+      // Verify live attendance states: checked_in and picked_up remain visible
+      const checkedInChild = homeData.childrenList.find((c: any) => c.id === childA1);
+      assert(checkedInChild && checkedInChild.status === 'Checked in', 'checked_in child must remain visible');
+      const pickedUpChild = homeData.childrenList.find((c: any) => c.id === childA2);
+      assert(pickedUpChild && pickedUpChild.status === 'Picked up', 'picked_up child must remain visible');
+
+      // Test inside & checked_out live attendance states
+      await execute(`UPDATE child_event_entries SET status = 'inside' WHERE id = ?`, [entryA1]);
+      await execute(`UPDATE child_event_entries SET status = 'checked_out' WHERE id = ?`, [entryA2]);
+      const liveStatusRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: { 'Authorization': `Bearer ${parentAToken}` }
+      });
+      const liveStatusData = await liveStatusRes.json();
+      assert(liveStatusData.childrenList.some((c: any) => c.id === childA1 && c.status === 'Inside'), 'inside child must remain visible');
+      assert(liveStatusData.childrenList.some((c: any) => c.id === childA2 && c.status === 'Checked out'), 'checked_out child must remain visible');
+      // Restore entries for subsequent tests
+      await execute(`UPDATE child_event_entries SET status = 'checked_in' WHERE id = ?`, [entryA1]);
+      await execute(`UPDATE child_event_entries SET status = 'picked_up' WHERE id = ?`, [entryA2]);
 
       // Test 2: Removed/deleted child is excluded
       assert(!homeData.childrenList.some((c: any) => c.id === childADel), 'Deleted child must NOT be present in /parent/home');
@@ -1506,6 +1527,70 @@ async function runTests() {
       assert(Array.isArray(adminChildrenData.children), 'Admin children must return children array');
       assert(adminChildrenData.children.some((c: any) => c.id === childA1 || c.childId === childA1), 'Admin must see Child A1');
       assert(adminChildrenData.children.some((c: any) => c.id === childA2 || c.childId === childA2), 'Admin must see Child A2');
+
+      // Test 9: Tochukwu-style canonical sign-in selects canonical user, ignores duplicate/shadow account, and strictly resolves canonical profile with both children
+      const canonicalEmail = `tochukwu.canonical.${crypto.randomUUID()}@koinonia.test`;
+      const duplicateEmail = `tochukwu.duplicate.${crypto.randomUUID()}@koinonia.test`;
+      const plainPassword = 'ParentPassword123!';
+      const hashedPass = hashPassword(plainPassword);
+      const canonUserId = `u-canon-${crypto.randomUUID()}`;
+      const canonProfileId = `p-canon-${crypto.randomUUID()}`;
+      const dupeUserId = `u-dupe-${crypto.randomUUID()}`;
+      const dupeProfileId = `p-dupe-${crypto.randomUUID()}`;
+
+      // Canonical user + profile (owns 2 children + photo)
+      await execute(`INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at) VALUES (?, ?, ?, 'parent', 1, ?, ?)`, [canonUserId, canonicalEmail, hashedPass, regNow, regNow]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, photo_file_id, created_at, updated_at) VALUES (?, ?, 'Tochukwu Ogunaka', ?, '+2348110940296', 'photo-canon-livina', ?, ?)`, [canonProfileId, canonUserId, canonicalEmail, regNow, regNow]);
+
+      // Duplicate user + profile (0 children, separate credentials)
+      await execute(`INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at) VALUES (?, ?, ?, 'parent', 1, ?, ?)`, [dupeUserId, duplicateEmail, hashPassword('OtherPass123!'), regNow, regNow]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, email, phone_number, photo_file_id, created_at, updated_at) VALUES (?, ?, 'Ogunaka Tochukwu Blessing', ?, '+2348110940953', 'photo-dupe-orphan', ?, ?)`, [dupeProfileId, dupeUserId, duplicateEmail, regNow, regNow]);
+
+      // Children under canonical profile
+      const canonChild1 = `c-canon-1-${crypto.randomUUID()}`;
+      const canonChild2 = `c-canon-2-${crypto.randomUUID()}`;
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, is_deleted, created_at, updated_at) VALUES (?, ?, 'Baby Livina', 'Female', '2022-01-01', 'photo-l1', 0, ?, ?)`, [canonChild1, canonProfileId, regNow, regNow]);
+      await execute(`INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, photo_file_id, is_deleted, created_at, updated_at) VALUES (?, ?, 'Baby Love', 'Female', '2023-01-01', 'photo-l2', 0, ?, ?)`, [canonChild2, canonProfileId, regNow, regNow]);
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'checked_in', ?, ?)`, [`entry-c1-${crypto.randomUUID()}`, canonChild1, testEventId, regNow, regNow]);
+      await execute(`INSERT INTO child_event_entries (id, child_id, event_id, status, created_at, updated_at) VALUES (?, ?, ?, 'picked_up', ?, ?)`, [`entry-c2-${crypto.randomUUID()}`, canonChild2, testEventId, regNow, regNow]);
+
+      // 1. Sign-in via /api/auth/sign-in with canonical credentials selects canonical user (NOT duplicate)
+      const signInRes = await fetch(`${testBaseUrl}/api/auth/sign-in`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: canonicalEmail, password: plainPassword })
+      });
+      assert(signInRes.status === 200, 'Canonical sign-in must return 200');
+      const signInData = await signInRes.json();
+      assert(signInData.user.id === canonUserId, `Must select canonical user ${canonUserId}, got ${signInData.user.id}`);
+      assert(signInData.user.id !== dupeUserId, 'Must NOT select duplicate user account');
+      assert(signInData.profile.id === canonProfileId, `Must resolve canonical profile ${canonProfileId}, got ${signInData.profile.id}`);
+      assert(signInData.profile.id !== dupeProfileId, 'Must NOT resolve duplicate profile');
+      assert(Boolean(signInData.token), 'Sign-in must issue auth token');
+
+      // 2. Fresh session GET /parent/home resolves canonical profile with both children and photo
+      const canonHomeRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: { 'Authorization': `Bearer ${signInData.token}` }
+      });
+      assert(canonHomeRes.status === 200, 'GET /parent/home for canonical user must return 200');
+      const canonHomeData = await canonHomeRes.json();
+      assert(canonHomeData.parentProfile.id === canonProfileId, `Profile must be canonical ${canonProfileId}`);
+      assert(canonHomeData.parentProfile.photoFileId === 'photo-canon-livina', 'Photo file ID must be canonical');
+      assert(canonHomeData.childrenCount === 2, `Expected 2 children for canonical profile, got ${canonHomeData.childrenCount}`);
+      assert(canonHomeData.childrenList.some((c: any) => c.name === 'Baby Livina'), 'Must include Baby Livina');
+      assert(canonHomeData.childrenList.some((c: any) => c.name === 'Baby Love'), 'Must include Baby Love');
+
+      // 3. Strict resolver isolation: duplicate user session receives ONLY duplicate profile (0 children), NEVER canonical profile
+      const dupeToken = generateToken(dupeUserId);
+      const dupeHomeRes = await fetch(`${testBaseUrl}/api/parent/home`, {
+        headers: { 'Authorization': `Bearer ${dupeToken}` }
+      });
+      assert(dupeHomeRes.status === 200, 'GET /parent/home for duplicate user must return 200');
+      const dupeHomeData = await dupeHomeRes.json();
+      assert(dupeHomeData.parentProfile.id === dupeProfileId, `Duplicate session must resolve duplicate profile ${dupeProfileId}`);
+      assert(dupeHomeData.parentProfile.id !== canonProfileId, 'Duplicate session must NEVER cross boundary into canonical profile');
+      assert(dupeHomeData.childrenCount === 0, 'Duplicate profile must have 0 children');
+      assert(!dupeHomeData.childrenList.some((c: any) => c.id === canonChild1 || c.id === canonChild2), 'Duplicate profile must NEVER see canonical children');
     });
 
     await test('Regression: Multi-channel campaign with Push failure and WhatsApp success reports partially_sent, NOT failed', async () => {

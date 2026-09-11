@@ -14,6 +14,8 @@ export interface ChildItem {
   draftData?: AddChildDraft;
   submittedAt?: string;
   passReference?: string;
+  passLocked?: boolean;
+  pass?: any;
   needsAgeReview?: boolean;
 }
 

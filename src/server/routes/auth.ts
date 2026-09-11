@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { queryOne, execute, transaction, query } from '../db';
-import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
+import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAuthMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { buildPublicAppUrl } from '../utils/urlHelper';
@@ -394,7 +394,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
 
     const cleanEmail = emailVal.normalizedEmail!;
 
-    const user = await queryOne('SELECT id, email, password_hash, role, email_verified, status FROM users WHERE email = ?', [cleanEmail]);
+    const user = await queryOne('SELECT id, email, password_hash, role, email_verified, status FROM users WHERE LOWER(TRIM(email)) = ?', [cleanEmail]);
     console.log(`[SIGN_IN] user lookup { email: "${cleanEmail}", userFound: ${!!user}, role: "${user?.role}" }`);
     if (!user) {
       return res.status(404).json({
@@ -422,7 +422,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [user.id]);
+    const profile = await resolveParentProfileForUser(user.id, user.email);
     const token = generateToken(user.id);
 
     const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
@@ -899,7 +899,7 @@ router.post('/passkeys/login/verify', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Account linked with this device is not found' });
     }
 
-    const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [user.id]);
+    const profile = await resolveParentProfileForUser(user.id, user.email);
     const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [user.id]);
     const token = generateToken(user.id);
 

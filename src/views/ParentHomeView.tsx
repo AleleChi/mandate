@@ -332,7 +332,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       const match = childrenList.find(c => c.id === selectedChildId);
       if (match) {
         setSelectedPassChild(match);
-        if (match.passReference || match.status === 'Pass ready') {
+        if (match.passReference || match.passLocked || match.status === 'Pass ready' || match.status === 'Checked in' || match.status === 'Inside' || match.status === 'Picked up' || match.status === 'Checked out') {
           setSelectedDetailChild(match);
         }
       }
@@ -398,7 +398,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   const renderHomeTab = () => {
     const underReviewCount = childrenList.filter(c => c.status === 'Under review').length;
-    const passReadyCount = childrenList.filter(c => c.status === 'Pass ready').length;
+    const passReadyCount = childrenList.filter(c =>
+      c.status === 'Pass ready' ||
+      c.status === 'Checked in' ||
+      c.status === 'Inside' ||
+      c.status === 'Picked up' ||
+      c.status === 'Checked out' ||
+      Boolean(c.passReference || (c.pass && (c.pass.passCode || c.pass.passLocked)))
+    ).length;
 
     return (
       <div data-view-version="parent-dashboard-v5-clean-header" className="space-y-6 pt-1">
@@ -2274,7 +2281,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       )}
 
       {/* Detailed Pass Modal */}
-      {selectedDetailChild && (selectedDetailChild.passReference || selectedDetailChild.status === 'Pass ready') && (
+      {selectedDetailChild && (selectedDetailChild.passReference || selectedDetailChild.passLocked || selectedDetailChild.status === 'Pass ready' || selectedDetailChild.status === 'Checked in' || selectedDetailChild.status === 'Inside' || selectedDetailChild.status === 'Picked up' || selectedDetailChild.status === 'Checked out') && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div 
             data-view-version="parent-pass-detail-v6-from-overview"
