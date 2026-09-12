@@ -248,7 +248,7 @@ async function runTests() {
           channel: 'in_app',
           channels: ['in_app'],
           subject: 'Important Event Details - {Event name}',
-          body: 'Dear {Parent name},\n\nWe look forward to welcoming your family to {Event name}!',
+          body: 'Dear {Parent name}, We are looking forward to {Event name}!',
           confirmed: true,
           eventId: testEventId
         })
@@ -266,10 +266,24 @@ async function runTests() {
 
       assert(insertedNotif !== null, 'In-app notification was not inserted for parent');
       assert(insertedNotif.parent_id === testParentId, `Expected parent_id ${testParentId}, got ${insertedNotif.parent_id}`);
+
+      // Required stored subject: "Important Event Details - The General Assembly"
+      assert(insertedNotif.title === 'Important Event Details - The General Assembly', `Expected stored subject "Important Event Details - The General Assembly", got "${insertedNotif.title}"`);
+
+      // Required stored body must contain "Dear Tochukwu Ogunaka" and "The General Assembly"
+      assert(insertedNotif.message.includes('Dear Tochukwu Ogunaka'), `Stored body missing "Dear Tochukwu Ogunaka", got: "${insertedNotif.message}"`);
+      assert(insertedNotif.message.includes('The General Assembly'), `Stored body missing "The General Assembly", got: "${insertedNotif.message}"`);
+
+      // The stored title/body must NOT contain raw tokens
       assert(!insertedNotif.title.includes('{Event name}'), `Title contains raw placeholder: ${insertedNotif.title}`);
-      assert(insertedNotif.title.includes('The General Assembly'), `Title missing event name: ${insertedNotif.title}`);
+      assert(!insertedNotif.title.includes('{Parent name}'), `Title contains raw placeholder: ${insertedNotif.title}`);
       assert(!insertedNotif.message.includes('{Parent name}'), `Message contains raw placeholder: ${insertedNotif.message}`);
-      assert(insertedNotif.message.includes('Tochukwu Ogunaka'), `Message missing parent name: ${insertedNotif.message}`);
+      assert(!insertedNotif.message.includes('{Event name}'), `Message contains raw placeholder: ${insertedNotif.message}`);
+
+      // Strict check: NO known raw tokens remaining in newly stored parent in-app title or body
+      const KNOWN_TOKENS = /\{(Parent name|Child name|Volunteer name|Team|Location|Event name|Pass link|Review link|Pickup time|Support contact)\}/i;
+      assert(!KNOWN_TOKENS.test(insertedNotif.title), `Raw token found in parent in-app title: "${insertedNotif.title}"`);
+      assert(!KNOWN_TOKENS.test(insertedNotif.message), `Raw token found in parent in-app message: "${insertedNotif.message}"`);
     });
 
     await test('Pass update to multi-child parent without selected child is blocked with plain error', async () => {
@@ -385,6 +399,58 @@ async function runTests() {
       assert(loveNotif.message.includes('Baby Love'), 'Love notification missing Love name');
       assert(loveNotif.message.includes(`/#/parent/children/${child2Id}/pass`), 'Love notification wrong pass link');
       assert(!loveNotif.message.includes('Baby Livina'), 'Love notification leaked Baby Livina');
+    });
+
+    await test('Child-specific In-app persistence for Baby Love contains correct Parent, Baby Love, correct Event, and never Baby Livina', async () => {
+      // testParentId has 2 children: child1Id (Baby Livina) and child2Id (Baby Love)
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_parents',
+          selectedParentIds: [testParentId],
+          selectedChildIds: [child2Id], // Baby Love
+          messageType: 'pass_update',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Event Update for {Child name} - {Event name}',
+          body: 'Dear {Parent name}, your child {Child name} is confirmed for {Event name}!',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 200, `Expected HTTP 200, got ${res.status}: ${data.message}`);
+      assert(data.recipientsCount === 1, `Expected 1 recipient, got ${data.recipientsCount}`);
+
+      const notif = await queryOne(`
+        SELECT title, message, parent_id, child_id FROM notifications
+        WHERE parent_id = ? AND child_id = ?
+        ORDER BY created_at DESC LIMIT 1
+      `, [testParentId, child2Id]);
+
+      assert(notif !== null, 'Notification for Baby Love not found');
+      assert(notif.parent_id === testParentId, 'Must belong to correct Parent');
+      assert(notif.child_id === child2Id, 'Must target Baby Love');
+
+      // Title assertions
+      assert(notif.title.includes('Baby Love'), 'Title must contain Baby Love');
+      assert(notif.title.includes('The General Assembly'), 'Title must contain The General Assembly');
+      assert(!notif.title.includes('{Child name}'), 'Title must not contain {Child name}');
+      assert(!notif.title.includes('{Event name}'), 'Title must not contain {Event name}');
+
+      // Body assertions
+      assert(notif.message.includes('Dear Tochukwu Ogunaka'), 'Body must contain Dear Tochukwu Ogunaka');
+      assert(notif.message.includes('Baby Love'), 'Body must contain Baby Love');
+      assert(notif.message.includes('The General Assembly'), 'Body must contain The General Assembly');
+      assert(!notif.message.includes('Baby Livina'), 'Body must NEVER contain Baby Livina');
+      assert(!notif.message.includes('{Parent name}'), 'Body must not contain {Parent name}');
+      assert(!notif.message.includes('{Child name}'), 'Body must not contain {Child name}');
+      assert(!notif.message.includes('{Event name}'), 'Body must not contain {Event name}');
     });
 
     await test('Backend safety: Rejects child belonging to another parent', async () => {
@@ -610,6 +676,85 @@ async function runTests() {
 
       // Clean up test jobs so other test suites (e.g. phase1c) start with clean queue
       await execute("DELETE FROM notification_jobs WHERE parent_id = ?", [testParentId]);
+    });
+
+    await test('Volunteer In-app notification resolves title, body, volunteer name, team, location, and event before storage', async () => {
+      const volUserId = `user-vol-notif-${crypto.randomUUID()}`;
+      const volProfileId = `vol-notif-${crypto.randomUUID()}`;
+      const volLocationId = `loc-vol-notif-${crypto.randomUUID()}`;
+      const volAssignmentId = `assign-vol-notif-${crypto.randomUUID()}`;
+      const volNow = new Date().toISOString();
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
+        VALUES (?, ?, 'hash', 'volunteer', 'active', ?, ?)
+      `, [volUserId, `vol-notif-${Date.now()}@test.koinonia`, volNow, volNow]);
+
+      await execute(`
+        INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, department, status, created_at, updated_at)
+        VALUES (?, ?, 'Amina Bello', '+2348031112233', '+2348031112233', 'Hospitality', 'Ushering', 'approved', ?, ?)
+      `, [volProfileId, volUserId, volNow, volNow]);
+
+      await execute(`
+        INSERT INTO event_locations (id, event_id, name, short_name, location_type, is_active, created_at, updated_at)
+        VALUES (?, ?, 'Main Gate West', 'MGW', 'room', 1, ?, ?)
+      `, [volLocationId, testEventId, volNow, volNow]);
+
+      await execute(`
+        INSERT INTO event_duty_assignments (id, user_id, event_id, assigned_location_id, responsibility_key, team_key, status, starts_at, ends_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'general', 'Hospitality', 'scheduled', '2026-09-12T07:00:00Z', '2026-09-12T13:00:00Z', ?, ?)
+      `, [volAssignmentId, volUserId, testEventId, volLocationId, volNow, volNow]);
+
+      const res = await fetch(`${testBaseUrl}/api/admin/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          recipientGroup: 'specific_volunteers',
+          selectedVolunteerIds: [volProfileId],
+          messageType: 'duty_reminder',
+          channel: 'in_app',
+          channels: ['in_app'],
+          subject: 'Duty Briefing for {Volunteer name} - {Event name}',
+          body: 'Dear {Volunteer name},\n\nReport to {Location} with the {Team} team for {Event name}.',
+          confirmed: true,
+          eventId: testEventId
+        })
+      });
+
+      const data = await res.json();
+      assert(res.status === 200, `Expected HTTP 200, got ${res.status}: ${data.message}`);
+      assert(data.success === true, 'Expected success === true');
+
+      const volNotif = await queryOne(`
+        SELECT title, message, audience_role, channel
+        FROM notifications
+        WHERE metadata_json LIKE ?
+        ORDER BY created_at DESC LIMIT 1
+      `, [`%"campaignId":"${data.campaignId}"%`]);
+
+      assert(volNotif !== null, 'Volunteer in-app notification not found');
+      assert(volNotif.audience_role === 'volunteer', `Expected audience_role volunteer, got ${volNotif.audience_role}`);
+      assert(volNotif.channel === 'in-app', `Expected channel in-app, got ${volNotif.channel}`);
+
+      // Title must be personalized without raw tokens
+      assert(volNotif.title.includes('Amina Bello'), `Title missing volunteer name: "${volNotif.title}"`);
+      assert(volNotif.title.includes('The General Assembly'), `Title missing event name: "${volNotif.title}"`);
+      assert(!volNotif.title.includes('{Volunteer name}'), `Title has raw {Volunteer name}: "${volNotif.title}"`);
+      assert(!volNotif.title.includes('{Event name}'), `Title has raw {Event name}: "${volNotif.title}"`);
+
+      // Body must be personalized without raw tokens
+      assert(volNotif.message.includes('Dear Amina Bello,'), `Message missing volunteer greeting: "${volNotif.message}"`);
+      assert(volNotif.message.includes('Main Gate West'), `Message missing location: "${volNotif.message}"`);
+      assert(volNotif.message.includes('Hospitality'), `Message missing team: "${volNotif.message}"`);
+      assert(volNotif.message.includes('The General Assembly'), `Message missing event: "${volNotif.message}"`);
+
+      // Strict check: NO known raw tokens remaining in title or message
+      const KNOWN_TOKENS = /\{(Parent name|Child name|Volunteer name|Team|Location|Event name|Pass link|Review link|Pickup time|Support contact)\}/i;
+      assert(!KNOWN_TOKENS.test(volNotif.title), `Raw token found in volunteer title: "${volNotif.title}"`);
+      assert(!KNOWN_TOKENS.test(volNotif.message), `Raw token found in volunteer message: "${volNotif.message}"`);
     });
 
     // -------------------------------------------------------------

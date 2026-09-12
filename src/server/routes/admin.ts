@@ -6462,6 +6462,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
         const renderedBody = resolveMessageTokens(body, {
           parentName: pName,
+          volunteerName: pName,
           childName: 'your child',
           eventName: eventTitle,
           passUrl,
@@ -6472,6 +6473,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
         const renderedSubject = resolveMessageTokens(subject || '', {
           parentName: pName,
+          volunteerName: pName,
           childName: 'your child',
           eventName: eventTitle,
           passUrl,
@@ -6496,11 +6498,22 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       ? 'volunteer' 
       : (recipientGroup === 'all_event_team' ? 'staff' : 'parent');
 
+    // Known supported communication tokens — must never appear unresolved in In-App storage
+    const KNOWN_TOKENS_RE = /\{(Parent name|Child name|Volunteer name|Team|Location|Event name|Pass link|Review link|Pickup time|Support contact)\}/i;
+
     // 3. IN-APP NOTIFICATIONS (Canonical source of truth)
     let inAppCreated = false;
     if (activeChannels.includes('in_app')) {
       for (const msg of messagesToSend) {
         const msgNotifId = `notif-${crypto.randomUUID()}`;
+        // Defensive guard: warn if any known token survived resolution (should never happen after fix)
+        const rawTitle = msg.subject?.trim() || '';
+        const rawBody = msg.body || '';
+        if (KNOWN_TOKENS_RE.test(rawTitle) || KNOWN_TOKENS_RE.test(rawBody)) {
+          const rawInTitle = rawTitle.match(KNOWN_TOKENS_RE)?.[0];
+          const rawInBody = rawBody.match(KNOWN_TOKENS_RE)?.[0];
+          console.error(`[In-App Guard] Unresolved token detected before In-App insert — title: "${rawInTitle || 'none'}", body: "${rawInBody || 'none'}" — recipientGroup: ${recipientGroup}, messageType: ${messageType}`);
+        }
         await execute(`
           INSERT INTO notifications (
             id, title, message, type, audience_role, audience_scope, event_id,
