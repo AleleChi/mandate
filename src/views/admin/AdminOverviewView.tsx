@@ -516,6 +516,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   };
 
+  const formatTime = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+      return '';
+    }
+  };
+
+
   // Fetch Admin Notifications
   const fetchNotificationsList = async (playFeedback = false) => {
     if (!api.getToken()) return;
@@ -1169,6 +1180,432 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   };
 
   const activeFilteredKids = activeAttentionModal ? getFilteredAttentionChildren(activeAttentionModal.id) : [];
+
+  const activeAlerts = safetyAlerts.filter((a: any) => a.status === 'open');
+  const underwayAlerts = safetyAlerts.filter((a: any) => a.status === 'acknowledged');
+  const resolvedAlerts = safetyAlerts.filter((a: any) => a.status === 'resolved');
+
+  const renderAlertCard = (alert: any) => {
+    const severity = alert.severity || 'normal';
+    const isUrgent = severity === 'urgent';
+    const isImportant = severity === 'important';
+    const isNormal = severity === 'normal';
+    const isAck = alert.status === 'acknowledged';
+    const isResolved = alert.status === 'resolved';
+    const isLocalSilenced = urgentAlertEffectsManager.isAlertSilenced(alert.id);
+    const catLabel = getCategoryLabel(alert.category);
+
+    const viewVersion = isResolved
+      ? "resolved-care-alert-v1"
+      : isUrgent
+        ? "urgent-child-care-response-v1-premium"
+        : isImportant
+          ? "important-care-alert-v1-premium"
+          : "normal-care-alert-v1-premium";
+
+    const cardVersion = isResolved
+      ? "resolved-alert-card-v1"
+      : isUrgent
+        ? "urgent-alert-card-v1-premium"
+        : isImportant
+          ? "important-alert-card-v1"
+          : "normal-alert-card-v1";
+
+    let borderAccent = "border-zinc-200 border-l-4 border-l-zinc-300";
+    if (isResolved) {
+      borderAccent = "border-zinc-200 opacity-75 border-l-4 border-l-zinc-300";
+    } else if (isUrgent && !isAck) {
+      borderAccent = "border-red-200/80 border-l-4 border-l-red-600";
+    } else if (isImportant && !isAck) {
+      borderAccent = "border-amber-200/80 border-l-4 border-l-amber-500";
+    } else if (isAck) {
+      borderAccent = "border-zinc-200 border-l-4 border-l-[#C59B27]";
+    }
+
+    const raisedTime = alert.created_at ? formatTime(alert.created_at) : '';
+    const raisedRelative = alert.created_at ? formatTimeAgo(alert.created_at) : '';
+
+    return (
+      <div
+        key={alert.id}
+        className={`bg-white border rounded-xl p-5 sm:p-6 relative transition-all shadow-2xs flex flex-col justify-between ${borderAccent}`}
+        data-view-version={viewVersion}
+        data-component-version={cardVersion}
+      >
+        <div>
+          {/* Header Row: Category & Status */}
+          <div className="flex items-baseline justify-between gap-3 pb-3 border-b border-zinc-100">
+            <div>
+              <span
+                className="font-serif font-bold text-lg text-zinc-950 block"
+                data-component-version="safety-alert-category-labels-v2"
+              >
+                {catLabel}
+              </span>
+              {raisedRelative && (
+                <span className="text-[11px] text-zinc-400 font-sans">
+                  Raised {raisedTime ? `${raisedTime} · ${raisedRelative}` : raisedRelative}
+                </span>
+              )}
+            </div>
+
+            <div className="text-right shrink-0">
+              {isResolved ? (
+                <span className="text-xs font-medium text-zinc-500">
+                  Resolved
+                </span>
+              ) : isAck ? (
+                <span className="text-xs font-medium text-[#C59B27]">
+                  Response underway
+                </span>
+              ) : (
+                <span className="text-xs font-semibold text-red-600">
+                  Needs response
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Child Information */}
+          {alert.child_name ? (
+            <div
+              className="py-3.5 flex items-center justify-between gap-4 border-b border-zinc-100"
+              data-component-version="alert-child-identity-card-v3-premium"
+            >
+              <div className="flex items-center space-x-3.5 min-w-0">
+                <div className="shrink-0">
+                  <SafeImage
+                    src={alert.child_photo_file_id}
+                    className="w-11 h-11 rounded-lg object-cover border border-zinc-200"
+                    fallbackComponent={
+                      <div className="w-11 h-11 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400">
+                        <User className="w-5 h-5 text-zinc-400" />
+                      </div>
+                    }
+                  />
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="text-zinc-900 font-medium text-sm leading-snug truncate">
+                    {alert.child_name}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {alert.child_age_group && <span>{alert.child_age_group} · </span>}
+                    <span>Parent: {alert.parent_name || 'Not on file'}</span>
+                  </p>
+                </div>
+              </div>
+
+              {alert.parent_phone && (
+                <a
+                  href={`tel:${alert.parent_phone}`}
+                  className="text-xs font-medium text-zinc-700 hover:text-zinc-950 bg-white hover:bg-zinc-50 border border-zinc-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+                  title="Call parent"
+                >
+                  <Phone className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Call parent</span>
+                </a>
+              )}
+            </div>
+          ) : (
+            <div className="py-2.5 text-xs text-zinc-500 border-b border-zinc-100 text-left">
+              General care request (no specific child linked)
+            </div>
+          )}
+
+          {/* Location & Volunteer Details */}
+          <div className="py-3 text-xs text-zinc-600 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-left">
+            <div>
+              <span className="text-zinc-400">Location: </span>
+              <span className="font-medium text-zinc-800">
+                {alert.location_label || alert.location || 'Location not available'}
+              </span>
+            </div>
+
+            {alert.volunteer_team && (
+              <div>
+                <span className="text-zinc-400">Team: </span>
+                <span className="font-medium text-zinc-800">{alert.volunteer_team}</span>
+              </div>
+            )}
+
+            {alert.raised_by_name && (
+              <div>
+                <span className="text-zinc-400">Raised by: </span>
+                <span className="font-medium text-zinc-800">{alert.raised_by_name}</span>
+              </div>
+            )}
+
+            {alert.volunteer_phone && (
+              <a
+                href={`tel:${alert.volunteer_phone}`}
+                className="text-zinc-600 hover:text-zinc-900 inline-flex items-center gap-1 font-medium"
+                title="Call volunteer"
+              >
+                <Phone className="w-3 h-3 text-zinc-400" />
+                <span>{alert.volunteer_phone}</span>
+              </a>
+            )}
+          </div>
+
+          {/* Distress Message with subtle left rule */}
+          {alert.message && (
+            <div className="my-2.5 pl-3.5 border-l-2 border-[#C59B27]/40 py-1 text-left" data-component-version="alert-message-summary-v2-premium">
+              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+                “{alert.message}”
+              </p>
+            </div>
+          )}
+
+          {/* Human Response Status Path (5 stages) */}
+          <div
+            className="my-4 pt-3 pb-3 border-t border-b border-zinc-100 space-y-2.5 text-left"
+            data-component-version="care-response-status-v2-human"
+          >
+            <span className="text-[11px] font-medium text-zinc-400 block">Response</span>
+
+            {/* Desktop Horizontal Timeline */}
+            <div className="hidden sm:flex items-center justify-between text-xs font-sans gap-1">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0" />
+                <span className="text-[11px] font-medium text-emerald-700">Help requested</span>
+              </div>
+              <div className="h-px flex-1 bg-emerald-200 mx-1" />
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0" />
+                <span className="text-[11px] font-medium text-emerald-700">Care team notified</span>
+              </div>
+              <div className={`h-px flex-1 mx-1 ${(isAck || isResolved) ? 'bg-emerald-200' : 'bg-zinc-200'}`} />
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${
+                  isResolved ? 'bg-emerald-600' : isAck ? 'bg-[#C59B27]' : 'bg-zinc-300'
+                }`} />
+                <span className={`text-[11px] ${
+                  isResolved ? 'font-medium text-emerald-700' : isAck ? 'font-semibold text-[#C59B27]' : 'font-normal text-zinc-400'
+                }`}>
+                  {isAck ? 'Response underway' : 'Response acknowledged'}
+                </span>
+              </div>
+              <div className={`h-px flex-1 mx-1 ${isResolved ? 'bg-emerald-200' : isAck ? 'bg-amber-100' : 'bg-zinc-200'}`} />
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${
+                  isResolved ? 'bg-emerald-600' : 'bg-zinc-300'
+                }`} />
+                <span className={`text-[11px] ${
+                  isResolved ? 'font-medium text-emerald-700' : isAck ? 'font-normal text-zinc-600' : 'font-normal text-zinc-400'
+                }`}>
+                  {isAck ? 'Assistance' : 'Child being assisted'}
+                </span>
+              </div>
+              <div className={`h-px flex-1 mx-1 ${isResolved ? 'bg-emerald-200' : 'bg-zinc-200'}`} />
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${
+                  isResolved ? 'bg-emerald-600' : 'bg-zinc-300'
+                }`} />
+                <span className={`text-[11px] ${
+                  isResolved ? 'font-semibold text-emerald-700' : 'font-normal text-zinc-400'
+                }`}>
+                  {isResolved ? 'Resolved' : 'Request resolved'}
+                </span>
+              </div>
+            </div>
+
+            {/* Mobile Vertical Timeline */}
+            <div className="flex sm:hidden flex-col space-y-2 text-xs font-sans pl-1">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0" />
+                <span className="text-[11px] font-medium text-emerald-700">Help requested</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0" />
+                <span className="text-[11px] font-medium text-emerald-700">Care team notified</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${
+                  isResolved ? 'bg-emerald-600' : isAck ? 'bg-[#C59B27]' : 'bg-zinc-300'
+                }`} />
+                <span className={`text-[11px] ${
+                  isResolved ? 'font-medium text-emerald-700' : isAck ? 'font-semibold text-[#C59B27]' : 'font-normal text-zinc-400'
+                }`}>
+                  {isAck ? 'Response underway' : 'Response acknowledged'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${
+                  isResolved ? 'bg-emerald-600' : 'bg-zinc-300'
+                }`} />
+                <span className={`text-[11px] ${
+                  isResolved ? 'font-medium text-emerald-700' : isAck ? 'font-normal text-zinc-600' : 'font-normal text-zinc-400'
+                }`}>
+                  {isAck ? 'Assistance' : 'Child being assisted'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${
+                  isResolved ? 'bg-emerald-600' : 'bg-zinc-300'
+                }`} />
+                <span className={`text-[11px] ${
+                  isResolved ? 'font-semibold text-emerald-700' : 'font-normal text-zinc-400'
+                }`}>
+                  {isResolved ? 'Resolved' : 'Request resolved'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ownership / Responder Status */}
+          <div className="my-3 text-xs text-left">
+            {isResolved ? (
+              <div className="text-zinc-600">
+                <p className="font-medium text-zinc-800">
+                  Resolved by {alert.resolved_by_name || 'Admin'}
+                  {alert.resolved_at && (
+                    <span className="text-zinc-400 font-normal"> · {formatTime(alert.resolved_at) ? `${formatTime(alert.resolved_at)} (${formatTimeAgo(alert.resolved_at)})` : formatTimeAgo(alert.resolved_at)}</span>
+                  )}
+                </p>
+                {alert.resolution_note && (
+                  <p className="mt-1 text-zinc-600 text-xs pl-3 border-l-2 border-zinc-200">
+                    “{alert.resolution_note}”
+                  </p>
+                )}
+              </div>
+            ) : isAck ? (
+              <p className="text-zinc-700 font-medium">
+                Response taken by {alert.acknowledged_by_name || 'Care Lead'}
+                {alert.acknowledged_at && (
+                  <span className="text-zinc-400 font-normal"> · {formatTime(alert.acknowledged_at) ? `${formatTime(alert.acknowledged_at)} (${formatTimeAgo(alert.acknowledged_at)})` : formatTimeAgo(alert.acknowledged_at)}</span>
+                )}
+              </p>
+            ) : (
+              <p className="text-red-600 font-medium text-xs">
+                Needs response · Awaiting care team acknowledgment
+              </p>
+            )}
+          </div>
+
+          {isLocalSilenced && (
+            <div className="my-2 text-xs text-zinc-600 bg-zinc-50 p-2.5 border border-zinc-200 rounded-lg flex items-center justify-between">
+              <span>Alarm sound is silenced on this device.</span>
+              <button
+                onClick={() => {
+                  urgentAlertEffectsManager.unsilenceAlert(alert.id);
+                  showSuccess('Unsilenced', 'Emergency sound restored.');
+                }}
+                className="text-zinc-900 hover:text-zinc-950 font-medium underline bg-transparent border-none cursor-pointer"
+              >
+                Restore Sound
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Action Section */}
+        <div
+          className="pt-3 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+          data-component-version="severity-specific-alert-actions-v1"
+        >
+          <div className="text-zinc-400 text-[11px] text-left">
+            {isResolved
+              ? `Closed ${formatTimeAgo(alert.resolved_at || alert.updated_at)}`
+              : `Requested ${formatTimeAgo(alert.created_at)}`}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {isResolved ? (
+              <>
+                <button
+                  onClick={() => {
+                    setResolutionNote(alert.resolution_note || '');
+                    setActiveAlertDetail(alert);
+                  }}
+                  className="font-medium text-zinc-700 hover:text-zinc-950 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-lg border border-zinc-200 transition-colors cursor-pointer"
+                >
+                  Open Details
+                </button>
+                <button
+                  onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
+                  className="font-medium text-zinc-700 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Safety Summary
+                </button>
+              </>
+            ) : !isAck ? (
+              <>
+                {/* Silence alert on local terminal */}
+                {!isLocalSilenced && isUrgent && (
+                  <button
+                    onClick={() => handleSilenceAlert(alert.id)}
+                    data-component-version="urgent-alert-silence-device-action-v2"
+                    className="font-medium text-zinc-700 bg-white hover:bg-zinc-50 px-3 py-1.5 rounded-lg border border-zinc-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                    title="Silence alert on this device"
+                  >
+                    <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Silence alert</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => handleAcknowledgeAlert(alert.id)}
+                  disabled={isAcknowledgeInProgress === alert.id}
+                  className={`font-medium text-white px-4 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    isUrgent ? 'bg-red-700 hover:bg-red-800' : 'bg-zinc-900 hover:bg-zinc-800'
+                  }`}
+                >
+                  {isAcknowledgeInProgress === alert.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <span>Acknowledge & respond</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setResolutionNote('');
+                    setActiveAlertDetail(alert);
+                  }}
+                  className="font-medium text-zinc-700 hover:text-zinc-950 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-lg border border-zinc-200 transition-colors cursor-pointer"
+                >
+                  Open Details
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setResolutionNote('');
+                    setActiveAlertDetail(alert);
+                  }}
+                  className="font-medium text-white bg-zinc-900 hover:bg-zinc-800 px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Open Details
+                </button>
+
+                <button
+                  onClick={() => {
+                    setResolutionNote('');
+                    setActiveAlertDetail(alert);
+                  }}
+                  className="font-medium text-zinc-700 hover:text-zinc-950 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-lg border border-zinc-200 transition-colors cursor-pointer"
+                >
+                  Resolve
+                </button>
+
+                <button
+                  onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
+                  className="font-medium text-zinc-700 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Safety Summary
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div 
@@ -2002,57 +2439,54 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   )}
 
                   {/* Event Safety Alerts Panel */}
-                  {safetyAlerts.filter((a: any) => a.status !== 'resolved').length > 0 && showCommandCenter && (
-                    <div 
-                      className="bg-[#FAF9F6] border border-[#E5D5AE] rounded-[28px] p-8 shadow-xl mb-8 text-zinc-950 relative text-left"
-                      data-view-version="emergency-command-center-v2-secondary-detail"
+                  {showCommandCenter && (
+                    <div
+                      className="bg-[#FCFCFA] border border-zinc-200 rounded-xl p-6 sm:p-7 shadow-2xs mb-8 text-zinc-950 relative text-left"
+                      data-view-version="emergency-response-desk-v3"
                     >
-                      {/* Header block with advanced security styling */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#E5D5AE]/30 mb-6 gap-4"
+                      {/* Header block with calm, authoritative styling */}
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between pb-4 border-b border-zinc-200/70 mb-6 gap-4"
                         data-component-version="active-safety-alert-header-v3"
                       >
-                        <div className="flex items-center space-x-3.5" data-component-version="emergency-no-blinking-dots-v1">
-                          <div className="bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider border border-[#C59B27]/20">
-                            Response Status: Active
-                          </div>
-                          <div>
-                            <h3 className="font-serif text-lg font-black text-[#C59B27] tracking-tight uppercase flex items-center gap-2">
-                              ✨ Child Care Response
-                            </h3>
-                            <p className="text-xs text-zinc-500 font-medium font-sans">
-                              Active care requests requiring immediate response and care team monitoring.
+                        <div className="space-y-1" data-component-version="emergency-no-blinking-dots-v1">
+                          <h2 className="font-serif text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
+                            Emergency Response
+                          </h2>
+                          <p className="text-xs text-zinc-500 font-sans">
+                            Active care requests that need attention.
+                          </p>
+                          {activeAlerts.length > 0 ? (
+                            <p className="text-xs text-red-600 font-medium pt-0.5">
+                              {activeAlerts.length === 1 ? '1 active request' : `${activeAlerts.length} active requests`}
                             </p>
-                          </div>
+                          ) : underwayAlerts.length > 0 ? (
+                            <p className="text-xs text-[#C59B27] font-medium pt-0.5">
+                              Response underway
+                            </p>
+                          ) : null}
                         </div>
-                        
-                        <div className="flex flex-col sm:items-end gap-2 shrink-0 text-left sm:text-right">
-                          <div className="flex items-center gap-2">
-                            {safetyAlerts.some((a: any) => a.severity === 'urgent' && a.status === 'open') && (
-                              <span className="text-[10px] text-red-600 font-sans font-semibold mr-2 animate-pulse">
-                                🔔 Urgent requests are active. Alarm sounds repeatedly on all connected terminals.
-                              </span>
-                            )}
-                            <button
-                              onClick={() => setShowCommandCenter(false)}
-                              className="text-[10px] font-bold bg-white hover:bg-zinc-50 text-zinc-700 hover:text-zinc-900 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>Minimize Panel</span>
-                            </button>
-                          </div>
+
+                        <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto">
+                          <button
+                            onClick={() => setShowCommandCenter(false)}
+                            className="text-xs text-zinc-500 hover:text-zinc-800 font-medium px-2.5 py-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                            title="Minimize panel"
+                          >
+                            Minimize
+                          </button>
                         </div>
                       </div>
 
                       {/* On-Load sound play notice behavior */}
                       {urgentAlertEffectsManager.hasUnsoundedUrgentOnLoad() && (
-                        <div 
-                          className="mb-6 bg-amber-50/80 border border-[#FAF9F6] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-800 shadow-xs"
+                        <div
+                          className="mb-6 bg-amber-50/80 border border-amber-200/60 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 shadow-2xs"
                           data-component-version="urgent-alert-load-behaviour-v2"
                         >
                           <div className="flex items-center gap-2 text-left">
-                            <Volume2 className="w-4 h-4 text-[#C59B27] shrink-0" />
+                            <Volume2 className="w-4 h-4 text-amber-700 shrink-0" />
                             <span>
-                              <strong>Emergency alert audio standby:</strong> Open care requests are active. Click to resume sounding alarms.
+                              Emergency alert audio standby: Open care requests are active. Click to resume sounding alarms.
                             </span>
                           </div>
                           <button
@@ -2061,397 +2495,111 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               resumeAudioContext();
                               urgentAlertEffectsManager.resumeOnLoadAlerts();
                             }}
-                            className="text-[10px] font-bold bg-[#C59B27] hover:bg-[#b58c22] text-white px-4 py-1.5 rounded-xl cursor-pointer shadow-sm shrink-0"
+                            className="text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-white px-3.5 py-1.5 rounded-lg cursor-pointer transition-colors shrink-0"
                           >
-                            RESUME AUDIO
+                            Resume audio
                           </button>
                         </div>
                       )}
 
-                      {/* Main grid with clean, ivory/light bento cards */}
+                      {/* Main grid: LEFT ~70%, RIGHT ~30% */}
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start" data-component-version="care-response-surface-v1-premium">
-                        
-                        {/* ALERT CARDS COLUMN */}
+
+                        {/* ALERT SECTIONS COLUMN (~70%) */}
                         <div className="lg:col-span-2 space-y-6">
-                          {safetyAlerts.filter((a: any) => a.status !== 'resolved').map((alert: any) => {
-                            const severity = alert.severity || 'normal';
-                            const isUrgent = severity === 'urgent';
-                            const isImportant = severity === 'important';
-                            const isNormal = severity === 'normal';
-                            const isAck = alert.status === 'acknowledged';
-                            const isLocalSilenced = urgentAlertEffectsManager.isAlertSilenced(alert.id);
-                            const catLabel = getCategoryLabel(alert.category);
 
-                            // Choose version based on severity
-                            const viewVersion = isUrgent 
-                              ? "urgent-child-care-response-v1-premium" 
-                              : isImportant 
-                                ? "important-care-alert-v1-premium" 
-                                : "normal-care-alert-v1-premium";
-
-                            const cardVersion = isUrgent 
-                              ? "urgent-alert-card-v1-premium" 
-                              : isImportant 
-                                ? "important-alert-card-v1" 
-                                : "normal-alert-card-v1";
-
-                            const soundVersion = isUrgent 
-                              ? "severity-audio-behaviour-v1" 
-                              : isImportant 
-                                ? "important-alert-sound-rules-v1" 
-                                : "normal-alert-sound-rules-v1";
-
-                            // Visual classes
-                            let bgClass = "bg-white border-[#E5D5AE]/30";
-                            let borderAccent = "border-l-4 border-l-[#C59B27]";
-                            let badgeClass = "bg-amber-50 text-[#C59B27] border-[#E5D5AE]/40";
-                            let badgeLabel = "Support Request";
-                            let subtitleCopy = "Review when available.";
-
-                            if (isImportant) {
-                              bgClass = "bg-[#FFFDF3] border-amber-200";
-                              borderAccent = "border-l-4 border-l-amber-500";
-                              badgeClass = "bg-amber-50 text-amber-800 border-amber-200";
-                              badgeLabel = "Important Care Update";
-                              subtitleCopy = "This request needs timely attention.";
-                            } else if (isUrgent) {
-                              bgClass = "bg-white border-red-200";
-                              borderAccent = "border-l-4 border-l-red-600 shadow-md shadow-red-50";
-                              badgeClass = "bg-red-50 text-red-700 border-red-200";
-                              badgeLabel = "Emergency Help Needed";
-                              subtitleCopy = "Immediate care or security response required.";
-                            }
-
-                            return (
-                              <div 
-                                key={alert.id}
-                                className={`border rounded-[24px] p-6 relative transition-all shadow-md flex flex-col justify-between ${bgClass} ${borderAccent}`}
-                                data-view-version={viewVersion}
-                                data-component-version={cardVersion}
-                              >
-                                <div>
-                                  {/* Badge & Meta Row */}
-                                  <div className="flex items-start justify-between gap-3 mb-4">
-                                    <div className="flex flex-col">
-                                      <span className="text-[10px] font-sans font-black tracking-wider text-zinc-400 uppercase flex items-center gap-1">
-                                        <span className={`h-1.5 w-1.5 rounded-full ${isUrgent ? 'bg-red-600' : isImportant ? 'bg-amber-500' : 'bg-[#C59B27]'}`} />
-                                        {badgeLabel}
-                                      </span>
-                                      <span className="font-serif font-bold text-lg text-zinc-950 mt-1"
-                                        data-component-version="safety-alert-category-labels-v2"
-                                      >
-                                        {catLabel}
-                                      </span>
-                                      <p className="text-[11px] text-zinc-500 font-sans mt-0.5">{subtitleCopy}</p>
-                                    </div>
-                                    
-                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold border shrink-0 ${
-                                      isAck 
-                                        ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                    }`}>
-                                      {isAck ? 'Acknowledged' : 'New request'}
-                                    </span>
-                                  </div>
-
-                                  {/* Child Identity Main Focus Section */}
-                                  {alert.child_name ? (
-                                    <div className="bg-[#FAF9F6] border border-[#E5D5AE]/20 rounded-2xl p-4 my-4 flex flex-col sm:flex-row items-center justify-between gap-4"
-                                         data-component-version="alert-child-identity-card-v3-premium">
-                                      <div className="flex items-center space-x-3.5">
-                                        <div className="shrink-0">
-                                          <SafeImage
-                                            src={alert.child_photo_file_id}
-                                            className="w-14 h-14 rounded-2xl object-cover border border-[#E5D5AE]/30 shadow-xs"
-                                            fallbackComponent={
-                                              <div className="w-14 h-14 rounded-2xl bg-amber-50/50 border border-[#E5D5AE]/20 flex flex-col items-center justify-center text-center p-1">
-                                                <User className="w-6 h-6 text-[#C59B27]/40" />
-                                                <span className="text-[6px] font-bold uppercase tracking-tight text-[#C59B27]/60 mt-0.5">No Photo</span>
-                                              </div>
-                                            }
-                                          />
-                                        </div>
-                                        <div className="text-left">
-                                          <p className="text-[9px] font-black text-[#C59B27] uppercase tracking-wider">Child Involves</p>
-                                          <p className="text-zinc-950 font-serif font-black text-sm leading-tight mt-0.5">{alert.child_name}</p>
-                                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-zinc-600 font-medium font-sans">
-                                            {alert.child_age_group && (
-                                              <span className="bg-amber-100/40 text-amber-900 px-1.5 py-0.5 rounded text-[10px]">
-                                                {alert.child_age_group}
-                                              </span>
-                                            )}
-                                            <span>·</span>
-                                            <span>Parent: {alert.parent_name || 'No parent profile'}</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      
-                                      {alert.parent_phone && (
-                                        <a 
-                                          href={`tel:${alert.parent_phone}`}
-                                          className="text-[11px] font-bold text-[#C59B27] bg-white hover:bg-amber-50/20 border border-[#E5D5AE]/40 px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer hover:shadow-sm"
-                                        >
-                                          <Phone className="w-3.5 h-3.5 text-[#C59B27]" />
-                                          <span>Call Parent</span>
-                                        </a>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="bg-[#FAF9F6] border border-[#E5D5AE]/20 rounded-2xl p-4 my-4 text-xs text-zinc-600 italic text-left">
-                                      🛡️ General Event Alert (No specific child linked)
-                                    </div>
-                                  )}
-
-                                  {/* Location & Message Details */}
-                                  <div className="space-y-3 my-4 text-xs">
-                                    {alert.location && (
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-semibold text-zinc-500">Location:</span>
-                                        <span className="bg-[#FAF9F6] text-zinc-800 px-3 py-1 rounded-xl font-bold border border-[#E5D5AE]/20">
-                                          {alert.location}
-                                        </span>
-                                      </div>
-                                    )}
-                                    
-                                    {alert.message && (
-                                      <div className="my-2" data-component-version="alert-message-summary-v2-premium">
-                                        <p className="bg-[#FAF9F6] border border-[#E5D5AE]/20 rounded-xl p-3.5 text-xs text-zinc-700 leading-relaxed font-sans italic">
-                                          "{alert.message}"
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Human Response Status Path (1 to 5) */}
-                                  <div className="my-5 py-4 border-y border-dashed border-[#E5D5AE]/20 space-y-3"
-                                    data-component-version="care-response-status-v2-human"
-                                  >
-                                    <p className="text-[10px] font-mono font-bold text-zinc-400 tracking-wider uppercase">Response status</p>
-                                    <div className="flex items-center justify-between text-[11px] text-zinc-500 font-sans">
-                                      {/* Step 1: Help requested */}
-                                      <div className="flex flex-col items-center flex-1">
-                                        <div className="h-6 w-6 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-bold text-[10px] shadow-xs">✓</div>
-                                        <span className="text-[9px] font-bold mt-1.5 text-emerald-700 text-center">Help requested</span>
-                                      </div>
-                                      <div className="h-0.5 bg-emerald-100 flex-1 -mt-4" />
-                                      
-                                      {/* Step 2: Care team notified */}
-                                      <div className="flex flex-col items-center flex-1">
-                                        <div className="h-6 w-6 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-bold text-[10px] shadow-xs">✓</div>
-                                        <span className="text-[9px] font-bold mt-1.5 text-emerald-700 text-center">Care team notified</span>
-                                      </div>
-                                      <div className="h-0.5 flex-1 -mt-4 transition-colors" style={{ backgroundColor: isAck ? '#d1fae5' : '#f4f4f5' }} />
-                                      
-                                      {/* Step 3: Response acknowledged */}
-                                      <div className="flex flex-col items-center flex-1">
-                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-[10px] shadow-xs ${
-                                          isAck ? 'bg-amber-50 border border-amber-200 text-amber-700' : 'bg-zinc-50 border border-zinc-200 text-zinc-400'
-                                        }`}>
-                                          {isAck ? '✓' : '3'}
-                                        </div>
-                                        <span className={`text-[9px] font-bold mt-1.5 text-center ${isAck ? 'text-amber-700' : 'text-zinc-400'}`}>Response acknowledged</span>
-                                      </div>
-                                      <div className="h-0.5 flex-1 -mt-4 transition-colors" style={{ backgroundColor: isAck ? '#fef3c7' : '#f4f4f5' }} />
-                                      
-                                      {/* Step 4: Child being assisted */}
-                                      <div className="flex flex-col items-center flex-1">
-                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-[10px] shadow-xs ${
-                                          isAck ? 'bg-[#FAF9F6] border border-[#E5D5AE] text-[#C59B27]' : 'bg-zinc-50 border border-zinc-200 text-zinc-400'
-                                        }`}>
-                                          {isAck ? '4' : '4'}
-                                        </div>
-                                        <span className={`text-[9px] font-bold mt-1.5 text-center ${isAck ? 'text-[#C59B27]' : 'text-zinc-400'}`}>Child being assisted</span>
-                                      </div>
-                                      <div className="h-0.5 bg-zinc-100 flex-1 -mt-4" />
-                                      
-                                      {/* Step 5: Request resolved */}
-                                      <div className="flex flex-col items-center flex-1">
-                                        <div className="h-6 w-6 rounded-full bg-zinc-50 border border-zinc-200 text-zinc-400 flex items-center justify-center font-bold text-[10px] shadow-xs">5</div>
-                                        <span className="text-[9px] font-medium mt-1.5 text-zinc-400 text-center">Request resolved</span>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Ownership Details */}
-                                  <div className="mb-4 text-[11px] text-zinc-600 bg-[#FAF9F6] border border-[#E5D5AE]/20 p-3 rounded-xl flex items-center justify-between">
-                                    {isAck ? (
-                                      <p className="font-sans font-semibold text-zinc-700 flex items-center gap-1.5">
-                                        <span>🛡️ Acknowledged by:</span>
-                                        <span className="text-[#C59B27] font-black">{alert.acknowledged_by_name || 'Care Lead'}</span>
-                                      </p>
-                                    ) : (
-                                      <p className="font-sans text-zinc-400 italic">
-                                        ⌛ Awaiting care team response
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  {isLocalSilenced && (
-                                    <div className="mb-4 text-[11px] text-zinc-600 bg-red-50 p-3 border border-red-200 rounded-xl flex items-center justify-between">
-                                      <span>🔇 Alarm sound is silenced on this device.</span>
-                                      <button 
-                                        onClick={() => {
-                                          urgentAlertEffectsManager.unsilenceAlert(alert.id);
-                                          showSuccess('Unsilenced', 'Emergency sound restored.');
-                                        }}
-                                        className="text-red-600 hover:text-red-700 font-bold underline bg-transparent border-none cursor-pointer"
-                                      >
-                                        Restore Sound
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Footer action section styled precisely by severity */}
-                                <div className="border-t border-zinc-100 pt-4 mt-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-3"
-                                  data-component-version="severity-specific-alert-actions-v1"
-                                >
-                                  <div className="text-zinc-400 font-medium shrink-0">
-                                    Requested {formatTimeAgo(alert.created_at)} by {alert.raised_by_name}
-                                  </div>
-
-                                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                                    {/* Local device silence rule */}
-                                    {!isLocalSilenced && isUrgent && (
-                                      <button
-                                        onClick={() => handleSilenceAlert(alert.id)}
-                                        data-component-version="urgent-alert-silence-device-action-v2"
-                                        className="font-bold text-zinc-600 bg-white hover:bg-zinc-50 px-3 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                        title="Silence sound only on this device"
-                                      >
-                                        <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
-                                        <span>Silence Device</span>
-                                      </button>
-                                    )}
-
-                                    {/* Normal Alert special actions */}
-                                    {isNormal && (
-                                      <>
-                                        <button
-                                          onClick={() => {
-                                            setResolutionNote('');
-                                            setActiveAlertDetail(alert);
-                                          }}
-                                          className="font-bold text-zinc-700 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer shadow-xs"
-                                        >
-                                          Open Details
-                                        </button>
-                                        <button
-                                          onClick={() => handleAcknowledgeAlert(alert.id)}
-                                          className="font-bold text-[#C59B27] bg-[#FAF9F6] hover:bg-[#FAF9F6]/80 px-3.5 py-1.5 rounded-xl border border-[#E5D5AE]/40 transition-all cursor-pointer shadow-xs"
-                                        >
-                                          Mark as Read
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {/* Important Alert actions */}
-                                    {isImportant && (
-                                      <>
-                                        {!isAck && (
-                                          <button
-                                            onClick={() => handleAcknowledgeAlert(alert.id)}
-                                            disabled={isAcknowledgeInProgress === alert.id}
-                                            className="font-bold text-amber-800 bg-amber-50 hover:bg-amber-100/50 px-3.5 py-1.5 rounded-xl border border-amber-200 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                                          >
-                                            {isAcknowledgeInProgress === alert.id ? (
-                                              <Loader2 className="w-3 h-3 animate-spin" />
-                                            ) : 'Acknowledge'}
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={() => {
-                                            setResolutionNote('');
-                                            setActiveAlertDetail(alert);
-                                          }}
-                                          className="font-bold text-zinc-700 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer shadow-xs"
-                                        >
-                                          Open Details
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setResolutionNote('');
-                                            setActiveAlertDetail(alert);
-                                          }}
-                                          className="font-bold text-white bg-[#C59B27] hover:bg-[#b58c22] px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs shadow-amber-900/10"
-                                        >
-                                          Resolve
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {/* Urgent Alert Actions */}
-                                    {isUrgent && (
-                                      <>
-                                        {!isAck && (
-                                          <button
-                                            onClick={() => handleAcknowledgeAlert(alert.id)}
-                                            disabled={isAcknowledgeInProgress === alert.id}
-                                            className="font-bold text-red-800 bg-red-50 hover:bg-red-100/50 px-3.5 py-1.5 rounded-xl border border-red-200 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                                          >
-                                            {isAcknowledgeInProgress === alert.id ? (
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin text-red-600" />
-                                            ) : 'Acknowledge and Respond'}
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={() => {
-                                            setResolutionNote('');
-                                            setActiveAlertDetail(alert);
-                                          }}
-                                          className="font-bold text-zinc-700 bg-white hover:bg-zinc-50 px-3.5 py-1.5 rounded-xl border border-zinc-200 transition-all cursor-pointer shadow-xs"
-                                        >
-                                          Open Full Details
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setResolutionNote('');
-                                            setActiveAlertDetail(alert); // Requires note popup
-                                          }}
-                                          className="font-bold text-white bg-red-600 hover:bg-red-700 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs shadow-red-900/10"
-                                        >
-                                          Resolve Alert
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {/* Phase 7 Shared Role-Aware Emergency & Safety Summary */}
-                                    <button
-                                      onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
-                                      className="font-bold text-white bg-amber-600 hover:bg-amber-700 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                    >
-                                      <Shield className="w-3.5 h-3.5 text-white" />
-                                      <span>Safety Summary</span>
-                                    </button>
-                                  </div>
-                                </div>
+                          {/* 1. ACTIVE REQUESTS / NEEDS RESPONSE */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-zinc-200/70">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-xs font-semibold text-zinc-900 font-sans">
+                                  Active requests
+                                </h3>
+                                {activeAlerts.length > 0 && (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                                    {activeAlerts.length}
+                                  </span>
+                                )}
                               </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* SECONDARY SIDE PANEL: SOUND SUMMARY & COLLAPSIBLE SETTINGS */}
-                        <div className="space-y-4" data-component-version="alert-device-sound-settings-secondary-v1">
-                          
-                          {/* Compact Sound Summary Bar */}
-                          <div className="bg-white border border-[#E5D5AE]/30 rounded-2xl p-4.5 shadow-sm text-zinc-900 text-left">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2.5">
-                                <Volume2 className="w-4 h-4 text-[#C59B27] shrink-0" />
-                                <div>
-                                  <p className="text-[10px] font-semibold uppercase text-[#C59B27] tracking-wider">Alert sound</p>
-                                  <p className="text-xs font-medium text-zinc-800 mt-0.5">
-                                    {alertProfile === 'emergency' ? 'Urgent' : alertProfile === 'important' ? 'Standard' : 'Soft'} · {alertVolume === 'very_loud' ? 'Very loud' : alertVolume === 'loud' ? 'Loud' : 'Normal'}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                              <span className="text-[11px] text-zinc-400">Needs response</span>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 mt-4">
+                            {activeAlerts.length === 0 ? (
+                              <div className="bg-white border border-zinc-200/80 rounded-xl p-5 text-center text-xs text-zinc-400 font-sans">
+                                No unacknowledged alerts active right now.
+                              </div>
+                            ) : (
+                              activeAlerts.map((alert: any) => renderAlertCard(alert))
+                            )}
+                          </div>
+
+                          {/* 2. RESPONSE UNDERWAY */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-zinc-200/70">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-xs font-semibold text-zinc-900 font-sans">
+                                  Response underway
+                                </h3>
+                                {underwayAlerts.length > 0 && (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                    {underwayAlerts.length}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-zinc-400">Responder attending</span>
+                            </div>
+
+                            {underwayAlerts.length === 0 ? (
+                              <div className="bg-white border border-zinc-200/80 rounded-xl p-5 text-center text-xs text-zinc-400 font-sans">
+                                No active responses currently underway.
+                              </div>
+                            ) : (
+                              underwayAlerts.map((alert: any) => renderAlertCard(alert))
+                            )}
+                          </div>
+
+                          {/* 3. RESOLVED TODAY */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-zinc-200/70">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-xs font-semibold text-zinc-900 font-sans">
+                                  Resolved today
+                                </h3>
+                                {resolvedAlerts.length > 0 && (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200">
+                                    {resolvedAlerts.length}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-zinc-400">Closed care requests</span>
+                            </div>
+
+                            {resolvedAlerts.length === 0 ? (
+                              <div className="bg-white border border-zinc-200/80 rounded-xl p-5 text-center text-xs text-zinc-400 font-sans">
+                                No incidents resolved yet today.
+                              </div>
+                            ) : (
+                              resolvedAlerts.map((alert: any) => renderAlertCard(alert))
+                            )}
+                          </div>
+
+                        </div>
+
+                        {/* SECONDARY SIDE PANEL: CONTROLS, SOUND & ESCALATION (~30%) */}
+                        <div className="space-y-4" data-component-version="alert-device-sound-settings-secondary-v1">
+
+                          {/* Compact Alert Sound Card */}
+                          <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-2xs text-zinc-900 text-left">
+                            <div className="space-y-0.5">
+                              <h4 className="text-xs font-semibold text-zinc-900">Alert sound</h4>
+                              <p className="text-xs text-zinc-500 font-sans">
+                                {alertProfile === 'emergency' ? 'Urgent' : alertProfile === 'important' ? 'Standard' : 'Soft'} · {alertVolume === 'very_loud' ? 'Very loud' : alertVolume === 'loud' ? 'Loud' : 'Normal'}
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 mt-3.5">
                               <button
                                 onClick={() => {
-                                  // Local Silence Button
                                   const activeUrgent = safetyAlerts.find((a: any) => a.severity === 'urgent' && a.status === 'open');
                                   if (activeUrgent) {
                                     handleSilenceAlert(activeUrgent.id);
@@ -2460,41 +2608,69 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                     showSuccess('Silenced', 'Alert audio silenced.');
                                   }
                                 }}
-                                className="font-medium text-[11px] text-zinc-700 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                className="font-medium text-xs text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 py-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
                               >
                                 <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
-                                <span>Mute alarm</span>
+                                <span>Silence alert</span>
                               </button>
 
                               <button
                                 onClick={() => setIsSoundSettingsOpen(!isSoundSettingsOpen)}
-                                className="font-medium text-[11px] text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                className="font-medium text-xs text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 py-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
                               >
                                 <Settings className="w-3.5 h-3.5 text-zinc-500" />
-                                <span>{isSoundSettingsOpen ? 'Hide settings' : 'Alert sound'}</span>
+                                <span>{isSoundSettingsOpen ? 'Hide settings' : 'Sound settings'}</span>
                               </button>
                             </div>
                           </div>
 
+                          {/* Escalation Information if relevant */}
+                          {activeAlerts.some((a: any) => a.severity === 'urgent') && (
+                            <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl text-left space-y-1">
+                              <h4 className="text-xs font-semibold text-zinc-800">Escalation</h4>
+                              <p className="text-xs text-zinc-500 leading-relaxed font-sans">
+                                If nobody responds within 45 seconds, the next response team will be notified.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Active Responders Summary if relevant */}
+                          {underwayAlerts.length > 0 && (
+                            <div className="p-3.5 bg-white border border-zinc-200/80 rounded-xl text-left space-y-2 shadow-2xs">
+                              <h4 className="text-xs font-semibold text-zinc-800">Active responders</h4>
+                              <div className="space-y-1.5 text-xs text-zinc-600 font-sans">
+                                {underwayAlerts.slice(0, 3).map((a: any) => (
+                                  <div key={a.id} className="flex items-center justify-between text-[11px]">
+                                    <span className="font-medium text-zinc-800 truncate max-w-[130px]">
+                                      {a.acknowledged_by_name || 'Care Lead'}
+                                    </span>
+                                    <span className="text-zinc-400">
+                                      {formatTimeAgo(a.acknowledged_at)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Collapsible detailed audio panel */}
                           {isSoundSettingsOpen && (
-                            <div className="bg-[#FAF9F6] border border-[#E5D5AE]/30 rounded-2xl p-4.5 space-y-3.5 text-zinc-800 shadow-md text-left animate-fade-in font-sans">
-                              <div className="border-b border-[#EAE8E1] pb-2">
-                                <h4 className="font-medium text-xs text-zinc-900 tracking-tight flex items-center gap-1.5">
-                                  <Settings className="w-3.5 h-3.5 text-[#C59B27]" />
-                                  Alert sound
+                            <div className="bg-white border border-zinc-200 rounded-xl p-4 space-y-3 text-zinc-800 shadow-sm text-left animate-fade-in font-sans">
+                              <div className="border-b border-zinc-100 pb-2">
+                                <h4 className="font-semibold text-xs text-zinc-900">
+                                  Sound preferences
                                 </h4>
                                 <p className="text-[11px] text-zinc-500 mt-0.5">
-                                  Set the sound used when urgent attention is needed.
+                                  Set tone and volume for urgent notifications.
                                 </p>
                               </div>
 
                               {/* Tone Selection */}
-                              <div className="space-y-1.5" data-component-version="emergency-alert-sound-profile-v2-loud">
+                              <div className="space-y-1" data-component-version="emergency-alert-sound-profile-v2-loud">
                                 <label className="text-[11px] font-medium text-zinc-600 block">
                                   Alert tone
                                 </label>
-                                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAE8E1]">
+                                <div className="grid grid-cols-3 gap-1 bg-zinc-50 p-1 rounded-lg border border-zinc-200">
                                   {[
                                     { id: 'normal', label: 'Soft' },
                                     { id: 'important', label: 'Standard' },
@@ -2508,9 +2684,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         updatePreference('urgentSoundProfile', prof.id);
                                         showSuccess('Tone updated', `Alert tone set to ${prof.label}.`);
                                       }}
-                                      className={`py-1.5 px-1 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
+                                      className={`py-1 px-1 rounded-md font-medium text-xs text-center transition-colors cursor-pointer ${
                                         alertProfile === prof.id
-                                          ? 'bg-[#18181B] text-white shadow-xs'
+                                          ? 'bg-zinc-900 text-white shadow-2xs'
                                           : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
                                       }`}
                                     >
@@ -2521,11 +2697,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
 
                               {/* Volume Selection */}
-                              <div className="space-y-1.5" data-component-version="alert-sound-volume-settings-v1">
+                              <div className="space-y-1" data-component-version="alert-sound-volume-settings-v1">
                                 <label className="text-[11px] font-medium text-zinc-600 block">
                                   Alert volume
                                 </label>
-                                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAE8E1]">
+                                <div className="grid grid-cols-3 gap-1 bg-zinc-50 p-1 rounded-lg border border-zinc-200">
                                   {[
                                     { id: 'standard', label: 'Normal' },
                                     { id: 'loud', label: 'Loud' },
@@ -2539,9 +2715,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         updatePreference('urgentVolumeBoost', vol.id);
                                         showSuccess('Volume updated', `Alert volume set to ${vol.label}.`);
                                       }}
-                                      className={`py-1.5 px-1 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
+                                      className={`py-1 px-1 rounded-md font-medium text-xs text-center transition-colors cursor-pointer ${
                                         alertVolume === vol.id
-                                          ? 'bg-[#18181B] text-white shadow-xs'
+                                          ? 'bg-zinc-900 text-white shadow-2xs'
                                           : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
                                       }`}
                                     >
@@ -2552,7 +2728,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
 
                               {/* Spoken Voice */}
-                              <div className="space-y-2 pt-1 border-t border-[#EAE8E1]" data-component-version="spoken-alert-voice-settings-v1">
+                              <div className="space-y-2 pt-1 border-t border-zinc-100" data-component-version="spoken-alert-voice-settings-v1">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-medium text-zinc-600">
                                     Spoken announcement
@@ -2565,10 +2741,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       updatePreference('spokenAlertsEnabled', newVal);
                                       showSuccess('Announcement ' + (newVal ? 'enabled' : 'disabled'), 'Spoken announcement updated.');
                                     }}
-                                    className={`text-[10px] font-medium px-2 py-0.5 rounded transition-all cursor-pointer ${
-                                      spokenAlertsEnabled 
-                                        ? 'bg-emerald-600 text-white shadow-xs' 
-                                        : 'bg-zinc-100 text-zinc-400 hover:text-zinc-600'
+                                    className={`text-[10px] font-medium px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                                      spokenAlertsEnabled
+                                        ? 'bg-emerald-600 text-white shadow-2xs'
+                                        : 'bg-zinc-100 text-zinc-500 hover:text-zinc-700'
                                     }`}
                                   >
                                     {spokenAlertsEnabled ? 'On' : 'Off'}
@@ -2577,14 +2753,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
 
                               {/* Test sound controls */}
-                              <div className="space-y-1.5 pt-1 border-t border-[#EAE8E1]" data-component-version="alert-sound-test-actions-v1">
+                              <div className="space-y-1.5 pt-1 border-t border-zinc-100" data-component-version="alert-sound-test-actions-v1">
                                 <div className="flex gap-2">
                                   <button
                                     type="button"
                                     onClick={() => {
                                       resumeAudioContext();
                                       playSound('emergency', { volume: alertVolume, profile: alertProfile });
-                                      
+
                                       if (spokenAlertsEnabled) {
                                         const sampleAlert = {
                                           category: 'medical_support',
@@ -2597,12 +2773,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       }
                                       showSuccess('Testing sound', 'Playing alert sound.');
                                     }}
-                                    className="flex-1 font-medium text-xs bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                                    className="flex-1 font-medium text-xs bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                                   >
-                                    <Volume2 className="w-3.5 h-3.5 text-[#C59B27]" />
+                                    <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
                                     <span>Test sound</span>
                                   </button>
-                                  
+
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2611,16 +2787,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         showSuccess('Stopped', 'Sound stopped.');
                                       } catch (_) {}
                                     }}
-                                    className="font-medium text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                                    className="font-medium text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                                   >
-                                    Stop sound
+                                    Stop
                                   </button>
                                 </div>
                               </div>
 
                               {/* Readiness Copy */}
-                              <div 
-                                className="bg-zinc-50 border border-zinc-200/70 p-2.5 rounded-xl text-zinc-500"
+                              <div
+                                className="bg-zinc-50 border border-zinc-200/70 p-2.5 rounded-lg text-zinc-500"
                                 data-component-version="event-sound-readiness-copy-v1"
                               >
                                 <p className="text-[11px] leading-relaxed">
@@ -2644,20 +2820,22 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     </div>
                   )}
 
-                  {/* Small Elegant Emergency Banner at the top of the dashboard */}
+                  {/* Refined Overview Emergency Banner (Requirement 14) */}
                   {safetyAlerts.filter((a: any) => a.status !== 'resolved').length > 0 && !showCommandCenter && (
-                    <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in"
-                         data-component-version="emergency-active-top-banner-v1">
+                    <div
+                      className="bg-white border border-zinc-200/90 border-l-4 border-l-red-600 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs animate-fade-in"
+                      data-component-version="emergency-active-top-banner-v2"
+                    >
                       <div className="flex items-center space-x-3 text-left">
-                        <div className="p-2 bg-red-100 text-red-700 rounded-xl">
-                          <ShieldAlert className="w-5 h-5" />
-                        </div>
+                        <div className="h-2 w-2 rounded-full bg-red-600 shrink-0" />
                         <div>
-                          <p className="font-bold text-red-950 text-sm">
-                            Emergency Care Alert Active
+                          <p className="font-bold text-zinc-900 text-sm">
+                            Emergency care alert
                           </p>
-                          <p className="text-xs text-red-700/80 font-medium">
-                            {safetyAlerts.filter((a: any) => a.status !== 'resolved').length} unresolved care escalations need immediate attention.
+                          <p className="text-xs text-zinc-500 font-medium">
+                            {safetyAlerts.filter((a: any) => a.status === 'open').length === 1
+                              ? '1 alert needs a response'
+                              : `${safetyAlerts.filter((a: any) => a.status === 'open').length} alerts need a response`}
                           </p>
                         </div>
                       </div>
@@ -2665,17 +2843,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         <Button
                           type="button"
                           onClick={() => {
-                            // Resume audio in case browser blocked it
                             try { resumeAudioContext(); } catch (_) {}
                             setShowCommandCenter(true);
                           }}
-                          className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-md cursor-pointer"
+                          className="bg-red-700 hover:bg-red-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all shadow-xs cursor-pointer"
                         >
-                          Open Command Center
+                          Open Response Desk
                         </Button>
                       </div>
                     </div>
                   )}
+
 
                   {/* Slim warm alert strip for pending reviews (restyled) */}
                   {stats.pendingVolunteers > 0 && (
@@ -3398,7 +3576,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
       {/* URGENT SAFETY ALERT FULL-SCREEN TAKEOVER OVERLAY */}
       {activeUrgentAlert && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 bg-[#18181B]/95 backdrop-blur-md animate-fade-in text-[#18181B]"
           data-view-version="urgent-alert-takeover-v7-personalised-scrollable"
         >
@@ -3415,355 +3593,147 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             )}
           </div>
 
-          <div 
-            className="w-full max-w-2xl h-full max-h-[100dvh] md:max-h-[90dvh] bg-[#FAF9F6] border-2 border-red-500 rounded-none md:rounded-[32px] shadow-2xl relative overflow-hidden flex flex-col"
+          <div
+            className="w-full max-w-lg max-h-[92dvh] bg-[#FAF9F6] border border-zinc-200/90 border-t-4 border-t-red-600 rounded-2xl shadow-2xl relative overflow-hidden flex flex-col text-left font-sans"
             data-component-version="emergency-mobile-viewport-safe-v1"
           >
-            {/* Elegant background gradients */}
-            <div className="absolute -top-16 -right-16 w-48 h-48 bg-red-500/5 rounded-full blur-2xl animate-fade-in" />
-            <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-amber-500/5 rounded-full blur-2xl animate-fade-in" />
-
-            {/* CARD HEADER (Static) */}
-            <div className="px-8 pt-8 pb-4 flex flex-col items-center text-center space-y-4 border-b border-red-200 relative z-10 shrink-0">
-              <div className="relative">
-                <div className="p-4 bg-red-50 rounded-2xl text-red-600 border border-red-200">
-                  <ShieldAlert className="w-10 h-10" />
+            {/* CARD HEADER */}
+            <div className="px-6 pt-5 pb-4 border-b border-zinc-200/80 bg-white/60 shrink-0">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${activeUrgentAlert.status === 'open' ? 'bg-red-600' : 'bg-amber-600'}`} />
+                  <span className={`text-[11px] font-semibold ${activeUrgentAlert.status === 'open' ? 'text-red-700' : 'text-amber-800'}`}>
+                    {activeUrgentAlert.status === 'open' ? 'Needs response' : 'Response underway'}
+                  </span>
                 </div>
-                <div className="absolute -top-1.5 -right-1.5 flex h-4 w-4">
-                  <span className="relative inline-flex rounded-full h-4 w-4 bg-red-600"></span>
-                </div>
+                {activeUrgentAlert.created_at && (
+                  <span className="text-[11px] text-zinc-400 font-medium">
+                    Raised {formatTimeAgo(activeUrgentAlert.created_at)}
+                  </span>
+                )}
               </div>
-              <div className="space-y-1">
-                <h2 className="text-2xl font-serif font-bold tracking-tight text-red-700">
-                  {activeUrgentAlert.isTest ? 'Alert Sound Test' : 'Urgent Care Alert'}
-                </h2>
-                <p className="text-xs text-zinc-600 font-sans">
-                  {activeUrgentAlert.isTest 
-                    ? 'Testing alert sound and notifications on this device.' 
-                    : 'Immediate attention required.'}
-                </p>
-                <p className="text-[11px] text-zinc-500">
-                  Sound repeats until acknowledged or resolved.
-                </p>
-              </div>
+              <h2 className="text-xl font-serif font-bold text-zinc-950 tracking-tight">
+                {activeUrgentAlert.isTest ? 'Alert Sound Test' : 'Emergency care alert'}
+              </h2>
+              <p className="text-xs text-zinc-600 mt-0.5">
+                {activeUrgentAlert.isTest ? 'Testing device alarm sound and readiness.' : 'A volunteer needs assistance.'}
+              </p>
             </div>
 
-            {/* CARD BODY (Scrollable) */}
-            <div 
-              className="px-8 py-4 overflow-y-auto flex-1 space-y-4 relative z-10 text-xs text-left [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-safe"
+            {/* CARD BODY */}
+            <div
+              className="px-6 py-5 overflow-y-auto flex-1 space-y-3.5 text-xs [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-safe"
               data-component-version="urgent-alert-scroll-container-v2"
             >
-              {/* Role Simulation Switcher */}
-              {!activeUrgentAlert.isTest && (
-                <div className="bg-zinc-100 border border-zinc-200 p-3.5 rounded-2xl flex flex-col md:flex-row justify-between items-center text-xs space-y-2 md:space-y-0 shadow-xs">
-                  <span className="font-bold text-zinc-600">Simulate Role View (Testing Masking):</span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {['admin', 'care_lead', 'gate_lead', 'pickup_lead', 'volunteer'].map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setSimulatedDutyRole(r)}
-                        className={`px-3 py-1 rounded-lg font-semibold border transition-all text-[10px] cursor-pointer ${
-                          simulatedDutyRole === r
-                            ? 'bg-red-600 border-red-700 text-white shadow-sm'
-                            : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
-                        }`}
-                      >
-                        {r.replace('_', ' ').toUpperCase()}
-                      </button>
-                    ))}
+              {/* Volunteer (WHO) */}
+              <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
+                <div className="text-[11px] font-medium text-zinc-400 mb-1">Volunteer</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-zinc-900 text-sm">{activeUrgentAlert.raised_by_name || 'Volunteer'}</p>
+                    {activeUrgentAlert.volunteer_team && (
+                      <p className="text-xs text-zinc-500 font-medium mt-0.5">{activeUrgentAlert.volunteer_team}</p>
+                    )}
                   </div>
+                  {activeUrgentAlert.volunteer_phone && (
+                    <a
+                      href={`tel:${activeUrgentAlert.volunteer_phone}`}
+                      className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-lg font-medium text-xs transition-colors shrink-0 flex items-center gap-1.5"
+                    >
+                      <Phone className="w-3 h-3 text-zinc-500" />
+                      <span>{activeUrgentAlert.volunteer_phone}</span>
+                    </a>
+                  )}
                 </div>
-              )}
+              </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-white border border-zinc-200 p-4 rounded-2xl shadow-sm">
-                <div>
-                  <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Raised by</span>
-                  <span className="font-bold text-zinc-800 text-xs">{activeUrgentAlert.raised_by_name}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Category</span>
-                  <span className="font-bold text-red-600 text-xs uppercase"
-                    data-component-version="safety-alert-category-labels-v2"
-                  >
+              {/* Location (WHERE) */}
+              <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
+                <div className="text-[11px] font-medium text-zinc-400 mb-1">Location</div>
+                <p className="font-semibold text-zinc-900 text-sm">
+                  {activeUrgentAlert.location_label || 'Location not available'}
+                </p>
+              </div>
+
+              {/* Distress Message (WHAT) */}
+              <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="text-[11px] font-medium text-zinc-400">
+                    Emergency Type
+                  </div>
+                  <span className="text-[10px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-100" data-component-version="safety-alert-category-labels-v2">
                     {getCategoryLabel(activeUrgentAlert.category)}
                   </span>
                 </div>
-                {activeUrgentAlert.location_label && (
-                  <div>
-                    <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Location</span>
-                    <span className="font-semibold text-amber-800 text-[10px] bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200 w-fit block mt-0.5">
-                      {activeUrgentAlert.location_label}
-                    </span>
-                  </div>
-                )}
-                {activeUrgentAlert.created_at && (
-                  <div>
-                    <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Time elapsed</span>
-                    <span className="font-bold text-zinc-800 text-xs">{formatTimeAgo(activeUrgentAlert.created_at)}</span>
-                  </div>
-                )}
-
-                {/* Rich Secure Child Details */}
-                {activeUrgentAlert.isTest ? (
-                  <div className="col-span-2 border-t border-zinc-100 pt-3 mt-1 text-center py-2 text-zinc-500">
-                    🛡️ This is a device readiness simulation test alert. No child details linked.
-                  </div>
-                ) : activeUrgentRichDetailLoading ? (
-                  <div className="col-span-2 flex justify-center py-6 text-zinc-400 border-t border-zinc-100 mt-2">
-                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                    <span>Loading secure details...</span>
-                  </div>
-                ) : activeUrgentRichDetail?.child ? (
-                  <div 
-                    className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" 
-                    data-component-version="emergency-scrollable-child-summary-v1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-zinc-700 tracking-wide uppercase">
-                        Child context
-                      </span>
-                      <span className="text-[9px] bg-zinc-800 text-white font-bold px-2 py-0.5 rounded uppercase">
-                        Secure in-app details
-                      </span>
-                    </div>
-
-                    <div className="flex items-start space-x-4 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs">
-                      {/* Child Photo */}
-                      <div className="relative shrink-0" data-component-version="admin-emergency-child-photo-v2">
-                        <SafeImage
-                          src={activeUrgentRichDetail.child.photoUrl}
-                          alt={activeUrgentRichDetail.child.fullName}
-                          className="w-16 h-16 rounded-2xl object-cover border border-zinc-300 shadow-sm"
-                          fallbackComponent={
-                            <div className="w-16 h-16 rounded-2xl bg-[#FAF6EB] border border-[#E5D5AE]/40 flex flex-col items-center justify-center text-center p-1">
-                              <span className="text-[9px] font-extrabold uppercase tracking-tight text-[#C59B27] leading-none">Photo</span>
-                              <span className="text-[8px] font-bold uppercase tracking-tight text-[#9A7326]/60 mt-1 leading-none">
-                                Unavailable
-                              </span>
-                            </div>
-                          }
-                        />
-                        <span className="absolute -bottom-1 -right-1 bg-zinc-800 text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white uppercase">
-                          {activeUrgentRichDetail.child.gender}
-                        </span>
-                      </div>
-
-                      {/* Child Identity Details */}
-                      <div className="flex-1 min-w-0">
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Child Affected</span>
-                        <h4 className="font-black text-zinc-900 text-base leading-tight truncate">
-                          {activeUrgentRichDetail.child.fullName}
-                        </h4>
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-md border border-red-100 text-[10px] font-bold">
-                            {activeUrgentRichDetail.child.ageGroup}
-                          </span>
-                          <span className="px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-md border border-zinc-200 text-[10px] font-medium font-mono">
-                            {activeUrgentRichDetail.child.ageDisplay}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                            activeUrgentRichDetail.child.passStatus === 'checked_in' || activeUrgentRichDetail.child.status === 'checked_in'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                          }`}>
-                            {((activeUrgentRichDetail.child.passStatus || activeUrgentRichDetail.child.status || '').toUpperCase()).replace('_', ' ')}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Care & Medical Summary */}
-                    {activeUrgentRichDetail.careSummary && (
-                      <div className={`p-4 rounded-2xl border ${
-                        activeUrgentRichDetail.careSummary.hasMedicalNote || activeUrgentRichDetail.careSummary.hasSupportNeed
-                          ? 'bg-red-50/50 border-red-200'
-                          : 'bg-zinc-50 border-zinc-200'
-                      }`}>
-                        <div className="flex items-center space-x-2 pb-1.5 border-b border-zinc-100 mb-2">
-                          <Activity className={`w-4 h-4 ${activeUrgentRichDetail.careSummary.hasMedicalNote ? 'text-red-600' : 'text-zinc-600'}`} />
-                          <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-wider">Care & Medical Summary</span>
-                        </div>
-                        <p className="text-[11px] font-semibold text-zinc-800 leading-relaxed">
-                          {activeUrgentRichDetail.careSummary.shortSummary}
-                        </p>
-                        {activeUrgentRichDetail.careSummary.hasAllergy && (
-                          <span className="mt-1.5 inline-flex items-center text-[9px] font-bold uppercase tracking-wider text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-lg">
-                            ⚠️ ALLERGY ALERT DETECTED
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Parent & Pickup Context Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {/* Parent Contact Card */}
-                      {activeUrgentRichDetail.parent && (
-                        <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs space-y-2">
-                          <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                            <Heart className="w-3.5 h-3.5 text-zinc-400" />
-                            <span>Linked Parent</span>
-                          </div>
-                          <div>
-                            <p className="font-bold text-zinc-900 text-xs">{activeUrgentRichDetail.parent.fullName}</p>
-                            <div className="flex items-center space-x-3 mt-1.5 font-mono text-[10px] text-zinc-600">
-                              <a
-                                href={`tel:${activeUrgentRichDetail.parent.phoneMaskedOrVisibleByPermission}`}
-                                className="hover:underline flex items-center space-x-1"
-                              >
-                                <span>📞 {activeUrgentRichDetail.parent.phoneMaskedOrVisibleByPermission}</span>
-                              </a>
-                              {activeUrgentRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
-                                <span className="text-zinc-400">|</span>
-                              )}
-                              {activeUrgentRichDetail.parent.whatsappMaskedOrVisibleByPermission && (
-                                <a
-                                  href={`https://wa.me/${activeUrgentRichDetail.parent.whatsappMaskedOrVisibleByPermission.replace(/[^0-9]/g, '')}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="hover:underline text-emerald-600 flex items-center space-x-1"
-                                >
-                                  <span>💬 WhatsApp</span>
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Authorized Pickup Card */}
-                      {activeUrgentRichDetail.pickup ? (
-                        <div className="bg-white border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center space-x-3">
-                          <SafeImage
-                            src={activeUrgentRichDetail.pickup.photoUrl}
-                            alt={activeUrgentRichDetail.pickup.fullName}
-                            className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
-                            fallbackComponent={
-                              <div className="w-12 h-12 rounded-xl bg-zinc-50 border border-zinc-200 flex flex-col items-center justify-center text-zinc-400 shrink-0 text-center p-1">
-                                <UserCheck className="w-5 h-5 text-zinc-400" />
-                                <span className="text-[7px] font-bold uppercase mt-0.5 leading-tight text-zinc-500">
-                                  No photo
-                                </span>
-                              </div>
-                            }
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center space-x-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                              <span>Authorized Pickup</span>
-                            </div>
-                            <p className="font-bold text-zinc-900 text-xs truncate">
-                              {activeUrgentRichDetail.pickup.fullName}
-                            </p>
-                            <p className="text-[10px] text-zinc-500 font-medium">
-                              Relationship: <strong className="text-zinc-700">{activeUrgentRichDetail.pickup.relationship}</strong>
-                            </p>
-                            {activeUrgentRichDetail.pickup.phoneMaskedOrVisibleByPermission && (
-                              <p className="text-[9px] font-mono text-zinc-500 mt-0.5">
-                                Phone: {activeUrgentRichDetail.pickup.phoneMaskedOrVisibleByPermission}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-zinc-50 border border-zinc-200 p-4 rounded-2xl shadow-xs flex items-center justify-center text-zinc-400">
-                          <span className="text-[10px] font-medium">No custom pickup person registered</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div 
-                    className="col-span-2 border-t border-zinc-200 pt-4 mt-2 space-y-4 text-left" 
-                    data-component-version="emergency-scrollable-child-summary-v1"
-                  >
-                    <div className="bg-[#FFF8F8] border border-red-200 p-4 rounded-2xl shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b border-red-100 pb-2">
-                        <span className="text-xs font-black text-red-700 uppercase tracking-tight flex items-center gap-1.5">
-                          <ShieldAlert className="w-4 h-4 text-red-600" />
-                          Emergency help needed
-                        </span>
-                        <span className="text-[9px] bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded uppercase">
-                          Secure in-app details
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-start space-x-4">
-                        {/* Photo placeholder with Photo unavailable text */}
-                        <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex flex-col items-center justify-center text-zinc-400 shrink-0 text-center p-1">
-                          <User className="w-6 h-6" />
-                          <span className="text-[8px] font-bold uppercase mt-1 leading-tight text-zinc-500">
-                            Photo unavailable
-                          </span>
-                        </div>
-
-                        <div className="flex-1 space-y-2">
-                          <p className="text-xs text-zinc-600 leading-relaxed font-sans">
-                            An active safety alert was raised without a specific child profile selection. Operators must triage using secondary channels or direct response.
-                          </p>
-
-                          {activeUrgentAlert.child_name && (
-                            <p className="text-xs">
-                              Reported Child Name: <strong className="text-red-600">{activeUrgentAlert.child_name}</strong>
-                            </p>
-                          )}
-
-                          {/* Open full details button */}
-                          <div className="pt-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setActiveAlertDetail(activeUrgentAlert);
-                              }}
-                              className="font-bold text-[10px] text-zinc-800 bg-white border border-zinc-300 hover:bg-zinc-50 px-3 py-1.5 rounded-xl transition-all inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              Open full details
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <p className="text-zinc-800 text-xs leading-relaxed font-sans mt-2 pl-3 border-l-2 border-[#C59B27]/40">
+                  “{activeUrgentAlert.message || activeUrgentAlert.title || 'Immediate support requested.'}”
+                </p>
               </div>
 
-              {activeUrgentAlert.message && (
-                <div className="bg-red-50 border border-red-100 p-4 rounded-2xl font-sans text-xs leading-relaxed text-red-950 italic shadow-xs text-left">
-                  "{activeUrgentAlert.message}"
+              {/* Child Info if linked */}
+              {activeUrgentAlert.child_name && (
+                <div className="bg-zinc-50 border border-zinc-200/70 rounded-xl p-3 text-xs text-zinc-600 flex items-center justify-between">
+                  <span>Child: <strong className="text-zinc-900">{activeUrgentAlert.child_name}</strong></span>
+                  {activeUrgentAlert.parent_phone && (
+                    <a href={`tel:${activeUrgentAlert.parent_phone}`} className="text-zinc-700 underline font-medium">
+                      Call Parent
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Local device silence notice */}
+              {urgentAlertEffectsManager.isAlertSilenced(activeUrgentAlert.id) && activeUrgentAlert.status === 'open' && (
+                <div className="bg-zinc-100 border border-zinc-200 rounded-xl p-3 flex items-center justify-between text-xs text-zinc-600">
+                  <span>Alarm sound is silenced on this device. Alert remains active.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      urgentAlertEffectsManager.unsilenceAlert(activeUrgentAlert.id);
+                      showSuccess('Sound Restored', 'Emergency sound restored.');
+                    }}
+                    className="text-zinc-900 font-semibold underline text-xs cursor-pointer"
+                  >
+                    Restore Sound
+                  </button>
+                </div>
+              )}
+
+              {/* Acknowledged status banner */}
+              {activeUrgentAlert.status === 'acknowledged' && (
+                <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4 text-xs text-amber-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <Check className="w-4 h-4 text-amber-700" />
+                    <span>Response underway</span>
+                  </div>
+                  <p className="text-amber-800 text-xs">
+                    Acknowledged by <strong>{activeUrgentAlert.acknowledged_by_name || 'Admin'}</strong> {formatTimeAgo(activeUrgentAlert.acknowledged_at || activeUrgentAlert.created_at)}
+                  </p>
                 </div>
               )}
             </div>
 
-            {/* CARD FOOTER (Sticky) */}
-            <div 
-              className="px-8 pt-4 pb-8 border-t border-zinc-200 bg-[#FAF9F6] relative z-10 shrink-0"
-              data-component-version="emergency-sticky-action-footer-v1"
-            >
-              {/* State transitions inside Overlay Takeover */}
+            {/* CARD FOOTER */}
+            <div className="px-6 py-4 border-t border-zinc-200/80 bg-white/80 shrink-0">
               {activeUrgentAlert.status === 'open' ? (
                 showResolutionInTakeover ? (
-                  <div className="space-y-4 text-left">
-                    <div className="space-y-2">
-                      <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
-                        Direct Resolution Note (Required to Close)
-                      </label>
-                      <textarea
-                        required
-                        value={resolutionNote}
-                        onChange={(e) => setResolutionNote(e.target.value)}
-                        placeholder="Specify actions taken to secure the child and coordinate with volunteers..."
-                        className="w-full text-xs p-3.5 border border-zinc-300 rounded-2xl focus:outline-none focus:border-red-500 bg-white text-zinc-800 placeholder-zinc-400"
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex gap-3 text-xs font-bold">
+                  <div className="space-y-3">
+                    <label className="text-[11px] font-semibold text-zinc-700 block">
+                      Resolution note (required to close)
+                    </label>
+                    <textarea
+                      value={resolutionNote}
+                      onChange={(e) => setResolutionNote(e.target.value)}
+                      placeholder="Specify actions taken to support the volunteer and child..."
+                      className="w-full text-xs p-3 border border-zinc-300 rounded-xl focus:outline-none focus:border-red-500 bg-white text-zinc-900 placeholder-zinc-400"
+                      rows={2}
+                    />
+                    <div className="flex gap-2">
                       <button
                         onClick={() => setShowResolutionInTakeover(false)}
-                        className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 py-3.5 rounded-xl text-center transition-all cursor-pointer border-none"
+                        className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-medium rounded-xl transition-colors cursor-pointer"
                       >
-                        Back to Actions
+                        Cancel
                       </button>
                       <button
                         onClick={async () => {
@@ -3771,174 +3741,147 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             showError('Required', 'Please add a resolution note.');
                             return;
                           }
-                          if (activeUrgentAlert.isTest) {
-                            stopActiveUrgentAlertEffects(activeUrgentAlert.id);
-                            setResolutionNote('');
-                            setShowResolutionInTakeover(false);
-                            showSuccess('Test Resolved', 'Device readiness test completed successfully.');
-                            return;
-                          }
                           try {
                             const res = await api.admin.resolveSafetyAlert(activeUrgentAlert.id, resolutionNote);
                             if (res && res.success) {
-                              showSuccess('Resolved', 'Safety concern has been successfully resolved.');
+                              showSuccess('Resolved', 'Emergency alert has been closed.');
                               stopActiveUrgentAlertEffects(activeUrgentAlert.id);
-                              setSafetyAlerts(prev => prev.map(a => a.id === activeUrgentAlert.id ? { ...a, status: 'resolved', resolution_note: resolutionNote, resolved_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
+                              setSafetyAlerts(prev => prev.map(a => a.id === activeUrgentAlert.id ? { ...a, status: 'resolved', resolution_note: resolutionNote } : a));
+                              setActiveUrgentAlert(null);
                               setResolutionNote('');
                               setShowResolutionInTakeover(false);
                             }
                           } catch (err) {
-                            console.error('Error resolving inside overlay:', err);
+                            console.error('Resolution error:', err);
                           }
                         }}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl text-center transition-all cursor-pointer shadow-md shadow-emerald-600/10 border-none"
+                        className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer shadow-xs"
                       >
-                        Submit & Close Alert
+                        Close incident
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3" data-component-version="takeover-open-state-actions-v3">
-                    {/* Primary Red Acknowledge Alert Button */}
-                    <button
-                      onClick={async () => {
-                        // INSTANT SOUND TERMINATION: Stop device alarm sound synchronously on click before waiting for network API call
-                        stopActiveUrgentAlertEffects(activeUrgentAlert.id);
-                        urgentAlertEffectsManager.silenceAlert(activeUrgentAlert.id);
-
-                        if (activeUrgentAlert.isTest) {
-                          showSuccess('Test Acknowledged', 'Local browser test marked as acknowledged.');
-                          return;
-                        }
-                        try {
-                          const res = await api.admin.acknowledgeSafetyAlert(activeUrgentAlert.id);
-                          if (res && res.success) {
-                            showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
-                            fetchSafetyAlerts();
-                          }
-                        } catch (err) {
-                          console.error('Error acknowledging inside overlay:', err);
-                        }
-                      }}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3.5 px-6 rounded-2xl transition-all shadow-md shadow-red-600/20 text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border-none"
-                    >
-                      <Check className="w-5 h-5" />
-                      <span>Acknowledge</span>
-                    </button>
-
-                    {/* Secondary Actions Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="space-y-2.5">
+                    <div className="flex gap-3">
+                      <button
+                        id="btn-stop-alert-sound"
+                        data-component-version="urgent-alert-silence-device-action-v2"
+                        onClick={() => handleSilenceAlert(activeUrgentAlert.id)}
+                        className="px-4 py-3 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-medium rounded-lg border border-zinc-200 shadow-2xs transition-colors cursor-pointer shrink-0"
+                      >
+                        {urgentAlertEffectsManager.isAlertSilenced(activeUrgentAlert.id) ? 'Sound silenced' : 'Silence alert'}
+                      </button>
+                      <button
+                        onClick={() => handleAcknowledgeAlert(activeUrgentAlert.id)}
+                        disabled={isAcknowledgeInProgress === activeUrgentAlert.id}
+                        className="flex-1 px-5 py-3 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {isAcknowledgeInProgress === activeUrgentAlert.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <span>Acknowledge & respond</span>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] text-zinc-400 pt-1">
                       <button
                         onClick={() => {
                           setShowCommandCenter(true);
                           setActiveUrgentAlert(null);
                         }}
-                        className="bg-white hover:bg-zinc-50 text-zinc-800 font-medium py-2.5 px-4 rounded-xl border border-zinc-200 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                        className="hover:text-zinc-700 underline cursor-pointer"
                       >
-                        <ShieldAlert className="w-4 h-4 text-red-600" />
-                        <span>Command Center</span>
+                        Open Response Desk
                       </button>
-
                       <button
                         onClick={() => setShowResolutionInTakeover(true)}
-                        className="bg-white hover:bg-zinc-50 text-zinc-800 font-medium py-2.5 px-4 rounded-xl border border-zinc-200 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                        className="hover:text-zinc-700 underline cursor-pointer"
                       >
-                        <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        <span>Resolve alert</span>
-                      </button>
-
-                      <button
-                        id="btn-stop-alert-sound"
-                        data-component-version="urgent-alert-silence-device-action-v2"
-                        onClick={() => {
-                          try {
-                            (window as any).stopAllUrgentAlertEffects?.();
-                            if (activeUrgentAlert?.id) {
-                              handleSilenceAlert(activeUrgentAlert.id);
-                            }
-                            setActiveUrgentAlert(null); // Close overlay after silences as per local device rule
-                          } catch (e) {
-                            console.warn('Kill switch failed:', e);
-                          }
-                        }}
-                        className="bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-2.5 px-4 rounded-xl border border-zinc-700 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
-                      >
-                        <VolumeX className="w-4 h-4 text-zinc-400" />
-                        <span>Mute alarm</span>
+                        Resolve alert
                       </button>
                     </div>
-
-                    <button
-                      onClick={() => setActiveUrgentAlert(null)}
-                      className="w-full bg-transparent hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 py-3 rounded-xl transition-all text-xs font-medium text-center cursor-pointer border-none"
-                    >
-                      Close Overlay View (Keeps Alert Open)
-                    </button>
                   </div>
                 )
               ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl">
-                    <Check className="w-4 h-4 shrink-0 text-emerald-600" />
-                    <span>Acknowledged · Add a resolution note to close this alert</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
-                      Resolution Actions Taken (Required)
-                    </label>
-                    <textarea
-                      required
-                      value={resolutionNote}
-                      onChange={(e) => setResolutionNote(e.target.value)}
-                      placeholder="Specify actions taken to secure the child and coordinate with volunteers..."
-                      className="w-full text-xs p-3.5 border border-zinc-300 rounded-2xl focus:outline-none focus:border-red-500 bg-white text-zinc-800 placeholder-zinc-400"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="flex gap-3 text-xs font-bold">
-                    <button
-                      onClick={() => setActiveUrgentAlert(null)}
-                      className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 py-3.5 rounded-xl text-center transition-all cursor-pointer"
-                    >
-                      Close View
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (!resolutionNote.trim()) {
-                          showError('Required', 'Please add a resolution note.');
-                          return;
-                        }
-                        if (activeUrgentAlert.isTest) {
-                          stopActiveUrgentAlertEffects(activeUrgentAlert.id);
-                          setResolutionNote('');
-                          showSuccess('Test Resolved', 'Device readiness test completed successfully.');
-                          return;
-                        }
-                        try {
-                          const res = await api.admin.resolveSafetyAlert(activeUrgentAlert.id, resolutionNote);
-                          if (res && res.success) {
-                            showSuccess('Resolved', 'Safety concern has been successfully resolved.');
-                            stopActiveUrgentAlertEffects(activeUrgentAlert.id);
-                            setSafetyAlerts(prev => prev.map(a => a.id === activeUrgentAlert.id ? { ...a, status: 'resolved', resolution_note: resolutionNote, resolved_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
-                            setResolutionNote('');
-                          }
-                        } catch (err) {
-                          console.error('Error resolving inside overlay:', err);
-                        }
-                      }}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl text-center transition-all cursor-pointer shadow-md shadow-emerald-600/10"
-                    >
-                      Submit & Close Alert
-                    </button>
-                  </div>
+                <div className="space-y-3">
+                  {showResolutionInTakeover ? (
+                    <div className="space-y-3">
+                      <label className="text-[11px] font-semibold text-zinc-700 block">
+                        Resolution note (required to close)
+                      </label>
+                      <textarea
+                        value={resolutionNote}
+                        onChange={(e) => setResolutionNote(e.target.value)}
+                        placeholder="Specify actions taken to support the volunteer and child..."
+                        className="w-full text-xs p-3 border border-zinc-300 rounded-xl focus:outline-none focus:border-red-500 bg-white text-zinc-900 placeholder-zinc-400"
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowResolutionInTakeover(false)}
+                          className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!resolutionNote.trim()) {
+                              showError('Required', 'Please add a resolution note.');
+                              return;
+                            }
+                            try {
+                              const res = await api.admin.resolveSafetyAlert(activeUrgentAlert.id, resolutionNote);
+                              if (res && res.success) {
+                                showSuccess('Resolved', 'Emergency alert has been closed.');
+                                stopActiveUrgentAlertEffects(activeUrgentAlert.id);
+                                setSafetyAlerts(prev => prev.map(a => a.id === activeUrgentAlert.id ? { ...a, status: 'resolved', resolution_note: resolutionNote } : a));
+                                setActiveUrgentAlert(null);
+                                setResolutionNote('');
+                                setShowResolutionInTakeover(false);
+                              }
+                            } catch (err) {
+                              console.error('Resolution error:', err);
+                            }
+                          }}
+                          className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+                        >
+                          Close incident
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          setShowCommandCenter(true);
+                          setActiveUrgentAlert(null);
+                        }}
+                        className="flex-1 py-3 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 text-xs font-medium rounded-lg shadow-2xs transition-colors cursor-pointer"
+                      >
+                        Open Response Desk
+                      </button>
+                      <button
+                        onClick={() => setShowResolutionInTakeover(true)}
+                        className="flex-1 py-3 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                      >
+                        Resolve alert
+                      </button>
+                      <button
+                        onClick={() => setActiveUrgentAlert(null)}
+                        className="px-3 py-3 text-zinc-500 hover:text-zinc-800 text-xs transition-colors cursor-pointer"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
       )}
+
 
       {activeEmergencySummaryAlertId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
