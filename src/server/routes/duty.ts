@@ -2035,13 +2035,31 @@ export async function resolveAlertRecipients(alertId: string, category: string, 
     const alertInfo = await queryOne(`
       SELECT a.*,
              COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
-             v_raised.phone as volunteer_phone,
-             v_raised.preferred_team as volunteer_team
+             COALESCE(v_raised.phone, p_raised.phone_number) as volunteer_phone,
+             v_raised.preferred_team as volunteer_team,
+             c.full_name as child_name,
+             c.photo_file_id as child_photo_file_id,
+             c.age_group as child_age_group,
+             c.calculated_age as child_calculated_age,
+             COALESCE(c.relationship_to_child, pk_pickup.relationship_to_child) as relationship_to_child,
+             COALESCE(p_parent.full_name, pk_pickup.full_name) as parent_name,
+             COALESCE(p_parent.phone_number, pk_pickup.phone_number) as parent_phone,
+             COALESCE(p_parent.photo_file_id, pk_pickup.photo_file_id) as parent_photo_file_id
       FROM event_safety_alerts a
+      LEFT JOIN children c ON a.child_id = c.id
+      LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
+      LEFT JOIN pickup_people pk_pickup ON pk_pickup.id = (
+        SELECT id FROM pickup_people
+        WHERE child_event_entry_id = a.child_event_entry_id AND approved_by_parent = 1
+        LIMIT 1
+      )
       LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
       LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
       WHERE a.id = ?
     `, [alertId]);
+
+    const childPhoto = alertInfo?.child_photo_file_id ? (String(alertInfo.child_photo_file_id).startsWith('http') || String(alertInfo.child_photo_file_id).startsWith('/') ? String(alertInfo.child_photo_file_id) : `/api/media/files/${alertInfo.child_photo_file_id}`) : '';
+    const parentPhoto = alertInfo?.parent_photo_file_id ? (String(alertInfo.parent_photo_file_id).startsWith('http') || String(alertInfo.parent_photo_file_id).startsWith('/') ? String(alertInfo.parent_photo_file_id) : `/api/media/files/${alertInfo.parent_photo_file_id}`) : '';
 
     broadcastSSEEvent('safety_alert_created', {
       alertId,
@@ -2813,7 +2831,7 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
 
     const now = new Date().toISOString();
 
-    // End previous active presence sessions for this user
+    // End previous active presence sessions for this user at other locations
     await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, REAL_EVENT_ID]);
 
     // Create new active presence

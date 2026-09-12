@@ -10263,8 +10263,10 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
              c.photo_file_id as child_photo_file_id,
              c.age_group as child_age_group,
              c.calculated_age as child_calculated_age,
-             p_parent.full_name as parent_name,
-             p_parent.phone_number as parent_phone,
+             c.relationship_to_child as relationship_to_child,
+             COALESCE(p_parent.full_name, pk_pickup.full_name) as parent_name,
+             COALESCE(p_parent.phone_number, pk_pickup.phone_number) as parent_phone,
+             COALESCE(p_parent.photo_file_id, pk_pickup.photo_file_id) as parent_photo_file_id,
              COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
              COALESCE(p_ack.full_name, v_ack.full_name, 'Admin') as acknowledged_by_name,
              COALESCE(p_res.full_name, v_res.full_name, 'Admin') as resolved_by_name,
@@ -10278,6 +10280,11 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       FROM event_safety_alerts a
       LEFT JOIN children c ON a.child_id = c.id
       LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
+      LEFT JOIN pickup_people pk_pickup ON pk_pickup.id = (
+        SELECT id FROM pickup_people
+        WHERE child_event_entry_id = a.child_event_entry_id AND approved_by_parent = 1
+        LIMIT 1
+      )
       LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
       LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
       LEFT JOIN parent_profiles p_ack ON a.acknowledged_by = p_ack.user_id
@@ -10307,9 +10314,14 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
 
     const mappedAlerts = (alerts || []).map((a: any) => {
       const childPhoto = a.child_photo_file_id ? (String(a.child_photo_file_id).startsWith('http') || String(a.child_photo_file_id).startsWith('/') ? String(a.child_photo_file_id) : `/api/media/files/${a.child_photo_file_id}`) : '';
+      const parentPhoto = a.parent_photo_file_id ? (String(a.parent_photo_file_id).startsWith('http') || String(a.parent_photo_file_id).startsWith('/') ? String(a.parent_photo_file_id) : `/api/media/files/${a.parent_photo_file_id}`) : '';
       return {
         ...a,
+        child_photo_url: childPhoto,
         child_photo_file_id: childPhoto,
+        parent_photo_url: parentPhoto,
+        parent_photo_file_id: parentPhoto,
+        relationship_to_child: a.relationship_to_child || null,
         soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important') && (!a.sound_stopped_at || a.sound_stopped_at === '')
       };
     });
@@ -10417,10 +10429,13 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
 
         const dbParent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [dbChild.parent_profile_id]);
         if (dbParent) {
+          const parentPhoto = dbParent.photo_file_id ? (String(dbParent.photo_file_id).startsWith('http') || String(dbParent.photo_file_id).startsWith('/') ? String(dbParent.photo_file_id) : `/api/media/files/${dbParent.photo_file_id}`) : '';
           parent = {
             fullName: dbParent.full_name,
+            relationship: dbChild.relationship_to_child || null,
             phoneMaskedOrVisibleByPermission: dbParent.phone_number,
-            whatsappMaskedOrVisibleByPermission: dbParent.whatsapp_number
+            whatsappMaskedOrVisibleByPermission: dbParent.whatsapp_number,
+            photoUrl: parentPhoto
           };
         }
 
@@ -10526,19 +10541,22 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
     }
 
     if (alert.status !== 'open') {
-      const ackUser = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.acknowledged_by]);
-      const ackName = ackUser ? ackUser.full_name : 'another Admin';
+      const ackProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.acknowledged_by])
+        || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [alert.acknowledged_by]);
+      const ackUser = await queryOne('SELECT email FROM users WHERE id = ?', [alert.acknowledged_by]);
+      const ackName = ackProfile?.full_name || (ackUser?.email ? ackUser.email.split('@')[0] : 'another responder');
       return res.status(409).json({
         success: false,
-        error: `This alert has already been acknowledged by ${ackName}.`,
+        error: `This alert was already acknowledged by ${ackName}.`,
         alreadyAcknowledged: true,
         acknowledgedBy: alert.acknowledged_by,
+        acknowledgedByName: ackName,
         acknowledgedAt: alert.acknowledged_at
       });
     }
 
     const now = new Date().toISOString();
-    await execute(`
+    const updateResult = await execute(`
       UPDATE event_safety_alerts
       SET status = 'acknowledged',
           acknowledged_by = ?,
@@ -10546,6 +10564,27 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
           updated_at = ?
       WHERE id = ? AND status = 'open'
     `, [req.user.id, now, now, id]);
+
+    if (updateResult.changes === 0) {
+      // First valid Admin acknowledgement wins!
+      const currentAlert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+      const ackProfile = currentAlert?.acknowledged_by
+        ? await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [currentAlert.acknowledged_by])
+          || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [currentAlert.acknowledged_by])
+        : null;
+      const ackUser = currentAlert?.acknowledged_by
+        ? await queryOne('SELECT email FROM users WHERE id = ?', [currentAlert.acknowledged_by])
+        : null;
+      const ackName = ackProfile?.full_name || (ackUser?.email ? ackUser.email.split('@')[0] : 'another responder');
+      return res.status(409).json({
+        success: false,
+        error: `This alert was already acknowledged by ${ackName}.`,
+        alreadyAcknowledged: true,
+        acknowledgedBy: currentAlert?.acknowledged_by,
+        acknowledgedByName: ackName,
+        acknowledgedAt: currentAlert?.acknowledged_at
+      });
+    }
 
     // Also update this recipient's specific record to show acknowledgement action
     await execute(`
@@ -10568,11 +10607,10 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       console.error('[Escalation Cancel Error]:', escErr);
     }
 
-    // Look up responder's human-friendly name
-    const adminUser = await queryOne('SELECT full_name, email FROM users WHERE id = ?', [req.user.id]);
+    // Look up responder's human-friendly name (users table does NOT have full_name)
     const adminProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [req.user.id])
       || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
-    const responderName = adminProfile?.full_name || adminUser?.full_name || (adminUser?.email ? adminUser.email.split('@')[0] : 'Admin');
+    const responderName = adminProfile?.full_name || (req.user.email ? req.user.email.split('@')[0] : 'Admin');
 
     try {
       broadcastSSEEvent('safety_alert_acknowledged', {
@@ -10591,6 +10629,8 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       alert: {
         id,
         status: 'acknowledged',
+        acknowledgedBy: req.user.id,
+        acknowledgedByName: responderName,
         acknowledgedAt: now,
         resolvedAt: alert.resolved_at || null,
         soundEligible: false
@@ -10598,7 +10638,7 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
     });
   } catch (err) {
     console.error('Acknowledge safety alert error:', err);
-    res.status(500).json({ error: 'Failed to acknowledge safety alert' });
+    res.status(500).json({ error: 'Could not acknowledge this alert. Please try again.' });
   }
 });
 

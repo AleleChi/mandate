@@ -293,7 +293,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             if (!prev || prev.id !== activeUnackUrgent.id) {
               return activeUnackUrgent;
             }
-            return { ...activeUnackUrgent, ...prev };
+            return { ...prev, ...activeUnackUrgent };
           });
         } else if (activeUrgentAlert) {
           const updated = res.find((a: any) => a.id === activeUrgentAlert.id);
@@ -301,7 +301,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             if (updated.status === 'resolved') {
               setActiveUrgentAlert(null);
             } else {
-              setActiveUrgentAlert(updated);
+              setActiveUrgentAlert((prev: any) => ({ ...prev, ...updated }));
             }
           }
         }
@@ -356,15 +356,31 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           return prev;
         });
       } else {
-        showError('Acknowledge Failed', (res as any)?.error || res?.message || 'Could not acknowledge alert at this moment.');
+        showError('Acknowledge Failed', (res as any)?.error || res?.message || 'Could not acknowledge this alert. Please try again.');
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      if (err.status === 409 || apiErr.message?.toLowerCase().includes('already')) {
-        showInfo('Already Responded', apiErr.message || 'This alert has already been acknowledged.');
+      if (err?.status === 409 || (err as any)?.data?.alreadyAcknowledged || apiErr.message?.toLowerCase().includes('already')) {
+        const errorMsg = apiErr.message || 'This alert was already acknowledged by another responder.';
+        showInfo('Already Responded', errorMsg);
+        const ackData = (err as any)?.data || {};
+        const ackName = ackData.acknowledgedByName || 'another responder';
+        const ackAt = ackData.acknowledgedAt || new Date().toISOString();
+        setActiveUrgentAlert((prev: any) => {
+          if (prev && prev.id === alertId) {
+            return {
+              ...prev,
+              status: 'acknowledged',
+              acknowledged_by: ackData.acknowledgedBy || prev.acknowledged_by,
+              acknowledged_by_name: ackName,
+              acknowledged_at: ackAt
+            };
+          }
+          return prev;
+        });
         fetchSafetyAlerts();
       } else {
-        showError('Error', apiErr.message || 'Error acknowledging alert.');
+        showError('Acknowledge Failed', apiErr.message || 'Could not acknowledge this alert. Please try again.');
       }
     } finally {
       setIsAcknowledgeInProgress(null);
@@ -637,6 +653,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 raised_by_name: payload.raisedByName || 'Volunteer',
                 volunteer_phone: payload.volunteerPhone || null,
                 volunteer_team: payload.volunteerTeam || null,
+                child_name: payload.childName || payload.child_name || null,
+                child_photo_url: payload.childPhotoUrl || payload.child_photo_url || null,
+                child_photo_file_id: payload.childPhotoFileId || payload.child_photo_file_id || payload.childPhotoUrl || null,
+                child_age_group: payload.childAgeGroup || payload.child_age_group || null,
+                child_calculated_age: payload.childCalculatedAge ?? payload.child_calculated_age ?? null,
+                relationship_to_child: payload.relationshipToChild || payload.relationship_to_child || null,
+                parent_name: payload.parentName || payload.parent_name || null,
+                parent_phone: payload.parentPhone || payload.parent_phone || null,
+                parent_photo_url: payload.parentPhotoUrl || payload.parent_photo_url || null,
+                parent_photo_file_id: payload.parentPhotoFileId || payload.parent_photo_file_id || payload.parentPhotoUrl || null,
                 status: 'open',
                 created_at: payload.timestamp || new Date().toISOString()
               };
@@ -3676,17 +3702,20 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
             {/* CARD BODY */}
             <div
-              className="px-6 py-5 overflow-y-auto flex-1 space-y-3.5 text-xs [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-safe"
+              className="px-6 py-5 overflow-y-auto flex-1 divide-y divide-zinc-200/80 text-xs [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-safe"
               data-component-version="urgent-alert-scroll-container-v2"
             >
-              {/* Volunteer (WHO) */}
-              <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
-                <div className="text-[11px] font-medium text-zinc-400 mb-1">Volunteer</div>
-                <div className="flex items-center justify-between gap-2">
+              {/* Reported by */}
+              <div className="pb-4 first:pt-0">
+                <div className="text-[11px] font-medium text-zinc-400 mb-1.5">Reported by</div>
+                <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-zinc-900 text-sm">{activeUrgentAlert.raised_by_name || 'Volunteer'}</p>
                     {activeUrgentAlert.volunteer_team && (
                       <p className="text-xs text-zinc-500 font-medium mt-0.5">{activeUrgentAlert.volunteer_team}</p>
+                    )}
+                    {activeUrgentAlert.volunteer_phone && (
+                      <p className="text-xs text-zinc-600 mt-1">{activeUrgentAlert.volunteer_phone}</p>
                     )}
                   </div>
                   {activeUrgentAlert.volunteer_phone && (
@@ -3694,75 +3723,144 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       href={`tel:${activeUrgentAlert.volunteer_phone}`}
                       className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-lg font-medium text-xs transition-colors shrink-0 flex items-center gap-1.5"
                     >
-                      <Phone className="w-3 h-3 text-zinc-500" />
-                      <span>{activeUrgentAlert.volunteer_phone}</span>
+                      <Phone className="w-3.5 h-3.5 text-zinc-600" />
+                      <span>Call volunteer</span>
                     </a>
                   )}
                 </div>
               </div>
 
-              {/* Location (WHERE) */}
-              <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
-                <div className="text-[11px] font-medium text-zinc-400 mb-1">Location</div>
+              {/* Location */}
+              <div className="py-4">
+                <div className="text-[11px] font-medium text-zinc-400 mb-1.5">Location</div>
                 <p className="font-semibold text-zinc-900 text-sm">
                   {activeUrgentAlert.location_label || 'Location not available'}
                 </p>
               </div>
 
-              {/* Distress Message (WHAT) */}
-              <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="text-[11px] font-medium text-zinc-400">
-                    Emergency Type
-                  </div>
+              {/* Emergency */}
+              <div className="py-4">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="text-[11px] font-medium text-zinc-400">Emergency</div>
                   <span className="text-[10px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-100" data-component-version="safety-alert-category-labels-v2">
                     {getCategoryLabel(activeUrgentAlert.category)}
                   </span>
                 </div>
-                <p className="text-zinc-800 text-xs leading-relaxed font-sans mt-2 pl-3 border-l-2 border-[#C59B27]/40">
+                <p className="text-zinc-800 text-xs leading-relaxed pl-3 border-l-2 border-[#C59B27]/40">
                   “{activeUrgentAlert.message || activeUrgentAlert.title || 'Immediate support requested.'}”
                 </p>
               </div>
 
-              {/* Child Info if linked */}
+              {/* Child involved & Parent / guardian (omitted if no child is linked) */}
               {activeUrgentAlert.child_name && (
-                <div className="bg-zinc-50 border border-zinc-200/70 rounded-xl p-3 text-xs text-zinc-600 flex items-center justify-between">
-                  <span>Child: <strong className="text-zinc-900">{activeUrgentAlert.child_name}</strong></span>
-                  {activeUrgentAlert.parent_phone && (
-                    <a href={`tel:${activeUrgentAlert.parent_phone}`} className="text-zinc-700 underline font-medium">
-                      Call Parent
-                    </a>
-                  )}
+                <div className="py-4 space-y-4">
+                  {/* Child section */}
+                  <div>
+                    <div className="text-[11px] font-medium text-zinc-400 mb-2">Child involved</div>
+                    <div className="flex items-center gap-3">
+                      <SafeImage
+                        src={activeUrgentAlert.child_photo_url || activeUrgentAlert.child_photo_file_id}
+                        className="w-10 h-10 rounded-lg object-cover border border-zinc-200 shrink-0"
+                        fallbackComponent={
+                          <div className="w-10 h-10 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0">
+                            <User className="w-5 h-5 text-zinc-400" />
+                          </div>
+                        }
+                      />
+                      <div>
+                        <p className="font-semibold text-zinc-900 text-sm leading-snug">{activeUrgentAlert.child_name}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          {[
+                            activeUrgentAlert.child_calculated_age != null ? `${activeUrgentAlert.child_calculated_age} yrs` : null,
+                            activeUrgentAlert.child_age_group
+                          ].filter(Boolean).join(' · ') || 'Age not specified'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Parent / guardian section */}
+                  <div className="pt-1">
+                    <div className="text-[11px] font-medium text-zinc-400 mb-2">Parent / guardian</div>
+                    {activeUrgentAlert.parent_name ? (
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <SafeImage
+                            src={activeUrgentAlert.parent_photo_url || activeUrgentAlert.parent_photo_file_id}
+                            className="w-10 h-10 rounded-lg object-cover border border-zinc-200 shrink-0"
+                            fallbackComponent={
+                              <div className="w-10 h-10 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400 shrink-0">
+                                <User className="w-5 h-5 text-zinc-400" />
+                              </div>
+                            }
+                          />
+                          <div>
+                            <p className="font-semibold text-zinc-900 text-sm leading-snug">{activeUrgentAlert.parent_name}</p>
+                            <p className="text-xs text-zinc-500 mt-0.5">
+                              {activeUrgentAlert.relationship_to_child || 'Parent / guardian'}
+                            </p>
+                            {activeUrgentAlert.parent_phone && (
+                              <p className="text-xs text-zinc-600 mt-1">{activeUrgentAlert.parent_phone}</p>
+                            )}
+                          </div>
+                        </div>
+                        {activeUrgentAlert.parent_phone && (
+                          <a
+                            href={`tel:${activeUrgentAlert.parent_phone}`}
+                            className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-lg font-medium text-xs transition-colors shrink-0 flex items-center gap-1.5"
+                          >
+                            <Phone className="w-3.5 h-3.5 text-zinc-600" />
+                            <span>Call parent</span>
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-zinc-500 italic">Parent / guardian contact not available</p>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* Local device silence notice */}
               {urgentAlertEffectsManager.isAlertSilenced(activeUrgentAlert.id) && activeUrgentAlert.status === 'open' && (
-                <div className="bg-zinc-100 border border-zinc-200 rounded-xl p-3 flex items-center justify-between text-xs text-zinc-600">
-                  <span>Alarm sound is silenced on this device. Alert remains active.</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      urgentAlertEffectsManager.unsilenceAlert(activeUrgentAlert.id);
-                      showSuccess('Sound Restored', 'Emergency sound restored.');
-                    }}
-                    className="text-zinc-900 font-semibold underline text-xs cursor-pointer"
-                  >
-                    Restore Sound
-                  </button>
+                <div className="py-3">
+                  <div className="bg-zinc-100 border border-zinc-200 rounded-xl p-3 flex items-center justify-between text-xs text-zinc-600">
+                    <span>Alarm sound is silenced on this device. Alert remains active.</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        urgentAlertEffectsManager.unsilenceAlert(activeUrgentAlert.id);
+                        showSuccess('Sound Restored', 'Emergency sound restored.');
+                      }}
+                      className="text-zinc-900 font-semibold underline text-xs cursor-pointer"
+                    >
+                      Restore Sound
+                    </button>
+                  </div>
                 </div>
               )}
 
               {/* Acknowledged status banner */}
               {activeUrgentAlert.status === 'acknowledged' && (
-                <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4 text-xs text-amber-900 space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <Check className="w-4 h-4 text-amber-700" />
-                    <span>Response underway</span>
+                <div className="py-3">
+                  <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4 text-xs text-amber-950 space-y-2">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                      <Check className="w-4 h-4 text-amber-700" />
+                      <span>Response underway</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-amber-200/60 text-xs">
+                      <div>
+                        <span className="text-[11px] text-amber-800/80 block">Responding</span>
+                        <span className="font-semibold text-amber-950">{activeUrgentAlert.acknowledged_by_name || 'Admin'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-amber-800/80 block">Acknowledged</span>
+                        <span className="font-semibold text-amber-950">
+                          {formatTimeAgo(activeUrgentAlert.acknowledged_at || activeUrgentAlert.created_at)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-amber-800 text-xs">
-                    Acknowledged by <strong>{activeUrgentAlert.acknowledged_by_name || 'Admin'}</strong> {formatTimeAgo(activeUrgentAlert.acknowledged_at || activeUrgentAlert.created_at)}
-                  </p>
                 </div>
               )}
             </div>
