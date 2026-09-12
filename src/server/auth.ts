@@ -40,6 +40,10 @@ export interface AuthenticatedRequest extends Request {
     status: string;
     approved_by_user_id: string | null;
     approved_at: string | null;
+    whatsapp_consent_status?: string | null;
+    whatsapp_consent_at?: string | null;
+    whatsapp_opt_out_at?: string | null;
+    whatsapp_consent_source?: string | null;
     created_at: string;
     updated_at: string;
   };

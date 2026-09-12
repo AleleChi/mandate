@@ -463,6 +463,12 @@ export const api = {
         body: JSON.stringify(profile)
       });
     },
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
+      return api.request<{ success: boolean; message: string; consentStatus: string; isDualRole?: boolean; profile?: any }>('/api/volunteer/whatsapp/consent', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async resendVerification(email: string) {
       return api.request<any>('/api/volunteer/resend-verification', {
         method: 'POST',

@@ -11,6 +11,7 @@ import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySe
 import { SharedNotificationSettings } from '../../components/common/SharedNotificationSettings';
 import { isAppInstalled, promptPwaInstall } from '../../utils/pwaInstall';
 import { PwaInstallGuideModal } from '../../components/common/PwaInstallBanner';
+import { VolunteerWhatsAppPreferences } from '../../components/volunteer/VolunteerWhatsAppPreferences';
 
 interface VolunteerProfileViewProps {
   onSignOut: () => void;
@@ -417,6 +418,16 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
       {/* Notifications settings card */}
       <SharedNotificationSettings
         role="volunteer"
+        showSuccess={showSuccess}
+        showError={showError}
+      />
+
+      {/* WhatsApp updates preference card */}
+      <VolunteerWhatsAppPreferences
+        variant="settings"
+        volunteerProfile={finalProfile}
+        onOpenEditProfile={() => setIsEditOpen(true)}
+        onConsentUpdated={() => fetchProfile(true)}
         showSuccess={showSuccess}
         showError={showError}
       />

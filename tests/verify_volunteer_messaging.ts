@@ -1,5 +1,9 @@
 import crypto from 'crypto';
+import express from 'express';
+import http from 'http';
 import { query, queryOne, execute } from '../src/server/db';
+import { generateToken } from '../src/server/auth';
+import volunteerRouter from '../src/server/routes/volunteer';
 import {
   isVolunteerAudience,
   isChildSpecificMessageType,
@@ -221,37 +225,35 @@ async function runTests() {
     // 7. WhatsApp Consent Model & Schema Gap Verification
     await test('WhatsApp requires explicit opt-in; audits volunteer consent source and reports schema gap', async () => {
       // 1. Verify parent_profiles has whatsapp_consent_status column
-      const parentCols = await query(`
+      let parentCols = await query(`
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = 'parent_profiles' AND column_name = 'whatsapp_consent_status'
       `).catch(() => []);
+      if (parentCols.length === 0) {
+        const pragma = await query("PRAGMA table_info(parent_profiles)").catch(() => []);
+        parentCols = pragma.filter((c: any) => c.name === 'whatsapp_consent_status');
+      }
 
       // 2. Verify volunteer_profiles column names
-      const volunteerCols = await query(`
+      let volunteerCols = await query(`
         SELECT column_name
         FROM information_schema.columns
-        WHERE table_name = 'volunteer_profiles' AND column_name IN ('whatsapp_consent_status', 'whatsapp_opt_in')
+        WHERE table_name = 'volunteer_profiles' AND column_name = 'whatsapp_consent_status'
       `).catch(() => []);
+      if (volunteerCols.length === 0) {
+        const pragma = await query("PRAGMA table_info(volunteer_profiles)").catch(() => []);
+        volunteerCols = pragma.filter((c: any) => c.name === 'whatsapp_consent_status');
+      }
 
-      // 3. Verify notification_jobs foreign key constraint to parent_profiles
-      const notifJobCols = await query(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = 'notification_jobs' AND column_name IN ('parent_id', 'volunteer_id', 'user_id')
-      `).catch(() => []);
-
-      // In the current schema:
-      // - parent_profiles has whatsapp_consent_status ('opted_in', 'opted_out', 'unknown')
-      // - volunteer_profiles does NOT have whatsapp_consent_status
-      // - notification_jobs requires parent_id REFERENCES parent_profiles(id)
       console.log('    [Consent Audit]:');
       console.log('    - Parent WhatsApp consent stored in: parent_profiles.whatsapp_consent_status');
-      console.log('    - Volunteer WhatsApp consent stored in: volunteer_profiles (MISSING COLUMN)');
-      console.log('    - Dual-role (Parent + Volunteer): Consent is safely auditable via parent_profiles');
-      console.log('    - Volunteer-only: Schema gap identified (cannot store consent on volunteer_profiles without migration)');
+      console.log(`    - Volunteer WhatsApp consent stored in: volunteer_profiles (${volunteerCols.length > 0 ? 'PHASE 2A COLUMN ACTIVE' : 'MISSING COLUMN'})`);
+      console.log('    - Dual-role (Parent + Volunteer): Parent WhatsApp consent remains authoritative');
+      console.log('    - Volunteer-only: Volunteer consent is authoritative');
       
-      assert(parentCols.length > 0 || true, 'Parent consent verification check');
+      assert(parentCols.length > 0, 'Parent consent verification check');
+      assert(volunteerCols.length > 0, 'Volunteer consent column must be present in volunteer_profiles');
     });
 
     // 8. Email Verification Independence
@@ -662,6 +664,368 @@ async function runTests() {
       });
       assert(resFullValid.isEnabled === true, 'Valid volunteer with assigned location and channel must be enabled');
       assert(resFullValid.blockerReason === null, 'Blocker reason must be null for valid state');
+    });
+
+    // 18. Volunteer WhatsApp Opt-In, Opt-Out, and Dual-Role Verification
+    await test('Volunteer WhatsApp Opt-In, Opt-Out, and Dual-Role consent flows behave safely', async () => {
+      const volOnlyUserId = `u-vol-only-${testSuffix}`;
+      const volOnlyProfileId = `vp-vol-only-${testSuffix}`;
+      const dualUserId = `u-dual-${testSuffix}`;
+      const dualParentId = `pp-dual-${testSuffix}`;
+      const dualVolProfileId = `vp-dual-${testSuffix}`;
+      const now = new Date().toISOString();
+
+      // 18a. Volunteer unknown preserved until action
+      await execute(`
+        INSERT INTO users (id, email, role, email_verified, status, created_at, updated_at)
+        VALUES (?, ?, 'volunteer', 1, 'active', ?, ?)
+      `, [volOnlyUserId, `volonly.${testSuffix}@test.com`, now, now]);
+
+      await execute(`
+        INSERT INTO volunteer_profiles (
+          id, user_id, full_name, phone, whatsapp, preferred_team, status, created_at, updated_at
+        ) VALUES (?, ?, 'Volunteer Only', '+2348011112222', '+2348011112222', 'Teens Team', 'approved', ?, ?)
+      `, [volOnlyProfileId, volOnlyUserId, now, now]);
+
+      const initialVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volOnlyProfileId]);
+      assert(initialVol.whatsapp_consent_status === 'unknown', `Expected initial consent 'unknown', got: ${initialVol.whatsapp_consent_status}`);
+      assert(initialVol.whatsapp_consent_at === null, 'Initial consent timestamp must be null');
+
+      // Admin Messages reflection: unknown consent -> badge is "WhatsApp pending", channel count is 0
+      const initialBadge = getVolunteerWhatsAppBadge(initialVol.whatsapp_consent_status, true);
+      assert(initialBadge.label === 'WhatsApp pending', `Expected badge 'WhatsApp pending', got: ${initialBadge.label}`);
+      assert(initialBadge.isPending === true, 'Badge must be marked isPending');
+
+      const initialEligibility = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{
+          id: volOnlyProfileId,
+          userId: volOnlyUserId,
+          name: 'Volunteer Only',
+          phone: '+2348011112222',
+          whatsappNumber: '+2348011112222',
+          whatsappConsentStatus: initialVol.whatsapp_consent_status
+        }],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(initialEligibility.whatsappOptedIn === 0, `Expected whatsappOptedIn 0 for unknown consent, got: ${initialEligibility.whatsappOptedIn}`);
+
+      // 18b. No phone -> opt-in blocked clearly
+      const volNoPhoneUserId = `u-nophone-${testSuffix}`;
+      const volNoPhoneProfileId = `vp-nophone-${testSuffix}`;
+      await execute(`
+        INSERT INTO users (id, email, role, email_verified, status, created_at, updated_at)
+        VALUES (?, ?, 'volunteer', 1, 'active', ?, ?)
+      `, [volNoPhoneUserId, `nophone.${testSuffix}@test.com`, now, now]);
+
+      await execute(`
+        INSERT INTO volunteer_profiles (
+          id, user_id, full_name, phone, whatsapp, preferred_team, status, created_at, updated_at
+        ) VALUES (?, ?, 'No Phone Volunteer', '', '', 'Teens Team', 'approved', ?, ?)
+      `, [volNoPhoneProfileId, volNoPhoneUserId, now, now]);
+
+      const noPhoneProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volNoPhoneProfileId]);
+      const hasPhone = Boolean(noPhoneProfile.phone || noPhoneProfile.whatsapp);
+      assert(hasPhone === false, 'Profile must have no phone number');
+
+      // 18c. Volunteer-only opts in successfully with timestamp and source
+      const optInTime = new Date().toISOString();
+      await execute(`
+        UPDATE volunteer_profiles SET
+          whatsapp_consent_status = 'opted_in',
+          whatsapp_consent_at = ?,
+          whatsapp_opt_out_at = NULL,
+          whatsapp_consent_source = 'volunteer_portal',
+          updated_at = ?
+        WHERE id = ?
+      `, [optInTime, optInTime, volOnlyProfileId]);
+
+      const optedInVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volOnlyProfileId]);
+      assert(optedInVol.whatsapp_consent_status === 'opted_in', `Expected 'opted_in', got: ${optedInVol.whatsapp_consent_status}`);
+      assert(optedInVol.whatsapp_consent_at !== null, 'Consent timestamp must be set');
+      assert(optedInVol.whatsapp_opt_out_at === null, 'Opt out timestamp must be null after opt-in');
+      assert(optedInVol.whatsapp_consent_source === 'volunteer_portal', 'Consent source must be recorded as volunteer_portal');
+
+      // 18d. Opted-in Volunteer becomes WhatsApp eligible in Admin Messages
+      const optedInBadge = getVolunteerWhatsAppBadge(optedInVol.whatsapp_consent_status, true);
+      assert(optedInBadge.label === 'WhatsApp', `Expected badge 'WhatsApp', got: ${optedInBadge.label}`);
+      assert(optedInBadge.isOptedIn === true, 'Badge must be isOptedIn');
+
+      const optedInEligibility = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{
+          id: volOnlyProfileId,
+          userId: volOnlyUserId,
+          name: 'Volunteer Only',
+          phone: '+2348011112222',
+          whatsappNumber: '+2348011112222',
+          whatsappConsentStatus: optedInVol.whatsapp_consent_status
+        }],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(optedInEligibility.whatsappOptedIn === 1, `Expected whatsappOptedIn 1 for opted-in volunteer, got: ${optedInEligibility.whatsappOptedIn}`);
+
+      // 18e. Volunteer opts out successfully; phone number preserved
+      const optOutTime = new Date().toISOString();
+      await execute(`
+        UPDATE volunteer_profiles SET
+          whatsapp_consent_status = 'opted_out',
+          whatsapp_opt_out_at = ?,
+          updated_at = ?
+        WHERE id = ?
+      `, [optOutTime, optOutTime, volOnlyProfileId]);
+
+      const optedOutVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volOnlyProfileId]);
+      assert(optedOutVol.whatsapp_consent_status === 'opted_out', `Expected 'opted_out', got: ${optedOutVol.whatsapp_consent_status}`);
+      assert(optedOutVol.whatsapp_opt_out_at !== null, 'Opt out timestamp must be recorded');
+      assert(optedOutVol.phone === '+2348011112222', 'Phone number must NOT be deleted on opt-out');
+
+      // 18f. Opted-out Volunteer becomes ineligible in Admin Messages
+      const optedOutBadge = getVolunteerWhatsAppBadge(optedOutVol.whatsapp_consent_status, true);
+      assert(optedOutBadge.label === 'WhatsApp off', `Expected badge 'WhatsApp off', got: ${optedOutBadge.label}`);
+      assert(optedOutBadge.isOptedIn === false, 'Opted out volunteer must not be isOptedIn');
+
+      const optedOutEligibility = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{
+          id: volOnlyProfileId,
+          userId: volOnlyUserId,
+          name: 'Volunteer Only',
+          phone: '+2348011112222',
+          whatsappNumber: '+2348011112222',
+          whatsappConsentStatus: optedOutVol.whatsapp_consent_status
+        }],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(optedOutEligibility.whatsappOptedIn === 0, `Expected whatsappOptedIn 0 for opted-out volunteer, got: ${optedOutEligibility.whatsappOptedIn}`);
+
+      // 18g. Dual-role Parent + Volunteer: Parent consent remains authoritative
+      await execute(`
+        INSERT INTO users (id, email, role, email_verified, status, created_at, updated_at)
+        VALUES (?, ?, 'parent', 1, 'active', ?, ?)
+      `, [dualUserId, `dual.${testSuffix}@test.com`, now, now]);
+
+      await execute(`
+        INSERT INTO parent_profiles (
+          id, user_id, full_name, email, phone_number, whatsapp_number, whatsapp_consent_status, whatsapp_consent_at, created_at, updated_at
+        ) VALUES (?, ?, 'Dual Parent Volunteer', ?, '+2348033334444', '+2348033334444', 'opted_in', ?, ?, ?)
+      `, [dualParentId, dualUserId, `dual.${testSuffix}@test.com`, now, now, now]);
+
+      await execute(`
+        INSERT INTO volunteer_profiles (
+          id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at
+        ) VALUES (?, ?, 'Dual Parent Volunteer', '+2348033334444', '+2348033334444', 'Teens Team', 'approved', 'unknown', ?, ?)
+      `, [dualVolProfileId, dualUserId, now, now]);
+
+      // When resolving dual-role volunteer profile:
+      const parentRow = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [dualUserId]);
+      const volRow = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [dualUserId]);
+
+      const effectiveConsentForDual = parentRow.id
+        ? (parentRow.whatsapp_consent_status || 'unknown')
+        : (volRow.whatsapp_consent_status || 'unknown');
+
+      assert(effectiveConsentForDual === 'opted_in', 'Dual-role user must inherit authoritative Parent opted_in consent');
+
+      // In Admin Messages query simulation:
+      const dualAdminVolunteer = {
+        id: dualVolProfileId,
+        userId: dualUserId,
+        name: 'Dual Parent Volunteer',
+        phone: '+2348033334444',
+        whatsappNumber: '+2348033334444',
+        parentProfileId: parentRow.id,
+        parentConsentStatus: parentRow.whatsapp_consent_status,
+        volunteerConsentStatus: volRow.whatsapp_consent_status,
+        whatsappConsentStatus: parentRow.id ? parentRow.whatsapp_consent_status : volRow.whatsapp_consent_status
+      };
+
+      assert(dualAdminVolunteer.whatsappConsentStatus === 'opted_in', 'Dual role admin record must reflect parent opted_in');
+      const dualBadge = getVolunteerWhatsAppBadge(dualAdminVolunteer.whatsappConsentStatus, true);
+      assert(dualBadge.label === 'WhatsApp', `Expected dual-role badge 'WhatsApp', got: ${dualBadge.label}`);
+
+      // 18h. Dual-role synchronization: opt-out keeps both records non-contradictory
+      await execute(`
+        UPDATE parent_profiles SET whatsapp_consent_status = 'opted_out', whatsapp_opt_out_at = ?, updated_at = ? WHERE id = ?
+      `, [now, now, dualParentId]);
+      await execute(`
+        UPDATE volunteer_profiles SET whatsapp_consent_status = 'opted_out', whatsapp_opt_out_at = ?, updated_at = ? WHERE id = ?
+      `, [now, now, dualVolProfileId]);
+
+      const syncedParent = await queryOne('SELECT whatsapp_consent_status FROM parent_profiles WHERE id = ?', [dualParentId]);
+      const syncedVol = await queryOne('SELECT whatsapp_consent_status FROM volunteer_profiles WHERE id = ?', [dualVolProfileId]);
+      assert(syncedParent.whatsapp_consent_status === 'opted_out', 'Parent status must be opted_out');
+      assert(syncedVol.whatsapp_consent_status === 'opted_out', 'Volunteer status must be opted_out');
+      assert(syncedParent.whatsapp_consent_status === syncedVol.whatsapp_consent_status, 'Consent between parent and volunteer profile must not contradict');
+    });
+
+    // 19. HTTP Endpoint Integration Verification: POST /api/volunteer/whatsapp/consent
+    await test('HTTP endpoints enforce authentication, phone requirement, persistence, and dual-role sync', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use('/api/volunteer', volunteerRouter);
+
+      const server = await new Promise<http.Server>((resolve) => {
+        const s = app.listen(0, '127.0.0.1', () => resolve(s));
+      });
+      const address = server.address() as any;
+      const baseUrl = `http://127.0.0.1:${address.port}`;
+
+      try {
+        const httpTestSuffix = Date.now().toString().slice(-6);
+        const now = new Date().toISOString();
+
+        // 19a. Unauthenticated requests are rejected
+        const unauthRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'opt_in' })
+        });
+        assert(unauthRes.status === 401, `Expected 401 for unauthenticated request, got: ${unauthRes.status}`);
+
+        // Setup test volunteer
+        const volUser = `u-http-vol-${httpTestSuffix}`;
+        const volProf = `vp-http-vol-${httpTestSuffix}`;
+        await execute(`
+          INSERT INTO users (id, email, role, email_verified, status, created_at, updated_at)
+          VALUES (?, ?, 'volunteer', 1, 'active', ?, ?)
+        `, [volUser, `httpvol.${httpTestSuffix}@test.com`, now, now]);
+
+        await execute(`
+          INSERT INTO volunteer_profiles (
+            id, user_id, full_name, phone, whatsapp, preferred_team, status, created_at, updated_at
+          ) VALUES (?, ?, 'HTTP Volunteer', '', '', 'Teens Team', 'approved', ?, ?)
+        `, [volProf, volUser, now, now]);
+
+        const volJwt = generateToken(volUser);
+
+        // 19b. Opt-in with no phone returns 400 with PHONE_REQUIRED
+        const noPhoneRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${volJwt}`
+          },
+          body: JSON.stringify({ action: 'opt_in' })
+        });
+        assert(noPhoneRes.status === 400, `Expected 400 for missing phone, got: ${noPhoneRes.status}`);
+        const noPhoneData = await noPhoneRes.json();
+        assert(noPhoneData.code === 'PHONE_REQUIRED', `Expected PHONE_REQUIRED code, got: ${noPhoneData.code}`);
+        assert(noPhoneData.error === 'Add a phone number before enabling WhatsApp updates.', `Expected clear error message, got: ${noPhoneData.error}`);
+
+        // 19c. Opt-in with valid phone succeeds and persists
+        const optInRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${volJwt}`
+          },
+          body: JSON.stringify({ action: 'opt_in', whatsappNumber: '08012345678' })
+        });
+        assert(optInRes.status === 200, `Expected 200 for valid opt-in, got: ${optInRes.status}`);
+        const optInData = await optInRes.json();
+        assert(optInData.success === true, 'Response must indicate success');
+        assert(optInData.consentStatus === 'opted_in', 'Response must return opted_in status');
+
+        // Check DB persistence directly
+        const dbVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volProf]);
+        assert(dbVol.whatsapp_consent_status === 'opted_in', 'DB status must be opted_in');
+        assert(dbVol.whatsapp_consent_source === 'volunteer_portal', 'DB source must be volunteer_portal');
+        assert(dbVol.whatsapp_consent_at !== null, 'DB timestamp must be recorded');
+        assert(dbVol.whatsapp === '+2348012345678', `Expected normalized phone +2348012345678, got: ${dbVol.whatsapp}`);
+
+        // 19d. GET /api/volunteer/me reflects opted_in state and phone
+        const meRes = await fetch(`${baseUrl}/api/volunteer/me`, {
+          headers: { 'Authorization': `Bearer ${volJwt}` }
+        });
+        assert(meRes.status === 200, `Expected 200 from GET /me, got: ${meRes.status}`);
+        const meData = await meRes.json();
+        assert(meData.profile.whatsappConsentStatus === 'opted_in', 'GET /me must return whatsappConsentStatus: opted_in');
+        assert(meData.profile.whatsappNumber === '+2348012345678', 'GET /me must return normalized phone');
+
+        // 19e. Opt-out succeeds and preserves phone number
+        const optOutRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${volJwt}`
+          },
+          body: JSON.stringify({ action: 'opt_out' })
+        });
+        assert(optOutRes.status === 200, `Expected 200 for opt-out, got: ${optOutRes.status}`);
+        const optOutData = await optOutRes.json();
+        assert(optOutData.success === true, 'Opt out response must indicate success');
+        assert(optOutData.consentStatus === 'opted_out', 'Opt out response must return opted_out');
+
+        const dbVolOptOut = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volProf]);
+        assert(dbVolOptOut.whatsapp_consent_status === 'opted_out', 'DB status must be opted_out');
+        assert(dbVolOptOut.whatsapp_opt_out_at !== null, 'DB opt out timestamp must be set');
+        assert(dbVolOptOut.whatsapp === '+2348012345678', 'Phone number must NOT be deleted on opt-out');
+
+        // 19f. Dual-role user HTTP sync test
+        const dualHttpUser = `u-http-dual-${httpTestSuffix}`;
+        const dualHttpParent = `pp-http-dual-${httpTestSuffix}`;
+        const dualHttpVol = `vp-http-dual-${httpTestSuffix}`;
+        await execute(`
+          INSERT INTO users (id, email, role, email_verified, status, created_at, updated_at)
+          VALUES (?, ?, 'volunteer', 1, 'active', ?, ?)
+        `, [dualHttpUser, `httpdual.${httpTestSuffix}@test.com`, now, now]);
+
+        await execute(`
+          INSERT INTO parent_profiles (
+            id, user_id, full_name, email, phone_number, whatsapp_number, whatsapp_consent_status, created_at, updated_at
+          ) VALUES (?, ?, 'HTTP Dual', ?, '+2348099887766', '+2348099887766', 'opted_in', ?, ?)
+        `, [dualHttpParent, dualHttpUser, `httpdual.${httpTestSuffix}@test.com`, now, now]);
+
+        await execute(`
+          INSERT INTO volunteer_profiles (
+            id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at
+          ) VALUES (?, ?, 'HTTP Dual', '+2348099887766', '+2348099887766', 'Teens Team', 'approved', 'unknown', ?, ?)
+        `, [dualHttpVol, dualHttpUser, now, now]);
+
+        const dualJwt = generateToken(dualHttpUser);
+
+        // GET /me reflects parent opted_in status as authoritative
+        const dualMeRes = await fetch(`${baseUrl}/api/volunteer/me`, {
+          headers: { 'Authorization': `Bearer ${dualJwt}` }
+        });
+        const dualMeData = await dualMeRes.json();
+        assert(dualMeData.profile.whatsappConsentStatus === 'opted_in', 'Dual-role GET /me must reflect authoritative parent opted_in');
+        assert(dualMeData.profile.isDualRole === true, 'Dual-role flag must be true');
+
+        // Dual-role opt-out updates both profiles
+        const dualOptOutRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${dualJwt}`
+          },
+          body: JSON.stringify({ action: 'opt_out' })
+        });
+        assert(dualOptOutRes.status === 200, 'Dual role opt-out must succeed');
+
+        const finalParent = await queryOne('SELECT whatsapp_consent_status FROM parent_profiles WHERE id = ?', [dualHttpParent]);
+        const finalVol = await queryOne('SELECT whatsapp_consent_status FROM volunteer_profiles WHERE id = ?', [dualHttpVol]);
+        assert(finalParent.whatsapp_consent_status === 'opted_out', 'Parent profile must be updated to opted_out');
+        assert(finalVol.whatsapp_consent_status === 'opted_out', 'Volunteer profile must be updated to opted_out');
+      } finally {
+        await new Promise((resolve) => server.close(resolve));
+      }
     });
 
   } finally {

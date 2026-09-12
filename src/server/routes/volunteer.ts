@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import multer from 'multer';
 import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
-import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest } from '../auth';
+import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmail, sendVolunteerVerificationEmail, sendVolunteerPasswordResetEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { uploadMedia } from '../services/media/cloudinary';
@@ -1180,6 +1180,12 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
     const photoRef = profile.photo_file_id || (profile as any).photo_url || (req.user as any)?.photo_url || (req.user as any)?.photo_file_id || null;
     const photoUrl = await resolvePhotoUrl(photoRef);
 
+    const parentProfile = req.parentProfile || (req.user ? await resolveParentProfileForUser(req.user.id, req.user.email) : null);
+    const isDualRole = Boolean(parentProfile?.id);
+    const effectiveConsent = isDualRole
+      ? (parentProfile.whatsapp_consent_status || 'unknown')
+      : (profile.whatsapp_consent_status || 'unknown');
+
     const volunteerProfileObj = {
       id: profile.id,
       status: profile.status,
@@ -1188,6 +1194,15 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       assignedArea,
       accessScope,
       full_name: profile.full_name || 'Volunteer',
+      phone: profile.phone || '',
+      whatsapp: profile.whatsapp || '',
+      whatsappNumber: profile.whatsapp || profile.phone || '',
+      whatsappConsentStatus: effectiveConsent,
+      whatsapp_consent_status: effectiveConsent,
+      whatsappConsentAt: isDualRole ? parentProfile.whatsapp_consent_at : profile.whatsapp_consent_at,
+      whatsappOptOutAt: isDualRole ? parentProfile.whatsapp_opt_out_at : profile.whatsapp_opt_out_at,
+      whatsappConsentSource: isDualRole ? parentProfile.whatsapp_consent_source : profile.whatsapp_consent_source,
+      isDualRole,
       photoUrl: photoUrl || null,
       profilePhotoUrl: photoUrl || null
     };
@@ -1305,6 +1320,12 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
   const photoRef = profile.photo_file_id || (profile as any).photo_url || (req.user as any)?.photo_url || (req.user as any)?.photo_file_id || null;
   const photoUrl = await resolvePhotoUrl(photoRef);
 
+  const parentProfile = req.parentProfile || (req.user ? await resolveParentProfileForUser(req.user.id, req.user.email) : null);
+  const isDualRole = Boolean(parentProfile?.id);
+  const effectiveConsent = isDualRole
+    ? (parentProfile.whatsapp_consent_status || 'unknown')
+    : (profile.whatsapp_consent_status || 'unknown');
+
   const volunteerProfileObj = {
     id: profile.id,
     status: volunteerStatus,
@@ -1314,6 +1335,13 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
     full_name: profile.full_name,
     phone: profile.phone,
     whatsapp: profile.whatsapp,
+    whatsappNumber: profile.whatsapp || profile.phone || '',
+    whatsappConsentStatus: effectiveConsent,
+    whatsapp_consent_status: effectiveConsent,
+    whatsappConsentAt: isDualRole ? parentProfile.whatsapp_consent_at : profile.whatsapp_consent_at,
+    whatsappOptOutAt: isDualRole ? parentProfile.whatsapp_opt_out_at : profile.whatsapp_opt_out_at,
+    whatsappConsentSource: isDualRole ? parentProfile.whatsapp_consent_source : profile.whatsapp_consent_source,
+    isDualRole,
     is_koinonia_worker: profile.is_koinonia_worker,
     department: profile.department,
     serving_experience: profile.serving_experience,
@@ -1331,6 +1359,130 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
     volunteerProfile: volunteerProfileObj,
     nextRoute
   });
+});
+
+// 3.1. VOLUNTEER WHATSAPP CONSENT (Opt-in / Opt-out)
+router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  // 1. Resolve volunteer profile
+  let volProfile = req.volunteerProfile;
+  if (!volProfile) {
+    volProfile = await queryOne(
+      'SELECT * FROM volunteer_profiles WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+      [req.user.id]
+    );
+  }
+  if (!volProfile) {
+    return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+  }
+
+  // 2. Resolve parent profile for dual-role user check
+  const parentProfile = req.parentProfile || await resolveParentProfileForUser(req.user.id, req.user.email);
+  const isDualRole = Boolean(parentProfile && parentProfile.id);
+
+  const { action, whatsappNumber } = req.body || {};
+  const now = new Date().toISOString();
+
+  if (action === 'opt_in') {
+    // Determine candidate phone number:
+    // User can supply one, or we use existing phone/whatsapp from volunteer_profiles or parent_profiles
+    const candidatePhone = (whatsappNumber && String(whatsappNumber).trim()) ||
+      volProfile.whatsapp ||
+      volProfile.phone ||
+      parentProfile?.whatsapp_number ||
+      parentProfile?.phone_number;
+
+    if (!candidatePhone || !String(candidatePhone).trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'PHONE_REQUIRED',
+        error: 'Add a phone number before enabling WhatsApp updates.'
+      });
+    }
+
+    const val = validatePhoneNumber(candidatePhone, 'NG');
+    if (!val.valid || !val.normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PHONE',
+        error: val.message || 'Please provide a valid phone number (e.g. 08012345678).'
+      });
+    }
+
+    const normalizedPhone = val.normalizedPhone;
+
+    // Persist to volunteer_profiles
+    await execute(`
+      UPDATE volunteer_profiles SET
+        whatsapp_consent_status = 'opted_in',
+        whatsapp_consent_at = ?,
+        whatsapp_opt_out_at = NULL,
+        whatsapp_consent_source = 'volunteer_portal',
+        whatsapp = COALESCE(NULLIF(whatsapp, ''), ?),
+        updated_at = ?
+      WHERE id = ?
+    `, [now, normalizedPhone, now, volProfile.id]);
+
+    // For dual-role user: keep parent_profiles in sync so there is never contradictory consent!
+    if (isDualRole && parentProfile) {
+      await execute(`
+        UPDATE parent_profiles SET
+          whatsapp_consent_status = 'opted_in',
+          whatsapp_consent_at = ?,
+          whatsapp_opt_out_at = NULL,
+          whatsapp_consent_source = 'volunteer_portal',
+          whatsapp_number = COALESCE(NULLIF(whatsapp_number, ''), ?),
+          updated_at = ?
+        WHERE id = ?
+      `, [now, normalizedPhone, now, parentProfile.id]);
+    }
+
+    const updatedVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volProfile.id]);
+    return res.json({
+      success: true,
+      message: 'WhatsApp updates enabled successfully.',
+      consentStatus: 'opted_in',
+      isDualRole,
+      profile: updatedVol
+    });
+  } else if (action === 'opt_out') {
+    // Persist opt-out to volunteer_profiles
+    await execute(`
+      UPDATE volunteer_profiles SET
+        whatsapp_consent_status = 'opted_out',
+        whatsapp_opt_out_at = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, now, volProfile.id]);
+
+    // For dual-role user: keep parent_profiles in sync so there is never contradictory consent!
+    if (isDualRole && parentProfile) {
+      await execute(`
+        UPDATE parent_profiles SET
+          whatsapp_consent_status = 'opted_out',
+          whatsapp_opt_out_at = ?,
+          updated_at = ?
+        WHERE id = ?
+      `, [now, now, parentProfile.id]);
+    }
+
+    const updatedVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volProfile.id]);
+    return res.json({
+      success: true,
+      message: 'WhatsApp updates turned off.',
+      consentStatus: 'opted_out',
+      isDualRole,
+      profile: updatedVol
+    });
+  } else {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid action. Action must be "opt_in" or "opt_out".'
+    });
+  }
 });
 
 // 3.5. VOLUNTEER REQUEST (For existing users, e.g. parents requesting access)

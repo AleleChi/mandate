@@ -837,7 +837,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
             email: v.email || '',
             phone: v.phone || '',
             whatsappNumber: v.whatsappNumber || v.phone || '',
-            whatsappConsentStatus: v.parentConsentStatus || 'unknown',
+            whatsappConsentStatus: v.whatsappConsentStatus || (v.parentProfileId ? (v.parentConsentStatus || 'unknown') : (v.volunteerConsentStatus || 'unknown')),
             userId: v.userId || v.user_id,
             pushCount: Number(v.pushCount || 0),
             isParent: Boolean(v.parentProfileId)

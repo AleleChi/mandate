@@ -4764,7 +4764,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         vp.user_id as "user_id",
         (SELECT COUNT(DISTINCT ps.id) FROM push_subscriptions ps WHERE ps.user_id = u.id AND ps.revoked_at IS NULL) as "pushCount",
         pp.id as "parentProfileId",
-        pp.whatsapp_consent_status as "parentConsentStatus"
+        pp.whatsapp_consent_status as "parentConsentStatus",
+        vp.whatsapp_consent_status as "volunteerConsentStatus"
       FROM volunteer_profiles vp
       JOIN users u ON u.id = vp.user_id
       LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
@@ -4779,6 +4780,12 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       const duty = uId ? await resolveUserDutyLocation(uId, eventId) : null;
       v.dutyLocation = duty?.name || null;
       v.dutyTeam = duty?.team || duty?.teamKey || v.preferredTeam || v.department || 'Volunteer';
+      // Phase 2A Dual-role consent rule:
+      // If user has parentProfile: Parent WhatsApp consent remains authoritative.
+      // If volunteer-only: Volunteer consent is authoritative.
+      v.whatsappConsentStatus = v.parentProfileId
+        ? (v.parentConsentStatus || 'unknown')
+        : (v.volunteerConsentStatus || 'unknown');
     }
 
     const recipientGroups = [

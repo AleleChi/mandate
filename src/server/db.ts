@@ -518,6 +518,10 @@ function initSqliteSchema(db: Database.Database) {
       full_name TEXT NOT NULL,
       phone TEXT NOT NULL,
       whatsapp TEXT NOT NULL,
+      whatsapp_consent_status TEXT NOT NULL DEFAULT 'unknown',
+      whatsapp_consent_at TEXT,
+      whatsapp_opt_out_at TEXT,
+      whatsapp_consent_source TEXT,
       is_koinonia_worker INTEGER DEFAULT 0,
       department TEXT,
       preferred_team TEXT NOT NULL,
@@ -1151,6 +1155,19 @@ function initSqliteSchema(db: Database.Database) {
   for (const col of sqliteParentWhatsAppConsentCols) {
     try {
       db.exec(`ALTER TABLE parent_profiles ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
+  // WhatsApp consent columns for volunteer_profiles in SQLite
+  const sqliteVolunteerWhatsAppConsentCols = [
+    "whatsapp_consent_status TEXT NOT NULL DEFAULT 'unknown'",
+    "whatsapp_consent_at TEXT",
+    "whatsapp_opt_out_at TEXT",
+    "whatsapp_consent_source TEXT"
+  ];
+  for (const col of sqliteVolunteerWhatsAppConsentCols) {
+    try {
+      db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN ${col};`);
     } catch (e) {}
   }
 
@@ -2858,6 +2875,37 @@ async function initPostgresSchema(pool: any) {
           ) THEN
             ALTER TABLE parent_profiles
               ADD CONSTRAINT chk_parent_profiles_whatsapp_consent_status
+              CHECK (whatsapp_consent_status IN ('unknown', 'opted_in', 'opted_out'));
+          END IF;
+        END $$;
+      `);
+    } catch (e) {}
+
+    // WhatsApp consent columns for volunteer_profiles in Postgres
+    const pgVolunteerWhatsAppConsentCols = [
+      "whatsapp_consent_status VARCHAR(32) DEFAULT 'unknown'",
+      "whatsapp_consent_at TIMESTAMP",
+      "whatsapp_opt_out_at TIMESTAMP",
+      "whatsapp_consent_source VARCHAR(64)"
+    ];
+    for (const col of pgVolunteerWhatsAppConsentCols) {
+      try {
+        const parts = col.split(' ');
+        const colName = parts[0];
+        const colDef = parts.slice(1).join(' ');
+        await pool.query(`ALTER TABLE volunteer_profiles ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
+      } catch (e) {}
+    }
+
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'chk_volunteer_profiles_whatsapp_consent_status'
+          ) THEN
+            ALTER TABLE volunteer_profiles
+              ADD CONSTRAINT chk_volunteer_profiles_whatsapp_consent_status
               CHECK (whatsapp_consent_status IN ('unknown', 'opted_in', 'opted_out'));
           END IF;
         END $$;

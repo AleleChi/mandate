@@ -31,6 +31,7 @@ import { KoinoniaEmptyState } from '../components/common/KoinoniaEmptyState';
 import { MobileNotificationCentre } from '../components/common/MobileNotificationCentre';
 import { PwaInstallBanner } from '../components/common/PwaInstallBanner';
 import { KoinoniaErrorState } from '../components/common/KoinoniaErrorState';
+import { VolunteerWhatsAppPreferences } from '../components/volunteer/VolunteerWhatsAppPreferences';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt && !endsAt) return '18–22 November 2026';
@@ -2700,6 +2701,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 Here's what you need for today's event.
               </p>
             </div>
+
+            {/* Quiet WhatsApp Opt-in Prompt for volunteers */}
+            <VolunteerWhatsAppPreferences
+              variant="banner"
+              volunteerProfile={volunteerProfile}
+              onOpenEditProfile={() => onNavigate('/volunteer/profile')}
+              showSuccess={showSuccess}
+              showError={showError}
+            />
 
             {/* 2. Unified Event Cover & Summary Card */}
             <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs" data-component-version="volunteer-dashboard-unified-event-card">
