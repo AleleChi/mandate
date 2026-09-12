@@ -1013,7 +1013,22 @@ export const api = {
           children: Array<{ id: string; name: string }>;
           childCount: number;
         }>;
+        eventVolunteers?: Array<{
+          id: string;
+          name: string;
+          phone: string;
+          whatsappNumber?: string;
+          preferredTeam?: string;
+          department?: string;
+          status: string;
+          email: string;
+          userId: string;
+          pushCount: number;
+          parentProfileId?: string;
+          parentConsentStatus?: string;
+        }>;
         messageTypes: Array<{ key: string; label: string }>;
+        volunteerMessageTypes?: Array<{ key: string; label: string }>;
         recentActivity: any[];
         latestDraft: any;
         emailEnabled?: boolean;
@@ -1038,8 +1053,17 @@ export const api = {
       body: string;
       selectedParentIds?: string[];
       selectedChildId?: string;
+      selectedVolunteerIds?: string[];
     }) {
-      return api.request<{ success: boolean; preview: { subject: string; body: string; representativeParentName?: string } }>('/api/admin/messages/preview', {
+      return api.request<{
+        success: boolean;
+        preview: {
+          subject: string;
+          body: string;
+          representativeParentName?: string;
+          representativeVolunteerName?: string;
+        };
+      }>('/api/admin/messages/preview', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
@@ -1068,6 +1092,7 @@ export const api = {
       eventId?: string;
       selectedParentIds?: string[];
       selectedChildIds?: string[];
+      selectedVolunteerIds?: string[];
     }) {
       return api.request<{
         success: boolean;

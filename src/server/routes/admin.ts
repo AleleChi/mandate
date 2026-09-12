@@ -4749,6 +4749,30 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       p.childCount = children?.length || 0;
     }
 
+    // Query approved volunteers to support volunteer recipient targeting
+    const eventVolunteers = await query(`
+      SELECT
+        vp.id,
+        vp.full_name as name,
+        vp.phone as phone,
+        vp.whatsapp as "whatsappNumber",
+        vp.preferred_team as "preferredTeam",
+        vp.department,
+        vp.status,
+        u.email,
+        u.id as "userId",
+        (SELECT COUNT(DISTINCT ps.id) FROM push_subscriptions ps WHERE ps.user_id = u.id AND ps.revoked_at IS NULL) as "pushCount",
+        pp.id as "parentProfileId",
+        pp.whatsapp_consent_status as "parentConsentStatus"
+      FROM volunteer_profiles vp
+      JOIN users u ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+      WHERE vp.status IN ('active', 'approved')
+        AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+        AND (u.status = 'active' OR u.status IS NULL)
+      ORDER BY vp.full_name ASC
+    `);
+
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
       { key: 'specific_parents', label: 'Selected parents', count: eventParents.length },
@@ -4757,7 +4781,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
       { key: 'not_selected', label: 'Not selected', count: Number(countNotSelectedRes?.count || 0) },
       { key: 'pass_ready', label: 'Pass ready', count: Number(countPassReadyRes?.count || 0) },
-      { key: 'volunteers', label: 'Volunteers', count: Number(countVolunteersRes?.count || 0) },
+      { key: 'volunteers', label: 'All approved volunteers', count: Number(countVolunteersRes?.count || 0) },
+      { key: 'specific_volunteers', label: 'Selected volunteers', count: eventVolunteers.length },
       { key: 'all_event_team', label: 'Event team & volunteers', count: Number(countTeamRes?.count || 0) }
     ];
 
@@ -4769,6 +4794,18 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       { key: 'waiting_list_update', label: 'Waitlist update' },
       { key: 'selection_update', label: 'Selection update' },
       { key: 'application_status', label: 'Application status' },
+      { key: 'safety_alert', label: 'Safety alert' }
+    ];
+
+    const volunteerMessageTypes = [
+      { key: 'general_announcement', label: 'General announcement' },
+      { key: 'volunteer_application_received', label: 'Volunteer application received' },
+      { key: 'volunteer_application_status', label: 'Volunteer application status' },
+      { key: 'volunteer_approved', label: 'Volunteer approved' },
+      { key: 'volunteer_assignment', label: 'Volunteer assignment' },
+      { key: 'duty_reminder', label: 'Duty reminder' },
+      { key: 'event_information', label: 'Event information' },
+      { key: 'operational_update', label: 'Operational update' },
       { key: 'safety_alert', label: 'Safety alert' }
     ];
 
@@ -4921,26 +4958,48 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       }
 
       // Remove raw placeholders from history using canonical URLs
-      const cleanSubject = resolveMessageTokens(log.subject || '', {
-        eventName,
-        parentName: '',
-        reviewUrl: buildParentStatusUrl(),
-        passUrl: buildParentPassUrl()
-      }).replace(/\s+-\s*$/, '').trim();
+      const isVolGroup = log.recipientGroup === 'volunteers' || log.recipientGroup === 'specific_volunteers' || log.recipientGroup === 'all_event_team';
+      const cleanSubject = isVolGroup
+        ? resolveMessageTokens(log.subject || '', {
+            eventName,
+            volunteerName: 'Volunteer',
+            team: 'Team',
+            location: 'Main Auditorium',
+            supportContact: '+234 803 123 4567'
+          }).replace(/\s+-\s*$/, '').trim()
+        : resolveMessageTokens(log.subject || '', {
+            eventName,
+            parentName: '',
+            reviewUrl: buildParentStatusUrl(),
+            passUrl: buildParentPassUrl()
+          }).replace(/\s+-\s*$/, '').trim();
 
-      const cleanBody = resolveMessageTokens(
-        (log.body || '')
-          .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
-          .replace(/\{Parent name\}/gi, 'Parent'),
-        {
-          eventName,
-          childName: 'your child',
-          reviewUrl: buildParentStatusUrl(),
-          passUrl: buildParentPassUrl(),
-          pickupTime: '4:00 PM',
-          supportContact: '+234 803 123 4567'
-        }
-      );
+      const cleanBody = isVolGroup
+        ? resolveMessageTokens(
+            (log.body || '')
+              .replace(/Dear \{Volunteer name\},?/gi, 'Dear Volunteers,')
+              .replace(/\{Volunteer name\}/gi, 'Volunteer'),
+            {
+              eventName,
+              volunteerName: 'Volunteer',
+              team: 'Team',
+              location: 'Main Auditorium',
+              supportContact: '+234 803 123 4567'
+            }
+          )
+        : resolveMessageTokens(
+            (log.body || '')
+              .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
+              .replace(/\{Parent name\}/gi, 'Parent'),
+            {
+              eventName,
+              childName: 'your child',
+              reviewUrl: buildParentStatusUrl(),
+              passUrl: buildParentPassUrl(),
+              pickupTime: '4:00 PM',
+              supportContact: '+234 803 123 4567'
+            }
+          );
 
       return {
         ...log,
@@ -5002,12 +5061,14 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       recipientGroups,
       channelEligibility,
       messageTypes,
+      volunteerMessageTypes,
       recentActivity: recentActivity || [],
       latestDraft: latestDraft || null,
       emailEnabled,
       whatsappEnabled,
       providerStatus,
-      eventParents: eventParents || []
+      eventParents: eventParents || [],
+      eventVolunteers: eventVolunteers || []
     });
   } catch (err: any) {
     console.error('Error fetching admin messages dashboard:', err);
@@ -5671,6 +5732,18 @@ router.post('/team/remove-access', async (req: AuthenticatedRequest, res: Respon
  * CHILD-SPECIFIC: pass ready / pass update, application status, selection update, waitlist update, review update, pickup reminders.
  */
 function isChildSpecificMessageType(messageType?: string, body?: string, subject?: string): boolean {
+  const volunteerTypes = [
+    'volunteer_application_received',
+    'volunteer_application_status',
+    'volunteer_approved',
+    'volunteer_assignment',
+    'duty_reminder',
+    'event_information',
+    'operational_update'
+  ];
+  if (messageType && volunteerTypes.includes(messageType)) {
+    return false;
+  }
   const childTypes = [
     'pass_ready',
     'pass_update',
@@ -5694,7 +5767,7 @@ function isChildSpecificMessageType(messageType?: string, body?: string, subject
 router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const { recipientGroup, messageType, channel, subject, body, selectedChildId } = req.body;
+    const { recipientGroup, messageType, channel, subject, body, selectedChildId, selectedVolunteerIds } = req.body;
     if (!body) {
       return res.status(400).json({ success: false, error: 'Message body is required for preview.' });
     }
@@ -5702,6 +5775,67 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
     const eventId = req.body.eventId || 'event-ga-2026';
     const evRow = await queryOne('SELECT title FROM events WHERE id = ?', [eventId]);
     const eventName = evRow?.title || 'The General Assembly';
+
+    // Dedicated Volunteer Audience Preview
+    const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
+    if (isVolunteerAudience) {
+      let sampleVolunteer: any = null;
+      if (recipientGroup === 'specific_volunteers' && Array.isArray(selectedVolunteerIds) && selectedVolunteerIds.length > 0) {
+        sampleVolunteer = await queryOne(`
+          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department
+          FROM volunteer_profiles vp
+          WHERE vp.id = ? AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          LIMIT 1
+        `, [selectedVolunteerIds[0]]);
+      }
+
+      if (!sampleVolunteer) {
+        sampleVolunteer = await queryOne(`
+          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department
+          FROM volunteer_profiles vp
+          WHERE vp.status IN ('active', 'approved')
+            AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          ORDER BY vp.full_name ASC
+          LIMIT 1
+        `);
+      }
+
+      const volunteerName = (sampleVolunteer?.volunteer_name || '').trim() || 'Volunteer';
+      const volunteerTeam = (sampleVolunteer?.team || sampleVolunteer?.department || '').trim() || 'Children Ministry';
+      const locationName = 'Grace Hall Primary';
+
+      let renderedBody = resolveMessageTokens(body, {
+        parentName: volunteerName,
+        childName: volunteerName,
+        eventName,
+        pickupTime: '8:30 AM',
+        supportContact: '+234 803 123 4567'
+      });
+      renderedBody = renderedBody
+        .replace(/\{Volunteer name\}/gi, volunteerName)
+        .replace(/\{Team\}/gi, volunteerTeam)
+        .replace(/\{Location\}/gi, locationName);
+
+      let renderedSubject = resolveMessageTokens(subject || '', {
+        parentName: volunteerName,
+        childName: volunteerName,
+        eventName
+      });
+      renderedSubject = renderedSubject
+        .replace(/\{Volunteer name\}/gi, volunteerName)
+        .replace(/\{Team\}/gi, volunteerTeam)
+        .replace(/\{Location\}/gi, locationName);
+
+      return res.json({
+        success: true,
+        preview: {
+          subject: renderedSubject,
+          body: renderedBody,
+          representativeVolunteerName: volunteerName,
+          representativeTeam: volunteerTeam
+        }
+      });
+    }
 
     // Build the query based on the selected recipientGroup
     let groupCondition = '';
@@ -5878,12 +6012,59 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     // 1. Resolve recipients query based on group
     let rows: any[] = [];
 
-    if (recipientGroup === 'volunteers') {
+    if (recipientGroup === 'specific_volunteers') {
+      const selectedIds = Array.isArray(req.body.selectedVolunteerIds) ? req.body.selectedVolunteerIds : [];
+      const deduplicatedVolunteerIds = Array.from(new Set(selectedIds)).filter(Boolean) as string[];
+      if (deduplicatedVolunteerIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'NO_RECIPIENTS',
+          message: 'Please select at least one volunteer recipient.'
+        });
+      }
+
+      const volPlaceholders = deduplicatedVolunteerIds.map(() => '?').join(',');
       rows = await query(`
-        SELECT vp.id as parent_id, vp.full_name as parent_name, vp.phone as phone_number, u.email, u.id as user_id, vp.full_name as child_name, NULL as entry_id
+        SELECT
+          vp.id as volunteer_id,
+          vp.full_name as volunteer_name,
+          vp.phone as phone_number,
+          vp.whatsapp as whatsapp_number,
+          vp.preferred_team as team,
+          vp.department,
+          u.email,
+          u.id as user_id,
+          pp.id as parent_id,
+          pp.full_name as parent_name,
+          pp.whatsapp_consent_status as parent_consent_status
         FROM volunteer_profiles vp
         JOIN users u ON u.id = vp.user_id
+        LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+        WHERE vp.id IN (${volPlaceholders})
+          AND vp.status IN ('active', 'approved')
+          AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          AND (u.status = 'active' OR u.status IS NULL)
+      `, deduplicatedVolunteerIds);
+    } else if (recipientGroup === 'volunteers') {
+      rows = await query(`
+        SELECT
+          vp.id as volunteer_id,
+          vp.full_name as volunteer_name,
+          vp.phone as phone_number,
+          vp.whatsapp as whatsapp_number,
+          vp.preferred_team as team,
+          vp.department,
+          u.email,
+          u.id as user_id,
+          pp.id as parent_id,
+          pp.full_name as parent_name,
+          pp.whatsapp_consent_status as parent_consent_status
+        FROM volunteer_profiles vp
+        JOIN users u ON u.id = vp.user_id
+        LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
         WHERE vp.status IN ('active', 'approved')
+          AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          AND (u.status = 'active' OR u.status IS NULL)
       `);
     } else if (recipientGroup === 'all_event_team') {
       rows = await query(`
@@ -6043,7 +6224,54 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       body: string;
     }> = [];
 
-    if (isChildSpecific) {
+    const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
+
+    if (isVolunteerAudience) {
+      const volunteerMap = new Map<string, any>();
+      for (const row of rows) {
+        const key = row.user_id || row.volunteer_id;
+        if (!volunteerMap.has(key)) {
+          volunteerMap.set(key, row);
+        }
+      }
+
+      for (const [, volRow] of volunteerMap.entries()) {
+        const vName = (volRow.volunteer_name || '').trim() || 'Volunteer';
+        const vTeam = (volRow.team || volRow.department || '').trim() || 'Children Ministry';
+        const vLocation = 'Grace Hall Primary';
+
+        let renderedBody = resolveMessageTokens(body, {
+          parentName: vName,
+          childName: vName,
+          eventName: eventTitle,
+          supportContact: '+234 803 123 4567'
+        });
+        renderedBody = renderedBody
+          .replace(/\{Volunteer name\}/gi, vName)
+          .replace(/\{Team\}/gi, vTeam)
+          .replace(/\{Location\}/gi, vLocation);
+
+        let renderedSubject = resolveMessageTokens(subject || '', {
+          parentName: vName,
+          childName: vName,
+          eventName: eventTitle
+        });
+        renderedSubject = renderedSubject
+          .replace(/\{Volunteer name\}/gi, vName)
+          .replace(/\{Team\}/gi, vTeam)
+          .replace(/\{Location\}/gi, vLocation);
+
+        messagesToSend.push({
+          parentId: volRow.parent_id || undefined,
+          parentName: vName,
+          email: volRow.email,
+          phone: volRow.whatsapp_number || volRow.phone_number,
+          userId: volRow.user_id,
+          subject: renderedSubject,
+          body: renderedBody
+        });
+      }
+    } else if (isChildSpecific) {
       for (const row of rows) {
         const pName = (row.parent_name || '').trim() || 'Parent';
         const cName = (row.child_name || '').trim() || 'your child';
@@ -6124,7 +6352,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     const notifNow = new Date().toISOString();
     const logId = crypto.randomUUID();
-    const audienceRole = recipientGroup === 'volunteers' 
+    const audienceRole = (recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers')
       ? 'volunteer' 
       : (recipientGroup === 'all_event_team' ? 'staff' : 'parent');
 
@@ -10644,6 +10872,7 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
         totalLocations,
         volunteersAssigned,
         currentlyOnDuty,
+        stillExpected: Math.max(0, volunteersAssigned - currentlyOnDuty),
         needAssignment,
         locationsNeedingAttention,
         activeLocations: totalLocations,
@@ -11047,6 +11276,105 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
   } catch (err: any) {
     console.error('Error fetching location coverage details:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve location coverage' });
+  }
+});
+
+// Admin manual duty presence actions (mark arrived / end duty)
+router.post('/events/:eventId/locations/:locationId/presence', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const { userId, action } = req.body;
+
+    if (!userId || !action) {
+      return res.status(400).json({ success: false, error: 'User ID and action are required' });
+    }
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!loc) {
+      return res.status(404).json({ success: false, error: 'Location not found' });
+    }
+
+    const now = new Date().toISOString();
+
+    if (action === 'check_in') {
+      await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, eventId]);
+
+      const presenceId = 'pres-' + crypto.randomBytes(8).toString('hex');
+      await execute(`
+        INSERT INTO event_duty_location_presence (
+          id, event_id, user_id, duty_device_id, event_location_id, source, started_at, ended_at, updated_at
+        ) VALUES (?, ?, ?, NULL, ?, 'admin_manual', ?, NULL, ?)
+      `, [presenceId, eventId, userId, locationId, now, now]);
+
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'on_duty', updated_at = ?
+        WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status != 'cancelled'
+      `, [now, userId, eventId, locationId]);
+
+      broadcastSSEEvent('duty_presence_changed', { eventId, userId, locationId });
+      return res.json({ success: true, action: 'checked_in', startedAt: now });
+    } else if (action === 'end_duty') {
+      await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, locationId, eventId]);
+
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'available', updated_at = ?
+        WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status = 'on_duty'
+      `, [now, userId, eventId, locationId]);
+
+      broadcastSSEEvent('duty_presence_changed', { eventId, userId, locationId: null });
+      return res.json({ success: true, action: 'duty_ended' });
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid action' });
+    }
+  } catch (err: any) {
+    console.error('Error modifying location presence:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update location presence' });
+  }
+});
+
+router.post('/locations/:locationId/presence', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  req.params.eventId = 'event-ga-2026';
+  const { locationId } = req.params;
+  const { userId, action } = req.body;
+
+  if (!userId || !action) {
+    return res.status(400).json({ success: false, error: 'User ID and action are required' });
+  }
+
+  const now = new Date().toISOString();
+  if (action === 'check_in') {
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL', [now, userId]);
+
+    const presenceId = 'pres-' + crypto.randomBytes(8).toString('hex');
+    await execute(`
+      INSERT INTO event_duty_location_presence (
+        id, event_id, user_id, duty_device_id, event_location_id, source, started_at, ended_at, updated_at
+      ) VALUES (?, 'event-ga-2026', ?, NULL, ?, 'admin_manual', ?, NULL, ?)
+    `, [presenceId, userId, locationId, now, now]);
+
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'on_duty', updated_at = ?
+      WHERE user_id = ? AND assigned_location_id = ? AND status != 'cancelled'
+    `, [now, userId, locationId]);
+
+    broadcastSSEEvent('duty_presence_changed', { eventId: 'event-ga-2026', userId, locationId });
+    return res.json({ success: true, action: 'checked_in', startedAt: now });
+  } else if (action === 'end_duty') {
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL', [now, userId, locationId]);
+
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'available', updated_at = ?
+      WHERE user_id = ? AND assigned_location_id = ? AND status = 'on_duty'
+    `, [now, userId, locationId]);
+
+    broadcastSSEEvent('duty_presence_changed', { eventId: 'event-ga-2026', userId, locationId: null });
+    return res.json({ success: true, action: 'duty_ended' });
+  } else {
+    return res.status(400).json({ success: false, error: 'Invalid action' });
   }
 });
 

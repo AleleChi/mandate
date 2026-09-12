@@ -98,7 +98,62 @@ const DEFAULT_TEMPLATES: Record<string, { subject: string; body: string }> = {
   }
 };
 
+const DEFAULT_VOLUNTEER_TEMPLATES: Record<string, { subject: string; body: string }> = {
+  general_announcement: {
+    subject: 'Important Event Update - {Event name}',
+    body: 'Dear {Volunteer name},\n\nWe are looking forward to serving with you at {Event name}! Please ensure you arrive on time and connect with your team lead for your briefing.\n\nWarm regards,\nThe Koinonia Team'
+  },
+  volunteer_application_received: {
+    subject: 'Volunteer Application Received - {Event name}',
+    body: 'Dear {Volunteer name},\n\nThank you for offering to serve at {Event name}. We have received your application for the {Team} team and our coordinators are reviewing your submission.\n\nBlessings,\nThe Koinonia Team'
+  },
+  volunteer_application_status: {
+    subject: 'Application Status Update - {Event name}',
+    body: 'Dear {Volunteer name},\n\nHere is an update regarding your volunteer application for {Event name}. Please check your volunteer portal for further information.\n\nWarm regards,\nThe Koinonia Team'
+  },
+  volunteer_approved: {
+    subject: 'Welcome to the Team - {Event name}',
+    body: 'Dear {Volunteer name},\n\nWe are glad to inform you that your volunteer application for {Event name} has been approved! You will be serving with the {Team} team.\n\nThank you for your dedication,\nThe Koinonia Team'
+  },
+  volunteer_assignment: {
+    subject: 'Duty Assignment - {Event name}',
+    body: 'Dear {Volunteer name},\n\nYour duty assignment for {Event name} is confirmed. You will be serving at {Location} with the {Team} team. Please report promptly at your designated time.\n\nBlessings,\nThe Koinonia Team'
+  },
+  duty_reminder: {
+    subject: 'Duty Reminder - {Event name}',
+    body: 'Dear {Volunteer name},\n\nThis is a reminder regarding your upcoming duty session for {Event name} at {Location}. Please report on time to support team readiness.\n\nWarm regards,\nThe Koinonia Team'
+  },
+  event_information: {
+    subject: 'Operational Information - {Event name}',
+    body: 'Dear {Volunteer name},\n\nPlease review these important operational details, schedule timings, and briefing notes for {Event name}.\n\nWarm regards,\nThe Koinonia Team'
+  },
+  operational_update: {
+    subject: 'Operational Update - {Event name}',
+    body: 'Dear {Volunteer name},\n\nHere is an operational update for team members serving at {Event name}. Please coordinate with your team lead upon arrival.\n\nBlessings,\nThe Koinonia Team'
+  },
+  safety_alert: {
+    subject: 'Care and Safety Notice - {Event name}',
+    body: 'Dear {Volunteer name},\n\nPlease note this important care and safety update during {Event name}. Check with your team lead for immediate coordination.\n\nWarm regards,\nThe Koinonia Team'
+  }
+};
+
+export function isVolunteerAudience(group?: string): boolean {
+  return group === 'volunteers' || group === 'specific_volunteers';
+}
+
 export function isChildSpecificMessageType(messageType?: string, body?: string, subject?: string): boolean {
+  const volunteerTypes = [
+    'volunteer_application_received',
+    'volunteer_application_status',
+    'volunteer_approved',
+    'volunteer_assignment',
+    'duty_reminder',
+    'event_information',
+    'operational_update'
+  ];
+  if (messageType && volunteerTypes.includes(messageType)) {
+    return false;
+  }
   const childTypes = [
     'pass_ready',
     'pass_update',
@@ -125,6 +180,14 @@ const TOKENS = [
   { key: '{Pass link}', label: 'Pass Link' },
   { key: '{Review link}', label: 'Review Link' },
   { key: '{Pickup time}', label: 'Pickup Time' },
+  { key: '{Support contact}', label: 'Support Contact' }
+];
+
+const VOLUNTEER_TOKENS = [
+  { key: '{Volunteer name}', label: 'Volunteer Name' },
+  { key: '{Team}', label: 'Assigned Team' },
+  { key: '{Location}', label: 'Duty Location' },
+  { key: '{Event name}', label: 'Event Name' },
   { key: '{Support contact}', label: 'Support Contact' }
 ];
 
@@ -176,6 +239,7 @@ function formatHumanType(typeStr: string) {
 function formatHumanSenderRole(roleStr?: string) {
   if (!roleStr) return 'System';
   const rLower = roleStr.toLowerCase();
+  if (rLower.includes('parent') && rLower.includes('volunteer')) return 'Parent · Volunteer';
   if (rLower.includes('volunteer')) return 'Volunteer';
   if (rLower.includes('parent')) return 'Parent';
   if (rLower.includes('super')) return 'Super Admin';
@@ -249,6 +313,23 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const [activePreviewChildId, setActivePreviewChildId] = useState<string | null>(null);
   const [parentSearchQuery, setParentSearchQuery] = useState('');
   const [previewRepresentativeParent, setPreviewRepresentativeParent] = useState<string | null>(null);
+  const [eventVolunteers, setEventVolunteers] = useState<Array<{
+    id: string;
+    name: string;
+    team: string;
+    status: string;
+    email: string;
+    phone: string;
+    whatsappNumber: string;
+    whatsappConsentStatus: string;
+    userId: string;
+    pushCount: number;
+    isParent: boolean;
+  }>>([]);
+  const [selectedVolunteerIds, setSelectedVolunteerIds] = useState<string[]>([]);
+  const [volunteerSearchQuery, setVolunteerSearchQuery] = useState('');
+  const [previewRepresentativeVolunteer, setPreviewRepresentativeVolunteer] = useState<string | null>(null);
+  const [volunteerMessageTypes, setVolunteerMessageTypes] = useState<any[]>([]);
   const [channelEligibility, setChannelEligibility] = useState<{
     inApp: number;
     push: number;
@@ -554,6 +635,27 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           setEventParents(data.eventParents);
         }
 
+        if (data.eventVolunteers) {
+          const mappedVolunteers = data.eventVolunteers.map((v: any) => ({
+            id: v.id,
+            name: v.name,
+            team: v.preferredTeam || v.department || 'Volunteer',
+            status: v.status,
+            email: v.email || '',
+            phone: v.phone || '',
+            whatsappNumber: v.whatsappNumber || v.phone || '',
+            whatsappConsentStatus: v.parentConsentStatus || 'unknown',
+            userId: v.userId,
+            pushCount: Number(v.pushCount || 0),
+            isParent: Boolean(v.parentProfileId)
+          }));
+          setEventVolunteers(mappedVolunteers);
+        }
+
+        if (data.volunteerMessageTypes) {
+          setVolunteerMessageTypes(data.volunteerMessageTypes);
+        }
+
         setMessageTypes(data.messageTypes || [
           { key: 'general_announcement', label: 'General announcement' },
           { key: 'pickup_reminder', label: 'Dismissal and pickup reminder' },
@@ -642,12 +744,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         subject,
         body,
         selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
-        selectedChildId: activePreviewChildId || undefined
+        selectedChildId: activePreviewChildId || undefined,
+        selectedVolunteerIds: selectedGroup === 'specific_volunteers' ? selectedVolunteerIds : undefined
       });
       if (res.success && res.preview) {
         setPreviewSubject(res.preview.subject);
         setPreviewBody(res.preview.body);
         setPreviewRepresentativeParent(res.preview.representativeParentName || null);
+        setPreviewRepresentativeVolunteer(res.preview.representativeVolunteerName || null);
       }
     } catch (err) {
       console.error('Preview error:', err);
@@ -661,7 +765,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       generateLivePreview();
     }, 400);
     return () => clearTimeout(timer);
-  }, [body, subject, selectedGroup, selectedType, selectedChannels, selectedParentIds, activePreviewChildId]);
+  }, [body, subject, selectedGroup, selectedType, selectedChannels, selectedParentIds, activePreviewChildId, selectedVolunteerIds]);
 
   useEffect(() => {
     if (!selectedChannels.includes(previewTab)) {
@@ -783,15 +887,42 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   };
 
   // Template / token handlers
+  const handleGroupChange = (group: string) => {
+    const wasVol = isVolunteerAudience(selectedGroup);
+    const nowVol = isVolunteerAudience(group);
+    setSelectedGroup(group);
+
+    if (nowVol && !wasVol) {
+      // Switched from Parent to Volunteer
+      const defaultType = 'general_announcement';
+      setSelectedType(defaultType);
+      const tmpl = DEFAULT_VOLUNTEER_TEMPLATES[defaultType];
+      if (tmpl) {
+        setSubject(tmpl.subject);
+        setBody(tmpl.body);
+      }
+    } else if (!nowVol && wasVol) {
+      // Switched from Volunteer to Parent
+      const defaultType = 'general_announcement';
+      setSelectedType(defaultType);
+      const tmpl = DEFAULT_TEMPLATES[defaultType];
+      if (tmpl) {
+        setSubject(tmpl.subject);
+        setBody(tmpl.body);
+      }
+    }
+  };
+
   const handleTypeChange = (type: string) => {
     setSelectedType(type);
-    const template = DEFAULT_TEMPLATES[type];
+    const isVol = isVolunteerAudience(selectedGroup);
+    const template = isVol ? (DEFAULT_VOLUNTEER_TEMPLATES[type] || DEFAULT_TEMPLATES[type]) : DEFAULT_TEMPLATES[type];
     if (template) {
       setSubject(template.subject);
       setBody(template.body);
     }
     // If switching to a child-specific type, preselect single children for selected parents
-    if (isChildSpecificMessageType(type, template?.body, template?.subject)) {
+    if (!isVol && isChildSpecificMessageType(type, template?.body, template?.subject)) {
       const autoChildIds: string[] = [];
       for (const pId of selectedParentIds) {
         const parentObj = eventParents.find(p => p.id === pId);
@@ -886,6 +1017,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           }
         }
       }
+    } else if (selectedGroup === 'specific_volunteers') {
+      if (selectedVolunteerIds.length === 0) {
+        showError('Please select at least one volunteer recipient.');
+        return;
+      }
     } else {
       const currentGroup = recipientGroups.find(g => g.key === selectedGroup);
       if (currentGroup && currentGroup.count === 0) {
@@ -912,7 +1048,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         confirmed: true,
         eventId: selectedEventId,
         selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
-        selectedChildIds: (selectedGroup === 'specific_parents' && isCurrentChildSpecific) ? selectedChildIds : undefined
+        selectedChildIds: (selectedGroup === 'specific_parents' && isCurrentChildSpecific) ? selectedChildIds : undefined,
+        selectedVolunteerIds: selectedGroup === 'specific_volunteers' ? selectedVolunteerIds : undefined
       });
       
       if (res.success) {
@@ -995,8 +1132,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   };
 
   const isSpecificParents = selectedGroup === 'specific_parents';
+  const isSpecificVolunteers = selectedGroup === 'specific_volunteers';
+  const isVolAudience = isVolunteerAudience(selectedGroup);
   const isChildSpecific = isChildSpecificMessageType(selectedType, body, subject);
   const selectedParentsList = eventParents.filter(p => selectedParentIds.includes(p.id));
+  const selectedVolunteersList = eventVolunteers.filter(v => selectedVolunteerIds.includes(v.id));
 
   // Linked children for selected parents that are selected
   const selectedChildrenList = selectedParentsList.flatMap(p =>
@@ -1009,10 +1149,18 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     email: selectedParentsList.filter(p => !!p.email && p.email.includes('@')).length,
     whatsappNumbers: selectedParentsList.filter(p => !!(p.whatsappNumber || p.phone)).length,
     whatsappOptedIn: whatsappEnabled ? selectedParentsList.filter(p => p.whatsappConsentStatus === 'opted_in' && !!(p.whatsappNumber || p.phone)).length : 0
+  } : isSpecificVolunteers ? {
+    inApp: selectedVolunteersList.filter(v => !!v.userId).length,
+    push: selectedVolunteersList.filter(v => Number(v.pushCount || 0) > 0).length,
+    email: selectedVolunteersList.filter(v => !!v.email && v.email.includes('@')).length,
+    whatsappNumbers: selectedVolunteersList.filter(v => !!(v.whatsappNumber || v.phone)).length,
+    whatsappOptedIn: whatsappEnabled ? selectedVolunteersList.filter(v => v.whatsappConsentStatus === 'opted_in' && !!(v.whatsappNumber || v.phone)).length : 0
   } : channelEligibility;
 
   const activeGroupRecipients = isSpecificParents
     ? (isChildSpecific ? selectedChildrenList.length : selectedParentIds.length)
+    : isSpecificVolunteers
+    ? selectedVolunteerIds.length
     : (recipientGroups.find(g => g.key === selectedGroup)?.count ?? 0);
 
   const isWhatsAppOnly = selectedChannels.length === 1 && selectedChannels[0] === 'whatsapp';
@@ -1057,8 +1205,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       }
       return `Send ${selectedChildrenList.length} ${formattedType}s?`;
     }
+    if (isSpecificVolunteers) {
+      return `Send announcement to ${selectedVolunteerIds.length} volunteer${selectedVolunteerIds.length === 1 ? '' : 's'}?`;
+    }
     return isWhatsAppOnly ? 'Send WhatsApp announcement?' : 'Send announcement?';
-  }, [isChildSpecific, isSpecificParents, selectedChildrenList.length, selectedType, isWhatsAppOnly]);
+  }, [isChildSpecific, isSpecificParents, isSpecificVolunteers, selectedChildrenList.length, selectedVolunteerIds.length, selectedType, isWhatsAppOnly]);
 
   const representativeParent = isSpecificParents
     ? selectedParentsList[0]
@@ -1083,21 +1234,69 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const resolvedChildName = activeChild?.name || 'your child';
   const resolvedChildId = activeChild?.id;
 
-  const resolvedPreviewSubject = (previewSubject || subject || '')
-    .replace(/{Parent name}/gi, resolvedRepresentativeName)
-    .replace(/{Child name}/gi, resolvedChildName)
-    .replace(/{Event name}/gi, resolvedEventName)
-    .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
-    .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId));
+  const resolvedVolunteerObj = isSpecificVolunteers
+    ? (selectedVolunteersList[0] || eventVolunteers[0])
+    : (eventVolunteers[0] || null);
+  const resolvedVolunteerName = previewRepresentativeVolunteer
+    || resolvedVolunteerObj?.name
+    || 'Approved Volunteer';
+  const resolvedVolunteerTeam = resolvedVolunteerObj?.team || 'Logistics';
+  const resolvedVolunteerLocation = 'Main Auditorium - Area B';
 
-  const resolvedPreviewBody = (previewBody || body || '')
-    .replace(/{Parent name}/gi, resolvedRepresentativeName)
-    .replace(/{Child name}/gi, resolvedChildName)
-    .replace(/{Event name}/gi, resolvedEventName)
-    .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId))
-    .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
-    .replace(/{Pickup time}/gi, '4:00 PM')
-    .replace(/{Support contact}/gi, '+234 803 123 4567');
+  const resolvedPreviewSubject = isVolAudience
+    ? (previewSubject || subject || '')
+        .replace(/{Volunteer name}/gi, resolvedVolunteerName)
+        .replace(/{Team}/gi, resolvedVolunteerTeam)
+        .replace(/{Location}/gi, resolvedVolunteerLocation)
+        .replace(/{Event name}/gi, resolvedEventName)
+        .replace(/{Support contact}/gi, '+234 803 123 4567')
+    : (previewSubject || subject || '')
+        .replace(/{Parent name}/gi, resolvedRepresentativeName)
+        .replace(/{Child name}/gi, resolvedChildName)
+        .replace(/{Event name}/gi, resolvedEventName)
+        .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
+        .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId));
+
+  const resolvedPreviewBody = isVolAudience
+    ? (previewBody || body || '')
+        .replace(/{Volunteer name}/gi, resolvedVolunteerName)
+        .replace(/{Team}/gi, resolvedVolunteerTeam)
+        .replace(/{Location}/gi, resolvedVolunteerLocation)
+        .replace(/{Event name}/gi, resolvedEventName)
+        .replace(/{Support contact}/gi, '+234 803 123 4567')
+    : (previewBody || body || '')
+        .replace(/{Parent name}/gi, resolvedRepresentativeName)
+        .replace(/{Child name}/gi, resolvedChildName)
+        .replace(/{Event name}/gi, resolvedEventName)
+        .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId))
+        .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
+        .replace(/{Pickup time}/gi, '4:00 PM')
+        .replace(/{Support contact}/gi, '+234 803 123 4567');
+
+  const filteredVolunteers = eventVolunteers.filter(v => {
+    if (!volunteerSearchQuery.trim()) return true;
+    const q = volunteerSearchQuery.toLowerCase().trim();
+    const nameMatch = (v.name || '').toLowerCase().includes(q);
+    const teamMatch = (v.team || '').toLowerCase().includes(q);
+    const emailMatch = (v.email || '').toLowerCase().includes(q);
+    const phoneMatch = (v.phone || '').includes(q) || (v.whatsappNumber || '').includes(q);
+    return nameMatch || teamMatch || emailMatch || phoneMatch;
+  });
+
+  const toggleSelectVolunteer = (id: string) => {
+    setSelectedVolunteerIds(prev =>
+      prev.includes(id) ? prev.filter(vId => vId !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllFilteredVolunteers = () => {
+    const idsToAdd = filteredVolunteers.map(v => v.id);
+    setSelectedVolunteerIds(prev => Array.from(new Set([...prev, ...idsToAdd])));
+  };
+
+  const clearSelectedVolunteers = () => {
+    setSelectedVolunteerIds([]);
+  };
 
   const filteredParents = eventParents.filter(p => {
     if (!parentSearchQuery.trim()) return true;
@@ -2038,7 +2237,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   </label>
                   <select
                     value={selectedGroup}
-                    onChange={(e) => setSelectedGroup(e.target.value)}
+                    onChange={(e) => handleGroupChange(e.target.value)}
                     className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                   >
                     {recipientGroups.map(group => {
@@ -2047,9 +2246,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       if (group.key === 'specific_parents') {
                         groupLabel = 'Selected parents';
                         count = selectedParentIds.length;
+                      } else if (group.key === 'specific_volunteers') {
+                        groupLabel = 'Selected volunteers';
+                        count = selectedVolunteerIds.length;
                       }
-                      const unitLabel = group.key === 'specific_parents'
+                      const unitLabel = (group.key === 'specific_parents' || group.key === 'all_parents')
                         ? (count === 1 ? 'parent' : 'parents')
+                        : (group.key === 'specific_volunteers' || group.key === 'volunteers')
+                        ? (count === 1 ? 'volunteer' : 'volunteers')
                         : (count === 1 ? 'contact' : 'contacts');
                       return (
                         <option key={group.key} value={group.key}>
@@ -2069,7 +2273,22 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     onChange={(e) => handleTypeChange(e.target.value)}
                     className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3 py-2 text-xs text-[#18181B] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                   >
-                    {messageTypes.map(type => (
+                    {(isVolAudience
+                      ? (volunteerMessageTypes.length > 0
+                          ? volunteerMessageTypes
+                          : [
+                              { key: 'general_announcement', label: 'General announcement' },
+                              { key: 'volunteer_application_received', label: 'Volunteer application received' },
+                              { key: 'volunteer_application_status', label: 'Volunteer application status' },
+                              { key: 'volunteer_approved', label: 'Volunteer approved' },
+                              { key: 'volunteer_assignment', label: 'Volunteer assignment' },
+                              { key: 'duty_reminder', label: 'Duty reminder' },
+                              { key: 'event_information', label: 'Event information' },
+                              { key: 'operational_update', label: 'Operational update' },
+                              { key: 'safety_alert', label: 'Care and safety notice' }
+                            ])
+                      : messageTypes
+                    ).map(type => (
                       <option key={type.key} value={type.key}>
                         {type.label}
                       </option>
@@ -2251,6 +2470,170 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 </div>
               )}
 
+              {/* Specific volunteers searchable multi-select */}
+              {isSpecificVolunteers && (
+                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-[#18181B] block">Selected volunteers</span>
+                      <p className="text-[11px] text-zinc-500">
+                        Choose recipient volunteers for this update (one message per volunteer).
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={selectAllFilteredVolunteers}
+                        className="text-[11px] font-medium text-[#C59B27] hover:underline cursor-pointer"
+                      >
+                        Select all shown ({filteredVolunteers.length})
+                      </button>
+                      <span className="text-zinc-300">•</span>
+                      <button
+                        type="button"
+                        onClick={clearSelectedVolunteers}
+                        className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 cursor-pointer"
+                      >
+                        Clear ({selectedVolunteerIds.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Search input */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={volunteerSearchQuery}
+                      onChange={(e) => setVolunteerSearchQuery(e.target.value)}
+                      placeholder="Search by volunteer name, team, email, or phone..."
+                      className="w-full pl-8 pr-8 py-1.5 bg-white border border-[#EAE8E1] rounded-lg text-xs text-[#18181B] placeholder:text-zinc-400 focus:outline-none focus:border-[#C59B27]"
+                    />
+                    {volunteerSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setVolunteerSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Volunteer list */}
+                  <div className="max-h-56 overflow-y-auto divide-y divide-[#EAE8E1] border border-[#EAE8E1] rounded-lg bg-white">
+                    {filteredVolunteers.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-zinc-400">
+                        No volunteers match &quot;{volunteerSearchQuery}&quot;
+                      </div>
+                    ) : (
+                      filteredVolunteers.map((vol) => {
+                        const isSelected = selectedVolunteerIds.includes(vol.id);
+                        const isOptedIn = vol.whatsappConsentStatus === 'opted_in';
+                        const isOptedOut = vol.whatsappConsentStatus === 'opted_out';
+
+                        return (
+                          <div
+                            key={vol.id}
+                            className={`p-2.5 hover:bg-zinc-50 transition-colors ${
+                              isSelected ? 'bg-blue-50/40' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <label className="flex items-center space-x-2.5 min-w-0 flex-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectVolunteer(vol.id)}
+                                  className="rounded border-zinc-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs font-semibold text-[#18181B] truncate">
+                                      {vol.name}
+                                    </span>
+                                    <span className="text-[10px] font-medium bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded">
+                                      {vol.team}
+                                    </span>
+                                    {vol.isParent && (
+                                      <span className="text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                                        Parent · Volunteer
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center space-x-2 text-[11px] text-zinc-500 mt-0.5 truncate">
+                                    <span>{vol.email || 'No email'}</span>
+                                    <span>•</span>
+                                    <span>{vol.phone || 'No phone'}</span>
+                                  </div>
+                                </div>
+                              </label>
+
+                              {/* Channel availability indicators */}
+                              <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                                {vol.userId ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title="Account active (In-app available)">
+                                    In-app
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-400" title="No account">
+                                    No app
+                                  </span>
+                                )}
+
+                                {vol.pushCount > 0 ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title={`${vol.pushCount} device registered`}>
+                                    Push
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-400" title="No registered device">
+                                    No push
+                                  </span>
+                                )}
+
+                                {vol.email && vol.email.includes('@') ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200" title="Email address verified">
+                                    Email
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-400" title="No email">
+                                    No email
+                                  </span>
+                                )}
+
+                                {isOptedIn ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    WhatsApp
+                                  </span>
+                                ) : isOptedOut ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-500">
+                                    WhatsApp off
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-400">
+                                    WhatsApp pending
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Selection summary */}
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1">
+                    <span>
+                      {selectedVolunteerIds.length} of {eventVolunteers.length} volunteers selected
+                    </span>
+                    <span className="font-medium text-[#18181B]">
+                      {selectedVolunteerIds.length === 1 ? '1 volunteer selected' : `${selectedVolunteerIds.length} volunteers selected`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Send through / Delivery channels */}
               <div className="space-y-2">
                 <label className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider block">
@@ -2365,7 +2748,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   Insert details
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {TOKENS.map(token => (
+                  {(isVolAudience ? VOLUNTEER_TOKENS : TOKENS).map(token => (
                     <button
                       key={token.key}
                       type="button"
@@ -2382,7 +2765,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               {/* Footer */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
                 <span className="text-xs text-zinc-500">
-                  Sending to: <strong>{activeGroupRecipients} {isSpecificParents ? (activeGroupRecipients === 1 ? 'parent' : 'parents') : (activeGroupRecipients === 1 ? 'recipient' : 'recipients')}</strong>
+                  Sending to: <strong>{activeGroupRecipients} {isSpecificParents ? (activeGroupRecipients === 1 ? 'parent' : 'parents') : isSpecificVolunteers ? (activeGroupRecipients === 1 ? 'volunteer' : 'volunteers') : (activeGroupRecipients === 1 ? 'recipient' : 'recipients')}</strong>
                 </span>
 
                 <div className="flex items-center space-x-2">
@@ -2484,6 +2867,17 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {isVolAudience && (
+                  <div className="space-y-2">
+                    <div className="px-3 py-2 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-900 flex items-center space-x-2">
+                      <User className="w-4 h-4 text-blue-700 shrink-0" />
+                      <div className="min-w-0 flex-1 font-semibold truncate">
+                        Preview for {resolvedVolunteerName} (Volunteer · {resolvedVolunteerTeam})
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2988,6 +3382,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       ? (isChildSpecific
                           ? `${selectedChildrenList.length} child update${selectedChildrenList.length === 1 ? '' : 's'} across ${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'}`
                           : `${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'} selected`)
+                      : isSpecificVolunteers
+                      ? `${selectedVolunteerIds.length} volunteer${selectedVolunteerIds.length === 1 ? '' : 's'} selected`
                       : `${selectedGroup.replace(/_/g, ' ')} (${activeGroupRecipients} recipient${activeGroupRecipients === 1 ? '' : 's'})`
                     }
                   </span>
@@ -3006,7 +3402,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       <div className="flex justify-between">
                         <span>In-app:</span>
                         <span className="font-semibold text-zinc-900">
-                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.inApp} notification${childDeliveryBreakdown.inApp === 1 ? '' : 's'}` : `${isSpecificParents ? effectiveEligibility?.inApp : activeGroupRecipients} available`}
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.inApp} notification${childDeliveryBreakdown.inApp === 1 ? '' : 's'}` : `${(isSpecificParents || isSpecificVolunteers) ? effectiveEligibility?.inApp : activeGroupRecipients} available`}
                         </span>
                       </div>
                     )}
@@ -3014,7 +3410,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       <div className="flex justify-between">
                         <span>Push notification:</span>
                         <span className="font-semibold text-zinc-900">
-                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.push} notification${childDeliveryBreakdown.push === 1 ? '' : 's'}` : `${isSpecificParents ? effectiveEligibility?.push : activeGroupRecipients} available`}
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.push} notification${childDeliveryBreakdown.push === 1 ? '' : 's'}` : `${(isSpecificParents || isSpecificVolunteers) ? effectiveEligibility?.push : activeGroupRecipients} available`}
                         </span>
                       </div>
                     )}
@@ -3022,7 +3418,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       <div className="flex justify-between">
                         <span>Email:</span>
                         <span className="font-semibold text-zinc-900">
-                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.email} email${childDeliveryBreakdown.email === 1 ? '' : 's'}` : `${isSpecificParents ? effectiveEligibility?.email : activeGroupRecipients} available`}
+                          {childDeliveryBreakdown ? `${childDeliveryBreakdown.email} email${childDeliveryBreakdown.email === 1 ? '' : 's'}` : `${(isSpecificParents || isSpecificVolunteers) ? effectiveEligibility?.email : activeGroupRecipients} available`}
                         </span>
                       </div>
                     )}
@@ -3066,6 +3462,29 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     {selectedParentsList.length > 5 && (
                       <div className="text-[11px] text-zinc-500 font-medium pl-5">
                         + {selectedParentsList.length - 5} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Recipients list for Specific Volunteers */}
+              {isSpecificVolunteers && selectedVolunteersList.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Recipients</div>
+                  <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs space-y-2 text-zinc-800">
+                    {selectedVolunteersList.slice(0, 5).map(v => (
+                      <div key={v.id} className="flex items-center justify-between">
+                        <div className="font-medium flex items-center space-x-1.5">
+                          <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span className="truncate">{v.name || 'Unnamed Volunteer'}</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 font-normal">{v.team}</span>
+                      </div>
+                    ))}
+                    {selectedVolunteersList.length > 5 && (
+                      <div className="text-[11px] text-zinc-500 font-medium pl-5">
+                        + {selectedVolunteersList.length - 5} more
                       </div>
                     )}
                   </div>

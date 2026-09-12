@@ -1124,16 +1124,21 @@ router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) =>
         if (u) {
           senderRole = u.role === 'super_admin' ? 'Super Admin' : u.role === 'admin' ? 'Admin' : u.role === 'staff' ? 'Care Lead' : 'Parent';
           senderName = u.email ? u.email.split('@')[0] : 'Admin';
-          // Check if volunteer
-          const vol = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [n.created_by_user_id]);
-          if (vol) {
+          // Check if volunteer and/or parent
+          const vol = await queryOne('SELECT full_name, preferred_team, department FROM volunteer_profiles WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [n.created_by_user_id]);
+          const par = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [n.created_by_user_id]);
+          if (vol && par) {
+            senderName = vol.full_name || par.full_name;
+            senderRole = 'Parent · Volunteer';
+          } else if (vol) {
             senderName = vol.full_name;
-            senderRole = 'Volunteer';
-          } else {
-            // Check if parent
-            const par = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [n.created_by_user_id]);
-            if (par) {
-              senderName = par.full_name;
+            const team = vol.preferred_team || vol.department;
+            senderRole = team ? `Volunteer · ${team}` : 'Volunteer';
+          } else if (par) {
+            senderName = par.full_name;
+            if (metadata?.childName) {
+              senderRole = `Parent of ${metadata.childName}`;
+            } else {
               senderRole = 'Parent';
             }
           }

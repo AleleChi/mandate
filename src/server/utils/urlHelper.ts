@@ -156,6 +156,9 @@ export function buildReviewUrl(childId?: string): string {
 export interface RecipientTokenContext {
   parentName?: string;
   childName?: string;
+  volunteerName?: string;
+  team?: string;
+  location?: string;
   eventName?: string;
   passUrl?: string;
   reviewUrl?: string;
@@ -168,6 +171,9 @@ export interface RecipientTokenContext {
  * Supported tokens:
  * - {Parent name}
  * - {Child name}
+ * - {Volunteer name}
+ * - {Team}
+ * - {Location}
  * - {Event name}
  * - {Pass link}
  * - {Review link}
@@ -178,6 +184,9 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
   if (!template) return '';
   const pName = (context.parentName || '').trim() || 'Parent';
   const cName = (context.childName || '').trim() || 'your child';
+  const vName = (context.volunteerName || '').trim() || 'Volunteer';
+  const vTeam = (context.team || '').trim() || 'Assigned Team';
+  const vLoc = (context.location || '').trim() || 'Designated Area';
   const eName = (context.eventName || '').trim() || 'The General Assembly';
   const pLink = context.passUrl || buildParentPassUrl();
   const rLink = context.reviewUrl || buildParentStatusUrl();
@@ -187,6 +196,9 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
   return template
     .replace(/\{Parent name\}/gi, pName)
     .replace(/\{Child name\}/gi, cName)
+    .replace(/\{Volunteer name\}/gi, vName)
+    .replace(/\{Team\}/gi, vTeam)
+    .replace(/\{Location\}/gi, vLoc)
     .replace(/\{Event name\}/gi, eName)
     .replace(/\{Pass link\}/gi, pLink)
     .replace(/\{Review link\}/gi, rLink)
