@@ -244,6 +244,8 @@ export async function processQueuedWhatsAppJobs(
         let recipientName = '';
         let targetUserId: string | null = candidate.user_id || null;
 
+        const defaultCampaignId = candidate.rule_id || (candidate.idempotency_key?.startsWith('registration_ack:') ? 'registration_acknowledgement' : 'manual_broadcast');
+
         if (candidate.parent_id) {
           parent = await queryOne(`
             SELECT id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email
@@ -274,7 +276,7 @@ export async function processQueuedWhatsAppJobs(
 
             await logWhatsAppDelivery({
               jobId: candidate.id,
-              campaignId: candidate.rule_id || 'manual_broadcast',
+              campaignId: defaultCampaignId,
               parentProfileId: candidate.parent_id,
               userId: targetUserId,
               childEventEntryId: resolvedEntryId || null,
@@ -323,7 +325,7 @@ export async function processQueuedWhatsAppJobs(
 
             await logWhatsAppDelivery({
               jobId: candidate.id,
-              campaignId: candidate.rule_id || 'manual_broadcast',
+              campaignId: defaultCampaignId,
               userId: targetUserId,
               recipientPhone: rawPhone || 'unknown',
               provider: provider.name,
@@ -349,7 +351,7 @@ export async function processQueuedWhatsAppJobs(
 
             await logWhatsAppDelivery({
               jobId: candidate.id,
-              campaignId: candidate.rule_id || 'manual_broadcast',
+              campaignId: defaultCampaignId,
               userId: targetUserId,
               recipientPhone: normalized,
               provider: provider.name,
@@ -375,7 +377,7 @@ export async function processQueuedWhatsAppJobs(
 
             await logWhatsAppDelivery({
               jobId: candidate.id,
-              campaignId: candidate.rule_id || 'manual_broadcast',
+              campaignId: defaultCampaignId,
               userId: targetUserId,
               recipientPhone: normalized,
               provider: provider.name,
@@ -398,11 +400,16 @@ export async function processQueuedWhatsAppJobs(
         let messageBody = '';
         let templateName: string | undefined = undefined;
 
+        const isRegistrationAck = Boolean(
+          candidate.idempotency_key?.startsWith('registration_ack:') ||
+          candidate.rule_id === 'registration_acknowledgement'
+        );
+
         // Try extracting broadcast log id from idempotency_key or rule_id
         const campaignMatch = candidate.idempotency_key?.match(/admin_message:([^:]+)/)
           || candidate.idempotency_key?.match(/campaign:([^:]+)/);
         const broadcastId = campaignMatch ? campaignMatch[1] : (candidate.rule_id || null);
-        const resolvedCampaignId = broadcastId || candidate.rule_id || 'broadcast';
+        const resolvedCampaignId = broadcastId || candidate.rule_id || (isRegistrationAck ? 'registration_acknowledgement' : 'broadcast');
 
         if (broadcastId) {
           const broadcastLog = await queryOne(`
@@ -423,6 +430,14 @@ export async function processQueuedWhatsAppJobs(
           if (eventRule && eventRule.message_template) {
             messageBody = eventRule.message_template;
           }
+        }
+
+        // Transactional registration acknowledgement
+        if (!messageBody && isRegistrationAck) {
+          const rawFirst = (recipientName || '').trim().split(/\s+/)[0];
+          const firstName = (rawFirst && rawFirst !== 'Parent' && rawFirst !== 'Volunteer') ? rawFirst : '';
+          const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
+          messageBody = `${greeting}\n\nYour Koinonia Children & Teens registration has been received.\n\nWe sent a verification link to your email address. Please check your inbox, spam or junk folder and verify your email to continue.\n\nIf you cannot find the email, return to the sign-in page and request another verification email.\n\nKoinonia Children & Teens`;
         }
 
         if (!messageBody.trim()) {

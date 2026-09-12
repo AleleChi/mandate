@@ -1,5 +1,15 @@
 import { resolveMx } from 'dns/promises';
-import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js';
+import parsePhoneNumber, { CountryCode } from 'libphonenumber-js/core';
+import meta from 'libphonenumber-js/metadata.min';
+
+const phoneMetadata = (meta as any)?.default || meta;
+const parsePhoneNumberFromString = (text: string, country?: any) => {
+  try {
+    return parsePhoneNumber(text, country, phoneMetadata);
+  } catch {
+    return undefined;
+  }
+};
 
 export interface ValidationResult {
   valid: boolean;
@@ -424,6 +434,14 @@ export function validateEmailSyntax(email: string, fieldName = 'email'): Validat
   return { valid: true };
 }
 
+export type MxResolver = (domain: string) => Promise<Array<{ exchange: string; priority: number }>>;
+
+let customMxResolver: MxResolver | null = null;
+
+export function setCustomMxResolver(resolver: MxResolver | null): void {
+  customMxResolver = resolver;
+}
+
 /**
  * Backend Email Validator (including DNS/MX check)
  */
@@ -439,7 +457,7 @@ export async function validateEmailAddress(email: string, skipMxCheck = false, f
   // Perform DNS MX lookup unless skipped
   if (!skipMxCheck) {
     try {
-      const mxRecords = await resolveMx(domain);
+      const mxRecords = customMxResolver ? await customMxResolver(domain) : await resolveMx(domain);
       if (!mxRecords || mxRecords.length === 0) {
         return {
           valid: false,

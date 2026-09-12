@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Mail } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Mail, Info } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
 import { validateEmailSyntax } from '../utils/validation';
@@ -197,17 +197,29 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
           </div>
           
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-xl text-[#18181B] tracking-tight">
+            <h1 className="font-serif-koinonia font-bold text-2xl sm:text-[28px] text-[#18181B] tracking-tight">
               Check your email
             </h1>
-            <p className="text-xs text-gray-500 leading-relaxed max-w-sm mx-auto">
-              We sent a confirmation link for Volunteer Access. Please open it to confirm your email.
-            </p>
-            {emailParam && (
-              <p className="text-xs text-gray-700 font-semibold bg-[#FAF6EC] border border-[#EBE3D3] rounded-xl py-1.5 px-3 inline-block mt-2">
-                Sent to: {emailParam}
+            <div className="text-sm text-[#3F3F46] leading-relaxed max-w-[360px] mx-auto pt-1">
+              <p className="text-zinc-600">We sent a verification link to:</p>
+              <p className="font-semibold text-[#18181B] text-base mt-0.5 break-all">
+                {emailParam || emailInput || 'your email address'}
               </p>
-            )}
+            </div>
+            <p className="text-xs sm:text-sm text-zinc-600 pt-1 max-w-[340px] mx-auto leading-relaxed">
+              Open the email and verify your address to continue.
+            </p>
+          </div>
+
+          {/* Spam / Junk Helper Card */}
+          <div className="p-4 rounded-2xl bg-[#FAF9F6] border border-[#EAE8E1] text-left shadow-2xs">
+            <div className="flex items-start gap-3">
+              <Info className="w-4 h-4 text-[#9A7326] shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="text-xs text-zinc-600 leading-relaxed">
+                <span className="font-semibold text-zinc-900 block mb-0.5">Can't find it?</span>
+                Check your Spam, Junk or Promotions folder. It may take a few minutes to arrive.
+              </div>
+            </div>
           </div>
 
           {/* RESEND FLOW NOTIFICATIONS */}
@@ -293,20 +305,24 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <span>
-                    {cooldown > 0 ? `Resend available in ${cooldown}s` : 'Resend confirmation email'}
+                    {cooldown > 0 ? `Resend available in ${cooldown}s` : 'Resend verification email'}
                   </span>
                 )}
               </button>
 
-              {!emailParam && !showEmailInput && (
-                <button
-                  type="button"
-                  onClick={() => setShowEmailInput(true)}
-                  className="text-xs font-semibold text-[#B89047] hover:underline block mx-auto cursor-pointer focus:outline-none"
-                >
-                  Enter a different email address
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (emailParam) {
+                    onNavigate('/volunteer/create-account');
+                  } else {
+                    setShowEmailInput(true);
+                  }
+                }}
+                className="text-xs font-semibold text-zinc-600 hover:text-[#18181B] block mx-auto cursor-pointer focus:outline-none"
+              >
+                Use a different email
+              </button>
 
               <button
                 onClick={() => onNavigate('/volunteer/sign-in')}

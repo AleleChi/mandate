@@ -74,6 +74,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
   const [note, setNote] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [agreedToWhatsApp, setAgreedToWhatsApp] = useState(false);
 
   // Draft Saving and Restoring Flow (500ms debounce, 7-day expiry)
   useEffect(() => {
@@ -292,6 +293,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
       formData.append('preferredTeam', preferredTeam);
       formData.append('servingExperience', servingExperience ? 'true' : 'false');
       formData.append('note', note.trim() || '');
+      formData.append('whatsappConsent', agreedToWhatsApp ? 'true' : 'false');
       formData.append('password', password);
       
       if (selectedPhotoFile) {
@@ -442,6 +444,39 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                   disabled={loading}
                 />
               )}
+
+              <div className="pt-0.5">
+                <label
+                  htmlFor="volunteerWhatsappConsent"
+                  className="flex items-start gap-2.5 cursor-pointer select-none group"
+                >
+                  <input
+                    id="volunteerWhatsappConsent"
+                    type="checkbox"
+                    className="sr-only"
+                    checked={agreedToWhatsApp}
+                    onChange={(e) => setAgreedToWhatsApp(e.target.checked)}
+                    disabled={loading}
+                  />
+                  <div
+                    className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center transition-all shrink-0 ${
+                      agreedToWhatsApp
+                        ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
+                        : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+                    }`}
+                  >
+                    {agreedToWhatsApp && <Check className="w-3 h-3 stroke-[3] text-[#18181B]" />}
+                  </div>
+                  <div className="pt-0.5">
+                    <span className="text-xs text-zinc-700 leading-snug block">
+                      Send me important registration and event updates on WhatsApp
+                    </span>
+                    <span className="text-[11px] text-zinc-400 block mt-0.5">
+                      You can turn this off later.
+                    </span>
+                  </div>
+                </label>
+              </div>
             </div>
 
             {/* KOINONIA WORKER STATUS */}

@@ -10,6 +10,7 @@ import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
 import { resolveAlertRecipients, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl } from '../utils/urlHelper';
+import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -238,6 +239,7 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       password,
       phone,
       whatsapp,
+      whatsappConsent,
       isKoinoniaWorker,
       department,
       preferredTeam,
@@ -425,6 +427,11 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
     const now = new Date().toISOString();
     const hashedPwd = hashPassword(password);
 
+    const isConsentGranted = (whatsappConsent === true || whatsappConsent === 'true') && Boolean(cleanWhatsapp || cleanPhone);
+    const consentStatus = isConsentGranted ? 'opted_in' : 'unknown';
+    const consentAt = isConsentGranted ? now : null;
+    const consentSource = isConsentGranted ? 'registration' : null;
+
     await transaction(async () => {
       await execute(`
         INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
@@ -435,8 +442,10 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
         INSERT INTO volunteer_profiles (
           id, user_id, photo_file_id, full_name, phone, whatsapp,
           is_koinonia_worker, department, preferred_team, serving_experience,
-          note, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?)
+          note, status,
+          whatsapp_consent_status, whatsapp_consent_at, whatsapp_consent_source,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?)
       `, [
         volunteerProfileId,
         userId,
@@ -449,6 +458,9 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
         preferredTeam,
         servingExperienceBool ? 1 : 0,
         note || null,
+        consentStatus,
+        consentAt,
+        consentSource,
         now,
         now
       ]);
@@ -503,6 +515,20 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       emailSent = false;
       emailMessage = 'Volunteer Access was created, but we could not send the confirmation email automatically. Use resend on the next screen.';
       console.error(`Volunteer verification email failed { userId: "${userId}", reason: "${e?.message || e}" }`);
+    }
+
+    // Optional transactional WhatsApp registration acknowledgement
+    if (isConsentGranted && Boolean(cleanWhatsapp || cleanPhone)) {
+      try {
+        await enqueueWhatsAppJob({
+          eventId: REAL_EVENT_ID,
+          userId,
+          idempotencyKey: `registration_ack:volunteer:${userId}`
+        });
+        console.log(`Volunteer registration WhatsApp acknowledgement enqueued { userId: "${userId}" }`);
+      } catch (waErr) {
+        console.error('WhatsApp volunteer registration acknowledgement enqueue failed (non-fatal):', waErr);
+      }
     }
 
     if (emailSent) {

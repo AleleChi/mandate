@@ -332,9 +332,14 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
               >
                 {agreedToWhatsApp && <Check className="w-3 h-3 stroke-[3] text-[#18181B]" />}
               </div>
-              <span className="text-xs text-zinc-700 leading-snug">
-                Send me important updates on WhatsApp.
-              </span>
+              <div className="pt-0.5">
+                <span className="text-xs text-zinc-700 leading-snug block">
+                  Send me important registration and event updates on WhatsApp
+                </span>
+                <span className="text-[11px] text-zinc-400 block mt-0.5">
+                  You can turn this off later.
+                </span>
+              </div>
             </label>
           </div>
         </div>

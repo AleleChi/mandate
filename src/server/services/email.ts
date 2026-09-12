@@ -82,11 +82,20 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     const fromName = options.fromName || process.env.MAIL_FROM_NAME || 'Koinonia Children and Teens';
     const fromAddress = process.env.MAIL_FROM_ADDRESS;
     
-    if (!fromAddress) {
+    if (!fromAddress && provider !== 'simulated' && provider !== 'test' && provider !== 'mock') {
       console.error('[EmailService] MAIL_FROM_ADDRESS is not configured in environment.');
       return {
         success: false,
         error: 'We could not send the email right now. Please try again.'
+      };
+    }
+
+    // Simulation / Test Provider: No external network transmission
+    if (provider === 'simulated' || provider === 'test' || provider === 'mock') {
+      const simId = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        success: true,
+        id: simId
       };
     }
 

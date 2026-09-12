@@ -68,9 +68,9 @@ class FailClosedWhatsAppProvider implements WhatsAppProvider {
 let cachedProvider: WhatsAppProvider | null = null;
 let cachedCacheKey: string | null = null;
 
-export function resetWhatsAppProviderCache(): void {
-  cachedProvider = null;
-  cachedCacheKey = null;
+export function resetWhatsAppProviderCache(override?: WhatsAppProvider | null): void {
+  cachedProvider = override || null;
+  cachedCacheKey = override ? 'custom-test' : null;
 }
 
 export function getWhatsAppProvider(): WhatsAppProvider {
@@ -78,7 +78,7 @@ export function getWhatsAppProvider(): WhatsAppProvider {
   const rawProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
   const cacheKey = `${isProd ? 'prod' : 'dev'}:${rawProvider}`;
 
-  if (cachedProvider && cachedCacheKey === cacheKey) {
+  if (cachedProvider && (cachedCacheKey === 'custom-test' || cachedCacheKey === cacheKey)) {
     return cachedProvider;
   }
 

@@ -6,6 +6,7 @@ import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderR
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
 import { buildPublicAppUrl } from '../utils/urlHelper';
 import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
+import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 
 const router = Router();
 
@@ -156,6 +157,20 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
       console.error('Email sending failed during registration:', e);
     }
 
+    // Optional transactional WhatsApp registration acknowledgement
+    if (isConsentGranted && Boolean(cleanWhatsapp || cleanPhone)) {
+      try {
+        await enqueueWhatsAppJob({
+          eventId: 'event-ga-2026',
+          parentId: profileId,
+          userId,
+          idempotencyKey: `registration_ack:parent:${profileId}`
+        });
+      } catch (waErr) {
+        console.error('WhatsApp registration acknowledgement enqueue failed (non-fatal):', waErr);
+      }
+    }
+
     res.status(201).json({ user, profile, token });
   } catch (err: any) {
     if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
@@ -256,6 +271,27 @@ router.post('/resend-verification', async (req, res) => {
         emailSent: false,
         message: 'This email is already confirmed. You can sign in.'
       });
+    }
+
+    // Enforce cooldown (60 seconds)
+    const lastToken = await queryOne(`
+      SELECT created_at FROM auth_tokens
+      WHERE user_id = ? AND token_type = 'email_verification'
+      ORDER BY created_at DESC LIMIT 1
+    `, [user.id]);
+    if (lastToken && lastToken.created_at) {
+      const elapsedMs = Date.now() - new Date(lastToken.created_at).getTime();
+      const cooldownMs = 60 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const retryAfterSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        return res.status(429).json({
+          success: false,
+          code: 'RESEND_COOLDOWN',
+          emailSent: false,
+          retryAfterSeconds,
+          message: 'Please wait before requesting another verification link.'
+        });
+      }
     }
 
     const now = new Date().toISOString();
