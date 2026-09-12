@@ -2706,6 +2706,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <VolunteerWhatsAppPreferences
               variant="banner"
               volunteerProfile={volunteerProfile}
+              onConsentUpdated={(newStatus) => {
+                if (volunteerProfile && typeof volunteerProfile === 'object') {
+                  volunteerProfile.whatsappConsentStatus = newStatus;
+                  volunteerProfile.whatsapp_consent_status = newStatus;
+                }
+              }}
               onOpenEditProfile={() => onNavigate('/volunteer/profile')}
               showSuccess={showSuccess}
               showError={showError}

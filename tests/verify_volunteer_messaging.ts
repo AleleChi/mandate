@@ -249,8 +249,8 @@ async function runTests() {
       console.log('    [Consent Audit]:');
       console.log('    - Parent WhatsApp consent stored in: parent_profiles.whatsapp_consent_status');
       console.log(`    - Volunteer WhatsApp consent stored in: volunteer_profiles (${volunteerCols.length > 0 ? 'PHASE 2A COLUMN ACTIVE' : 'MISSING COLUMN'})`);
-      console.log('    - Dual-role (Parent + Volunteer): Parent WhatsApp consent remains authoritative');
-      console.log('    - Volunteer-only: Volunteer consent is authoritative');
+      console.log('    - Role-specific consent: Volunteer audience uses Volunteer consent, Parent audience uses Parent consent');
+      console.log('    - Role independence: Volunteer preference change never modifies Parent consent and vice versa');
       
       assert(parentCols.length > 0, 'Parent consent verification check');
       assert(volunteerCols.length > 0, 'Volunteer consent column must be present in volunteer_profiles');
@@ -814,7 +814,10 @@ async function runTests() {
       });
       assert(optedOutEligibility.whatsappOptedIn === 0, `Expected whatsappOptedIn 0 for opted-out volunteer, got: ${optedOutEligibility.whatsappOptedIn}`);
 
-      // 18g. Dual-role Parent + Volunteer: Parent consent remains authoritative
+      // 18g. Dual-role Role-Specific Consent Policy:
+      // Communication consent is ROLE-SPECIFIC.
+      // For Volunteer audience: volunteer_profiles.whatsapp_consent_status
+      // For Parent audience: parent_profiles.whatsapp_consent_status
       await execute(`
         INSERT INTO users (id, email, role, email_verified, status, created_at, updated_at)
         VALUES (?, ?, 'parent', 1, 'active', ?, ?)
@@ -822,56 +825,130 @@ async function runTests() {
 
       await execute(`
         INSERT INTO parent_profiles (
-          id, user_id, full_name, email, phone_number, whatsapp_number, whatsapp_consent_status, whatsapp_consent_at, created_at, updated_at
-        ) VALUES (?, ?, 'Dual Parent Volunteer', ?, '+2348033334444', '+2348033334444', 'opted_in', ?, ?, ?)
-      `, [dualParentId, dualUserId, `dual.${testSuffix}@test.com`, now, now, now]);
+          id, user_id, full_name, email, phone_number, whatsapp_number, whatsapp_consent_status, created_at, updated_at
+        ) VALUES (?, ?, 'Dual Parent Volunteer', ?, '+2348033334444', '+2348033334444', 'unknown', ?, ?)
+      `, [dualParentId, dualUserId, `dual.${testSuffix}@test.com`, now, now]);
 
       await execute(`
         INSERT INTO volunteer_profiles (
           id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at
-        ) VALUES (?, ?, 'Dual Parent Volunteer', '+2348033334444', '+2348033334444', 'Teens Team', 'approved', 'unknown', ?, ?)
+        ) VALUES (?, ?, 'Dual Parent Volunteer', '+2348033334444', '+2348033334444', 'Teens Team', 'approved', 'opted_in', ?, ?)
       `, [dualVolProfileId, dualUserId, now, now]);
 
-      // When resolving dual-role volunteer profile:
-      const parentRow = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [dualUserId]);
-      const volRow = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [dualUserId]);
+      // Matrix Case 1: Parent unknown + Volunteer opted_in -> Volunteer audience AVAILABLE, Parent audience UNAVAILABLE
+      const volAudienceCase1 = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{
+          id: dualVolProfileId,
+          userId: dualUserId,
+          name: 'Dual Parent Volunteer',
+          phone: '+2348033334444',
+          whatsappNumber: '+2348033334444',
+          whatsappConsentStatus: 'opted_in'
+        }],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(volAudienceCase1.whatsappOptedIn === 1, `Parent unknown + Volunteer opted_in: Volunteer audience must be AVAILABLE (1), got: ${volAudienceCase1.whatsappOptedIn}`);
 
-      const effectiveConsentForDual = parentRow.id
-        ? (parentRow.whatsapp_consent_status || 'unknown')
-        : (volRow.whatsapp_consent_status || 'unknown');
+      const parentAudienceCase1 = calculateEffectiveEligibility({
+        selectedGroup: 'all_parents',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(parentAudienceCase1.whatsappOptedIn === 0, `Parent unknown + Volunteer opted_in: Parent audience must be UNAVAILABLE (0), got: ${parentAudienceCase1.whatsappOptedIn}`);
 
-      assert(effectiveConsentForDual === 'opted_in', 'Dual-role user must inherit authoritative Parent opted_in consent');
+      const badgeCase1 = getVolunteerWhatsAppBadge('opted_in', true);
+      assert(badgeCase1.isOptedIn === true, 'Row badge must be isOptedIn');
+      assert(badgeCase1.label === 'WhatsApp', 'Row badge label must be WhatsApp');
 
-      // In Admin Messages query simulation:
-      const dualAdminVolunteer = {
-        id: dualVolProfileId,
-        userId: dualUserId,
-        name: 'Dual Parent Volunteer',
-        phone: '+2348033334444',
-        whatsappNumber: '+2348033334444',
-        parentProfileId: parentRow.id,
-        parentConsentStatus: parentRow.whatsapp_consent_status,
-        volunteerConsentStatus: volRow.whatsapp_consent_status,
-        whatsappConsentStatus: parentRow.id ? parentRow.whatsapp_consent_status : volRow.whatsapp_consent_status
-      };
-
-      assert(dualAdminVolunteer.whatsappConsentStatus === 'opted_in', 'Dual role admin record must reflect parent opted_in');
-      const dualBadge = getVolunteerWhatsAppBadge(dualAdminVolunteer.whatsappConsentStatus, true);
-      assert(dualBadge.label === 'WhatsApp', `Expected dual-role badge 'WhatsApp', got: ${dualBadge.label}`);
-
-      // 18h. Dual-role synchronization: opt-out keeps both records non-contradictory
+      // Matrix Case 2: Parent opted_out + Volunteer opted_in -> Volunteer audience AVAILABLE, Parent audience UNAVAILABLE
       await execute(`
         UPDATE parent_profiles SET whatsapp_consent_status = 'opted_out', whatsapp_opt_out_at = ?, updated_at = ? WHERE id = ?
+      `, [now, now, dualParentId]);
+
+      const volAudienceCase2 = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{
+          id: dualVolProfileId,
+          userId: dualUserId,
+          name: 'Dual Parent Volunteer',
+          phone: '+2348033334444',
+          whatsappNumber: '+2348033334444',
+          whatsappConsentStatus: 'opted_in'
+        }],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(volAudienceCase2.whatsappOptedIn === 1, `Parent opted_out + Volunteer opted_in: Volunteer audience must be AVAILABLE (1), got: ${volAudienceCase2.whatsappOptedIn}`);
+
+      const parentAudienceCase2 = calculateEffectiveEligibility({
+        selectedGroup: 'all_parents',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(parentAudienceCase2.whatsappOptedIn === 0, `Parent opted_out + Volunteer opted_in: Parent audience must be UNAVAILABLE (0), got: ${parentAudienceCase2.whatsappOptedIn}`);
+
+      // Matrix Case 3: Parent opted_in + Volunteer opted_out -> Volunteer audience UNAVAILABLE, Parent audience AVAILABLE
+      await execute(`
+        UPDATE parent_profiles SET whatsapp_consent_status = 'opted_in', whatsapp_consent_at = ?, whatsapp_opt_out_at = NULL, updated_at = ? WHERE id = ?
       `, [now, now, dualParentId]);
       await execute(`
         UPDATE volunteer_profiles SET whatsapp_consent_status = 'opted_out', whatsapp_opt_out_at = ?, updated_at = ? WHERE id = ?
       `, [now, now, dualVolProfileId]);
 
-      const syncedParent = await queryOne('SELECT whatsapp_consent_status FROM parent_profiles WHERE id = ?', [dualParentId]);
-      const syncedVol = await queryOne('SELECT whatsapp_consent_status FROM volunteer_profiles WHERE id = ?', [dualVolProfileId]);
-      assert(syncedParent.whatsapp_consent_status === 'opted_out', 'Parent status must be opted_out');
-      assert(syncedVol.whatsapp_consent_status === 'opted_out', 'Volunteer status must be opted_out');
-      assert(syncedParent.whatsapp_consent_status === syncedVol.whatsapp_consent_status, 'Consent between parent and volunteer profile must not contradict');
+      const volAudienceCase3 = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{
+          id: dualVolProfileId,
+          userId: dualUserId,
+          name: 'Dual Parent Volunteer',
+          phone: '+2348033334444',
+          whatsappNumber: '+2348033334444',
+          whatsappConsentStatus: 'opted_out'
+        }],
+        channelEligibility: { whatsappOptedIn: 1 },
+        whatsappEnabled: true
+      });
+      assert(volAudienceCase3.whatsappOptedIn === 0, `Parent opted_in + Volunteer opted_out: Volunteer audience must be UNAVAILABLE (0), got: ${volAudienceCase3.whatsappOptedIn}`);
+
+      const parentAudienceCase3 = calculateEffectiveEligibility({
+        selectedGroup: 'all_parents',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [],
+        channelEligibility: { whatsappOptedIn: 1 },
+        whatsappEnabled: true
+      });
+      assert(parentAudienceCase3.whatsappOptedIn === 1, `Parent opted_in + Volunteer opted_out: Parent audience must be AVAILABLE (1), got: ${parentAudienceCase3.whatsappOptedIn}`);
+
+      const badgeCase3 = getVolunteerWhatsAppBadge('opted_out', true);
+      assert(badgeCase3.isOptedOut === true, 'Row badge must be isOptedOut');
+      assert(badgeCase3.label === 'WhatsApp off', 'Row badge label must be WhatsApp off');
     });
 
     // 19. HTTP Endpoint Integration Verification: POST /api/volunteer/whatsapp/consent
@@ -1000,15 +1077,36 @@ async function runTests() {
 
         const dualJwt = generateToken(dualHttpUser);
 
-        // GET /me reflects parent opted_in status as authoritative
+        // GET /me reflects volunteer's own consent status (role-specific, NOT overridden by parent)
         const dualMeRes = await fetch(`${baseUrl}/api/volunteer/me`, {
           headers: { 'Authorization': `Bearer ${dualJwt}` }
         });
         const dualMeData = await dualMeRes.json();
-        assert(dualMeData.profile.whatsappConsentStatus === 'opted_in', 'Dual-role GET /me must reflect authoritative parent opted_in');
+        assert(dualMeData.profile.whatsappConsentStatus === 'unknown', `Dual-role GET /me must reflect volunteer consent 'unknown', got: ${dualMeData.profile.whatsappConsentStatus}`);
         assert(dualMeData.profile.isDualRole === true, 'Dual-role flag must be true');
 
-        // Dual-role opt-out updates both profiles
+        // Immediate UI state update: Opt-in returns updated status and profile without requiring reload
+        const dualOptInRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${dualJwt}`
+          },
+          body: JSON.stringify({ action: 'opt_in' })
+        });
+        assert(dualOptInRes.status === 200, 'Dual role volunteer opt-in must succeed');
+        const dualOptInData = await dualOptInRes.json();
+        assert(dualOptInData.success === true, 'Opt-in response indicates success');
+        assert(dualOptInData.consentStatus === 'opted_in', 'Opt-in response immediately provides opted_in for UI state');
+        assert(dualOptInData.profile?.whatsappConsentStatus === 'opted_in', 'Returned profile immediately provides opted_in');
+
+        // Volunteer opt-in leaves Parent consent untouched
+        const parentAfterVolOptIn = await queryOne('SELECT whatsapp_consent_status FROM parent_profiles WHERE id = ?', [dualHttpParent]);
+        const volAfterOptIn = await queryOne('SELECT whatsapp_consent_status FROM volunteer_profiles WHERE id = ?', [dualHttpVol]);
+        assert(parentAfterVolOptIn.whatsapp_consent_status === 'opted_in', 'Parent consent must remain untouched as opted_in');
+        assert(volAfterOptIn.whatsapp_consent_status === 'opted_in', 'Volunteer profile must be updated to opted_in');
+
+        // Volunteer opt-out leaves Parent consent untouched
         const dualOptOutRes = await fetch(`${baseUrl}/api/volunteer/whatsapp/consent`, {
           method: 'POST',
           headers: {
@@ -1018,10 +1116,12 @@ async function runTests() {
           body: JSON.stringify({ action: 'opt_out' })
         });
         assert(dualOptOutRes.status === 200, 'Dual role opt-out must succeed');
+        const dualOptOutData = await dualOptOutRes.json();
+        assert(dualOptOutData.consentStatus === 'opted_out', 'Opt-out response immediately provides opted_out for UI state');
 
         const finalParent = await queryOne('SELECT whatsapp_consent_status FROM parent_profiles WHERE id = ?', [dualHttpParent]);
         const finalVol = await queryOne('SELECT whatsapp_consent_status FROM volunteer_profiles WHERE id = ?', [dualHttpVol]);
-        assert(finalParent.whatsapp_consent_status === 'opted_out', 'Parent profile must be updated to opted_out');
+        assert(finalParent.whatsapp_consent_status === 'opted_in', 'Parent profile consent must REMAIN opted_in (untouched by volunteer opt-out)');
         assert(finalVol.whatsapp_consent_status === 'opted_out', 'Volunteer profile must be updated to opted_out');
       } finally {
         await new Promise((resolve) => server.close(resolve));

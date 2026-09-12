@@ -837,7 +837,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
             email: v.email || '',
             phone: v.phone || '',
             whatsappNumber: v.whatsappNumber || v.phone || '',
-            whatsappConsentStatus: v.whatsappConsentStatus || (v.parentProfileId ? (v.parentConsentStatus || 'unknown') : (v.volunteerConsentStatus || 'unknown')),
+            whatsappConsentStatus: v.whatsappConsentStatus || v.volunteerConsentStatus || 'unknown',
             userId: v.userId || v.user_id,
             pushCount: Number(v.pushCount || 0),
             isParent: Boolean(v.parentProfileId)
@@ -2874,7 +2874,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
                                 {waBadge.isOptedIn ? (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    {waBadge.label}
+                                    {waBadge.label === 'WhatsApp' ? 'WhatsApp enabled' : waBadge.label}
                                   </span>
                                 ) : waBadge.isOptedOut ? (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-500">

@@ -4780,12 +4780,10 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       const duty = uId ? await resolveUserDutyLocation(uId, eventId) : null;
       v.dutyLocation = duty?.name || null;
       v.dutyTeam = duty?.team || duty?.teamKey || v.preferredTeam || v.department || 'Volunteer';
-      // Phase 2A Dual-role consent rule:
-      // If user has parentProfile: Parent WhatsApp consent remains authoritative.
-      // If volunteer-only: Volunteer consent is authoritative.
-      v.whatsappConsentStatus = v.parentProfileId
-        ? (v.parentConsentStatus || 'unknown')
-        : (v.volunteerConsentStatus || 'unknown');
+      // Role-specific consent rule:
+      // For Volunteer audiences, eligibility is strictly based on volunteer_profiles.whatsapp_consent_status.
+      // Parent consent must NOT suppress an explicit Volunteer opt-in for a Volunteer-targeted message.
+      v.whatsappConsentStatus = v.volunteerConsentStatus || 'unknown';
     }
 
     const recipientGroups = [

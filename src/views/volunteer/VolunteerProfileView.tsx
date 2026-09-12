@@ -427,7 +427,20 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
         variant="settings"
         volunteerProfile={finalProfile}
         onOpenEditProfile={() => setIsEditOpen(true)}
-        onConsentUpdated={() => fetchProfile(true)}
+        onConsentUpdated={(newStatus, updatedProfile) => {
+          if (updatedProfile) {
+            setProfileData((prev: any) => ({
+              ...prev,
+              volunteerProfile: {
+                ...(prev?.volunteerProfile || {}),
+                ...updatedProfile,
+                whatsappConsentStatus: newStatus,
+                whatsapp_consent_status: newStatus
+              }
+            }));
+          }
+          fetchProfile(true);
+        }}
         showSuccess={showSuccess}
         showError={showError}
       />

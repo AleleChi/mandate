@@ -1182,9 +1182,8 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
 
     const parentProfile = req.parentProfile || (req.user ? await resolveParentProfileForUser(req.user.id, req.user.email) : null);
     const isDualRole = Boolean(parentProfile?.id);
-    const effectiveConsent = isDualRole
-      ? (parentProfile.whatsapp_consent_status || 'unknown')
-      : (profile.whatsapp_consent_status || 'unknown');
+    // Role-specific consent: Volunteer communication preferences are governed by volunteer_profiles
+    const volunteerConsent = profile.whatsapp_consent_status || 'unknown';
 
     const volunteerProfileObj = {
       id: profile.id,
@@ -1197,11 +1196,11 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       phone: profile.phone || '',
       whatsapp: profile.whatsapp || '',
       whatsappNumber: profile.whatsapp || profile.phone || '',
-      whatsappConsentStatus: effectiveConsent,
-      whatsapp_consent_status: effectiveConsent,
-      whatsappConsentAt: isDualRole ? parentProfile.whatsapp_consent_at : profile.whatsapp_consent_at,
-      whatsappOptOutAt: isDualRole ? parentProfile.whatsapp_opt_out_at : profile.whatsapp_opt_out_at,
-      whatsappConsentSource: isDualRole ? parentProfile.whatsapp_consent_source : profile.whatsapp_consent_source,
+      whatsappConsentStatus: volunteerConsent,
+      whatsapp_consent_status: volunteerConsent,
+      whatsappConsentAt: profile.whatsapp_consent_at,
+      whatsappOptOutAt: profile.whatsapp_opt_out_at,
+      whatsappConsentSource: profile.whatsapp_consent_source,
       isDualRole,
       photoUrl: photoUrl || null,
       profilePhotoUrl: photoUrl || null
@@ -1322,9 +1321,8 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
 
   const parentProfile = req.parentProfile || (req.user ? await resolveParentProfileForUser(req.user.id, req.user.email) : null);
   const isDualRole = Boolean(parentProfile?.id);
-  const effectiveConsent = isDualRole
-    ? (parentProfile.whatsapp_consent_status || 'unknown')
-    : (profile.whatsapp_consent_status || 'unknown');
+  // Role-specific consent: Volunteer communication preferences are governed by volunteer_profiles
+  const volunteerConsent = profile.whatsapp_consent_status || 'unknown';
 
   const volunteerProfileObj = {
     id: profile.id,
@@ -1336,11 +1334,11 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
     phone: profile.phone,
     whatsapp: profile.whatsapp,
     whatsappNumber: profile.whatsapp || profile.phone || '',
-    whatsappConsentStatus: effectiveConsent,
-    whatsapp_consent_status: effectiveConsent,
-    whatsappConsentAt: isDualRole ? parentProfile.whatsapp_consent_at : profile.whatsapp_consent_at,
-    whatsappOptOutAt: isDualRole ? parentProfile.whatsapp_opt_out_at : profile.whatsapp_opt_out_at,
-    whatsappConsentSource: isDualRole ? parentProfile.whatsapp_consent_source : profile.whatsapp_consent_source,
+    whatsappConsentStatus: volunteerConsent,
+    whatsapp_consent_status: volunteerConsent,
+    whatsappConsentAt: profile.whatsapp_consent_at,
+    whatsappOptOutAt: profile.whatsapp_opt_out_at,
+    whatsappConsentSource: profile.whatsapp_consent_source,
     isDualRole,
     is_koinonia_worker: profile.is_koinonia_worker,
     department: profile.department,
@@ -1426,19 +1424,9 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       WHERE id = ?
     `, [now, normalizedPhone, now, volProfile.id]);
 
-    // For dual-role user: keep parent_profiles in sync so there is never contradictory consent!
-    if (isDualRole && parentProfile) {
-      await execute(`
-        UPDATE parent_profiles SET
-          whatsapp_consent_status = 'opted_in',
-          whatsapp_consent_at = ?,
-          whatsapp_opt_out_at = NULL,
-          whatsapp_consent_source = 'volunteer_portal',
-          whatsapp_number = COALESCE(NULLIF(whatsapp_number, ''), ?),
-          updated_at = ?
-        WHERE id = ?
-      `, [now, normalizedPhone, now, parentProfile.id]);
-    }
+    // Role-specific consent rule:
+    // Consent is role-specific. Do NOT copy consent value into parent_profiles.
+    // Do NOT modify Parent consent when Volunteer consent changes.
 
     const updatedVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volProfile.id]);
     return res.json({
@@ -1446,7 +1434,11 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       message: 'WhatsApp updates enabled successfully.',
       consentStatus: 'opted_in',
       isDualRole,
-      profile: updatedVol
+      profile: updatedVol ? {
+        ...updatedVol,
+        whatsappConsentStatus: updatedVol.whatsapp_consent_status,
+        whatsappNumber: updatedVol.whatsapp || updatedVol.phone || ''
+      } : null
     });
   } else if (action === 'opt_out') {
     // Persist opt-out to volunteer_profiles
@@ -1458,16 +1450,9 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       WHERE id = ?
     `, [now, now, volProfile.id]);
 
-    // For dual-role user: keep parent_profiles in sync so there is never contradictory consent!
-    if (isDualRole && parentProfile) {
-      await execute(`
-        UPDATE parent_profiles SET
-          whatsapp_consent_status = 'opted_out',
-          whatsapp_opt_out_at = ?,
-          updated_at = ?
-        WHERE id = ?
-      `, [now, now, parentProfile.id]);
-    }
+    // Role-specific consent rule:
+    // Consent is role-specific. Do NOT copy consent value into parent_profiles.
+    // Do NOT modify Parent consent when Volunteer consent changes.
 
     const updatedVol = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volProfile.id]);
     return res.json({
@@ -1475,7 +1460,11 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       message: 'WhatsApp updates turned off.',
       consentStatus: 'opted_out',
       isDualRole,
-      profile: updatedVol
+      profile: updatedVol ? {
+        ...updatedVol,
+        whatsappConsentStatus: updatedVol.whatsapp_consent_status,
+        whatsappNumber: updatedVol.whatsapp || updatedVol.phone || ''
+      } : null
     });
   } else {
     return res.status(400).json({

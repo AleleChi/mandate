@@ -5,7 +5,7 @@ import { api } from '../../services/api';
 interface VolunteerWhatsAppPreferencesProps {
   variant?: 'banner' | 'settings';
   volunteerProfile?: any;
-  onConsentUpdated?: (newStatus: 'opted_in' | 'opted_out') => void;
+  onConsentUpdated?: (newStatus: 'opted_in' | 'opted_out', updatedProfile?: any) => void;
   onOpenEditProfile?: () => void;
   showSuccess?: (title: string, message: string) => void;
   showError?: (title: string, message: string) => void;
@@ -42,6 +42,19 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
     }
   }, [volunteerProfile?.whatsappConsentStatus, volunteerProfile?.whatsapp_consent_status]);
 
+  // Synchronize across components without requiring page reload
+  React.useEffect(() => {
+    const handleSync = (e: any) => {
+      if (e?.detail?.consentStatus) {
+        setWhatsappStatus(e.detail.consentStatus);
+      }
+    };
+    window.addEventListener('volunteer_whatsapp_consent_updated', handleSync);
+    return () => {
+      window.removeEventListener('volunteer_whatsapp_consent_updated', handleSync);
+    };
+  }, []);
+
   const phone = volunteerProfile?.phone || volunteerProfile?.whatsapp || volunteerProfile?.whatsappNumber || '';
   const hasPhone = Boolean(phone && String(phone).trim());
   const isDualRole = Boolean(volunteerProfile?.isDualRole);
@@ -60,12 +73,27 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
     try {
       const res = await api.volunteer.updateWhatsAppConsent({ action: 'opt_in' });
       if (res.success) {
-        setWhatsappStatus('opted_in');
+        const newStatus = (res.consentStatus as 'opted_in') || 'opted_in';
+        setWhatsappStatus(newStatus);
+        if (volunteerProfile && typeof volunteerProfile === 'object') {
+          volunteerProfile.whatsappConsentStatus = newStatus;
+          volunteerProfile.whatsapp_consent_status = newStatus;
+          if (res.profile?.whatsapp) {
+            volunteerProfile.whatsapp = res.profile.whatsapp;
+            volunteerProfile.whatsappNumber = res.profile.whatsapp;
+          }
+        }
+        try {
+          localStorage.setItem('koinonia_vol_wa_status', newStatus);
+          window.dispatchEvent(new CustomEvent('volunteer_whatsapp_consent_updated', {
+            detail: { consentStatus: newStatus, profile: res.profile }
+          }));
+        } catch {}
         if (showSuccess) {
           showSuccess('WhatsApp updates enabled', 'You will receive volunteer updates and duty reminders on WhatsApp.');
         }
         if (onConsentUpdated) {
-          onConsentUpdated('opted_in');
+          onConsentUpdated(newStatus, res.profile);
         }
       } else {
         if (showError) {
@@ -86,12 +114,23 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
     try {
       const res = await api.volunteer.updateWhatsAppConsent({ action: 'opt_out' });
       if (res.success) {
-        setWhatsappStatus('opted_out');
+        const newStatus = (res.consentStatus as 'opted_out') || 'opted_out';
+        setWhatsappStatus(newStatus);
+        if (volunteerProfile && typeof volunteerProfile === 'object') {
+          volunteerProfile.whatsappConsentStatus = newStatus;
+          volunteerProfile.whatsapp_consent_status = newStatus;
+        }
+        try {
+          localStorage.setItem('koinonia_vol_wa_status', newStatus);
+          window.dispatchEvent(new CustomEvent('volunteer_whatsapp_consent_updated', {
+            detail: { consentStatus: newStatus, profile: res.profile }
+          }));
+        } catch {}
         if (showSuccess) {
           showSuccess('WhatsApp updates turned off', 'In-app, push, and email updates remain active.');
         }
         if (onConsentUpdated) {
-          onConsentUpdated('opted_out');
+          onConsentUpdated(newStatus, res.profile);
         }
       } else {
         if (showError) {
