@@ -990,9 +990,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 <StatusBadge status={child.status} />
               </div>
               <p className="text-xs text-[#6B7280] leading-relaxed">{child.statusNote}</p>
-              <div className="pt-2 border-t border-[#FAF9F6] flex items-center justify-between text-[11px] text-[#A1A1AA]">
+              <div className="pt-2 border-t border-[#FAF9F6] flex items-center justify-between gap-2 text-[11px] text-[#A1A1AA]">
                 <span>Last updated today</span>
-                <span className="font-semibold text-[#9A7326]">Verified protocol</span>
+                <span className="font-semibold text-[#9A7326] shrink-0 text-right">Confirmed by team</span>
               </div>
             </div>
           ))}

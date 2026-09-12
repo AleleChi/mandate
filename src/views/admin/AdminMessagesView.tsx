@@ -3497,23 +3497,58 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       const channelRaw = log.channel || 'in_app';
                       const logChannel = channelRaw.includes('whatsapp') ? 'WhatsApp' : channelRaw.includes('email') ? 'Email' : 'In-app';
                       const recipientCount = log.recipientCount || log.recipient_count || 1;
+                      const getStatusMeta = (statusStr: string) => {
+                        const s = (statusStr || '').toLowerCase().trim();
+                        if (s === 'read' || s === 'delivered' || s === 'sent') {
+                          return {
+                            text: s === 'read' ? 'Read' : (s === 'delivered' ? 'Delivered' : 'Sent'),
+                            badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+                            dotClass: 'bg-emerald-500',
+                            textClass: 'text-emerald-700 font-medium'
+                          };
+                        }
+                        if (s === 'sending' || s === 'queued') {
+                          return {
+                            text: 'Sending',
+                            badgeClass: 'bg-amber-50 text-amber-700 border-amber-200/80',
+                            dotClass: 'bg-amber-500',
+                            textClass: 'text-amber-700 font-medium'
+                          };
+                        }
+                        if (s === 'partial' || s === 'partially_sent' || s === 'partially sent') {
+                          return {
+                            text: 'Partially sent',
+                            badgeClass: 'bg-amber-50 text-amber-700 border-amber-200/80',
+                            dotClass: 'bg-amber-500',
+                            textClass: 'text-amber-700 font-medium'
+                          };
+                        }
+                        if (s === 'failed' || s === 'could not be sent') {
+                          return {
+                            text: 'Could not be sent',
+                            badgeClass: 'bg-rose-50 text-rose-700 border-rose-200/80',
+                            dotClass: 'bg-rose-500',
+                            textClass: 'text-rose-700 font-medium'
+                          };
+                        }
+                        return {
+                          text: statusStr || 'Draft',
+                          badgeClass: 'bg-zinc-50 text-zinc-600 border-zinc-200',
+                          dotClass: 'bg-zinc-400',
+                          textClass: 'text-zinc-600 font-medium'
+                        };
+                      };
+
                       const status = log.status || 'queued';
-                      const statusBadge = status === 'read'
-                        ? { text: 'Read', class: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-                        : status === 'delivered'
-                        ? { text: 'Delivered', class: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-                        : status === 'sent'
-                        ? { text: 'Sent', class: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
-                        : (status === 'partial' || status === 'partially_sent')
-                        ? { text: 'Partially sent', class: 'bg-amber-50 text-amber-700 border-amber-200' }
-                        : status === 'failed'
-                        ? { text: 'Could not be sent', class: 'bg-rose-50 text-rose-700 border-rose-200' }
-                        : { text: 'Sending', class: 'bg-amber-50 text-amber-700 border-amber-200' };
+                      const statusBadge = getStatusMeta(status);
 
                       const cleanBody = String(log.body || '')
                         .replace(/{Event name}/gi, resolvedEventName)
                         .replace(/{Parent name}/gi, 'Parent')
                         .replace(/{Child name}/gi, 'your child')
+                        .replace(/{Volunteer name}/gi, 'Volunteer')
+                        .replace(/{Location}/gi, 'Assigned location')
+                        .replace(/{Team}/gi, 'Team')
                         .replace(/{Review link}/gi, buildFrontendParentStatusUrl())
                         .replace(/{Pass link}/gi, buildFrontendParentPassUrl())
                         .replace(/{Pickup time}/gi, '4:00 PM')
@@ -3529,31 +3564,23 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                               {logSubject}
                             </span>
                             {log.channelStatuses && log.channelStatuses.length > 0 ? (
-                              <div className="flex items-center gap-1 flex-wrap justify-end">
+                              <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                 {log.channelStatuses.map((cs: any) => {
-                                  const sLower = (cs.status || '').toLowerCase();
-                                  const csClass = (sLower === 'read' || sLower === 'delivered')
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : sLower === 'sent'
-                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                    : (sLower === 'partial' || sLower === 'partially_sent' || sLower === 'partially sent')
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                    : (sLower === 'failed' || sLower === 'could not be sent')
-                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200';
-                                  const displayStatus = (sLower === 'failed' || sLower === 'could not be sent') ? 'Could not be sent' : (sLower === 'queued' ? 'Sending' : cs.status);
+                                  const csMeta = getStatusMeta(cs.status);
                                   return (
                                     <span
                                       key={cs.channel}
-                                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${csClass}`}
+                                      className={`inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full border ${csMeta.badgeClass}`}
                                     >
-                                      {cs.label} · {displayStatus}
+                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${csMeta.dotClass}`} />
+                                      {cs.label} · {csMeta.text}
                                     </span>
                                   );
                                 })}
                               </div>
                             ) : (
-                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge.class}`}>
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge.badgeClass}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusBadge.dotClass}`} />
                                 {statusBadge.text}
                               </span>
                             )}
@@ -3566,7 +3593,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                             {cleanBody}
                           </p>
                           <div className="text-[10px] text-zinc-400 pt-1 flex justify-between border-t border-zinc-200/60">
-                            <span>Status: {statusBadge.text}</span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span>Status:</span>
+                              <span className={`inline-flex items-center gap-1 ${statusBadge.textClass}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusBadge.dotClass}`} />
+                                {statusBadge.text}
+                              </span>
+                            </span>
                             <span>{dateVal ? new Date(dateVal).toLocaleDateString() : ''}</span>
                           </div>
                         </div>

@@ -4974,47 +4974,135 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 
       // Remove raw placeholders from history using canonical URLs
       const isVolGroup = log.recipientGroup === 'volunteers' || log.recipientGroup === 'specific_volunteers' || log.recipientGroup === 'all_event_team';
-      const cleanSubject = isVolGroup
-        ? resolveMessageTokens(log.subject || '', {
-            eventName,
-            volunteerName: 'Volunteer',
-            team: 'Team',
-            location: 'Main Auditorium',
-            supportContact: '+234 803 123 4567'
-          }).replace(/\s+-\s*$/, '').trim()
-        : resolveMessageTokens(log.subject || '', {
-            eventName,
-            parentName: '',
-            reviewUrl: buildParentStatusUrl(),
-            passUrl: buildParentPassUrl()
-          }).replace(/\s+-\s*$/, '').trim();
+      const recipientCount = log.recipients_count ?? log.recipientsCount ?? 1;
+      const isSingleRecipient = recipientCount === 1;
 
-      const cleanBody = isVolGroup
-        ? resolveMessageTokens(
-            (log.body || '')
-              .replace(/Dear \{Volunteer name\},?/gi, 'Dear Volunteers,')
-              .replace(/\{Volunteer name\}/gi, 'Volunteer'),
-            {
+      let resolvedSingleRecipientName = '';
+      let resolvedSingleRecipientLocation = '';
+      let resolvedSingleRecipientTeam = '';
+
+      if (isSingleRecipient) {
+        // Resolve the specific recipient from notification_jobs or profile
+        const job = await queryOne(`
+          SELECT parent_id, user_id FROM notification_jobs
+          WHERE idempotency_key LIKE ?
+          LIMIT 1
+        `, [`%campaign:${log.id}%`]);
+
+        if (job) {
+          if (job.user_id) {
+            const vp = await queryOne(`SELECT full_name, preferred_team, department FROM volunteer_profiles WHERE user_id = ? OR id = ?`, [job.user_id, job.user_id]);
+            if (vp?.full_name) resolvedSingleRecipientName = vp.full_name.trim();
+            const duty = await resolveUserDutyLocation(job.user_id, eventId || 'event-ga-2026');
+            resolvedSingleRecipientLocation = duty?.name || '';
+            resolvedSingleRecipientTeam = duty?.team || duty?.teamKey || vp?.preferred_team || vp?.department || '';
+          } else if (job.parent_id) {
+            const pp = await queryOne(`SELECT full_name FROM parent_profiles WHERE id = ?`, [job.parent_id]);
+            if (pp?.full_name) resolvedSingleRecipientName = pp.full_name.trim();
+          }
+        }
+      }
+
+      let cleanSubject = log.subject || '';
+      let cleanBody = log.body || '';
+
+      if (isSingleRecipient) {
+        if (resolvedSingleRecipientName) {
+          if (isVolGroup) {
+            cleanBody = cleanBody
+              .replace(/^Dear\s+(?:Volunteers?|\{Volunteer\s+name\}),?/i, `Dear ${resolvedSingleRecipientName},`)
+              .replace(/\{Volunteer\s+name\}/gi, resolvedSingleRecipientName);
+            cleanSubject = cleanSubject.replace(/\{Volunteer\s+name\}/gi, resolvedSingleRecipientName);
+          } else {
+            cleanBody = cleanBody
+              .replace(/^Dear\s+(?:Parents?|\{Parent\s+name\}),?/i, `Dear ${resolvedSingleRecipientName},`)
+              .replace(/\{Parent\s+name\}/gi, resolvedSingleRecipientName);
+            cleanSubject = cleanSubject.replace(/\{Parent\s+name\}/gi, resolvedSingleRecipientName);
+          }
+        }
+        cleanSubject = isVolGroup
+          ? resolveMessageTokens(cleanSubject, {
               eventName,
-              volunteerName: 'Volunteer',
-              team: 'Team',
-              location: 'Main Auditorium',
+              volunteerName: resolvedSingleRecipientName || 'Volunteer',
+              team: resolvedSingleRecipientTeam || 'Team',
+              location: resolvedSingleRecipientLocation || 'Main Auditorium',
               supportContact: '+234 803 123 4567'
-            }
-          )
-        : resolveMessageTokens(
-            (log.body || '')
-              .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
-              .replace(/\{Parent name\}/gi, 'Parent'),
-            {
+            }).replace(/\s+-\s*$/, '').trim()
+          : resolveMessageTokens(cleanSubject, {
               eventName,
+              parentName: resolvedSingleRecipientName || '',
+              reviewUrl: buildParentStatusUrl(),
+              passUrl: buildParentPassUrl()
+            }).replace(/\s+-\s*$/, '').trim();
+
+        cleanBody = isVolGroup
+          ? resolveMessageTokens(cleanBody, {
+              eventName,
+              volunteerName: resolvedSingleRecipientName || 'Volunteer',
+              team: resolvedSingleRecipientTeam || 'Team',
+              location: resolvedSingleRecipientLocation || 'Main Auditorium',
+              supportContact: '+234 803 123 4567'
+            })
+          : resolveMessageTokens(cleanBody, {
+              eventName,
+              parentName: resolvedSingleRecipientName || '',
               childName: 'your child',
               reviewUrl: buildParentStatusUrl(),
               passUrl: buildParentPassUrl(),
               pickupTime: '4:00 PM',
               supportContact: '+234 803 123 4567'
-            }
-          );
+            });
+      } else {
+        // Bulk campaigns: Keep campaign-level preview, do not pretend one personalized body represents everyone, do not expose template tokens
+        cleanSubject = isVolGroup
+          ? resolveMessageTokens(
+              cleanSubject.replace(/\{Volunteer\s+name\}/gi, 'Volunteers'),
+              {
+                eventName,
+                volunteerName: 'Volunteers',
+                team: 'Team',
+                location: 'Assigned Locations',
+                supportContact: '+234 803 123 4567'
+              }
+            ).replace(/\s+-\s*$/, '').trim()
+          : resolveMessageTokens(
+              cleanSubject.replace(/\{Parent\s+name\}/gi, 'Parents'),
+              {
+                eventName,
+                parentName: 'Parents',
+                reviewUrl: buildParentStatusUrl(),
+                passUrl: buildParentPassUrl()
+              }
+            ).replace(/\s+-\s*$/, '').trim();
+
+        cleanBody = isVolGroup
+          ? resolveMessageTokens(
+              cleanBody
+                .replace(/Dear\s+\{Volunteer\s+name\},?/gi, 'Dear Volunteers,')
+                .replace(/\{Volunteer\s+name\}/gi, 'Volunteers'),
+              {
+                eventName,
+                volunteerName: 'Volunteers',
+                team: 'Assigned Team',
+                location: 'Assigned Location',
+                supportContact: '+234 803 123 4567'
+              }
+            )
+          : resolveMessageTokens(
+              cleanBody
+                .replace(/Dear\s+\{Parent\s+name\},?/gi, 'Dear Parents,')
+                .replace(/\{Parent\s+name\}/gi, 'Parents'),
+              {
+                eventName,
+                parentName: 'Parents',
+                childName: 'your children',
+                reviewUrl: buildParentStatusUrl(),
+                passUrl: buildParentPassUrl(),
+                pickupTime: '4:00 PM',
+                supportContact: '+234 803 123 4567'
+              }
+            );
+      }
 
       return {
         ...log,
@@ -6539,26 +6627,60 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     const logChannelsStr = activeChannels.join(',');
     const initialStatus = activeChannels.includes('whatsapp') ? 'queued' : 'sent';
 
-    const cleanLogSubject = resolveMessageTokens(subject || '', {
-      eventName: eventTitle,
-      parentName: '',
-      reviewUrl: buildParentStatusUrl(),
-      passUrl: buildParentPassUrl()
-    }).replace(/\s+-\s*$/, '').trim() || 'Event Update';
+    let cleanLogSubject = 'Event Update';
+    let cleanLogBody = '';
 
-    const cleanLogBody = resolveMessageTokens(
-      (body || '')
-        .replace(/Dear \{Parent name\},?/gi, 'Dear Parents,')
-        .replace(/\{Parent name\}/gi, 'Parent'),
-      {
-        eventName: eventTitle,
-        childName: 'your child',
-        reviewUrl: buildParentStatusUrl(),
-        passUrl: buildParentPassUrl(),
-        pickupTime: '4:00 PM',
-        supportContact: '+234 803 123 4567'
+    if (messagesToSend.length === 1) {
+      // Exactly one recipient: use the resolved recipient-specific subject and body
+      cleanLogSubject = messagesToSend[0].subject || 'Event Update';
+      cleanLogBody = messagesToSend[0].body;
+    } else {
+      // Multi-recipient campaign: keep campaign-level preview, do not pretend one personalized body represents everyone, do not expose template tokens
+      if (isVolunteerAudience) {
+        cleanLogSubject = resolveMessageTokens(subject || '', {
+          eventName: eventTitle,
+          volunteerName: 'Volunteers',
+          team: 'Team',
+          location: 'Assigned Locations',
+          supportContact: '+234 803 123 4567'
+        }).replace(/\s+-\s*$/, '').trim() || 'Event Update';
+
+        cleanLogBody = resolveMessageTokens(
+          (body || '')
+            .replace(/Dear\s+\{Volunteer\s+name\},?/gi, 'Dear Volunteers,')
+            .replace(/\{Volunteer\s+name\}/gi, 'Volunteers'),
+          {
+            eventName: eventTitle,
+            volunteerName: 'Volunteers',
+            team: 'Assigned Team',
+            location: 'Assigned Location',
+            supportContact: '+234 803 123 4567'
+          }
+        );
+      } else {
+        cleanLogSubject = resolveMessageTokens(subject || '', {
+          eventName: eventTitle,
+          parentName: 'Parents',
+          reviewUrl: buildParentStatusUrl(),
+          passUrl: buildParentPassUrl()
+        }).replace(/\s+-\s*$/, '').trim() || 'Event Update';
+
+        cleanLogBody = resolveMessageTokens(
+          (body || '')
+            .replace(/Dear\s+\{Parent\s+name\},?/gi, 'Dear Parents,')
+            .replace(/\{Parent\s+name\}/gi, 'Parents'),
+          {
+            eventName: eventTitle,
+            childName: 'your children',
+            parentName: 'Parents',
+            reviewUrl: buildParentStatusUrl(),
+            passUrl: buildParentPassUrl(),
+            pickupTime: '4:00 PM',
+            supportContact: '+234 803 123 4567'
+          }
+        );
       }
-    );
+    }
 
     await execute(
       'INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',

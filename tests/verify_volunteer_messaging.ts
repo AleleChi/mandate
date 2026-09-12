@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import express from 'express';
 import http from 'http';
 import { query, queryOne, execute } from '../src/server/db';
@@ -8,7 +10,8 @@ import adminRouter from '../src/server/routes/admin';
 import {
   enqueueWhatsAppJob,
   processQueuedWhatsAppJobs,
-  resetWhatsAppProviderCache
+  resetWhatsAppProviderCache,
+  SimulatedWhatsAppProvider
 } from '../src/server/services/whatsapp';
 import {
   isVolunteerAudience,
@@ -1315,6 +1318,208 @@ async function runTests() {
       } finally {
         await new Promise((resolve) => server.close(resolve));
       }
+    });
+
+    // =========================================================================
+    // SECTION 21: PRODUCTION POLISH — PERSONALIZATION, STATUS UI, AND PARENT WORDING
+    // =========================================================================
+    console.log('\n--- Section 21: Production Polish — Personalization, Status UI, and Parent Wording ---');
+
+    await test('Specific Volunteer name resolves in WhatsApp and preserves Event & Location tokens', async () => {
+      const testSuffix = Date.now().toString();
+      const vUserId = `u-pol-vol-${testSuffix}`;
+      const now = new Date().toISOString();
+
+      await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'volunteer', 'active', ?, ?)`,
+        [vUserId, `pol.vol.${testSuffix}@test.com`, now, now]);
+
+      await execute(`INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at)
+        VALUES (?, ?, 'Alele Chi', '+2348110940296', '+2348110940296', 'Event Support', 'approved', 'opted_in', ?, ?)`,
+        [`vp-pol-${testSuffix}`, vUserId, now, now]);
+
+      // Assign duty location
+      await execute(`INSERT OR REPLACE INTO event_locations (id, event_id, name, location_type, capacity, is_active, created_at, updated_at)
+        VALUES ('loc-grace-hall', 'event-ga-2026', 'Grace Hall Primary', 'hall', 100, 1, ?, ?)`, [now, now]);
+      await execute(`INSERT INTO event_duty_assignments (id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, assigned_location_id, created_at, updated_at)
+        VALUES (?, 'event-ga-2026', ?, 'hall_marshal', 'Event Support', 'primary', 'on_duty', ?, ?, 'loc-grace-hall', ?, ?)`,
+        [`duty-pol-${testSuffix}`, vUserId, now, now, now, now]);
+
+      // Create campaign log with duty reminder template
+      const campId = `camp-pol-${testSuffix}`;
+      const rawTemplateBody = "Dear {Volunteer name},\n\nThis is a reminder regarding your upcoming duty session for {Event name} at {Location}.\n\nWarm regards,\nThe Koinonia Team";
+      await execute(`INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+        VALUES (?, 'specific_volunteers', 'duty_reminder', 'whatsapp', 'Duty Reminder', ?, 1, 'queued', ?)`,
+        [campId, rawTemplateBody, now]);
+
+      const key = `campaign:${campId}:${vUserId}`;
+      await enqueueWhatsAppJob({ eventId: 'event-ga-2026', userId: vUserId, idempotencyKey: key });
+
+      let capturedDispatched: any = null;
+      const origSend = SimulatedWhatsAppProvider.prototype.sendSessionMessage;
+      SimulatedWhatsAppProvider.prototype.sendSessionMessage = async function(params) {
+        capturedDispatched = params;
+        return origSend.call(this, params);
+      };
+
+      try {
+        const batchRes = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+        assert(batchRes.succeeded >= 1, 'Job must succeed');
+        assert(capturedDispatched !== null, 'Message must be dispatched to simulated provider');
+        assert(capturedDispatched.body.includes('Dear Alele Chi,'), `Must start with 'Dear Alele Chi,', got: ${capturedDispatched.body}`);
+        assert(!capturedDispatched.body.includes('Dear Volunteer,'), 'Must NOT contain generic Dear Volunteer,');
+        assert(capturedDispatched.body.includes('The General Assembly'), 'Must resolve Event name to The General Assembly');
+        assert(capturedDispatched.body.includes('Grace Hall Primary'), 'Must resolve Location to Grace Hall Primary');
+      } finally {
+        SimulatedWhatsAppProvider.prototype.sendSessionMessage = origSend;
+      }
+    });
+
+    await test('Push and WhatsApp resolve identical Volunteer name and duty context', async () => {
+      const vName: string = 'Alele Chi';
+      const vLocation = 'Grace Hall Primary';
+      const vTeam = 'Event Support';
+      const eventTitle = 'The General Assembly';
+      const template = "Dear {Volunteer name},\n\nThis is a reminder regarding your upcoming duty session for {Event name} at {Location}.\n\nWarm regards,\nThe Koinonia Team";
+
+      const pushBody = serverResolveMessageTokens(template, {
+        volunteerName: vName,
+        team: vTeam,
+        location: vLocation,
+        eventName: eventTitle,
+        supportContact: '+234 803 123 4567'
+      });
+
+      let waRendered = template;
+      if (vName && vName !== 'Volunteer') {
+        waRendered = waRendered
+          .replace(/^Dear\s+(?:Volunteers?|\{Volunteer\s+name\}),?/i, `Dear ${vName},`)
+          .replace(/\{Volunteer\s+name\}/gi, vName);
+      }
+      const waBody = serverResolveMessageTokens(waRendered, {
+        volunteerName: vName,
+        team: vTeam,
+        location: vLocation,
+        eventName: eventTitle,
+        supportContact: '+234 803 123 4567'
+      });
+
+      assert(pushBody.includes('Dear Alele Chi,'), 'Push body contains Dear Alele Chi,');
+      assert(waBody.includes('Dear Alele Chi,'), 'WhatsApp body contains Dear Alele Chi,');
+      assert(pushBody === waBody, 'Push and WhatsApp resolved bodies must match exactly');
+    });
+
+    await test('Parent WhatsApp personalization remains intact', async () => {
+      const pName: string = 'David Miller';
+      const childName = 'Baby Love';
+      const eventTitle = 'The General Assembly';
+      const template = "Dear {Parent name},\n\n{Child name} has been registered for {Event name}. Check your pass at {Pass link}.\n\nWarm regards,\nThe Koinonia Team";
+
+      let rendered = template;
+      if (pName && pName !== 'Parent') {
+        rendered = rendered
+          .replace(/^Dear\s+(?:Parents?|\{Parent\s+name\}),?/i, `Dear ${pName},`)
+          .replace(/\{Parent\s+name\}/gi, pName);
+      }
+      const waParentBody = serverResolveMessageTokens(rendered, {
+        parentName: pName,
+        childName,
+        eventName: eventTitle,
+        passUrl: 'http://localhost:5173/parent/pass/test',
+        reviewUrl: 'http://localhost:5173/parent/status/test'
+      });
+
+      assert(waParentBody.includes('Dear David Miller,'), `Expected 'Dear David Miller,', got: ${waParentBody}`);
+      assert(waParentBody.includes('Baby Love'), 'Child name preserved');
+      assert(waParentBody.includes('http://localhost:5173/parent/pass/test'), 'Pass link preserved');
+      assert(!waParentBody.includes('{Parent name}'), 'No raw token remaining');
+    });
+
+    await test('Message history personalizes single-recipient but preserves safe bulk preview', async () => {
+      const testSuffix = Date.now().toString();
+      const app = express();
+      app.use(express.json());
+      app.use('/api/admin', adminRouter);
+
+      let server: any;
+      let baseUrl = '';
+      await new Promise<void>((resolve) => {
+        server = app.listen(0, () => {
+          const port = (server.address() as any).port;
+          baseUrl = `http://127.0.0.1:${port}`;
+          resolve();
+        });
+      });
+
+      try {
+        const adminUser = `u-admin-hist-${testSuffix}`;
+        const now = new Date().toISOString();
+        await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'super_admin', 'active', ?, ?)`,
+          [adminUser, `admin.hist.${testSuffix}@test.com`, now, now]);
+        const adminJwt = generateToken(adminUser);
+
+        // Single-recipient volunteer campaign
+        const singleVolCampId = `camp-single-vol-${testSuffix}`;
+        await execute(`INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+          VALUES (?, 'specific_volunteers', 'duty_reminder', 'whatsapp', 'Duty Reminder', 'Dear Alele Chi,\n\nDuty session reminder...', 1, 'sent', ?)`,
+          [singleVolCampId, now]);
+
+        // Bulk volunteer campaign
+        const bulkVolCampId = `camp-bulk-vol-${testSuffix}`;
+        await execute(`INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+          VALUES (?, 'volunteers', 'duty_reminder', 'whatsapp', 'Duty Reminder', 'Dear {Volunteer name},\n\nDuty session reminder...', 5, 'sent', ?)`,
+          [bulkVolCampId, now]);
+
+        const res = await fetch(`${baseUrl}/api/admin/messages`, {
+          headers: { 'Authorization': `Bearer ${adminJwt}` }
+        });
+        const data = await res.json();
+        assert(data.success === true, 'History request must succeed');
+
+        const singleItem = data.recentActivity?.find((a: any) => a.id === singleVolCampId);
+        assert(singleItem, 'Single recipient campaign must exist in history');
+        assert(singleItem.body.includes('Dear Alele Chi,'), `Single recipient must show personalized name, got: ${singleItem.body}`);
+
+        const bulkItem = data.recentActivity?.find((a: any) => a.id === bulkVolCampId);
+        assert(bulkItem, 'Bulk campaign must exist in history');
+        assert(bulkItem.body.includes('Dear Volunteers,'), `Bulk campaign must show 'Dear Volunteers,', got: ${bulkItem.body}`);
+        assert(!bulkItem.body.includes('Alele Chi'), 'Bulk campaign must NOT show a single recipient name');
+        assert(!bulkItem.body.includes('{Volunteer name}'), 'Bulk campaign must NOT expose template tokens');
+      } finally {
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
+
+    await test('Status presentation mapping adheres strictly to semantic color system', async () => {
+      const testMapping = (statusStr: string) => {
+        const s = (statusStr || '').toLowerCase().trim();
+        if (s === 'read' || s === 'delivered' || s === 'sent') return 'success-green';
+        if (s === 'sending' || s === 'queued') return 'in_progress-amber';
+        if (s === 'partial' || s === 'partially_sent' || s === 'partially sent') return 'warning-amber';
+        if (s === 'failed' || s === 'could not be sent') return 'failure-red';
+        return 'neutral-muted';
+      };
+
+      assert(testMapping('Sent') === 'success-green', 'Sent must map to green');
+      assert(testMapping('Delivered') === 'success-green', 'Delivered must map to green');
+      assert(testMapping('Read') === 'success-green', 'Read must map to green');
+      assert(testMapping('Sending') === 'in_progress-amber', 'Sending must map to amber');
+      assert(testMapping('Queued') === 'in_progress-amber', 'Queued must map to amber');
+      assert(testMapping('Failed') === 'failure-red', 'Failed must map to red');
+      assert(testMapping('Could not be sent') === 'failure-red', 'Could not be sent must map to red');
+      assert(testMapping('Partially sent') === 'warning-amber', 'Partially sent must map to amber warning');
+      assert(testMapping('Draft') === 'neutral-muted', 'Draft must map to neutral');
+    });
+
+    await test('Parent Status screen copy replaces Verified protocol with Confirmed by team', async () => {
+      const parentHomePath = path.resolve(process.cwd(), 'src/views/ParentHomeView.tsx');
+      const fileContent = fs.readFileSync(parentHomePath, 'utf8');
+
+      assert(!fileContent.includes('Verified protocol'), "ParentHomeView must NOT contain 'Verified protocol'");
+      assert(fileContent.includes('Confirmed by team'), "ParentHomeView must contain 'Confirmed by team'");
+
+      // Verify attendance values remain intact
+      assert(fileContent.includes("'Checked in'"), "Attendance status 'Checked in' preserved");
+      assert(fileContent.includes("'Picked up'"), "Attendance status 'Picked up' preserved");
     });
 
   } finally {

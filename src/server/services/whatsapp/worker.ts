@@ -474,7 +474,14 @@ export async function processQueuedWhatsAppJobs(
           const vLocation = (duty?.name || '').trim();
           const vTeam = (duty?.team || duty?.teamKey || volunteerProfile?.preferred_team || volunteerProfile?.department || '').trim();
 
-          messageBody = resolveMessageTokens(messageBody, {
+          let rendered = messageBody;
+          if (recipientName && recipientName !== 'Volunteer') {
+            rendered = rendered
+              .replace(/^Dear\s+(?:Volunteers?|\{Volunteer\s+name\}),?/i, `Dear ${recipientName},`)
+              .replace(/\{Volunteer\s+name\}/gi, recipientName);
+          }
+
+          messageBody = resolveMessageTokens(rendered, {
             volunteerName: recipientName,
             team: vTeam,
             location: vLocation,
@@ -485,7 +492,13 @@ export async function processQueuedWhatsAppJobs(
           });
         } else {
           const parentDisplayName = (parent?.full_name || '').trim() || 'Parent';
-          messageBody = resolveMessageTokens(messageBody, {
+          let rendered = messageBody;
+          if (parentDisplayName && parentDisplayName !== 'Parent') {
+            rendered = rendered
+              .replace(/^Dear\s+(?:Parents?|\{Parent\s+name\}),?/i, `Dear ${parentDisplayName},`)
+              .replace(/\{Parent\s+name\}/gi, parentDisplayName);
+          }
+          messageBody = resolveMessageTokens(rendered, {
             parentName: parentDisplayName,
             eventName,
             childName,
