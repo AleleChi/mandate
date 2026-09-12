@@ -82,3 +82,51 @@ export function buildFrontendParentPassUrl(childId?: string): string {
   }
   return `${origin}/#/parent/passes`;
 }
+
+export interface RecipientTokenContext {
+  parentName?: string;
+  childName?: string;
+  volunteerName?: string;
+  team?: string;
+  location?: string;
+  eventName?: string;
+  passUrl?: string;
+  reviewUrl?: string;
+  pickupTime?: string;
+  supportContact?: string;
+}
+
+/**
+ * Resolves communication tokens against recipient context.
+ * Shared implementation with server urlHelper.
+ */
+export function resolveMessageTokens(template: string, context: RecipientTokenContext): string {
+  if (!template) return '';
+  const pName = (context.parentName || '').trim() || 'Parent';
+  const cName = (context.childName || '').trim() || 'your child';
+  const vName = (context.volunteerName || '').trim() || 'Volunteer';
+  const vTeam = (context.team || '').trim() || 'Assigned Team';
+  const vLoc = (context.location || '').trim();
+  const eName = (context.eventName || '').trim() || 'The General Assembly';
+  const pLink = context.passUrl || buildFrontendParentPassUrl();
+  const rLink = context.reviewUrl || buildFrontendParentStatusUrl();
+  const pTime = (context.pickupTime || '').trim() || '4:00 PM';
+  const sContact = (context.supportContact || '').trim() || '+234 803 123 4567';
+
+  let result = template
+    .replace(/\{Parent name\}/gi, pName)
+    .replace(/\{Child name\}/gi, cName)
+    .replace(/\{Volunteer name\}/gi, vName)
+    .replace(/\{Team\}/gi, vTeam)
+    .replace(/\{Event name\}/gi, eName)
+    .replace(/\{Pass link\}/gi, pLink)
+    .replace(/\{Review link\}/gi, rLink)
+    .replace(/\{Pickup time\}/gi, pTime)
+    .replace(/\{Support contact\}/gi, sContact);
+
+  if (vLoc) {
+    result = result.replace(/\{Location\}/gi, vLoc);
+  }
+
+  return result;
+}

@@ -2,9 +2,16 @@ import crypto from 'crypto';
 import { query, queryOne, execute } from '../src/server/db';
 import {
   isVolunteerAudience,
-  isChildSpecificMessageType
+  isChildSpecificMessageType,
+  getVolunteerWhatsAppBadge,
+  calculateEffectiveEligibility,
+  getWhatsAppAudienceDescription,
+  getPushPreviewFooterText,
+  validateRequiredVolunteerTokens
 } from '../src/views/admin/AdminMessagesView';
-import { resolveMessageTokens } from '../src/server/utils/urlHelper';
+import { resolveMessageTokens as serverResolveMessageTokens } from '../src/server/utils/urlHelper';
+import { resolveMessageTokens as clientResolveMessageTokens } from '../src/utils/urlHelper';
+import { resolveUserDutyLocation } from '../src/server/routes/duty';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -84,7 +91,7 @@ async function runTests() {
     // 3. Volunteer Preview Uses Volunteer Context (No Child Tokens)
     await test('Volunteer preview resolves volunteer tokens and excludes child context', () => {
       const volunteerTemplate = 'Dear {Volunteer name},\nYour assignment for {Event name} is with the {Team} team at {Location}. Contact {Support contact}.';
-      const resolved = resolveMessageTokens(volunteerTemplate, {
+      const resolved = serverResolveMessageTokens(volunteerTemplate, {
         eventName: 'The General Assembly 2026',
         volunteerName: 'Samuel Adeyemi',
         team: 'Logistics',
@@ -253,6 +260,239 @@ async function runTests() {
       assert(isWaSafe === false, 'Security-sensitive email verification must not be bypassed or routed as verified via WhatsApp');
     });
 
+    // 9. WhatsApp Availability Consistency: Unknown Consent vs Opted-in vs Opted-out
+    await test('Volunteer WhatsApp availability indicators are consistent across row badge, channel count, and side panel', () => {
+      // 9a. Unknown consent -> row badge says "WhatsApp pending"
+      const unknownBadge = getVolunteerWhatsAppBadge('unknown', true);
+      assert(unknownBadge.label === 'WhatsApp pending', `Expected badge 'WhatsApp pending', got '${unknownBadge.label}'`);
+      assert(unknownBadge.isPending === true, 'Unknown consent must be marked as isPending');
+      assert(unknownBadge.isOptedIn === false, 'Unknown consent must not be marked as isOptedIn');
+
+      // 9b. Unknown consent -> WhatsApp channel count is 0
+      const unknownEligibility = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{ userId: 'vol-1', name: 'Alele Chi', phone: '+2348000000000', whatsappConsentStatus: 'unknown', pushCount: 1, email: 'alele@test.com' }],
+        channelEligibility: { whatsappOptedIn: 10 }, // parent count must be ignored
+        whatsappEnabled: true
+      });
+      assert(unknownEligibility.whatsappOptedIn === 0, `Expected whatsappOptedIn 0 for unknown consent, got ${unknownEligibility.whatsappOptedIn}`);
+
+      // 9c. Specific volunteer selection with unknown consent -> channel count is 0
+      const specificUnknownEligibility = calculateEffectiveEligibility({
+        selectedGroup: 'specific_volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: true,
+        selectedParentsList: [],
+        selectedVolunteersList: [{ userId: 'vol-1', name: 'Alele Chi', phone: '+2348000000000', whatsappConsentStatus: 'unknown', pushCount: 1, email: 'alele@test.com' }],
+        eventVolunteers: [],
+        channelEligibility: { whatsappOptedIn: 10 },
+        whatsappEnabled: true
+      });
+      assert(specificUnknownEligibility.whatsappOptedIn === 0, `Expected specific volunteer whatsappOptedIn 0 for unknown consent, got ${specificUnknownEligibility.whatsappOptedIn}`);
+
+      // 9d. Opted-in volunteer with phone -> row badge says "WhatsApp", channel count is 1
+      const optedInBadge = getVolunteerWhatsAppBadge('opted_in', true);
+      assert(optedInBadge.label === 'WhatsApp', `Expected badge 'WhatsApp', got '${optedInBadge.label}'`);
+      assert(optedInBadge.isOptedIn === true, 'Opted-in volunteer must be marked as isOptedIn');
+
+      const optedInEligibility = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [{ userId: 'vol-2', name: 'Approved Vol', phone: '+2348000000001', whatsappConsentStatus: 'opted_in', pushCount: 0, email: 'app@test.com' }],
+        channelEligibility: { whatsappOptedIn: 0 },
+        whatsappEnabled: true
+      });
+      assert(optedInEligibility.whatsappOptedIn === 1, `Expected whatsappOptedIn 1 for opted_in volunteer, got ${optedInEligibility.whatsappOptedIn}`);
+
+      // 9e. Opted-out volunteer -> row badge says "WhatsApp off"
+      const optedOutBadge = getVolunteerWhatsAppBadge('opted_out', true);
+      assert(optedOutBadge.label === 'WhatsApp off', `Expected badge 'WhatsApp off', got '${optedOutBadge.label}'`);
+      assert(optedOutBadge.isOptedOut === true, 'Opted-out volunteer must be marked as isOptedOut');
+    });
+
+    // 10. Provider READY does not imply recipient availability
+    await test('Provider READY status does not imply recipient availability', () => {
+      // Even if whatsappEnabled is true (configured and READY), 0 opted-in volunteers results in 0 available
+      const eligibility = calculateEffectiveEligibility({
+        selectedGroup: 'volunteers',
+        isSpecificParents: false,
+        isSpecificVolunteers: false,
+        selectedParentsList: [],
+        selectedVolunteersList: [],
+        eventVolunteers: [
+          { userId: 'vol-1', name: 'Vol 1', phone: '+2348000000000', whatsappConsentStatus: 'unknown' },
+          { userId: 'vol-2', name: 'Vol 2', phone: '', whatsappConsentStatus: 'opted_in' } // opted in but missing phone
+        ],
+        channelEligibility: { whatsappOptedIn: 12 }, // should not bleed from parent eligibility
+        whatsappEnabled: true // Provider is ready
+      });
+
+      assert(eligibility.whatsappOptedIn === 0, `Provider READY must not inflate volunteer WhatsApp availability. Got ${eligibility.whatsappOptedIn}`);
+
+      // WhatsApp send condition verification: when whatsappOptedIn === 0, send is disabled
+      const isSendDisabled = !eligibility.whatsappOptedIn || eligibility.whatsappOptedIn === 0;
+      assert(isSendDisabled === true, 'WhatsApp send button must be disabled when 0 recipients are available, even if provider is ready');
+    });
+
+    // 11. Audience-Aware WhatsApp Copy & Descriptions
+    await test('Audience-aware WhatsApp copy distinguishes parents vs volunteers', () => {
+      const parentCopy = getWhatsAppAudienceDescription('all_parents');
+      assert(parentCopy === 'Parents with WhatsApp updates enabled for this event.', `Unexpected parent copy: ${parentCopy}`);
+
+      const specificParentCopy = getWhatsAppAudienceDescription('specific_parents');
+      assert(specificParentCopy === 'Parents with WhatsApp updates enabled for this event.', `Unexpected specific parent copy: ${specificParentCopy}`);
+
+      const volCopy = getWhatsAppAudienceDescription('volunteers');
+      assert(volCopy === 'Volunteers with WhatsApp updates enabled for this event.', `Unexpected volunteer copy: ${volCopy}`);
+
+      const specificVolCopy = getWhatsAppAudienceDescription('specific_volunteers');
+      assert(specificVolCopy === 'Volunteers with WhatsApp updates enabled for this event.', `Unexpected specific volunteer copy: ${specificVolCopy}`);
+    });
+
+    // 12. Volunteer Identity & Duty Token Resolution ({Volunteer name}, {Team}, {Location})
+    await test('Volunteer identity and duty tokens resolve correctly and remove fake Designated Area fallback', () => {
+      const template = 'Dear {Volunteer name},\nYou are assigned to the {Team} team at {Location} for {Event name}. Contact {Support contact}.';
+
+      // Full context resolution
+      const resolved = serverResolveMessageTokens(template, {
+        volunteerName: 'Alele Chi',
+        team: 'Teens Team',
+        location: 'Grace Hall Primary',
+        eventName: 'The General Assembly 2026',
+        supportContact: '+234 803 123 4567'
+      });
+
+      assert(resolved.includes('Dear Alele Chi,'), `Expected 'Dear Alele Chi,', got: ${resolved}`);
+      assert(resolved.includes('Teens Team team'), `Expected 'Teens Team team', got: ${resolved}`);
+      assert(resolved.includes('at Grace Hall Primary for'), `Expected 'at Grace Hall Primary for', got: ${resolved}`);
+      assert(resolved.includes('The General Assembly 2026'), 'Event name mismatch');
+      assert(resolved.includes('+234 803 123 4567'), 'Support contact mismatch');
+
+      // Removal of fake "Designated Area": when location is absent/empty, it must NOT inject "Designated Area"
+      const emptyLocationResolved = serverResolveMessageTokens('Reporting at {Location}.', {
+        volunteerName: 'Alele Chi',
+        location: ''
+      });
+      assert(!emptyLocationResolved.includes('Designated Area'), `Fake placeholder 'Designated Area' must not be injected! Got: ${emptyLocationResolved}`);
+      assert(emptyLocationResolved.includes('{Location}'), `Token {Location} should remain unreplaced if unassigned, got: ${emptyLocationResolved}`);
+    });
+
+    // 13. Missing Duty Location Blocks Duty Reminder and Send
+    await test('Missing duty location blocks Duty Reminder send with staff-facing validation error', () => {
+      // 13a. Duty reminder with unassigned volunteer
+      const unassignedResult = validateRequiredVolunteerTokens({
+        messageType: 'duty_reminder',
+        subject: 'Duty Reminder - The General Assembly',
+        body: 'Dear {Volunteer name},\n\nThis is a reminder regarding your upcoming duty session for {Event name} at {Location}.',
+        volunteers: [{ name: 'Alele Chi', dutyLocation: null, team: 'Teens Team' }]
+      });
+
+      assert(unassignedResult.valid === false, 'Duty reminder without assigned location must be invalid');
+      assert(unassignedResult.error?.includes("Can't send duty reminder"), `Error must mention Can't send duty reminder, got: ${unassignedResult.error}`);
+      assert(unassignedResult.error?.includes('does not have a duty location assigned yet.'), `Error must mention missing duty location, got: ${unassignedResult.error}`);
+
+      // 13b. Template with {Location} token with unassigned volunteer
+      const customLocationResult = validateRequiredVolunteerTokens({
+        messageType: 'operational_update',
+        subject: 'Report to {Location}',
+        body: 'Please report immediately to {Location}.',
+        volunteers: [{ name: 'John Doe', dutyLocation: '', team: 'Logistics' }]
+      });
+      assert(customLocationResult.valid === false, 'Message with {Location} token and empty duty location must be blocked');
+
+      // 13c. Valid volunteer with duty location passes validation
+      const validResult = validateRequiredVolunteerTokens({
+        messageType: 'duty_reminder',
+        subject: 'Duty Reminder - The General Assembly',
+        body: 'Dear {Volunteer name},\n\nThis is a reminder regarding your upcoming duty session for {Event name} at {Location}.',
+        volunteers: [{ name: 'Alele Chi', dutyLocation: 'Grace Hall Primary', team: 'Teens Team' }]
+      });
+      assert(validResult.valid === true, `Expected valid: true for volunteer with assigned location, got error: ${validResult.error}`);
+    });
+
+    // 14. Token Resolver Parity: Frontend Preview and Server Dispatch
+    await test('Frontend preview and server dispatch token resolvers produce identical results', () => {
+      const testCases = [
+        {
+          template: 'Dear {Volunteer name},\n\nYour duty assignment for {Event name} is confirmed. You will be serving at {Location} with the {Team} team.',
+          context: {
+            volunteerName: 'Alele Chi',
+            team: 'Teens Team',
+            location: 'Grace Hall Primary',
+            eventName: 'The General Assembly'
+          }
+        },
+        {
+          template: 'Reminder for {Volunteer name} at {Location}. Contact {Support contact}.',
+          context: {
+            volunteerName: 'Samuel Adeyemi',
+            team: 'Logistics',
+            location: '', // empty location
+            eventName: 'The General Assembly',
+            supportContact: '+234 800 000 0000'
+          }
+        },
+        {
+          template: 'Dear {Parent name},\n\nPass link: {Pass link}\nReview link: {Review link}',
+          context: {
+            parentName: 'Jane Doe',
+            childName: 'Baby Livina',
+            passUrl: 'https://koinonia.app/#/parent/children/c1/pass',
+            reviewUrl: 'https://koinonia.app/#/parent/children/c1/status'
+          }
+        }
+      ];
+
+      for (const tc of testCases) {
+        const clientOutput = clientResolveMessageTokens(tc.template, tc.context);
+        const serverOutput = serverResolveMessageTokens(tc.template, tc.context);
+        assert(clientOutput === serverOutput, `Parity mismatch:\nClient: ${clientOutput}\nServer: ${serverOutput}`);
+      }
+    });
+
+    // 15. Preview Truth in Advertising: No Premature "Delivered" Claim
+    await test('Push preview footer accurately reflects device availability without false Delivered claims', () => {
+      const footer1 = getPushPreviewFooterText(1);
+      assert(footer1 === '1 registered device available', `Expected '1 registered device available', got '${footer1}'`);
+
+      const footer0 = getPushPreviewFooterText(0);
+      assert(footer0 === 'No registered devices available', `Expected 'No registered devices available', got '${footer0}'`);
+
+      const footerMultiple = getPushPreviewFooterText(3);
+      assert(footerMultiple === '3 registered devices available', `Expected '3 registered devices available', got '${footerMultiple}'`);
+
+      assert(!footer1.toLowerCase().includes('delivered'), 'Preview footer must not claim message was delivered');
+      assert(!footer0.toLowerCase().includes('delivered'), 'Preview footer must not claim message was delivered');
+    });
+
+    // 16. Canonical Database Duty Location Resolution
+    await test('resolveUserDutyLocation resolves duty location and team from live database', async () => {
+      // Find a volunteer with a user_id
+      const volunteerUser = await queryOne(`
+        SELECT u.id as user_id, vp.full_name, vp.preferred_team
+        FROM volunteer_profiles vp
+        JOIN users u ON u.id = vp.user_id
+        WHERE vp.status IN ('active', 'approved')
+          AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+        LIMIT 1
+      `);
+
+      if (volunteerUser) {
+        const duty = await resolveUserDutyLocation(volunteerUser.user_id);
+        console.log(`    [Duty Audit for ${volunteerUser.full_name}]:`, duty ? `${duty.name} (${duty.team || 'no team'})` : 'No assignment currently active');
+        if (duty) {
+          assert(typeof duty.name === 'string', 'Duty location must have a name string');
+        }
+      }
+    });
+
   } finally {
     console.log('\n====================================================');
     console.log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
@@ -262,6 +502,7 @@ async function runTests() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runTests().catch(err => {

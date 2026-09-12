@@ -14,7 +14,7 @@ import { broadcastSSEEvent } from '../services/sse';
 import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
-import { adminDutyRouter } from './duty';
+import { adminDutyRouter, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
 import {
   getWhatsAppProvider,
@@ -4773,6 +4773,12 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       ORDER BY vp.full_name ASC
     `);
 
+    for (const v of eventVolunteers) {
+      const duty = v.userId ? await resolveUserDutyLocation(v.userId, eventId) : null;
+      v.dutyLocation = duty?.name || null;
+      v.dutyTeam = duty?.team || duty?.teamKey || v.preferredTeam || v.department || 'Volunteer';
+    }
+
     const recipientGroups = [
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
       { key: 'specific_parents', label: 'Selected parents', count: eventParents.length },
@@ -5782,7 +5788,7 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       let sampleVolunteer: any = null;
       if (recipientGroup === 'specific_volunteers' && Array.isArray(selectedVolunteerIds) && selectedVolunteerIds.length > 0) {
         sampleVolunteer = await queryOne(`
-          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department
+          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department, vp.user_id
           FROM volunteer_profiles vp
           WHERE vp.id = ? AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
           LIMIT 1
@@ -5791,7 +5797,7 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
 
       if (!sampleVolunteer) {
         sampleVolunteer = await queryOne(`
-          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department
+          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department, vp.user_id
           FROM volunteer_profiles vp
           WHERE vp.status IN ('active', 'approved')
             AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
@@ -5801,30 +5807,29 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       }
 
       const volunteerName = (sampleVolunteer?.volunteer_name || '').trim() || 'Volunteer';
-      const volunteerTeam = (sampleVolunteer?.team || sampleVolunteer?.department || '').trim() || 'Children Ministry';
-      const locationName = 'Grace Hall Primary';
+      const duty = sampleVolunteer?.user_id ? await resolveUserDutyLocation(sampleVolunteer.user_id, eventId) : null;
+      const volunteerTeam = (duty?.team || duty?.teamKey || sampleVolunteer?.team || sampleVolunteer?.department || '').trim() || 'Teens Team';
+      const locationName = (duty?.name || '').trim();
 
-      let renderedBody = resolveMessageTokens(body, {
+      const renderedBody = resolveMessageTokens(body, {
+        volunteerName,
+        team: volunteerTeam,
+        location: locationName,
         parentName: volunteerName,
         childName: volunteerName,
         eventName,
         pickupTime: '8:30 AM',
         supportContact: '+234 803 123 4567'
       });
-      renderedBody = renderedBody
-        .replace(/\{Volunteer name\}/gi, volunteerName)
-        .replace(/\{Team\}/gi, volunteerTeam)
-        .replace(/\{Location\}/gi, locationName);
 
-      let renderedSubject = resolveMessageTokens(subject || '', {
+      const renderedSubject = resolveMessageTokens(subject || '', {
+        volunteerName,
+        team: volunteerTeam,
+        location: locationName,
         parentName: volunteerName,
         childName: volunteerName,
         eventName
       });
-      renderedSubject = renderedSubject
-        .replace(/\{Volunteer name\}/gi, volunteerName)
-        .replace(/\{Team\}/gi, volunteerTeam)
-        .replace(/\{Location\}/gi, locationName);
 
       return res.json({
         success: true,
@@ -5832,7 +5837,8 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
           subject: renderedSubject,
           body: renderedBody,
           representativeVolunteerName: volunteerName,
-          representativeTeam: volunteerTeam
+          representativeTeam: volunteerTeam,
+          representativeLocation: locationName
         }
       });
     }
@@ -6236,30 +6242,67 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       }
 
       for (const [, volRow] of volunteerMap.entries()) {
-        const vName = (volRow.volunteer_name || '').trim() || 'Volunteer';
-        const vTeam = (volRow.team || volRow.department || '').trim() || 'Children Ministry';
-        const vLocation = 'Grace Hall Primary';
+        const vName = (volRow.volunteer_name || '').trim();
+        const duty = volRow.user_id ? await resolveUserDutyLocation(volRow.user_id, eventId) : null;
+        const vLocation = (duty?.name || '').trim();
+        const vTeam = (duty?.team || duty?.teamKey || volRow.team || volRow.department || '').trim();
 
-        let renderedBody = resolveMessageTokens(body, {
+        // Validate required tokens
+        const usesLocation = /\{Location\}/i.test(body) || /\{Location\}/i.test(subject || '') || messageType === 'duty_reminder';
+        const usesVolunteerName = /\{Volunteer name\}/i.test(body) || /\{Volunteer name\}/i.test(subject || '') || messageType === 'duty_reminder';
+        const usesEventName = /\{Event name\}/i.test(body) || /\{Event name\}/i.test(subject || '') || messageType === 'duty_reminder';
+        const usesTeam = /\{Team\}/i.test(body) || /\{Team\}/i.test(subject || '');
+
+        if (usesVolunteerName && !vName) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\nSelected volunteer does not have a name on file.\n\nUpdate the volunteer profile or choose another message type.`
+          });
+        }
+
+        if (usesEventName && !eventTitle) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\nEvent name could not be resolved.\n\nSelect a valid event or choose another message type.`
+          });
+        }
+
+        if (usesLocation && !vLocation) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\n${vName || 'Selected volunteer'} does not have a duty location assigned yet.\n\nAssign a location or choose another message type.`
+          });
+        }
+
+        if (usesTeam && !vTeam) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\n${vName || 'Selected volunteer'} does not have a team assigned yet.\n\nAssign a team or choose another message type.`
+          });
+        }
+
+        const renderedBody = resolveMessageTokens(body, {
+          volunteerName: vName,
+          team: vTeam,
+          location: vLocation,
           parentName: vName,
           childName: vName,
           eventName: eventTitle,
           supportContact: '+234 803 123 4567'
         });
-        renderedBody = renderedBody
-          .replace(/\{Volunteer name\}/gi, vName)
-          .replace(/\{Team\}/gi, vTeam)
-          .replace(/\{Location\}/gi, vLocation);
 
-        let renderedSubject = resolveMessageTokens(subject || '', {
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          volunteerName: vName,
+          team: vTeam,
+          location: vLocation,
           parentName: vName,
           childName: vName,
           eventName: eventTitle
         });
-        renderedSubject = renderedSubject
-          .replace(/\{Volunteer name\}/gi, vName)
-          .replace(/\{Team\}/gi, vTeam)
-          .replace(/\{Location\}/gi, vLocation);
 
         messagesToSend.push({
           parentId: volRow.parent_id || undefined,

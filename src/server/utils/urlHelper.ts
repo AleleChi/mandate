@@ -186,22 +186,27 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
   const cName = (context.childName || '').trim() || 'your child';
   const vName = (context.volunteerName || '').trim() || 'Volunteer';
   const vTeam = (context.team || '').trim() || 'Assigned Team';
-  const vLoc = (context.location || '').trim() || 'Designated Area';
+  const vLoc = (context.location || '').trim();
   const eName = (context.eventName || '').trim() || 'The General Assembly';
   const pLink = context.passUrl || buildParentPassUrl();
   const rLink = context.reviewUrl || buildParentStatusUrl();
   const pTime = (context.pickupTime || '').trim() || '4:00 PM';
   const sContact = (context.supportContact || '').trim() || '+234 803 123 4567';
 
-  return template
+  let result = template
     .replace(/\{Parent name\}/gi, pName)
     .replace(/\{Child name\}/gi, cName)
     .replace(/\{Volunteer name\}/gi, vName)
     .replace(/\{Team\}/gi, vTeam)
-    .replace(/\{Location\}/gi, vLoc)
     .replace(/\{Event name\}/gi, eName)
     .replace(/\{Pass link\}/gi, pLink)
     .replace(/\{Review link\}/gi, rLink)
     .replace(/\{Pickup time\}/gi, pTime)
     .replace(/\{Support contact\}/gi, sContact);
+
+  if (vLoc) {
+    result = result.replace(/\{Location\}/gi, vLoc);
+  }
+
+  return result;
 }

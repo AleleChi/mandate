@@ -30,7 +30,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { safeStorage } from '../../utils/storage';
-import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl } from '../../utils/urlHelper';
+import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl, resolveMessageTokens } from '../../utils/urlHelper';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
@@ -248,6 +248,123 @@ function formatHumanSenderRole(roleStr?: string) {
   return roleStr;
 }
 
+export function getVolunteerWhatsAppBadge(consentStatus: string, hasPhone: boolean): { label: string; isOptedIn: boolean; isOptedOut: boolean; isPending: boolean } {
+  const isOptedIn = consentStatus === 'opted_in' && hasPhone;
+  const isOptedOut = consentStatus === 'opted_out';
+  const isPending = !isOptedIn && !isOptedOut;
+  return {
+    label: isOptedIn ? 'WhatsApp' : isOptedOut ? 'WhatsApp off' : 'WhatsApp pending',
+    isOptedIn,
+    isOptedOut,
+    isPending
+  };
+}
+
+export function calculateEffectiveEligibility(params: {
+  selectedGroup: string;
+  isSpecificParents: boolean;
+  isSpecificVolunteers: boolean;
+  selectedParentsList: any[];
+  selectedVolunteersList: any[];
+  eventVolunteers: any[];
+  channelEligibility: any;
+  whatsappEnabled: boolean;
+}) {
+  const {
+    selectedGroup,
+    isSpecificParents,
+    isSpecificVolunteers,
+    selectedParentsList,
+    selectedVolunteersList,
+    eventVolunteers,
+    channelEligibility,
+    whatsappEnabled
+  } = params;
+
+  const isVolAudience = isVolunteerAudience(selectedGroup);
+
+  if (isSpecificParents) {
+    return {
+      inApp: selectedParentsList.filter(p => !!p.userId).length,
+      push: selectedParentsList.filter(p => Number(p.pushCount || 0) > 0).length,
+      email: selectedParentsList.filter(p => !!p.email && p.email.includes('@')).length,
+      whatsappNumbers: selectedParentsList.filter(p => !!(p.whatsappNumber || p.phone)).length,
+      whatsappOptedIn: whatsappEnabled ? selectedParentsList.filter(p => p.whatsappConsentStatus === 'opted_in' && !!(p.whatsappNumber || p.phone)).length : 0
+    };
+  }
+
+  if (isSpecificVolunteers) {
+    return {
+      inApp: selectedVolunteersList.filter(v => !!v.userId).length,
+      push: selectedVolunteersList.filter(v => Number(v.pushCount || 0) > 0).length,
+      email: selectedVolunteersList.filter(v => !!v.email && v.email.includes('@')).length,
+      whatsappNumbers: selectedVolunteersList.filter(v => !!(v.whatsappNumber || v.phone)).length,
+      whatsappOptedIn: whatsappEnabled ? selectedVolunteersList.filter(v => v.whatsappConsentStatus === 'opted_in' && !!(v.whatsappNumber || v.phone)).length : 0
+    };
+  }
+
+  if (isVolAudience) {
+    return {
+      inApp: eventVolunteers.filter(v => !!v.userId).length,
+      push: eventVolunteers.filter(v => Number(v.pushCount || 0) > 0).length,
+      email: eventVolunteers.filter(v => !!v.email && v.email.includes('@')).length,
+      whatsappNumbers: eventVolunteers.filter(v => !!(v.whatsappNumber || v.phone)).length,
+      whatsappOptedIn: whatsappEnabled ? eventVolunteers.filter(v => v.whatsappConsentStatus === 'opted_in' && !!(v.whatsappNumber || v.phone)).length : 0
+    };
+  }
+
+  return channelEligibility;
+}
+
+export function getWhatsAppAudienceDescription(selectedGroup?: string): string {
+  return isVolunteerAudience(selectedGroup)
+    ? 'Volunteers with WhatsApp updates enabled for this event.'
+    : 'Parents with WhatsApp updates enabled for this event.';
+}
+
+export function getPushPreviewFooterText(registeredDevicesCount: number): string {
+  if (registeredDevicesCount > 0) {
+    return `${registeredDevicesCount} registered device${registeredDevicesCount === 1 ? '' : 's'} available`;
+  }
+  return 'No registered devices available';
+}
+
+export function validateRequiredVolunteerTokens(params: {
+  messageType: string;
+  subject: string;
+  body: string;
+  volunteers: Array<{ name: string; dutyLocation?: string | null; team?: string | null }>;
+}): { valid: boolean; error?: string } {
+  const { messageType, subject, body, volunteers } = params;
+  const usesLocation = /\{Location\}/i.test(body) || /\{Location\}/i.test(subject) || messageType === 'duty_reminder';
+  const usesVolunteerName = /\{Volunteer name\}/i.test(body) || /\{Volunteer name\}/i.test(subject) || messageType === 'duty_reminder';
+  const usesTeam = /\{Team\}/i.test(body) || /\{Team\}/i.test(subject);
+
+  for (const vol of volunteers) {
+    const vName = (vol.name || '').trim();
+    if (usesVolunteerName && !vName) {
+      return {
+        valid: false,
+        error: `Can't send duty reminder\n\nSelected volunteer does not have a name on file.\n\nUpdate the volunteer profile or choose another message type.`
+      };
+    }
+    if (usesLocation && (!vol.dutyLocation || !vol.dutyLocation.trim())) {
+      return {
+        valid: false,
+        error: `Can't send duty reminder\n\n${vName || 'Selected volunteer'} does not have a duty location assigned yet.\n\nAssign a location or choose another message type.`
+      };
+    }
+    if (usesTeam && (!vol.team || !vol.team.trim() || vol.team === 'Volunteer')) {
+      return {
+        valid: false,
+        error: `Can't send duty reminder\n\n${vName || 'Selected volunteer'} does not have a team assigned yet.\n\nAssign a team or choose another message type.`
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
 export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: AdminMessagesViewProps) {
   const { showSuccess, showError } = useNotification();
   const isSuperAdmin = adminUser?.role === 'super_admin';
@@ -317,6 +434,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     id: string;
     name: string;
     team: string;
+    dutyLocation: string | null;
     status: string;
     email: string;
     phone: string;
@@ -639,7 +757,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           const mappedVolunteers = data.eventVolunteers.map((v: any) => ({
             id: v.id,
             name: v.name,
-            team: v.preferredTeam || v.department || 'Volunteer',
+            team: v.dutyTeam || v.preferredTeam || v.department || 'Volunteer',
+            dutyLocation: v.dutyLocation || null,
             status: v.status,
             email: v.email || '',
             phone: v.phone || '',
@@ -1030,6 +1149,20 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       }
     }
 
+    if (isVolAudience) {
+      const targetVolunteers = isSpecificVolunteers ? selectedVolunteersList : eventVolunteers;
+      const validation = validateRequiredVolunteerTokens({
+        messageType: selectedType,
+        subject,
+        body,
+        volunteers: targetVolunteers
+      });
+      if (!validation.valid && validation.error) {
+        showError(validation.error);
+        return;
+      }
+    }
+
     setShowConfirmModal(true);
   };
 
@@ -1143,19 +1276,16 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     (p.children || []).filter(c => selectedChildIds.includes(c.id))
   );
 
-  const effectiveEligibility = isSpecificParents ? {
-    inApp: selectedParentsList.filter(p => !!p.userId).length,
-    push: selectedParentsList.filter(p => Number(p.pushCount || 0) > 0).length,
-    email: selectedParentsList.filter(p => !!p.email && p.email.includes('@')).length,
-    whatsappNumbers: selectedParentsList.filter(p => !!(p.whatsappNumber || p.phone)).length,
-    whatsappOptedIn: whatsappEnabled ? selectedParentsList.filter(p => p.whatsappConsentStatus === 'opted_in' && !!(p.whatsappNumber || p.phone)).length : 0
-  } : isSpecificVolunteers ? {
-    inApp: selectedVolunteersList.filter(v => !!v.userId).length,
-    push: selectedVolunteersList.filter(v => Number(v.pushCount || 0) > 0).length,
-    email: selectedVolunteersList.filter(v => !!v.email && v.email.includes('@')).length,
-    whatsappNumbers: selectedVolunteersList.filter(v => !!(v.whatsappNumber || v.phone)).length,
-    whatsappOptedIn: whatsappEnabled ? selectedVolunteersList.filter(v => v.whatsappConsentStatus === 'opted_in' && !!(v.whatsappNumber || v.phone)).length : 0
-  } : channelEligibility;
+  const effectiveEligibility = calculateEffectiveEligibility({
+    selectedGroup,
+    isSpecificParents,
+    isSpecificVolunteers,
+    selectedParentsList,
+    selectedVolunteersList,
+    eventVolunteers,
+    channelEligibility,
+    whatsappEnabled
+  });
 
   const activeGroupRecipients = isSpecificParents
     ? (isChildSpecific ? selectedChildrenList.length : selectedParentIds.length)
@@ -1241,37 +1371,41 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     || resolvedVolunteerObj?.name
     || 'Approved Volunteer';
   const resolvedVolunteerTeam = resolvedVolunteerObj?.team || 'Logistics';
-  const resolvedVolunteerLocation = 'Main Auditorium - Area B';
+  const resolvedVolunteerLocation = resolvedVolunteerObj?.dutyLocation || '';
 
   const resolvedPreviewSubject = isVolAudience
-    ? (previewSubject || subject || '')
-        .replace(/{Volunteer name}/gi, resolvedVolunteerName)
-        .replace(/{Team}/gi, resolvedVolunteerTeam)
-        .replace(/{Location}/gi, resolvedVolunteerLocation)
-        .replace(/{Event name}/gi, resolvedEventName)
-        .replace(/{Support contact}/gi, '+234 803 123 4567')
-    : (previewSubject || subject || '')
-        .replace(/{Parent name}/gi, resolvedRepresentativeName)
-        .replace(/{Child name}/gi, resolvedChildName)
-        .replace(/{Event name}/gi, resolvedEventName)
-        .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
-        .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId));
+    ? resolveMessageTokens(previewSubject || subject || '', {
+        volunteerName: resolvedVolunteerName,
+        team: resolvedVolunteerTeam,
+        location: resolvedVolunteerLocation,
+        eventName: resolvedEventName,
+        supportContact: '+234 803 123 4567'
+      })
+    : resolveMessageTokens(previewSubject || subject || '', {
+        parentName: resolvedRepresentativeName,
+        childName: resolvedChildName,
+        eventName: resolvedEventName,
+        passUrl: buildFrontendParentPassUrl(resolvedChildId),
+        reviewUrl: buildFrontendParentStatusUrl(resolvedChildId)
+      });
 
   const resolvedPreviewBody = isVolAudience
-    ? (previewBody || body || '')
-        .replace(/{Volunteer name}/gi, resolvedVolunteerName)
-        .replace(/{Team}/gi, resolvedVolunteerTeam)
-        .replace(/{Location}/gi, resolvedVolunteerLocation)
-        .replace(/{Event name}/gi, resolvedEventName)
-        .replace(/{Support contact}/gi, '+234 803 123 4567')
-    : (previewBody || body || '')
-        .replace(/{Parent name}/gi, resolvedRepresentativeName)
-        .replace(/{Child name}/gi, resolvedChildName)
-        .replace(/{Event name}/gi, resolvedEventName)
-        .replace(/{Review link}/gi, buildFrontendParentStatusUrl(resolvedChildId))
-        .replace(/{Pass link}/gi, buildFrontendParentPassUrl(resolvedChildId))
-        .replace(/{Pickup time}/gi, '4:00 PM')
-        .replace(/{Support contact}/gi, '+234 803 123 4567');
+    ? resolveMessageTokens(previewBody || body || '', {
+        volunteerName: resolvedVolunteerName,
+        team: resolvedVolunteerTeam,
+        location: resolvedVolunteerLocation,
+        eventName: resolvedEventName,
+        supportContact: '+234 803 123 4567'
+      })
+    : resolveMessageTokens(previewBody || body || '', {
+        parentName: resolvedRepresentativeName,
+        childName: resolvedChildName,
+        eventName: resolvedEventName,
+        passUrl: buildFrontendParentPassUrl(resolvedChildId),
+        reviewUrl: buildFrontendParentStatusUrl(resolvedChildId),
+        pickupTime: '4:00 PM',
+        supportContact: '+234 803 123 4567'
+      });
 
   const filteredVolunteers = eventVolunteers.filter(v => {
     if (!volunteerSearchQuery.trim()) return true;
@@ -2189,7 +2323,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           {(() => {
             const readiness = providerStatus.whatsappReadiness;
             const isWaConfigured = readiness?.configured ?? whatsappEnabled;
-            const optedInCount = channelEligibility?.whatsappOptedIn ?? 0;
+            const optedInCount = effectiveEligibility?.whatsappOptedIn ?? 0;
 
             let waNotice: string | null = null;
             if (!isWaConfigured) {
@@ -2197,7 +2331,9 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
             } else if (providerStatus.whatsappFailure || readiness?.statusMessage?.includes('temporarily')) {
               waNotice = 'WhatsApp is temporarily unavailable.';
             } else if (isWaConfigured && optedInCount === 0) {
-              waNotice = 'WhatsApp is ready. No parents in this audience have enabled WhatsApp updates yet.';
+              waNotice = isVolAudience
+                ? 'WhatsApp is ready. No volunteers in this audience have enabled WhatsApp updates yet.'
+                : 'WhatsApp is ready. No parents in this audience have enabled WhatsApp updates yet.';
             }
 
             if (!emailEnabled || waNotice) {
@@ -2529,8 +2665,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     ) : (
                       filteredVolunteers.map((vol) => {
                         const isSelected = selectedVolunteerIds.includes(vol.id);
-                        const isOptedIn = vol.whatsappConsentStatus === 'opted_in';
-                        const isOptedOut = vol.whatsappConsentStatus === 'opted_out';
+                        const waBadge = getVolunteerWhatsAppBadge(vol.whatsappConsentStatus, !!(vol.whatsappNumber || vol.phone));
 
                         return (
                           <div
@@ -2601,17 +2736,17 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                                   </span>
                                 )}
 
-                                {isOptedIn ? (
+                                {waBadge.isOptedIn ? (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    WhatsApp
+                                    {waBadge.label}
                                   </span>
-                                ) : isOptedOut ? (
+                                ) : waBadge.isOptedOut ? (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-500">
-                                    WhatsApp off
+                                    {waBadge.label}
                                   </span>
                                 ) : (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-400">
-                                    WhatsApp pending
+                                    {waBadge.label}
                                   </span>
                                 )}
                               </div>
@@ -2668,7 +2803,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     {
                       id: 'whatsapp',
                       label: 'WhatsApp',
-                      desc: 'Parents with WhatsApp updates enabled',
+                      desc: isVolAudience ? 'Volunteers with WhatsApp updates enabled' : 'Parents with WhatsApp updates enabled',
                       countLabel: `${effectiveEligibility ? effectiveEligibility.whatsappOptedIn : 0} available`,
                       icon: Phone,
                       enabled: whatsappEnabled && (effectiveEligibility ? effectiveEligibility.whatsappOptedIn > 0 : false)
@@ -2762,6 +2897,27 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                 </div>
               </div>
 
+              {/* Duty Location Warning before Send */}
+              {isVolAudience && (selectedType === 'duty_reminder' || body.includes('{Location}') || subject.includes('{Location}')) && (() => {
+                const targetVols = isSpecificVolunteers ? selectedVolunteersList : eventVolunteers;
+                const unassigned = targetVols.filter(v => !v.dutyLocation);
+                if (unassigned.length === 0) return null;
+                return (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start space-x-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="font-semibold block">Missing duty location</span>
+                      <p className="text-amber-800">
+                        No duty location has been assigned to {unassigned.map(v => v.name).join(', ')}.
+                      </p>
+                      <p className="text-[11px] text-amber-700">
+                        Assign a location or choose another message type before sending.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Footer */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
                 <span className="text-xs text-zinc-500">
@@ -2782,7 +2938,15 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <button
                     type="button"
                     onClick={handleSendRequest}
-                    disabled={actionLoading || !body.trim() || activeGroupRecipients === 0 || selectedChannels.length === 0 || (selectedChannels.includes('email') && !emailEnabled) || (selectedChannels.includes('whatsapp') && (!whatsappEnabled || (effectiveEligibility?.whatsappOptedIn === 0)))}
+                    disabled={
+                      actionLoading ||
+                      !body.trim() ||
+                      activeGroupRecipients === 0 ||
+                      selectedChannels.length === 0 ||
+                      (selectedChannels.includes('email') && !emailEnabled) ||
+                      (selectedChannels.includes('whatsapp') && (!whatsappEnabled || (effectiveEligibility?.whatsappOptedIn === 0))) ||
+                      (isVolAudience && (selectedType === 'duty_reminder' || body.includes('{Location}') || subject.includes('{Location}')) && (isSpecificVolunteers ? selectedVolunteersList : eventVolunteers).some(v => !v.dutyLocation))
+                    }
                     className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
                   >
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
@@ -2875,7 +3039,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     <div className="px-3 py-2 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-900 flex items-center space-x-2">
                       <User className="w-4 h-4 text-blue-700 shrink-0" />
                       <div className="min-w-0 flex-1 font-semibold truncate">
-                        Preview for {resolvedVolunteerName} (Volunteer · {resolvedVolunteerTeam})
+                        Preview for {resolvedVolunteerName} · Volunteer · {resolvedVolunteerTeam}
                       </div>
                     </div>
                   </div>
@@ -2909,7 +3073,9 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       </div>
                       <div className="text-[10px] text-zinc-400 pt-2 border-t border-[#EAE8E1] flex items-center justify-between">
                         <span>Push notification</span>
-                        <span className="text-[#C59B27] font-medium">Delivered to registered devices</span>
+                        <span className="text-zinc-600 font-medium">
+                          {getPushPreviewFooterText(effectiveEligibility?.push ?? 0)}
+                        </span>
                       </div>
                     </div>
                   ) : previewTab === 'in_app' ? (
@@ -2930,13 +3096,26 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       <div className="bg-[#FFFDF9] border border-[#EAE8E1] rounded-lg p-3.5 text-zinc-800 leading-relaxed whitespace-pre-line min-h-[120px]">
                         {resolvedPreviewBody || previewBody || body || 'You have a new update for The General Assembly.'}
                       </div>
+                      <div className="text-[10px] text-zinc-400 pt-1 flex items-center justify-between">
+                        <span>Email preview</span>
+                        <span className="text-zinc-600 font-medium">
+                          {(effectiveEligibility?.email ?? 0) > 0
+                            ? `${effectiveEligibility?.email} email recipient${effectiveEligibility?.email === 1 ? '' : 's'} available`
+                            : 'No email recipients available'}
+                        </span>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex justify-end font-sans">
                       <div className="bg-[#F0F7F4] border border-[#D1E7DD] rounded-2xl rounded-tr-none p-3.5 text-xs text-zinc-800 leading-relaxed max-w-[90%] whitespace-pre-line shadow-2xs">
                         {resolvedPreviewBody || previewBody || body || 'Important Event Details — The General Assembly\n\nYou have a new update for The General Assembly.'}
-                        <div className="text-[10px] text-zinc-400 text-right mt-2">
-                          12:00 PM · WhatsApp
+                        <div className="text-[10px] text-zinc-400 flex items-center justify-between mt-2 pt-1 border-t border-emerald-100">
+                          <span>12:00 PM · WhatsApp</span>
+                          <span className="font-medium text-zinc-600">
+                            {!whatsappEnabled || (effectiveEligibility?.whatsappOptedIn ?? 0) === 0
+                              ? 'WhatsApp not enabled'
+                              : `${effectiveEligibility?.whatsappOptedIn} WhatsApp recipient${effectiveEligibility?.whatsappOptedIn === 1 ? '' : 's'} available`}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -3001,11 +3180,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <div className="flex items-center justify-between">
                     <span className="text-zinc-500">Recipient availability:</span>
                     <span className="font-semibold text-zinc-800">
-                      {channelEligibility?.whatsappOptedIn ?? 0} available
+                      {effectiveEligibility?.whatsappOptedIn ?? 0} available
                     </span>
                   </div>
                   <p className="text-[11px] text-zinc-500">
-                    Parents with WhatsApp updates enabled for this event.
+                    {isVolAudience
+                      ? 'Volunteers with WhatsApp updates enabled for this event.'
+                      : 'Parents with WhatsApp updates enabled for this event.'}
                   </p>
                 </div>
 
