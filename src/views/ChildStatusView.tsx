@@ -82,9 +82,29 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
 
-  const foundChild = childId
-    ? childrenList.find((c) => c.id === childId)
-    : childrenList.find((c) => c.status === 'Under review' || c.status !== 'Draft') || childrenList[0];
+  // Deterministic default child selection
+  const resolveDefaultChild = (list: ChildItem[]): ChildItem | undefined => {
+    if (list.length === 0) return undefined;
+    if (list.length === 1) return list[0];
+
+    // Preferred: most recently updated child
+    const sorted = [...list].sort((a, b) => {
+      const getTs = (c: ChildItem) => {
+        const raw = (c as any).updated_at || (c as any).updatedAt || c.submittedAt || c.draftData?.review?.submittedAt;
+        if (!raw) return 0;
+        const ms = new Date(raw).getTime();
+        return isNaN(ms) ? 0 : ms;
+      };
+      return getTs(b) - getTs(a);
+    });
+
+    const top = sorted[0];
+    const topTs = (top as any).updated_at || (top as any).updatedAt || top.submittedAt || top.draftData?.review?.submittedAt;
+    if (topTs) return top;
+    return list[0];
+  };
+
+  const foundChild = (childId ? childrenList.find((c) => c.id === childId) : null) || resolveDefaultChild(childrenList);
 
   const [localStatus, setLocalStatus] = useState<string>(foundChild?.status || 'Under review');
 
@@ -93,6 +113,15 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
       setLocalStatus(foundChild.status);
     }
   }, [foundChild?.id, foundChild?.status]);
+
+  // Synchronize route so refresh/bookmarking preserves the selected child
+  useEffect(() => {
+    if (foundChild?.id && (!childId || childId !== foundChild.id)) {
+      try {
+        window.history.replaceState(null, '', `#/parent/status/${foundChild.id}`);
+      } catch {}
+    }
+  }, [foundChild?.id, childId]);
 
   useEffect(() => {
     let intervalId: any;
@@ -117,10 +146,10 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   }, [foundChild?.id, localStatus]);
 
   useEffect(() => {
-    if (!foundChild) {
+    if (!foundChild && childrenList.length === 0) {
       onNavigate('/parent/home');
     }
-  }, [foundChild, onNavigate]);
+  }, [foundChild, childrenList.length, onNavigate]);
 
   if (!foundChild) {
     return null;
@@ -217,18 +246,88 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   };
 
   // Determine active progress steps based on status
-  const currentStatus = localStatus || 'Under review';
-  const isDetailsSentDone = true;
-  const isReviewDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
-  const isReviewActive = currentStatus === 'Under review';
-  const isDecisionDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
-  const isDecisionActive = false;
-  const isPassDone = ['Pass ready', 'Checked in', 'Picked up'].includes(currentStatus);
-  const isPassPending = currentStatus === 'Selected';
+  const currentStatus = localStatus || foundChild.status || 'Under review';
+  const isDetailsSentDone = foundChild.status !== 'Draft' && foundChild.status !== 'Incomplete';
+  const isReviewDone = ['Selected', 'Not selected', 'Waiting list', 'Pass ready', 'Checked in', 'Inside', 'Picked up', 'Checked out'].includes(currentStatus) || Boolean(foundChild.passReference);
+  const isPassDone = ['Pass ready', 'Checked in', 'Inside', 'Picked up', 'Checked out'].includes(currentStatus) || Boolean(foundChild.passReference);
+  const isCheckInDone = ['Checked in', 'Inside', 'Picked up', 'Checked out'].includes(currentStatus);
+  const isPickupDone = ['Picked up', 'Checked out'].includes(currentStatus);
+
+  // Clean age group: Never append "(Review Needed)" when review is complete or not under review
+  const cleanAgeGroup = (foundChild.ageGroup || '')
+    .replace(/\s*\(Review Needed\)/gi, '')
+    .trim() || 'Children';
+
+  const displayAgeGroup = (isReviewDone || currentStatus !== 'Under review')
+    ? cleanAgeGroup
+    : foundChild.ageGroup || 'Children';
+
+  const displayAge = foundChild.age === 0 ? '0 yrs old' : `${foundChild.age} yrs old`;
+
+  // Contextual status card content derived directly from current status
+  const getStatusCardContent = () => {
+    switch (currentStatus) {
+      case 'Picked up':
+      case 'Checked out':
+        return {
+          title: 'Picked up',
+          message: foundChild.statusNote && foundChild.statusNote.toLowerCase().includes('picked up')
+            ? foundChild.statusNote
+            : `${foundChild.name} has been picked up and checked out safely.`
+        };
+      case 'Checked in':
+      case 'Inside':
+        return {
+          title: 'Checked in',
+          message: foundChild.statusNote && foundChild.statusNote.toLowerCase().includes('checked in')
+            ? foundChild.statusNote
+            : `${foundChild.name} has been checked in successfully.`
+        };
+      case 'Pass ready':
+        return {
+          title: 'Pass ready',
+          message: 'Your child’s event pass is ready. Please present it at arrival and keep it available for pickup.'
+        };
+      case 'Selected':
+        return {
+          title: 'Selected',
+          message: 'Your child has been selected. The event pass is being generated.'
+        };
+      case 'Waiting list':
+        return {
+          title: 'Waiting list',
+          message: 'Your child is currently on the waiting list. We will notify you if a space opens up.'
+        };
+      case 'Not selected':
+        return {
+          title: 'Not selected',
+          message: 'Unfortunately, your child was not selected for this session.'
+        };
+      case 'Draft':
+      case 'Incomplete':
+        return {
+          title: 'Details incomplete',
+          message: foundChild.statusNote || 'Please complete and submit your child’s registration details.'
+        };
+      case 'Withdrawn':
+        return {
+          title: 'Withdrawn',
+          message: foundChild.statusNote || `Registration details for ${foundChild.name} have been withdrawn.`
+        };
+      case 'Under review':
+      default:
+        return {
+          title: 'Details under review',
+          message: foundChild.statusNote || 'The care team is reviewing your child’s details. You will be notified once verified.'
+        };
+    }
+  };
+
+  const statusCard = getStatusCardContent();
 
   return (
     <div 
-      data-view-version="parent-child-status-v9-brand-polished"
+      data-view-version="parent-child-status-v11-canonical"
       className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 pb-24"
     >
       {/* Scrollable Content */}
@@ -250,8 +349,46 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
           <div className="w-5" />
         </div>
 
+        {/* Multi-child compact selector row */}
+        {childrenList.length > 1 && (
+          <div
+            className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar -mx-1 px-1 mb-3"
+            role="tablist"
+            aria-label="Select child"
+          >
+            {childrenList.map((c) => {
+              const isSelected = c.id === foundChild.id;
+              const highLevelState = c.status || 'Under review';
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => onNavigate(`/parent/status/${c.id}`)}
+                  className={`flex items-center gap-2 py-1.5 px-3 rounded-full text-xs transition-all cursor-pointer shrink-0 border ${
+                    isSelected
+                      ? 'bg-[#FAF6EB] border-[#C59B27] text-[#18181B] font-bold shadow-2xs ring-1 ring-[#C59B27]/30'
+                      : 'bg-white border-[#EAE8E1] text-[#5C5A54] hover:border-[#D9D6CE] hover:text-[#18181B]'
+                  }`}
+                  role="tab"
+                  aria-selected={isSelected}
+                >
+                  <FallbackAvatar
+                    src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
+                    name={c.name}
+                    className="w-5 h-5 rounded-full text-[9px] border border-[#E5D5AE]"
+                  />
+                  <span className="truncate max-w-[120px]">{c.name}</span>
+                  <span className={`text-[10px] font-semibold ${isSelected ? 'text-[#9A7326]' : 'text-[#8E8B82]'}`}>
+                    · {highLevelState}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Child summary card (Elegant Header) */}
-        <div data-component-version="parent-child-status-summary-card-v2" className="bg-white rounded-3xl p-5 border border-[#EAE8E1] shadow-xs mt-3 space-y-4">
+        <div data-component-version="parent-child-status-summary-card-v2" className="bg-white rounded-3xl p-5 border border-[#EAE8E1] shadow-xs mt-1 space-y-4">
           <div className="flex items-center space-x-4">
             <div className="relative shrink-0">
               <FallbackAvatar
@@ -269,7 +406,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                 {foundChild.name}
               </h2>
               <p className="text-xs text-[#5C5A54] mt-0.5 font-medium">
-                {foundChild.age} yrs old • {foundChild.ageGroup}
+                {displayAge} · {displayAgeGroup}
               </p>
             </div>
           </div>
@@ -291,20 +428,10 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-serif-koinonia font-bold text-sm text-[#18181B] leading-snug">
-              {currentStatus === 'Pass ready' ? 'Pass ready' : currentStatus === 'Selected' ? 'Selected' : currentStatus === 'Not selected' ? 'Not selected' : currentStatus === 'Waiting list' ? 'Waiting list' : 'Details under review'}
+              {statusCard.title}
             </h3>
             <p className="text-xs text-[#5C5A54] mt-1 leading-relaxed">
-              {currentStatus === 'Pass ready' ? (
-                <>Your child’s event pass is ready. Please present it at arrival and keep it available for pickup.</>
-              ) : currentStatus === 'Selected' ? (
-                <>Your child has been selected. The event pass is being generated.</>
-              ) : currentStatus === 'Not selected' ? (
-                <>Unfortunately, your child was not selected for this session.</>
-              ) : currentStatus === 'Waiting list' ? (
-                <>Your child is currently on the waiting list. We will notify you if a space opens up.</>
-              ) : (
-                <>The care team is reviewing your child’s details. You will be notified once verified.</>
-              )}
+              {statusCard.message}
             </p>
           </div>
         </div>
@@ -321,12 +448,20 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             {/* Step 1: Details sent */}
             <div className="relative">
               {/* Dot */}
-              <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-[#137333]/10 border border-[#137333]/30 flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#137333]" />
+              <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
+                isDetailsSentDone
+                  ? 'bg-[#137333]/10 border-[#137333]/30'
+                  : 'bg-[#C59B27]/10 border-[#C59B27]/30'
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${isDetailsSentDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
               </div>
               <div className="space-y-0.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#137333] block">Details sent</span>
-                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">Your child’s details were received.</span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${isDetailsSentDone ? 'text-[#137333]' : 'text-[#C59B27]'}`}>
+                  Details sent
+                </span>
+                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                  {isDetailsSentDone ? 'Your child’s details were received.' : 'Submit child registration details.'}
+                </span>
                 <span className="text-[9px] text-[#8E8B82] font-semibold block">Verified on {submittedDateText}</span>
               </div>
             </div>
@@ -337,16 +472,26 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
                 isReviewDone 
                   ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]' 
-                  : 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
+                  : (currentStatus === 'Under review')
+                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
               }`}>
-                <div className={`w-1.5 h-1.5 rounded-full ${isReviewDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                {isReviewDone || currentStatus === 'Under review' ? (
+                  <div className={`w-1.5 h-1.5 rounded-full ${isReviewDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                ) : null}
               </div>
               <div className="space-y-0.5">
-                <span className={`text-[10px] font-bold uppercase tracking-wider block ${isReviewDone ? 'text-[#137333]' : 'text-[#C59B27]'}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                  isReviewDone ? 'text-[#137333]' : (currentStatus === 'Under review') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                }`}>
                   Review completed
                 </span>
                 <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
-                  {isReviewDone ? 'The care team has reviewed the details.' : 'The care team is reviewing the details.'}
+                  {isReviewDone
+                    ? 'The care team has reviewed the details.'
+                    : (currentStatus === 'Under review')
+                      ? 'The care team is reviewing the details.'
+                      : 'The care team will review the details.'}
                 </span>
               </div>
             </div>
@@ -381,21 +526,19 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             <div className="relative">
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
-                (currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up')
+                isCheckInDone
                   ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]'
                   : (currentStatus === 'Pass ready')
                     ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
                     : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
               }`}>
-                {(currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up' || currentStatus === 'Pass ready') ? (
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    (currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up') ? 'bg-[#137333]' : 'bg-[#C59B27]'
-                  }`} />
+                {isCheckInDone || currentStatus === 'Pass ready' ? (
+                  <div className={`w-1.5 h-1.5 rounded-full ${isCheckInDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
                 ) : null}
               </div>
               <div className="space-y-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-                  (currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up')
+                  isCheckInDone
                     ? 'text-[#137333]'
                     : (currentStatus === 'Pass ready')
                       ? 'text-[#C59B27]'
@@ -404,7 +547,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                   Arrival check-in
                 </span>
                 <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
-                  {(currentStatus === 'Checked in' || currentStatus === 'Inside' || currentStatus === 'Picked up')
+                  {isCheckInDone
                     ? 'Child successfully checked in.'
                     : 'Show the pass when your child arrives.'}
                 </span>
@@ -415,25 +558,25 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             <div className="relative">
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
-                currentStatus === 'Picked up'
+                isPickupDone
                   ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]'
                   : (currentStatus === 'Checked in' || currentStatus === 'Inside')
                     ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
                     : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
               }`}>
-                {currentStatus === 'Picked up' || currentStatus === 'Checked in' || currentStatus === 'Inside' ? (
-                  <div className={`w-1.5 h-1.5 rounded-full ${currentStatus === 'Picked up' ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                {isPickupDone || currentStatus === 'Checked in' || currentStatus === 'Inside' ? (
+                  <div className={`w-1.5 h-1.5 rounded-full ${isPickupDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
                 ) : null}
               </div>
               <div className="space-y-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-                  currentStatus === 'Picked up' ? 'text-[#137333]' : (currentStatus === 'Checked in' || currentStatus === 'Inside') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                  isPickupDone ? 'text-[#137333]' : (currentStatus === 'Checked in' || currentStatus === 'Inside') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
                 }`}>
                   Pickup and release
                 </span>
                 <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
-                  {currentStatus === 'Picked up'
-                    ? 'Child safely picked up.'
+                  {isPickupDone
+                    ? 'Child safely picked up and released.'
                     : 'Pickup will be confirmed before release.'}
                 </span>
               </div>
@@ -499,7 +642,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
 
         {/* Actions */}
         <div className="mt-8 space-y-3">
-          {(currentStatus === 'Pass ready' || currentStatus === 'Checked in' || currentStatus === 'Inside') ? (
+          {(isPassDone || Boolean(foundChild.passReference)) ? (
             <button
               type="button"
               onClick={() => onNavigate(`/parent/children/${foundChild.id}/pass`)}
@@ -510,13 +653,6 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               <span>View pass</span>
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => onNavigate('/parent/home')}
-            className="w-full py-3.5 px-5 rounded-2xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-bold text-sm transition-all duration-200 shadow-2xs cursor-pointer focus:outline-none"
-          >
-            Back to Home
-          </button>
           
           {currentStatus === 'Under review' && (
             <>

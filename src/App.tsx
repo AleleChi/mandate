@@ -470,6 +470,7 @@ export default function App() {
 
   const isValidRoute = (route: string): boolean => {
     const cleanRoute = route.split('?')[0];
+    if (cleanRoute.startsWith('/parent/status/')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
     if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) return true;
@@ -1031,9 +1032,18 @@ export default function App() {
       }
     }
 
-    if (cleanRoute === '/parent/status' || (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))) {
+    if (
+      cleanRoute === '/parent/status' ||
+      cleanRoute.startsWith('/parent/status/') ||
+      (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))
+    ) {
       const parts = cleanRoute.split('/');
-      const childIdParam = parts.length >= 4 && parts[3] !== 'review-sent' && parts[3] !== 'new' ? parts[3] : undefined;
+      let childIdParam: string | undefined = undefined;
+      if (cleanRoute.startsWith('/parent/status/')) {
+        childIdParam = parts.length >= 4 && parts[3] ? parts[3] : undefined;
+      } else if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) {
+        childIdParam = parts.length >= 4 && parts[3] !== 'review-sent' && parts[3] !== 'new' ? parts[3] : undefined;
+      }
       return (
         <ProtectedRoute requiresCompletedProfile={true}>
           <ChildStatusView

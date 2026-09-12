@@ -299,10 +299,18 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   };
 
   useEffect(() => {
-    if (initialTab) {
+    if (initialTab === 'Status') {
+      onNavigate('/parent/status');
+    } else if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab]);
+  }, [initialTab, onNavigate]);
+
+  useEffect(() => {
+    if (activeTab === 'Status') {
+      onNavigate('/parent/status');
+    }
+  }, [activeTab, onNavigate]);
 
   const [showAddChildModal, setShowAddChildModal] = useState(false);
   const [selectedPassChild, setSelectedPassChild] = useState<ChildItem | null>(null);
@@ -338,6 +346,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   });
 
   const handleTabChange = (tab: BottomNavTab) => {
+    if (tab === 'Status') {
+      onNavigate('/parent/status');
+      return;
+    }
     setActiveTab(tab);
     try {
       const pathMap: Record<BottomNavTab, string> = {
@@ -965,41 +977,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     </div>
   );
 
-  const renderStatusTab = () => (
-    <div data-view-version="parent-child-status-v10-clean-header" className="space-y-4">
-      <div>
-        <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Review Status</h2>
-        <p className="text-xs text-[#6B7280]">Current progress from initial submission to event pass readiness.</p>
-      </div>
-
-      {childrenList.length === 0 ? (
-        <div className="bg-white rounded-2xl p-8 border border-[#EAE8E1] text-center space-y-3 shadow-sm">
-          <h4 className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B]">
-            No children added yet
-          </h4>
-          <p className="text-xs sm:text-sm text-[#3F3F46] max-w-xs mx-auto leading-relaxed">
-            Add each child who may attend the Children and Teens section.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {childrenList.map((child) => (
-            <div key={child.id} className="bg-white rounded-2xl p-5 border border-[#EAE8E1] shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#18181B] text-sm">{child.name}</span>
-                <StatusBadge status={child.status} />
-              </div>
-              <p className="text-xs text-[#6B7280] leading-relaxed">{child.statusNote}</p>
-              <div className="pt-2 border-t border-[#FAF9F6] flex items-center justify-between gap-2 text-[11px] text-[#A1A1AA]">
-                <span>Last updated today</span>
-                <span className="font-semibold text-[#9A7326] shrink-0 text-right">Confirmed by team</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const renderStatusTab = () => null;
 
   const renderPassesTab = () => {
     // 1. passReadyChildren: child.pass exists / pass is active/issued/pass_ready.
