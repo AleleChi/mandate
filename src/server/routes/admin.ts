@@ -14,6 +14,7 @@ import { broadcastSSEEvent } from '../services/sse';
 import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
+import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { adminDutyRouter, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
 import {
@@ -10267,6 +10268,8 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
              COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
              COALESCE(p_ack.full_name, v_ack.full_name, 'Admin') as acknowledged_by_name,
              COALESCE(p_res.full_name, v_res.full_name, 'Admin') as resolved_by_name,
+             v_raised.phone as volunteer_phone,
+             v_raised.preferred_team as volunteer_team,
              r.delivered_in_app_at,
              r.read_at,
              r.sound_started_at,
@@ -10366,6 +10369,8 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
       raisedBy = {
         name: volunteerProfile.full_name,
         role: alert.raised_by_role || 'volunteer',
+        phone: volunteerProfile.phone || '',
+        team: volunteerProfile.preferred_team || '',
         photoUrl: volunteerProfile.photo_file_id ? (String(volunteerProfile.photo_file_id).startsWith('http') || String(volunteerProfile.photo_file_id).startsWith('/') ? String(volunteerProfile.photo_file_id) : `/api/media/files/${volunteerProfile.photo_file_id}`) : ''
       };
     } else {
@@ -10373,6 +10378,8 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
       raisedBy = {
         name: parentProf ? parentProf.full_name : 'Staff Member',
         role: alert.raised_by_role || 'staff',
+        phone: parentProf?.phone_number || '',
+        team: '',
         photoUrl: parentProf?.photo_file_id ? `/api/media/files/${parentProf.photo_file_id}` : ''
       };
     }
@@ -10554,10 +10561,24 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       WHERE alert_id = ?
     `, [now, now, id]);
 
+    // Stop server escalation for this alert
+    try {
+      await cancelActiveEscalationCycles({ alertId: id, reason: 'Alert was acknowledged' });
+    } catch (escErr) {
+      console.error('[Escalation Cancel Error]:', escErr);
+    }
+
+    // Look up responder's human-friendly name
+    const adminUser = await queryOne('SELECT full_name, email FROM users WHERE id = ?', [req.user.id]);
+    const adminProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [req.user.id])
+      || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    const responderName = adminProfile?.full_name || adminUser?.full_name || (adminUser?.email ? adminUser.email.split('@')[0] : 'Admin');
+
     try {
       broadcastSSEEvent('safety_alert_acknowledged', {
         alertId: id,
         acknowledgedBy: req.user.id,
+        acknowledgedByName: responderName,
         acknowledgedAt: now
       });
     } catch (sseErr) {
@@ -10627,6 +10648,13 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
       SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
       WHERE alert_id = ?
     `, [now, now, id]);
+
+    // Stop server escalation for this alert
+    try {
+      await cancelActiveEscalationCycles({ alertId: id, reason: 'Alert was resolved' });
+    } catch (escErr) {
+      console.error('[Escalation Cancel Error]:', escErr);
+    }
 
     try {
       broadcastSSEEvent('safety_alert_resolved', {

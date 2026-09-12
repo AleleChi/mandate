@@ -589,7 +589,7 @@ async function executeStep(cycle: any, step: EscalationPolicyStep, execution: an
 /**
  * Processes active executions whose time has come
  */
-export async function processScheduledExecutions(now: Date) {
+export async function processScheduledExecutions(now: Date = new Date()) {
   const nowStr = now.toISOString();
 
   // Query all scheduled executions
@@ -606,6 +606,16 @@ export async function processScheduledExecutions(now: Date) {
       // Re-verify execution is still scheduled to prevent concurrency race
       const freshExec = await queryOne('SELECT status FROM escalation_executions WHERE id = ?', [exec.id]);
       if (!freshExec || freshExec.status !== 'scheduled') return;
+
+      // Re-verify underlying alert status if subject is an alert
+      if (exec.alert_id) {
+        const alertCheck = await queryOne('SELECT status, acknowledged_by, resolved_by FROM event_safety_alerts WHERE id = ?', [exec.alert_id]);
+        if (alertCheck && (alertCheck.status !== 'open' || alertCheck.acknowledged_by || alertCheck.resolved_by)) {
+          await execute(`UPDATE escalation_executions SET status = 'cancelled', failure_code = 'ALERT_ALREADY_HANDLED', updated_at = ? WHERE id = ?`, [nowStr, exec.id]);
+          await execute(`UPDATE escalation_cycles SET status = 'cancelled', stopped_at = ?, stop_reason = 'Alert was acknowledged or resolved', next_due_at = NULL, updated_at = ? WHERE id = ?`, [nowStr, nowStr, exec.cycle_id]);
+          return;
+        }
+      }
 
       // Update status to processing
       await execute(`UPDATE escalation_executions SET status = 'processing', started_at = ?, updated_at = ? WHERE id = ?`, [nowStr, nowStr, exec.id]);

@@ -2032,11 +2032,29 @@ export async function resolveAlertRecipients(alertId: string, category: string, 
 
   // 6. Instantly Broadcast SSE delivery event (Section 12, 20)
   try {
+    const alertInfo = await queryOne(`
+      SELECT a.*,
+             COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
+             v_raised.phone as volunteer_phone,
+             v_raised.preferred_team as volunteer_team
+      FROM event_safety_alerts a
+      LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
+      LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
+      WHERE a.id = ?
+    `, [alertId]);
+
     broadcastSSEEvent('safety_alert_created', {
       alertId,
-      severity,
-      category,
-      timestamp: now,
+      severity: alertInfo?.severity || severity,
+      category: alertInfo?.category || category,
+      title: alertInfo?.title || 'Emergency care alert',
+      message: alertInfo?.message || '',
+      locationLabel: alertInfo?.location_label || null,
+      raisedByName: alertInfo?.raised_by_name || 'Volunteer',
+      volunteerPhone: alertInfo?.volunteer_phone || null,
+      volunteerTeam: alertInfo?.volunteer_team || null,
+      status: 'open',
+      timestamp: alertInfo?.created_at || now,
       recipientsCount: uniqueUserIds.length
     });
   } catch (sseErr) {

@@ -9,6 +9,7 @@ import { uploadMedia } from '../services/media/cloudinary';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
 import { resolveAlertRecipients, resolveUserDutyLocation } from './duty';
+import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { buildPublicAppUrl } from '../utils/urlHelper';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 
@@ -4684,6 +4685,21 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       finalLocationSource = 'manually_entered';
     }
 
+    // Automatically attach assigned Event Duty location if no location was explicitly provided
+    if (!finalLocationLabel) {
+      try {
+        const dutyLoc = await resolveUserDutyLocation(req.user.id, REAL_EVENT_ID);
+        if (dutyLoc && dutyLoc.name) {
+          finalLocationLabel = dutyLoc.name;
+          finalLocationId = dutyLoc.locationId;
+          finalLocationPath = dutyLoc.pathLabel;
+          finalLocationSource = 'assigned_duty';
+        }
+      } catch (locErr) {
+        console.warn('[Safety Alert] Duty location resolution fallback:', locErr);
+      }
+    }
+
     const catLabels: Record<string, string> = {
       child_care: 'Child care concern',
       pickup_issue: 'Pickup issue',
@@ -4825,7 +4841,7 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       return res.status(403).json({ error: 'Access denied: Volunteer role required' });
     }
 
-    const volProfile = await queryOne('SELECT status FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    const volProfile = await queryOne('SELECT status, full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
     if (!volProfile || (volProfile.status !== 'active' && volProfile.status !== 'approved')) {
       return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
     }
@@ -4836,6 +4852,19 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
       return res.status(404).json({ error: 'Safety alert not found' });
     }
 
+    if (alert.status !== 'open') {
+      const ackUser = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.acknowledged_by])
+        || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [alert.acknowledged_by]);
+      const ackName = ackUser ? ackUser.full_name : 'another responder';
+      return res.status(409).json({
+        success: false,
+        error: `This alert has already been acknowledged by ${ackName}.`,
+        alreadyAcknowledged: true,
+        acknowledgedBy: alert.acknowledged_by,
+        acknowledgedAt: alert.acknowledged_at
+      });
+    }
+
     const now = new Date().toISOString();
     await execute(`
       UPDATE event_safety_alerts
@@ -4843,8 +4872,34 @@ router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: Authen
           acknowledged_by = ?,
           acknowledged_at = ?,
           updated_at = ?
-      WHERE id = ?
+      WHERE id = ? AND status = 'open'
     `, [req.user.id, now, now, id]);
+
+    // Ensure repeating sound is stopped for all recipients
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ?
+    `, [now, now, id]);
+
+    // Stop server escalation for this alert
+    try {
+      await cancelActiveEscalationCycles({ alertId: id, reason: 'Alert was acknowledged' });
+    } catch (escErr) {
+      console.error('[Escalation Cancel Error]:', escErr);
+    }
+
+    const responderName = volProfile.full_name || 'Volunteer';
+    try {
+      broadcastSSEEvent('safety_alert_acknowledged', {
+        alertId: id,
+        acknowledgedBy: req.user.id,
+        acknowledgedByName: responderName,
+        acknowledgedAt: now
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert acknowledge:', sseErr);
+    }
 
     res.json({ success: true, message: 'Alert acknowledged.' });
   } catch (err) {
@@ -4873,6 +4928,14 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
       return res.status(404).json({ error: 'Safety alert not found' });
     }
 
+    if (alert.status === 'resolved') {
+      return res.status(409).json({
+        success: false,
+        error: 'This alert has already been resolved.',
+        alreadyResolved: true
+      });
+    }
+
     if ((alert.severity === 'important' || alert.severity === 'urgent') && (!note || !note.trim())) {
       return res.status(400).json({ error: 'Please add a resolution note.' });
     }
@@ -4887,6 +4950,31 @@ router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: Authentica
           updated_at = ?
       WHERE id = ?
     `, [req.user.id, now, (note || 'Resolved by volunteer').trim(), now, id]);
+
+    // Ensure repeating sound is stopped for all recipients
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ?
+    `, [now, now, id]);
+
+    // Stop server escalation for this alert
+    try {
+      await cancelActiveEscalationCycles({ alertId: id, reason: 'Alert was resolved' });
+    } catch (escErr) {
+      console.error('[Escalation Cancel Error]:', escErr);
+    }
+
+    try {
+      broadcastSSEEvent('safety_alert_resolved', {
+        alertId: id,
+        resolvedBy: req.user.id,
+        resolvedAt: now,
+        resolutionNote: (note || 'Resolved by volunteer').trim()
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert resolve:', sseErr);
+    }
 
     res.json({ success: true, message: 'Alert resolved.' });
   } catch (err) {

@@ -183,7 +183,7 @@ const getSeoPropsForRoute = (route: string) => {
   }
   if (cleanRoute.startsWith('/admin')) {
     return {
-      title: 'Admin Command Center | Koinonia Children and Teens',
+      title: 'Admin Emergency Response | Koinonia Children and Teens',
       ...defaults,
     };
   }
