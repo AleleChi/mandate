@@ -39,6 +39,7 @@ import { IncidentEditModal } from './IncidentEditModal';
 interface ActiveResponseCoordinationPanelProps {
   alertId: string;
   currentUser: { id: string; role: string; email: string; fullName?: string };
+  initialAlert?: any;
   onClose?: () => void;
   onRefreshParentAlerts?: () => void;
 }
@@ -46,6 +47,7 @@ interface ActiveResponseCoordinationPanelProps {
 export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinationPanelProps> = ({
   alertId,
   currentUser,
+  initialAlert,
   onClose,
   onRefreshParentAlerts
 }) => {
@@ -106,6 +108,38 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
     renderTime: Date.now(),
     lastActionLatency: null,
   });
+
+  const formatTime = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+      return '';
+    }
+  };
+
+  const formatDateTime = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return `${dateStr} · ${timeStr}`;
+    } catch (_) {
+      return '';
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const generateIdempotencyKey = (actionName: string) => {
     const key = `${actionName}_${alertId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -235,38 +269,53 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
     }
   };
 
-  if (loading || !responseState) {
+  if (loading && !responseState && !initialAlert) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 bg-white/80 backdrop-blur-xs rounded-3xl border border-[#EAE8E1] h-96" id="coordination-loader">
+      <div className="flex flex-col items-center justify-center p-12 bg-white/80 backdrop-blur-xs rounded-2xl border border-zinc-200 h-96" id="coordination-loader">
         <RefreshCw className="w-8 h-8 text-[#C59B27] animate-spin mb-4" />
-        <p className="text-xs text-zinc-500 font-medium font-sans">Loading response coordination panel...</p>
+        <p className="text-xs text-zinc-500 font-medium font-sans">Loading response details...</p>
       </div>
     );
   }
 
-  const { alert, response } = responseState;
+  const alert = { ...(initialAlert || {}), ...(responseState?.alert || {}) };
+  const response = responseState?.response;
   const isOwner = response?.owner?.id === currentUser.id;
   const isAssistant = response?.assistants?.some((a: any) => a.id === currentUser.id);
   const allowedActions = response?.allowedActions || [];
 
-  // Helper selectors
-  const statusLabel = getResponseStatusLabel(alert?.status);
-  const statusTone = getResponseStatusTone(alert?.status);
+  const status = alert?.status || 'open';
+  const isResolved = status === 'resolved' || status === 'closed';
+  const isUnderway = status === 'acknowledged' || status === 'in_progress';
+  const isNeedsResponse = status === 'open' || (!isResolved && !isUnderway);
+
+  const resolvedByName = alert.resolved_by_name || alert.resolvedByName || alert.structuredDetails?.resolved_by_name || (isResolved ? (response?.owner?.displayName || 'Admin') : 'Admin');
+  const resolvedAt = alert.resolved_at || alert.resolvedAt || (isResolved ? (alert.updated_at || alert.updatedAt) : null);
+  const resolutionNote = alert.resolution_note || alert.resolutionNote || alert.structuredDetails?.resolution_note || '';
+
+  const acknowledgedByName = alert.acknowledged_by_name || alert.acknowledgedByName || response?.owner?.displayName || 'Care Lead';
+  const acknowledgedAt = alert.acknowledged_at || alert.acknowledgedAt || response?.owner?.assignedAt || response?.ownershipStartTime;
+
+  const childName = alert.child_name || alert.childName || alert.structuredDetails?.child_name;
+  const childAgeGroup = alert.child_age_group || alert.childAgeGroup || alert.structuredDetails?.child_age_group;
+  const parentName = alert.parent_name || alert.parentName || alert.structuredDetails?.parent_name;
+  const parentPhone = alert.parent_phone || alert.parentPhone || alert.structuredDetails?.parent_phone;
+  const locationLabel = alert.location_label || alert.location || alert.structuredDetails?.location_label || 'Location not available';
 
   return (
     <div 
-      className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-3xl p-6 shadow-md space-y-6 max-w-4xl mx-auto"
+      className="bg-[#FAF9F6] border border-zinc-200/80 rounded-2xl p-5 sm:p-6 shadow-md space-y-5 max-w-xl mx-auto w-full text-left overflow-y-auto max-h-[85vh]"
       data-view-version="active-alert-response-coordination-v2-premium"
       id={`panel-${alertId}`}
     >
-      {/* PERFORMANCE METRIC DIAGNOSTIC BLOCK (HIDDEN OR MINI) */}
+      {/* PERFORMANCE METRIC DIAGNOSTIC BLOCK */}
       <div className="hidden" data-component-version="alert-response-frontend-performance-v1">
         Render latency: {Date.now() - metrics.renderTime}ms. Last Action latency: {metrics.lastActionLatency}ms
       </div>
 
       {/* ACCESSIBILITY HELPER FOR SCREEN READERS */}
       <div className="sr-only" data-component-version="alert-response-accessibility-v2">
-        Active security alert coordination panel for alert {alert?.id}. Severity: {alert?.severity}. Status: {alert?.status}. Led by: {response?.owner?.displayName || 'Unassigned'}.
+        Security alert details for alert {alert?.id}. Severity: {alert?.severity}. Status: {status}.
       </div>
 
       {/* IDEMPOTENCY KEY HIDDEN FEEDBACK */}
@@ -274,312 +323,282 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
         IDEM_KEY: {idempotencyKey}
       </div>
 
-      {/* REALTIME STREAM INDICATOR */}
-      <div className="flex items-center justify-between border-b border-[#EAE8E1]/80 pb-4" data-component-version="alert-response-realtime-client-v1">
-        <div className="flex items-center space-x-2">
-          <ShieldAlert className="w-5 h-5 text-red-600 animate-pulse" />
-          <h2 className="font-serif font-bold text-base text-[#18181B] tracking-tight">Active Response Coordination</h2>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="text-[10px] text-emerald-700 font-bold tracking-wider uppercase font-sans">Live Connection Active</span>
-        </div>
-      </div>
-
-      {/* VERSION AWARE HEADER */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-2xs" data-component-version="alert-response-version-aware-ui-v1">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2">
-            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-sans font-bold uppercase tracking-wider ${
-              alert?.severity === 'urgent' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
-            }`}>
-              {alert?.severity} Priority
-            </span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-sans font-bold uppercase tracking-wider ${statusTone.bg} ${statusTone.text} ${statusTone.border} border`}>
-              {statusLabel}
-            </span>
-            <span className="text-[10px] text-zinc-400 font-mono">v{response?.version || 1}</span>
-          </div>
-          <h3 className="font-serif font-bold text-sm text-zinc-800">{alert?.title || 'Safety Emergency'}</h3>
-          <p className="text-xs text-zinc-500 font-medium">📍 {alert?.location_label || 'Main Campus Hall'}</p>
-        </div>
-        {alert?.status === 'acknowledged' && alert?.severity === 'urgent' && (
-          <div 
-            className="text-[10px] bg-red-50 text-red-700 border border-red-200 rounded-lg px-2.5 py-1 font-sans font-semibold flex items-center space-x-1" 
-            data-component-version="response-acknowledgement-effects-stop-v2"
-          >
-            <CheckCircle className="w-3.5 h-3.5 text-red-600" />
-            <span>Alarms silenced on this device</span>
-          </div>
-        )}
-      </div>
-
       {/* CONFLICT ERROR DISPLAY */}
       {conflictError && (
         <div 
-          className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-xs text-red-800 font-sans space-y-1 flex items-start space-x-2"
+          className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-800 font-sans space-y-1 flex items-start space-x-2"
           data-component-version="response-ownership-conflict-ui-v1"
         >
           <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold">Coordination Conflict Warning</p>
-            <p className="text-[11px] opacity-90">{conflictError}</p>
-            <div className="mt-2 flex space-x-2">
-              <button 
-                onClick={() => handleAction(() => api.safetyAlerts.joinAlertResponse(alertId, {}), 'join', 'Joined as response assistant')}
-                className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg text-[10px] border-none"
-              >
-                Join Response Team
-              </button>
-              <button onClick={() => setConflictError(null)} className="text-zinc-500 hover:text-zinc-700 underline text-[10px] bg-transparent border-none cursor-pointer">
-                Dismiss
-              </button>
+          <div className="flex-1">
+            <p className="font-semibold">Conflict Notice</p>
+            <p className="text-[11px] text-red-700">{conflictError}</p>
+            <button onClick={() => setConflictError(null)} className="text-zinc-500 hover:text-zinc-800 underline text-[10px] mt-1 bg-transparent border-none cursor-pointer">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STATE A: RESOLVED INCIDENT SUMMARY (READ-ONLY CALM PRESENTATION)          */}
+      {/* ========================================================================= */}
+      {isResolved && (
+        <div className="space-y-4" data-component-version="resolved-incident-summary-v2-premium">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+            <div className="space-y-0.5">
+              <h2 className="font-serif font-bold text-lg text-zinc-900 tracking-tight">Incident resolved</h2>
+              <p className="text-xs text-zinc-500 font-sans">Closed care request summary</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                Resolved
+              </span>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  title="Close"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
-        </div>
-      )}
 
-      {/* AVAILABILITY WARNINGS */}
-      {response?.ownerAvailabilityWarning && (
-        <div 
-          className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 text-xs font-sans space-y-2 flex items-start space-x-3 shadow-xs"
-          data-component-version="response-owner-availability-warning-v1"
-        >
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-          <div className="space-y-1 flex-1">
-            <p className="font-bold text-amber-950">Response Coverage Needs Attention</p>
-            <p className="text-zinc-600 leading-relaxed text-[11px]">{response.ownerAvailabilityWarning}</p>
-            {currentUser.role === 'admin' && (
-              <div className="flex space-x-2.5 pt-1.5">
-                <button 
-                  onClick={() => { handleSearchEligible(); setShowReassignmentSheet(true); }}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] transition-all cursor-pointer border-none shadow-2xs"
-                >
-                  Reassign Lead
-                </button>
-                <button 
-                  onClick={() => setShowAssistanceSheet(true)}
-                  className="bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold px-3 py-1.5 rounded-lg text-[10px] transition-all cursor-pointer shadow-2xs"
-                >
-                  Request Backup Support
-                </button>
-              </div>
+          {/* Incident title and location */}
+          <div className="space-y-1">
+            <h3 className="font-serif font-bold text-base text-zinc-950">
+              {alert?.title || 'Safety Concern'}
+            </h3>
+            <p className="text-xs text-zinc-600 font-sans">
+              {locationLabel}
+            </p>
+            <p className="text-xs text-zinc-600 font-sans pt-1">
+              Resolved by <strong className="text-zinc-800">{resolvedByName}</strong>
+              {resolvedAt && <span> · {formatDateTime(resolvedAt)}</span>}
+            </p>
+            {acknowledgedByName && acknowledgedAt && (
+              <p className="text-[11px] text-zinc-400 font-sans">
+                Response taken by {acknowledgedByName} · {formatTime(acknowledgedAt)}
+              </p>
             )}
           </div>
-        </div>
-      )}
 
-      {/* MAIN TWO-COLUMN RESPONSIVE LAYOUT */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-component-version="alert-response-desktop-v2">
-        
-        {/* LEFT COLUMN: ACTIVE OWNER CARD & CORE ACTIONS */}
-        <div className="space-y-6" data-component-version="alert-response-mobile-v2">
-          
-          {/* OWNER CARD */}
-          <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4"
-            data-component-version="alert-response-owner-card-v2"
-          >
-            <h4 className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider font-sans">Active Response Lead</h4>
-            
-            {response?.owner ? (
-              <div className="flex items-center space-x-3.5">
-                <div className="w-12 h-12 rounded-full border border-[#FAF9F6] bg-[#C59B27]/10 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
-                  {response.owner.photoUrl ? (
-                    <SafeImage src={response.owner.photoUrl} alt={response.owner.displayName} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-[#C59B27] font-serif font-bold text-sm">
-                      {response.owner.displayName?.charAt(0) || 'R'}
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-0.5 min-w-0">
-                  <p className="font-serif font-bold text-[#18181B] text-sm truncate">
-                    {response.owner.displayName}
-                  </p>
-                  <p className="text-[11px] text-zinc-500 font-medium truncate">
-                    {response.owner.responsibility || 'Care Team Responder'}
-                  </p>
-                  {response.owner.assignedTeam && (
-                    <p className="text-[10px] text-[#C59B27] font-semibold tracking-wide">
-                      {response.owner.assignedTeam}
-                    </p>
-                  )}
-                </div>
+          {/* Child & Parent info if present */}
+          {childName && (
+            <div className="py-2.5 px-3.5 bg-white border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-medium text-zinc-900">{childName}</span>
+                {childAgeGroup && <span className="text-zinc-500"> ({childAgeGroup})</span>}
+                {parentName && <span className="text-zinc-500 block text-[11px]">Parent: {parentName}</span>}
+              </div>
+              {parentPhone && (
+                <a
+                  href={`tel:${parentPhone}`}
+                  className="text-[11px] text-zinc-600 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-lg bg-zinc-50"
+                >
+                  {parentPhone}
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Distress message with subtle left rule */}
+          {alert?.message && (
+            <div className="pl-3.5 border-l-2 border-[#C59B27]/40 py-1 text-left">
+              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+                “{alert.message}”
+              </p>
+            </div>
+          )}
+
+          {/* Resolution Note */}
+          <div className="space-y-1.5 pt-1">
+            <h4 className="text-xs font-semibold text-zinc-900 font-sans">Resolution</h4>
+            {resolutionNote ? (
+              <div className="pl-3.5 border-l-2 border-emerald-600/60 py-1.5 text-left bg-emerald-50/40 rounded-r-lg">
+                <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+                  “{resolutionNote}”
+                </p>
               </div>
             ) : (
-              <div className="flex items-center space-x-3 p-3 bg-red-50/20 border border-dashed border-red-200 rounded-xl">
-                <Users className="w-5 h-5 text-red-500 shrink-0" />
-                <p className="text-xs text-red-800 font-sans font-medium">Waiting for a responder to lead this case.</p>
-              </div>
+              <p className="text-xs text-zinc-400 font-sans">No resolution note was added.</p>
             )}
-
-            <div className="border-t border-[#FAF9F6] pt-3.5 flex justify-between items-center text-[10px] text-zinc-400 font-medium">
-              <span>Ownership: {response?.owner ? `Since ${new Date(response.ownershipStartTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'Pending'}</span>
-              <span>State: <strong className="text-[#C59B27]">{statusLabel}</strong></span>
-            </div>
           </div>
 
-          {/* PRIMARY CONTEXTUAL ACTION AREA */}
-          <div 
-            className="space-y-3"
-            data-component-version="contextual-response-primary-action-v2"
-          >
-            {/* ACTION LOADER STATE */}
-            {actionInProgress && (
-              <div 
-                className="bg-zinc-100 border border-zinc-200 text-zinc-600 rounded-xl p-3 text-xs flex items-center space-x-2 justify-center"
-                data-component-version="alert-response-action-state-v1"
-              >
-                <RefreshCw className="w-4 h-4 animate-spin text-[#C59B27]" />
-                <span>{actionInProgress === 'ack' ? 'Acknowledging…' : actionInProgress === 'in_progress' ? 'Updating…' : 'Processing request…'}</span>
+          {/* Response History */}
+          <div className="space-y-2 pt-2 border-t border-zinc-100">
+            <h4 className="text-xs font-semibold text-zinc-900 font-sans">Response history</h4>
+            {timeline.length > 0 ? (
+              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                {timeline.map((item: any, idx: number) => (
+                  <div key={item.id || idx} className="text-xs flex items-start gap-2.5 text-zinc-600">
+                    <span className="text-[11px] text-zinc-400 shrink-0 font-mono pt-0.5">
+                      {formatTime(item.createdAt || item.timestamp || item.created_at)}
+                    </span>
+                    <div className="min-w-0">
+                      <span className="font-medium text-zinc-800">{item.actionName || item.action}</span>
+                      {item.actorName && <span className="text-zinc-400"> · {item.actorName}</span>}
+                      {item.note && <p className="text-[11px] text-zinc-500 italic mt-0.5">"{item.note}"</p>}
+                    </div>
+                  </div>
+                ))}
               </div>
+            ) : (
+              <p className="text-xs text-zinc-400 font-sans">No additional response notes.</p>
             )}
+          </div>
 
-            {/* ACKNOWLEDGE & CLAIM RESPOND UI */}
-            {allowedActions.includes('acknowledge') && !actionInProgress && (
+          {/* Footer Actions */}
+          <div className="pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3">
+            {onClose ? (
               <button
-                onClick={() => handleAction(() => api.safetyAlerts.acknowledgeAndRespond(alertId, {}), 'ack', 'You are now leading this response')}
-                className="w-full bg-[#C59B27] hover:bg-[#b58c22] text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-md text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border-none"
-                data-component-version="acknowledge-and-respond-ui-v2"
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
               >
-                <UserCheck className="w-5 h-5" />
-                <span>Acknowledge & Respond</span>
+                Close
               </button>
-            )}
-
-            {/* MARK IN PROGRESS */}
-            {allowedActions.includes('mark_in_progress') && isOwner && !actionInProgress && (
-              <button
-                onClick={() => handleAction(() => api.safetyAlerts.markAlertInProgress(alertId, {}), 'in_progress', 'Response marked as In Progress')}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-md text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border-none"
-                data-component-version="mark-alert-in-progress-ui-v1"
-              >
-                <Clock className="w-5 h-5 animate-pulse" />
-                <span>Mark Help in Progress</span>
-              </button>
-            )}
-
-            {/* JOIN RESPONSE UI */}
-            {allowedActions.includes('join_response') && !isAssistant && !isOwner && !actionInProgress && (
-              <button
-                onClick={() => handleAction(() => api.safetyAlerts.joinAlertResponse(alertId, {}), 'join', 'Joined as response assistant')}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-md text-center flex items-center justify-center space-x-2 text-sm cursor-pointer border-none"
-                data-component-version="join-alert-response-ui-v1"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Join Response Team</span>
-              </button>
-            )}
-
-            {/* LEAVE RESPONSE */}
-            {isAssistant && !isOwner && !actionInProgress && (
-              <button
-                onClick={() => handleAction(() => api.safetyAlerts.leaveAlertResponse(alertId, {}), 'leave', 'Left assistance')}
-                className="w-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 font-bold py-3.5 px-6 rounded-2xl transition-all text-center flex items-center justify-center space-x-2 text-xs cursor-pointer border-none"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Leave Response Team</span>
-              </button>
-            )}
-
-            {/* SECONDARY ACTION GRID */}
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              {/* ADD UPDATE BUTTON */}
-              {allowedActions.includes('add_update') && (
+            ) : <div />}
+            <div className="flex items-center gap-2">
+              {currentUser.role === 'admin' && (
                 <button
-                  onClick={() => setShowUpdateSheet(true)}
-                  className="bg-white hover:bg-[#FAF9F6] text-zinc-800 border border-[#EAE8E1] py-3 px-4 rounded-xl font-bold transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-3xs"
-                >
-                  <FileText className="w-4 h-4 text-[#C59B27]" />
-                  <span>Add Update</span>
-                </button>
-              )}
-
-              {/* REQUEST ASSISTANCE BUTTON */}
-              {allowedActions.includes('request_assistance') && isOwner && (
-                <button
-                  onClick={() => setShowAssistanceSheet(true)}
-                  className="bg-white hover:bg-[#FAF9F6] text-zinc-800 border border-[#EAE8E1] py-3 px-4 rounded-xl font-bold transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-3xs"
-                >
-                  <UserPlus className="w-4 h-4 text-blue-600" />
-                  <span>Request Backup</span>
-                </button>
-              )}
-
-              {/* REQUEST HANDOVER */}
-              {allowedActions.includes('request_handover') && isOwner && (
-                <button
-                  onClick={() => { handleSearchEligible(); setShowHandoverSheet(true); }}
-                  className="bg-white hover:bg-[#FAF9F6] text-zinc-800 border border-[#EAE8E1] py-3 px-4 rounded-xl font-bold transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-3xs col-span-2"
-                >
-                  <ArrowLeftRight className="w-4 h-4 text-amber-600" />
-                  <span>Hand Over Responsibility</span>
-                </button>
-              )}
-
-              {/* RESOLVE BUTTON */}
-              {allowedActions.includes('resolve') && (isOwner || currentUser.role === 'admin') && (
-                <button
-                  onClick={() => setShowResolveSheet(true)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 px-4 rounded-xl font-bold transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs col-span-2"
-                >
-                  <CheckSquare className="w-4 h-4" />
-                  <span>Resolve Request</span>
-                </button>
-              )}
-
-              {/* REOPEN BUTTON (ADMIN ONLY) */}
-              {alert?.status === 'resolved' && currentUser.role === 'admin' && (
-                <button
+                  type="button"
                   onClick={() => setShowReopenSheet(true)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white py-3.5 px-4 rounded-xl font-bold transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs col-span-2"
+                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Reopen Case</span>
+                  Reopen case
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setShowIncidentModal(true)}
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                View incident report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {/* LOG INCIDENT BUTTON AFTER RESOLUTION */}
-              {alert?.status === 'resolved' && (
+      {/* ========================================================================= */}
+      {/* STATE B: RESPONSE UNDERWAY STATE                                          */}
+      {/* ========================================================================= */}
+      {isUnderway && (
+        <div className="space-y-4" data-component-version="underway-incident-summary-v2-premium">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+            <div className="space-y-0.5">
+              <h2 className="font-serif font-bold text-lg text-zinc-900 tracking-tight">Emergency Response</h2>
+              <p className="text-xs text-zinc-500 font-sans">Response underway</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium text-[#C59B27] bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                Response underway
+              </span>
+              {onClose && (
                 <button
-                  onClick={() => setShowIncidentModal(true)}
-                  className="bg-[#C59B27] hover:bg-[#B08621] text-white py-3.5 px-4 rounded-xl font-bold transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs col-span-2 animate-pulse"
+                  type="button"
+                  onClick={onClose}
+                  className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  title="Close"
+                  aria-label="Close"
                 >
-                  <FileText className="w-4 h-4" />
-                  <span>Document Incident Report</span>
+                  <X className="w-5 h-5" />
                 </button>
               )}
             </div>
           </div>
 
-          {/* HANDOVER DECISION CARD */}
-          {response?.handover?.pending && response.handover.targetUserId === currentUser.id && (
-            <div 
-              className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3"
-              data-component-version="response-handover-decision-ui-v2"
-            >
-              <div className="flex items-start space-x-2.5">
-                <ArrowLeftRight className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <p className="font-bold text-xs text-amber-950">Responsibility Handover Requested</p>
-                  <p className="text-[11px] text-zinc-600">The current owner has requested to transfer this case to you.</p>
-                  {response.handover.reason && <p className="text-[11px] text-zinc-600 italic">Reason: "{response.handover.reason}"</p>}
-                </div>
+          {/* Incident title and location */}
+          <div className="space-y-1">
+            <h3 className="font-serif font-bold text-base text-zinc-950">
+              {alert?.title || 'Safety Emergency'}
+            </h3>
+            <p className="text-xs text-zinc-600 font-sans">
+              {locationLabel}
+            </p>
+          </div>
+
+          {/* Responder section */}
+          <div className="p-3.5 bg-white border border-zinc-200 rounded-xl space-y-1">
+            <span className="text-[11px] text-zinc-400 font-medium">Responding</span>
+            <p className="text-xs font-semibold text-zinc-900">
+              {acknowledgedByName}
+            </p>
+            {acknowledgedAt && (
+              <p className="text-[11px] text-zinc-500 font-sans">
+                Acknowledged at {formatTime(acknowledgedAt)}
+              </p>
+            )}
+          </div>
+
+          {/* Other Responders (ONLY if > 0) */}
+          {response?.assistants && response.assistants.length > 0 && (
+            <div className="p-3.5 bg-white border border-zinc-200 rounded-xl space-y-2">
+              <span className="text-[11px] text-zinc-400 font-medium">Other responders ({response.assistants.length})</span>
+              <div className="space-y-1.5">
+                {response.assistants.map((assistant: any, idx: number) => (
+                  <div key={assistant.id || idx} className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-800">{assistant.displayName}</span>
+                    <span className="text-[11px] text-zinc-400">{assistant.responsibility || 'Care Assistant'}</span>
+                  </div>
+                ))}
               </div>
-              <div className="flex space-x-2 pt-1">
+            </div>
+          )}
+
+          {/* Distress message */}
+          {alert?.message && (
+            <div className="pl-3.5 border-l-2 border-[#C59B27]/40 py-1 text-left">
+              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+                “{alert.message}”
+              </p>
+            </div>
+          )}
+
+          {/* Child & Parent Details */}
+          {childName && (
+            <div className="py-2.5 px-3.5 bg-white border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-medium text-zinc-900">{childName}</span>
+                {childAgeGroup && <span className="text-zinc-500"> ({childAgeGroup})</span>}
+                {parentName && <span className="text-zinc-500 block text-[11px]">Parent: {parentName}</span>}
+              </div>
+              {parentPhone && (
+                <a
+                  href={`tel:${parentPhone}`}
+                  className="text-[11px] text-zinc-600 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-lg bg-zinc-50"
+                >
+                  {parentPhone}
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Handover decision card if target is current user */}
+          {response?.handover?.pending && response.handover.targetUserId === currentUser.id && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-2.5">
+              <p className="text-xs font-semibold text-amber-950">Responsibility Handover Requested</p>
+              <p className="text-xs text-zinc-600">The current responder has requested to transfer this case to you.</p>
+              {response.handover.reason && <p className="text-xs text-zinc-500 italic">"{response.handover.reason}"</p>}
+              <div className="flex gap-2 pt-1">
                 <button
-                  onClick={() => handleAction(() => api.safetyAlerts.respondToAlertHandover(alertId, response.handover.id, { decision: 'accept' }), 'handover_decide', 'Handover accepted successfully')}
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded-lg text-[11px] border-none shadow-3xs"
+                  type="button"
+                  onClick={() => handleAction(() => api.safetyAlerts.respondToAlertHandover(alertId, response.handover.id, { decision: 'accept' }), 'handover_decide', 'Handover accepted')}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium py-1.5 rounded-lg text-xs"
                 >
                   Accept Transfer
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleAction(() => api.safetyAlerts.respondToAlertHandover(alertId, response.handover.id, { decision: 'decline' }), 'handover_decide', 'Handover declined')}
-                  className="flex-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 font-bold py-2 rounded-lg text-[11px] shadow-3xs"
+                  className="flex-1 bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 font-medium py-1.5 rounded-lg text-xs"
                 >
                   Decline
                 </button>
@@ -587,152 +606,184 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
             </div>
           )}
 
-          {/* ASSISTING RESPONDERS LIST */}
-          <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4"
-            data-component-version="alert-response-assistants-list-v1"
-          >
-            <div className="flex items-center justify-between border-b border-[#FAF9F6] pb-2">
-              <h4 className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider font-sans">Assisting Team</h4>
-              <span className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full font-bold">{response?.assistants?.length || 0}</span>
-            </div>
-            
-            {response?.assistants && response.assistants.length > 0 ? (
-              <div className="space-y-3 max-h-48 overflow-y-auto">
-                {response.assistants.map((assistant: any, idx: number) => (
-                  <div key={assistant.id || idx} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center shrink-0 text-zinc-600 font-sans font-bold text-xs overflow-hidden">
-                        {assistant.photoUrl ? (
-                          <SafeImage src={assistant.photoUrl} alt={assistant.displayName} className="w-full h-full object-cover" />
-                        ) : (
-                          <span>{assistant.displayName?.charAt(0) || 'A'}</span>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-zinc-800 truncate">{assistant.displayName}</p>
-                        <p className="text-[10px] text-zinc-400 truncate">{assistant.responsibility || 'Care Assistant'}</p>
-                      </div>
+          {/* Timeline */}
+          <div className="space-y-2 pt-2 border-t border-zinc-100">
+            <h4 className="text-xs font-semibold text-zinc-900 font-sans">Response timeline</h4>
+            {timeline.length > 0 ? (
+              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                {timeline.map((item: any, idx: number) => (
+                  <div key={item.id || idx} className="text-xs flex items-start gap-2.5 text-zinc-600">
+                    <span className="text-[11px] text-zinc-400 shrink-0 font-mono pt-0.5">
+                      {formatTime(item.createdAt || item.timestamp || item.created_at)}
+                    </span>
+                    <div className="min-w-0">
+                      <span className="font-medium text-zinc-800">{item.actionName || item.action}</span>
+                      {item.actorName && <span className="text-zinc-400"> · {item.actorName}</span>}
+                      {item.note && <p className="text-[11px] text-zinc-500 italic mt-0.5">"{item.note}"</p>}
                     </div>
-                    {assistant.joinedTime && (
-                      <span className="text-[9px] text-zinc-400 font-medium">Joined {new Date(assistant.joinedTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-[11px] text-zinc-400 text-center py-2">No other responders have joined yet.</p>
+              <p className="text-xs text-zinc-400 font-sans">No additional response notes.</p>
             )}
           </div>
-        </div>
 
-        {/* RIGHT COLUMN: PROGRESS & RESPONSE TIMELINE */}
-        <div className="space-y-6">
-          
-          {/* RESPONSE PROGRESS INDICATOR STEPPER */}
-          <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4"
-            data-component-version="alert-response-progress-v2"
-          >
-            <h4 className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider font-sans border-b border-[#FAF9F6] pb-2">Response Progress</h4>
-            
-            <div className="flex items-center justify-between relative py-2 px-1">
-              {/* Stepper progress bar line */}
-              <div className="absolute left-4 right-4 top-1/2 h-0.5 bg-zinc-100 -translate-y-1/2 z-0" />
-              
-              {/* Step 1 */}
-              <div className="flex flex-col items-center z-10 space-y-1">
-                <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  1
-                </div>
-                <span className="text-[9px] text-zinc-800 font-bold">Requested</span>
-              </div>
-
-              {/* Step 2 */}
-              <div className="flex flex-col items-center z-10 space-y-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shadow-xs ${
-                  ['acknowledged', 'in_progress', 'resolved'].includes(alert?.status) ? 'bg-amber-500 text-white' : 'bg-zinc-100 text-zinc-400'
-                }`}>
-                  2
-                </div>
-                <span className="text-[9px] text-zinc-500 font-bold">Led</span>
-              </div>
-
-              {/* Step 3 */}
-              <div className="flex flex-col items-center z-10 space-y-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shadow-xs ${
-                  ['in_progress', 'resolved'].includes(alert?.status) ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-400'
-                }`}>
-                  3
-                </div>
-                <span className="text-[9px] text-zinc-500 font-bold">In Progress</span>
-              </div>
-
-              {/* Step 4 */}
-              <div className="flex flex-col items-center z-10 space-y-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shadow-xs ${
-                  alert?.status === 'resolved' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 text-zinc-400'
-                }`}>
-                  {alert?.status === 'resolved' ? <Check className="w-4 h-4" /> : '4'}
-                </div>
-                <span className="text-[9px] text-zinc-500 font-bold">Resolved</span>
-              </div>
-            </div>
-          </div>
-
-          {/* RESPONSE TIMELINE */}
-          <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-2xs space-y-4"
-            data-component-version="alert-response-timeline-v2-premium"
-          >
-            <div className="flex items-center justify-between border-b border-[#FAF9F6] pb-2">
-              <h4 className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider font-sans">Response Timeline</h4>
-              {loadingTimeline && <RefreshCw className="w-3.5 h-3.5 text-[#C59B27] animate-spin" />}
-            </div>
-
-            <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
-              {timeline.length > 0 ? (
-                timeline.map((item: any, idx: number) => (
-                  <div key={item.id || idx} className="flex space-x-3 text-xs">
-                    <div className="flex flex-col items-center shrink-0">
-                      <div className="w-2.5 h-2.5 rounded-full bg-[#C59B27] ring-4 ring-[#C59B27]/15 mt-1" />
-                      {idx !== timeline.length - 1 && <div className="w-0.5 bg-zinc-100 flex-1 my-1" />}
-                    </div>
-                    <div className="space-y-0.5 pb-2 min-w-0">
-                      <p className="font-bold text-zinc-800 break-words">{item.actionName || item.action}</p>
-                      {item.actorName && (
-                        <p className="text-[10px] text-zinc-500">
-                          {item.actorName} &bull; <span className="italic">{item.responsibility || 'Care Team'}</span>
-                        </p>
-                      )}
-                      {item.note && (
-                        <p className="text-[11px] text-zinc-600 italic bg-[#FAF9F6] border border-[#EAE8E1]/40 rounded-lg p-2 mt-1 leading-relaxed break-words">
-                          "{item.note}"
-                        </p>
-                      )}
-                      <p className="text-[9px] text-zinc-400 font-medium">
-                        {new Date(item.createdAt || item.timestamp || item.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-[11px] text-zinc-400 text-center py-4">No events found in response history.</p>
-              )}
-
-              {/* Load More Button */}
-              {timelineTotal > timeline.length && (
+          {/* Actions */}
+          <div className="pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3">
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            ) : <div />}
+            <div className="flex flex-wrap items-center gap-2">
+              {allowedActions.includes('add_update') && (
                 <button
-                  onClick={() => loadTimeline(timelinePage + 1)}
-                  className="w-full text-center text-[10px] text-[#C59B27] font-bold hover:underline py-2 bg-transparent border-none cursor-pointer"
+                  type="button"
+                  onClick={() => setShowUpdateSheet(true)}
+                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
                 >
-                  Load More Events ({timelineTotal - timeline.length} remaining)
+                  Add update
+                </button>
+              )}
+              {allowedActions.includes('request_assistance') && isOwner && (
+                <button
+                  type="button"
+                  onClick={() => setShowAssistanceSheet(true)}
+                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  Request backup
+                </button>
+              )}
+              {allowedActions.includes('request_handover') && isOwner && (
+                <button
+                  type="button"
+                  onClick={() => { handleSearchEligible(); setShowHandoverSheet(true); }}
+                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  Hand over
+                </button>
+              )}
+              {(allowedActions.includes('resolve') || currentUser.role === 'admin') && (
+                <button
+                  type="button"
+                  onClick={() => setShowResolveSheet(true)}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                >
+                  Resolve request
                 </button>
               )}
             </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STATE C: NEEDS RESPONSE STATE                                             */}
+      {/* ========================================================================= */}
+      {isNeedsResponse && (
+        <div className="space-y-4" data-component-version="needs-response-incident-summary-v2-premium">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+            <div className="space-y-0.5">
+              <h2 className="font-serif font-bold text-lg text-zinc-900 tracking-tight">Emergency Response</h2>
+              <p className="text-xs text-zinc-500 font-sans">Needs response</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                Needs response
+              </span>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  title="Close"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Incident title and location */}
+          <div className="space-y-1">
+            <h3 className="font-serif font-bold text-base text-zinc-950">
+              {alert?.title || 'Safety Emergency'}
+            </h3>
+            <p className="text-xs text-zinc-600 font-sans">
+              {locationLabel}
+            </p>
+            {alert?.raised_by_name && (
+              <p className="text-xs text-zinc-500 font-sans">
+                Raised by <strong className="text-zinc-800">{alert.raised_by_name}</strong>
+                {alert.volunteer_team && <span> ({alert.volunteer_team})</span>}
+              </p>
+            )}
+          </div>
+
+          {/* Child & Parent Details */}
+          {childName && (
+            <div className="py-2.5 px-3.5 bg-white border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-medium text-zinc-900">{childName}</span>
+                {childAgeGroup && <span className="text-zinc-500"> ({childAgeGroup})</span>}
+                {parentName && <span className="text-zinc-500 block text-[11px]">Parent: {parentName}</span>}
+              </div>
+              {parentPhone && (
+                <a
+                  href={`tel:${parentPhone}`}
+                  className="text-[11px] text-zinc-600 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-lg bg-zinc-50"
+                >
+                  {parentPhone}
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Distress message */}
+          {alert?.message && (
+            <div className="pl-3.5 border-l-2 border-red-500 py-1 text-left">
+              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+                “{alert.message}”
+              </p>
+            </div>
+          )}
+
+          {/* Responder section: calm and honest */}
+          <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl text-xs text-zinc-600 font-sans">
+            <span className="font-medium text-zinc-800">Responder: </span>
+            <span>No responder yet</span>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3">
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            ) : <div />}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleAction(() => api.safetyAlerts.acknowledgeAndRespond(alertId, {}), 'ack', 'You are now leading this response')}
+                className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                Acknowledge & respond
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================== */}
       {/* SHEET MODALS RENDERING                     */}

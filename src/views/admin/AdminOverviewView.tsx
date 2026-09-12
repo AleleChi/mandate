@@ -1,17 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { AppRoute } from '../../types';
-import { 
-  Users, 
-  UserCheck, 
-  Clock, 
-  Calendar, 
-  ClipboardList, 
+import {
+  Users,
+  UserCheck,
+  Clock,
+  Calendar,
+  ClipboardList,
   ShieldAlert,
   AlertTriangle,
-  LogOut, 
-  RefreshCw, 
-  Bell, 
-  Settings, 
+  LogOut,
+  RefreshCw,
+  Bell,
+  Settings,
   Search,
   MessageSquare,
   FileCheck2,
@@ -90,7 +90,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerTab, setHeaderTab] = useState<'current' | 'upcoming'>('current');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Rich dashboard dynamic dataset
   const [overviewData, setOverviewData] = useState<any>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -250,28 +250,24 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   }, [activeUrgentAlert?.id, simulatedDutyRole]);
 
-  // Centralized cleanup handler (Phase 2, Phase 3, Phase 5)
+  // Centralized audio cleanup handler
   const stopActiveUrgentAlertEffects = (alertId: string) => {
-    // 1. Silence in global manager
+    // Silence audio in global manager
     urgentAlertEffectsManager.silenceAlert(alertId);
-
-    // 2. Clear from active urgent popup overlay state if matched
-    setActiveUrgentAlert((prev: any) => {
-      if (prev && prev.id === alertId) {
-        return null;
-      }
-      return prev;
-    });
+    try {
+      (window as any).stopAllUrgentAlertEffects?.();
+    } catch (_) {}
   };
 
   const handleSilenceAlert = async (alertId: string) => {
     try {
+      // Local device silence only: Mute sound on this terminal
+      // Incident remains ACTIVE and UNACKNOWLEDGED, and server escalation continues!
       stopActiveUrgentAlertEffects(alertId);
       await api.admin.silenceSafetyAlert(alertId);
-      showSuccess('Alarm Silenced', 'The emergency audio was stopped for this device.');
-      await fetchSafetyAlerts();
+      showSuccess('Sound Silenced', 'Emergency sound stopped on this device. Alert remains active.');
     } catch (err) {
-      console.error('Failed to silence alert centrally:', err);
+      console.error('Failed to silence alert locally:', err);
     }
   };
 
@@ -282,39 +278,37 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       if (Array.isArray(res)) {
         setSafetyAlerts(res);
 
-        // Sync with our global alert effects manager!
+        // Sync with global alert effects manager
         urgentAlertEffectsManager.syncAlerts(res);
 
         // Filter unresolved open alerts
         const openAlerts = res.filter((a: any) => a.status !== 'resolved');
-        const rxUrgentPref = localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
-        const showPopupPref = localStorage.getItem('koinonia_device_show_popup') !== 'false';
+        const activeUnackUrgent = openAlerts.find(
+          (a: any) => (a.severity === 'urgent' || a.category === 'medical_support' || a.category === 'security_concern') && a.status === 'open'
+        );
 
-        // Update popup overlay state for new qualifying alerts
-        if (rxUrgentPref && showPopupPref) {
-          const currentSilenced = urgentAlertEffectsManager.getSilencedAlertIds();
-          const activeUrgent = openAlerts.find((a: any) => a.severity === 'urgent' && a.status === 'open' && !currentSilenced.has(a.id));
-          if (activeUrgent) {
-            setActiveUrgentAlert(activeUrgent);
-          }
-        }
-
-        // Count active urgent alerts
-        const urgentCount = openAlerts.filter((a: any) => a.severity === 'urgent').length;
-        setActiveUrgentAlertCount(urgentCount);
-
-        // If there is an active takeover urgent alert, track and clear if status updates to resolved/acknowledged
-        if (activeUrgentAlert) {
+        // Browser Refresh & Reconnect: If an active unacknowledged alert exists, restore emergency dialog!
+        if (activeUnackUrgent) {
+          setActiveUrgentAlert((prev: any) => {
+            if (!prev || prev.id !== activeUnackUrgent.id) {
+              return activeUnackUrgent;
+            }
+            return { ...activeUnackUrgent, ...prev };
+          });
+        } else if (activeUrgentAlert) {
           const updated = res.find((a: any) => a.id === activeUrgentAlert.id);
           if (updated) {
-            if (updated.status === 'resolved' || updated.status === 'acknowledged' || urgentAlertEffectsManager.isAlertSilenced(updated.id)) {
-              // Clear from active takeover
+            if (updated.status === 'resolved') {
               setActiveUrgentAlert(null);
             } else {
               setActiveUrgentAlert(updated);
             }
           }
         }
+
+        // Count active urgent alerts
+        const urgentCount = openAlerts.filter((a: any) => a.severity === 'urgent').length;
+        setActiveUrgentAlertCount(urgentCount);
 
         // Auto-update active details panel if open
         if (activeAlertDetail) {
@@ -330,18 +324,39 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   };
 
   const handleAcknowledgeAlert = async (alertId: string) => {
-    // INSTANT SOUND TERMINATION: Stop device alarm sound synchronously on click before waiting for network API call
+    // INSTANT SOUND TERMINATION: Stop device alarm sound synchronously on click
     stopActiveUrgentAlertEffects(alertId);
-    urgentAlertEffectsManager.silenceAlert(alertId);
 
     setIsAcknowledgeInProgress(alertId);
     try {
       const res = await api.admin.acknowledgeSafetyAlert(alertId);
       if (res && res.success) {
-        showSuccess('Acknowledged', 'The safety alert has been marked as acknowledged.');
-        setSafetyAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'acknowledged', acknowledged_by_name: adminUser?.email?.split('@')[0] || 'Care Lead' } : a));
+        showSuccess('Response Underway', 'Alert acknowledged. Escalation stopped.');
+        const nowIso = new Date().toISOString();
+        const responderName = overviewData?.admin?.fullName || adminUser?.fullName || (adminUser?.email ? adminUser.email.split('@')[0] : 'Admin');
+
+        setSafetyAlerts(prev => prev.map(a => a.id === alertId ? {
+          ...a,
+          status: 'acknowledged',
+          acknowledged_by: adminUser?.id,
+          acknowledged_by_name: responderName,
+          acknowledged_at: nowIso
+        } : a));
+
+        setActiveUrgentAlert((prev: any) => {
+          if (prev && prev.id === alertId) {
+            return {
+              ...prev,
+              status: 'acknowledged',
+              acknowledged_by: adminUser?.id,
+              acknowledged_by_name: responderName,
+              acknowledged_at: nowIso
+            };
+          }
+          return prev;
+        });
       } else {
-        showError('Acknowledge Failed', 'Could not acknowledge alert at this moment.');
+        showError('Acknowledge Failed', (res as any)?.error || res?.message || 'Could not acknowledge alert at this moment.');
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
@@ -526,14 +541,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
   };
 
-
   // Fetch Admin Notifications
   const fetchNotificationsList = async (playFeedback = false) => {
     if (!api.getToken()) return;
     try {
       const list = await api.parent.getNotifications(false, 'admin');
       const unreadList = list.filter((n: any) => !n.isRead);
-      
+
       setNotifications((prevNotifications) => {
         // Compare with prevNotifications to find genuinely new unread notifications
         // Avoid sound on initial load (when prevNotifications is empty)
@@ -554,7 +568,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         }
         return list;
       });
-      
+
       setUnreadNotifCount(unreadList.length);
     } catch (err: any) {
       console.warn('[AdminOverview] Admin notifications poll fetch issue:', err?.message || err);
@@ -600,7 +614,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             const clientReceiptTime = new Date();
             const createdTime = new Date(payload.timestamp || (payload.data && payload.data.created_at) || new Date());
             const latencyMs = clientReceiptTime.getTime() - createdTime.getTime();
-            
+
             console.log('%c[EMERGENCY ALERT TIMING DIAGNOSTIC]', 'background: #DC2626; color: white; font-weight: bold; padding: 6px; border-radius: 4px;', {
               'Event Type': payload.type,
               'Submission/DB Timestamp (Server)': createdTime.toISOString(),
@@ -615,17 +629,44 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             if (payload.type === 'safety_alert_created') {
               const alertObj = {
                 id: alertId,
-                severity: payload.data?.severity || 'urgent',
-                category: payload.data?.category || 'general_help',
+                title: payload.title || 'Emergency care alert',
+                message: payload.message || '',
+                severity: payload.severity || payload.data?.severity || 'urgent',
+                category: payload.category || payload.data?.category || 'general_help',
+                location_label: payload.locationLabel || null,
+                raised_by_name: payload.raisedByName || 'Volunteer',
+                volunteer_phone: payload.volunteerPhone || null,
+                volunteer_team: payload.volunteerTeam || null,
                 status: 'open',
                 created_at: payload.timestamp || new Date().toISOString()
               };
-              // Trigger local sound & effects INSTANTLY from SSE packet before network fetch finishes
+              // 1. Trigger local sound & repeating siren instantly from SSE packet
               urgentAlertEffectsManager.syncAlerts([alertObj]);
-            } else if (payload.type === 'safety_alert_acknowledged' || payload.type === 'safety_alert_resolved') {
+              // 2. Open emergency dialog immediately (<100ms) without waiting for network fetch
+              setActiveUrgentAlert(alertObj);
+            } else if (payload.type === 'safety_alert_acknowledged') {
               if (alertId) {
                 stopActiveUrgentAlertEffects(alertId);
                 urgentAlertEffectsManager.silenceAlert(alertId);
+                // Multi-admin consistency: Update dialog in-place so other admins see "Response underway"
+                setActiveUrgentAlert((prev: any) => {
+                  if (prev && prev.id === alertId) {
+                    return {
+                      ...prev,
+                      status: 'acknowledged',
+                      acknowledged_by: payload.acknowledgedBy,
+                      acknowledged_by_name: payload.acknowledgedByName || 'Admin',
+                      acknowledged_at: payload.acknowledgedAt || new Date().toISOString()
+                    };
+                  }
+                  return prev;
+                });
+              }
+            } else if (payload.type === 'safety_alert_resolved') {
+              if (alertId) {
+                stopActiveUrgentAlertEffects(alertId);
+                urgentAlertEffectsManager.silenceAlert(alertId);
+                setActiveUrgentAlert((prev: any) => (prev && prev.id === alertId ? null : prev));
               }
             }
 
@@ -660,6 +701,19 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
+    };
+  }, []);
+
+  // Network Reconnect: Sync emergency state on reconnect (Requirement 21)
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[Network Online] Reconnected. Rechecking active emergency care alerts...');
+      fetchSafetyAlerts();
+      fetchNotificationsList();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
     };
   }, []);
 
@@ -875,20 +929,20 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       }
       console.error('[AdminOverviewView - fetchDashboardData Error]:', err);
       const parsed = extractApiError(err);
-      
+
       // Map generic "Connection problem" or other errors to highly informative but safe/classified operation errors
       let classifiedError = {
         message: 'Administrative Sync Interrupted',
         description: 'We could not reach the service to synchronize the administrative overview. Please check your network and try again.'
       };
-      
+
       if (parsed.message && parsed.message.toLowerCase().includes('auth')) {
         classifiedError = {
           message: 'Access Authorization Expired',
           description: 'Your session has expired or is invalid. Please sign in again.'
         };
       }
-      
+
       setDashboardError(classifiedError);
       setErrorUpdatingDemographics('We could not update demographics right now. Please try again.');
 
@@ -1084,7 +1138,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             />
           </div>
           {/* Mobile close button */}
-          <button 
+          <button
             onClick={() => setMobileMenuOpen(false)}
             className="lg:hidden text-zinc-500 hover:text-[#18181B] p-1 rounded-lg focus:outline-none"
           >
@@ -1097,7 +1151,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest px-3 mb-2">
             Ministry Admin
           </div>
-          
+
           {[
             { id: 'overview', label: 'Overview', icon: ClipboardList },
             { id: 'operations', label: 'Event Operations', icon: Activity },
@@ -1608,12 +1662,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   };
 
   return (
-    <div 
+    <div
       className="min-h-screen bg-[#FAF9F6] text-[#18181B] flex font-sans antialiased relative overflow-hidden"
       data-view-version="admin-layout-v2-approved-design"
       data-layout-mode="admin-responsive-v1"
     >
-      
+
       {/* DESKTOP SIDEBAR - Approved Light Background */}
       <aside className="w-64 bg-[#F9F8F3] flex flex-col justify-between shrink-0 border-r border-[#EAE8E1] hidden lg:flex">
         {renderSidebarContent()}
@@ -1623,9 +1677,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden">
           {/* Backdrop */}
-          <div 
+          <div
             onClick={() => setMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/40 transition-opacity backdrop-blur-xs" 
+            className="fixed inset-0 bg-black/40 transition-opacity backdrop-blur-xs"
           />
           {/* Drawer Panel */}
           <div className="relative flex w-full max-w-xs flex-1 flex-col bg-[#F9F8F3] h-full animate-slide-in-left shadow-2xl">
@@ -1636,7 +1690,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
       {/* RIGHT MAIN WINDOW */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        
+
         {/* Top bar header - Styled with warm ivory theme */}
         <header className="h-20 bg-white border-b border-[#EAE8E1] px-4 sm:px-8 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3 sm:space-x-4">
@@ -1648,7 +1702,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             >
               <Menu className="w-5.5 h-5.5" />
             </button>
-            
+
             <h1 className="text-base sm:text-lg font-serif font-medium text-zinc-800 tracking-normal">
               Children and Teens Admin
             </h1>
@@ -1852,7 +1906,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </button>
 
               {showNotifPanel && (
-                <div 
+                <div
                   className="absolute right-0 mt-2 w-80 sm:w-[420px] bg-[#FCFBF9] border border-[#EAE8E1] rounded-[24px] shadow-2xl overflow-hidden z-50 animate-fade-in"
                   data-component-version="admin-notification-panel-v3-premium"
                 >
@@ -1861,14 +1915,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       <h4 className="font-serif font-bold text-base text-[#18181B] tracking-tight">Updates & Care Alerts</h4>
                       <p className="text-[11px] text-[#C59B27] font-medium font-sans mt-0.5 uppercase tracking-wider">Active child review actions</p>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <button
                         onClick={toggleSound}
                         data-component-version="admin-sound-notification-toggle-v3"
                         className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                          soundEnabled 
-                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
+                          soundEnabled
+                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]'
                             : 'bg-zinc-100 border-zinc-200 text-zinc-400'
                         }`}
                         title={soundEnabled ? 'Mute Alert Chimes' : 'Unmute Alert Chimes'}
@@ -1888,8 +1942,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         onClick={togglePush}
                         data-component-version="admin-push-notification-toggle-v2"
                         className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                          pushEnabled 
-                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]' 
+                          pushEnabled
+                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]'
                             : 'bg-zinc-100 border-zinc-200 text-zinc-400'
                         }`}
                         title={pushEnabled ? 'Disable Push Notifications' : 'Enable Push Notifications'}
@@ -1946,11 +2000,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                       return listToRender.map((notif: any) => {
                         const isUnread = !notif.isRead;
-                        
+
                         // Select premium icon + colors based on notification metadata
                         let IconComponent = Bell;
                         let iconBgClass = "bg-zinc-100 text-zinc-500";
-                        
+
                         if (notif.type === 'escalation') {
                           IconComponent = ShieldAlert;
                           iconBgClass = "bg-[#FFF0F0] text-[#E05252] border border-[#FFD1D1]";
@@ -1966,7 +2020,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         }
 
                         return (
-                          <div 
+                          <div
                             key={notif.id}
                             className={`p-4 flex items-start gap-4 hover:bg-[#FAF9F6] transition-colors text-left relative ${
                               isUnread ? 'bg-[#FCFBF9]' : 'bg-white/60'
@@ -2003,7 +2057,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       const cid = notif.metadata?.childId || notif.metadata?.child_id || notif.childId;
                                       const aid = notif.metadata?.applicationId || notif.metadata?.application_id || notif.applicationId;
                                       const alertId = notif.metadata?.safetyAlertId || notif.metadata?.safety_alert_id || notif.metadata?.alertId;
-                                      
+
                                       if (alertId) {
                                         setActiveTab('overview');
                                         setShowNotifPanel(false);
@@ -2027,7 +2081,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         // Deep link states set
                                         if (aid) setInitialApplicationId(aid);
                                         setInitialChildId(cid);
-                                        
+
                                         // Navigate to Review Board Tab
                                         setActiveTab('review');
                                         setShowNotifPanel(false);
@@ -2036,7 +2090,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                         setActiveTab('overview');
                                         setShowNotifPanel(false);
                                       }
-                                      
+
                                       if (isUnread) {
                                         try {
                                           await api.parent.markNotificationAsRead(notif.id);
@@ -2128,10 +2182,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
         {/* Dashboard Main container */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6 sm:space-y-8 bg-[#FAF9F6]">
-          
+
           {/* URGENT EMERGENCY ALERT PERSISTENT BANNER */}
           {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length > 0 && (
-            <div 
+            <div
               className="bg-[#FFF8F8] border-l-4 border-red-600 border border-red-200/80 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in font-sans"
               data-view-version="urgent-alert-persistent-banner-v2"
             >
@@ -2165,7 +2219,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             "{alert.message}"
                           </p>
                         )}
-                        
+
                         {/* Inline Resolution form if resolving is clicked */}
                         {resolvingAlertId === alert.id && (
                           <div className="mt-3 bg-white border border-red-200 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
@@ -2254,7 +2308,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* IMPORTANT ALERT PERSISTENT BANNER */}
           {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').length > 0 && (
-            <div 
+            <div
               className="bg-[#FFFDF3] border-l-4 border-amber-500 border border-[#F5E6BE]/80 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in"
               data-view-version="important-alert-banner-v1"
             >
@@ -2285,7 +2339,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             "{alert.message}"
                           </p>
                         )}
-                        
+
                         {/* Inline Resolution form if resolving is clicked */}
                         {resolvingAlertId === alert.id && (
                           <div className="mt-3 bg-white border border-amber-200 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
@@ -2358,7 +2412,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </div>
             </div>
           )}
-          
+
           {/* TAB 1: OVERVIEW DASHBOARD */}
           {activeTab === 'overview' && (
             <div data-view-version="admin-overview-v2-approved-design">
@@ -2854,7 +2908,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     </div>
                   )}
 
-
                   {/* Slim warm alert strip for pending reviews (restyled) */}
                   {stats.pendingVolunteers > 0 && (
                     <div className="bg-[#FFFDF5] border border-[#F5E6BE] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs text-amber-800 shadow-xs mb-6 animate-fade-in">
@@ -2886,7 +2939,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   ) : (
                     <div className="space-y-6 sm:space-y-8">
                       {/* Event Hero Block */}
-                      <div 
+                      <div
                         className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6 shadow-xs"
                         data-component-version="admin-event-hero-approved-v1"
                       >
@@ -2899,7 +2952,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               Registration Open
                             </span>
                           </div>
-                          
+
                           <div>
                             <h2 className="font-serif text-2xl sm:text-3xl font-semibold text-zinc-800 tracking-tight">
                               {overviewData?.event?.name || 'The General Assembly'}
@@ -2939,10 +2992,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                       {/* Split Main Content Area */}
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 items-start">
-                        
+
                         {/* LEFT COLUMN: Overview Metrics & Demographics */}
                         <div className="lg:col-span-2 space-y-6 sm:space-y-8">
-                          
+
                           {/* Overview Metrics section */}
                           <div className="space-y-4" data-component-version="admin-overview-metrics-approved-v1">
                             <h3 className="font-serif text-lg font-medium text-zinc-800 tracking-normal">
@@ -2959,8 +3012,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 { label: 'Checked In', val: stats.checkedIn, sub: 'on-site today', tab: 'attendance' },
                                 { label: 'Picked Up', val: stats.pickedUp, sub: 'safely released', tab: 'attendance' }
                               ].map((item, idx) => (
-                                <button 
-                                  key={idx} 
+                                <button
+                                  key={idx}
                                   onClick={() => handleTabChange(item.tab as AdminTab)}
                                   className="bg-white border border-[#EAE8E1] rounded-2xl p-5 hover:shadow-md transition-all text-left duration-300 relative group cursor-pointer focus:outline-none"
                                 >
@@ -3007,7 +3060,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
                                   <span>Refresh counts</span>
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => setActiveTab('reports')}
                                   className="text-xs text-[#C59B27] font-semibold hover:underline"
                                 >
@@ -3081,9 +3134,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                         {/* RIGHT COLUMN: Insight Panels */}
                         <div className="space-y-6 sm:space-y-8">
-                          
+
                           {/* Needs attention Panel */}
-                          <div 
+                          <div
                             className="bg-[#FFF5F5] border border-[#FEE2E2] rounded-2xl p-5 space-y-4"
                             data-component-version="admin-needs-attention-approved-v1"
                           >
@@ -3107,7 +3160,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                     <span className="text-zinc-700 font-medium">{item.label}</span>
                                     <div className="flex items-center space-x-2">
                                       <span className="font-bold text-red-700 mr-1.5">{item.count}</span>
-                                      <button 
+                                      <button
                                         onClick={() => setActiveAttentionModal({ id: item.id, label: item.label })}
                                         className="text-red-700 font-semibold hover:underline"
                                       >
@@ -3121,7 +3174,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           {/* Review Progress Panel */}
-                          <div 
+                          <div
                             className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4"
                             data-component-version="admin-review-progress-approved-v1"
                           >
@@ -3153,7 +3206,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           {/* Today's Attendance Panel */}
-                          <div 
+                          <div
                             className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4"
                             data-component-version="admin-attendance-approved-v1"
                           >
@@ -3188,7 +3241,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           {/* Recent Activity Panel */}
-                          <div 
+                          <div
                             className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
                             data-component-version="admin-recent-activity-refined-v2"
                           >
@@ -3196,7 +3249,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
                                 Recent activity
                               </h3>
-                              <button 
+                              <button
                                 onClick={() => setActiveTab('attendance')}
                                 className="text-xs font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
                               >
@@ -3228,7 +3281,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           {/* Care & Safety Panel */}
-                          <div 
+                          <div
                             className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
                             data-component-version="admin-care-safety-refined-v2"
                           >
@@ -3239,7 +3292,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               <div className="flex items-center gap-2 text-xs text-zinc-400 font-normal">
                                 <span>{safetyAlerts.length}</span>
                                 <span className="text-zinc-300">·</span>
-                                <button 
+                                <button
                                   onClick={() => setActiveTab('review')}
                                   className="font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
                                 >
@@ -3294,7 +3347,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           {/* Alert Sound Readiness Panel */}
-                          <div 
+                          <div
                             className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
                             data-component-version="admin-alert-sound-readiness-v2"
                           >
@@ -3316,7 +3369,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </div>
 
                             <p className="text-xs text-zinc-600 leading-relaxed font-normal">
-                              {soundEnabled !== false 
+                              {soundEnabled !== false
                                 ? 'Important alerts can be heard on this device.'
                                 : "Turn up this device's volume so important alerts can be heard."}
                             </p>
@@ -3357,7 +3410,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* TAB 2: SYSTEM SETTINGS - Ivory and Cream design restyled */}
           {activeTab === 'settings' && (
-            <AdminSettingsView 
+            <AdminSettingsView
               onBackToOverview={() => handleTabChange('overview')}
               isSuperAdmin={isSuperAdmin}
               adminUser={adminUser}
@@ -3370,7 +3423,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* APPLICATIONS REGISTRY VIEW PANEL */}
           {activeTab === 'applications' && (
-            <AdminApplicationsView 
+            <AdminApplicationsView
               onBackToOverview={() => handleTabChange('overview')}
               adminUser={adminUser}
               isSuperAdmin={isSuperAdmin}
@@ -3379,8 +3432,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* REVIEW BOARD VIEW PANEL */}
           {activeTab === 'review' && (
-            <AdminReviewBoardView 
-              onBackToOverview={() => handleTabChange('overview')} 
+            <AdminReviewBoardView
+              onBackToOverview={() => handleTabChange('overview')}
               initialApplicationId={initialApplicationId}
               initialChildId={initialChildId}
               onClearInitialParams={() => {
@@ -3398,16 +3451,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* ATTENDANCE VIEW PANEL */}
           {activeTab === 'attendance' && (
-            <AdminAttendanceView 
-              onBackToOverview={() => handleTabChange('overview')} 
+            <AdminAttendanceView
+              onBackToOverview={() => handleTabChange('overview')}
               onNavigate={onNavigate}
             />
           )}
 
           {/* REPORTS VIEW PANEL */}
           {activeTab === 'reports' && (
-            <AdminReportsView 
-              onBackToOverview={() => handleTabChange('overview')} 
+            <AdminReportsView
+              onBackToOverview={() => handleTabChange('overview')}
               onNavigate={onNavigate}
               currentRoute={currentRoute}
             />
@@ -3415,8 +3468,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* MESSAGES VIEW PANEL */}
           {activeTab === 'messages' && (
-            <AdminMessagesView 
-              onBackToOverview={() => handleTabChange('overview')} 
+            <AdminMessagesView
+              onBackToOverview={() => handleTabChange('overview')}
               onNavigate={onNavigate}
               adminUser={adminUser}
             />
@@ -3430,9 +3483,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {/* PARENTS MODULE VIEW PANEL */}
           {activeTab === 'parents' && (
             currentRoute && currentRoute.startsWith('/admin/parents/') ? (
-              <AdminParentDetailView 
-                parentId={currentRoute.split('/').pop() || ''} 
-                onNavigate={onNavigate} 
+              <AdminParentDetailView
+                parentId={currentRoute.split('/').pop() || ''}
+                onNavigate={onNavigate}
                 onBack={() => onNavigate('/admin/parents')}
                 adminUser={adminUser}
               />
@@ -3453,7 +3506,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* INCIDENT DESK RECORDS CENTRE */}
           {activeTab === 'incidents' && (
-            <AdminIncidentRecordsCentre 
+            <AdminIncidentRecordsCentre
               onBackToOverview={() => handleTabChange('overview')}
               adminUser={adminUser}
             />
@@ -3466,7 +3519,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* LIVE EVENT OPERATIONS DASHBOARD */}
           {activeTab === 'operations' && (
-            <AdminOperationsDashboardView 
+            <AdminOperationsDashboardView
               onBackToOverview={() => handleTabChange('overview')}
               adminUser={adminUser}
               onNavigate={onNavigate}
@@ -3483,9 +3536,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {/* ATTENTION CATEGORY FILTER MODAL */}
       {activeAttentionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
+          <div
             onClick={() => setActiveAttentionModal(null)}
-            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
           />
           <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in space-y-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
@@ -3495,7 +3548,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   {activeAttentionModal.label} List
                 </h4>
               </div>
-              <button 
+              <button
                 onClick={() => setActiveAttentionModal(null)}
                 className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg"
               >
@@ -3551,13 +3604,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {/* EVENT SAFETY ALERT DETAIL & RESOLUTION MODAL */}
       {activeAlertDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
+          <div
             onClick={() => setActiveAlertDetail(null)}
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs" 
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs"
           />
           <div className="relative bg-[#FAF9F6] border border-[#EAE8E1] rounded-[28px] w-full max-w-xl shadow-2xl animate-fade-in max-h-[90vh] flex flex-col overflow-hidden" id="coordination-panel-modal">
             <ActiveResponseCoordinationPanel
               alertId={activeAlertDetail.id}
+              initialAlert={activeAlertDetail}
               currentUser={{
                 id: adminUser?.id || 'temp-id',
                 role: adminUser?.role || 'admin',
@@ -3882,7 +3936,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         </div>
       )}
 
-
       {activeEmergencySummaryAlertId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-[#FAF9F5] rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#EAE8E1]">
@@ -3899,8 +3952,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
-              <ChildEmergencySummary 
-                alertId={activeEmergencySummaryAlertId} 
+              <ChildEmergencySummary
+                alertId={activeEmergencySummaryAlertId}
                 onClose={() => setActiveEmergencySummaryAlertId(null)}
                 isAdmin={true}
                 onRefreshAlert={() => {
