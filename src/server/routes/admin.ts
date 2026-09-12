@@ -4761,6 +4761,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         vp.status,
         u.email,
         u.id as "userId",
+        vp.user_id as "user_id",
         (SELECT COUNT(DISTINCT ps.id) FROM push_subscriptions ps WHERE ps.user_id = u.id AND ps.revoked_at IS NULL) as "pushCount",
         pp.id as "parentProfileId",
         pp.whatsapp_consent_status as "parentConsentStatus"
@@ -4774,7 +4775,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
     `);
 
     for (const v of eventVolunteers) {
-      const duty = v.userId ? await resolveUserDutyLocation(v.userId, eventId) : null;
+      const uId = v.userId || v.user_id || v.userid;
+      const duty = uId ? await resolveUserDutyLocation(uId, eventId) : null;
       v.dutyLocation = duty?.name || null;
       v.dutyTeam = duty?.team || duty?.teamKey || v.preferredTeam || v.department || 'Volunteer';
     }

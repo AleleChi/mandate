@@ -7,7 +7,8 @@ import {
   calculateEffectiveEligibility,
   getWhatsAppAudienceDescription,
   getPushPreviewFooterText,
-  validateRequiredVolunteerTokens
+  validateRequiredVolunteerTokens,
+  evaluateSendButtonState
 } from '../src/views/admin/AdminMessagesView';
 import { resolveMessageTokens as serverResolveMessageTokens } from '../src/server/utils/urlHelper';
 import { resolveMessageTokens as clientResolveMessageTokens } from '../src/utils/urlHelper';
@@ -491,6 +492,176 @@ async function runTests() {
           assert(typeof duty.name === 'string', 'Duty location must have a name string');
         }
       }
+    });
+
+    // 17. Send Button Validation & Blocker State Evaluation
+    await test('Send button evaluation correctly enables send for valid volunteer context and blocks with staff-facing reason when invalid', () => {
+      const aleleVolunteer = { name: 'Alele Chi', dutyLocation: null, team: 'Teens Team' };
+
+      // 17a. Duty Reminder + resolved location + Push eligible → send enabled
+      const resPushOnly = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty session at {Location} for {Event name}.',
+        subject: 'Duty Reminder - The General Assembly',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 0, whatsappOptedIn: 0 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resPushOnly.isEnabled === true, `Expected send enabled with Push only, got: ${resPushOnly.blockerReason}`);
+      assert(resPushOnly.blockerReason === null, 'Blocker reason must be null');
+
+      // 17b. Duty Reminder + resolved location + Email eligible → send enabled
+      const resEmailOnly = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty session at {Location} for {Event name}.',
+        subject: 'Duty Reminder - The General Assembly',
+        activeGroupRecipients: 1,
+        selectedChannels: ['email'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 0, email: 1, whatsappOptedIn: 0 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resEmailOnly.isEnabled === true, `Expected send enabled with Email only, got: ${resEmailOnly.blockerReason}`);
+
+      // 17c. Duty Reminder + Push + Email eligible → send enabled
+      const resPushAndEmail = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty session at {Location} for {Event name}.',
+        subject: 'Duty Reminder - The General Assembly',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push', 'email'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 1, whatsappOptedIn: 0 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resPushAndEmail.isEnabled === true, `Expected send enabled with Push + Email, got: ${resPushAndEmail.blockerReason}`);
+
+      // 17d. WhatsApp unavailable (0 available) but not selected does NOT disable send
+      const resWaUnselected = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty session at {Location} for {Event name}.',
+        subject: 'Duty Reminder',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push', 'email'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 1, whatsappOptedIn: 0 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resWaUnselected.isEnabled === true, 'WhatsApp unavailable must not disable send when WhatsApp is not selected');
+
+      // 17e. In-app unchecked does NOT disable send
+      const resInAppUnchecked = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty session at {Location} for {Event name}.',
+        subject: 'Duty Reminder',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { inApp: 1, push: 1, email: 1, whatsappOptedIn: 0 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resInAppUnchecked.isEnabled === true, 'Unchecking in-app notification must not disable send when push is eligible');
+
+      // 17f. Raw template contains {Location} and {Volunteer name} but resolved location exists → send enabled
+      const resRawTemplate = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nYour duty assignment is at {Location} for {Event name}.',
+        subject: 'Duty Reminder - {Event name}',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push', 'email'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 1 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resRawTemplate.isEnabled === true, 'Raw template tokens must not block send when resolved data exists');
+
+      // 17g. Genuinely missing location → send disabled
+      const resMissingLocation = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty at {Location}.',
+        subject: 'Duty Reminder',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push', 'email'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 1 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [{ name: 'Unassigned Volunteer', dutyLocation: null, team: 'Logistics' }],
+        resolvedVolunteerLocation: null
+      });
+      assert(resMissingLocation.isEnabled === false, 'Genuinely missing duty location must disable send');
+
+      // 17h. Missing location gives staff-facing reason
+      assert(
+        resMissingLocation.blockerReason === 'Unassigned Volunteer does not have a duty location assigned yet.',
+        `Expected staff-facing reason, got: ${resMissingLocation.blockerReason}`
+      );
+
+      // 17i. No eligible selected channels → send disabled
+      const resNoEligibleChannels = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty update.',
+        subject: 'Duty Reminder',
+        activeGroupRecipients: 1,
+        selectedChannels: ['whatsapp'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 1, whatsappOptedIn: 0 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [aleleVolunteer],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resNoEligibleChannels.isEnabled === false, 'Send must be disabled when selected channels have 0 eligible recipients');
+      assert(
+        resNoEligibleChannels.blockerReason === 'Selected delivery methods have no eligible recipients.',
+        `Expected channel blocker message, got: ${resNoEligibleChannels.blockerReason}`
+      );
+
+      // 17j. Selected volunteer + valid context + valid channel → send enabled
+      const resFullValid = evaluateSendButtonState({
+        actionLoading: false,
+        body: 'Dear {Volunteer name},\nDuty session at {Location}.',
+        subject: 'Duty Reminder',
+        activeGroupRecipients: 1,
+        selectedChannels: ['push', 'email'],
+        emailEnabled: true,
+        whatsappEnabled: true,
+        effectiveEligibility: { push: 1, email: 1 },
+        isVolAudience: true,
+        selectedType: 'duty_reminder',
+        targetVolunteers: [{ name: 'Alele Chi', dutyLocation: 'Grace Hall Primary', team: 'Teens Team' }],
+        resolvedVolunteerLocation: 'Grace Hall Primary'
+      });
+      assert(resFullValid.isEnabled === true, 'Valid volunteer with assigned location and channel must be enabled');
+      assert(resFullValid.blockerReason === null, 'Blocker reason must be null for valid state');
     });
 
   } finally {

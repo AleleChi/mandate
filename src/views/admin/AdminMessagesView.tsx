@@ -365,6 +365,78 @@ export function validateRequiredVolunteerTokens(params: {
   return { valid: true };
 }
 
+export function evaluateSendButtonState(params: {
+  actionLoading: boolean;
+  body: string;
+  subject: string;
+  activeGroupRecipients: number;
+  selectedChannels: string[];
+  emailEnabled: boolean;
+  whatsappEnabled: boolean;
+  effectiveEligibility: {
+    inApp?: number;
+    push?: number;
+    email?: number;
+    whatsappOptedIn?: number;
+  } | null;
+  isVolAudience: boolean;
+  selectedType: string;
+  targetVolunteers: Array<{ name: string; dutyLocation?: string | null; team?: string | null }>;
+  resolvedVolunteerLocation?: string | null;
+}): { isEnabled: boolean; blockerReason: string | null } {
+  const {
+    actionLoading,
+    body,
+    subject,
+    activeGroupRecipients,
+    selectedChannels,
+    emailEnabled,
+    whatsappEnabled,
+    effectiveEligibility,
+    isVolAudience,
+    selectedType,
+    targetVolunteers,
+    resolvedVolunteerLocation
+  } = params;
+
+  if (actionLoading) return { isEnabled: false, blockerReason: 'Sending announcement...' };
+  if (!body.trim()) return { isEnabled: false, blockerReason: 'Write a message before sending.' };
+  if (activeGroupRecipients === 0) return { isEnabled: false, blockerReason: 'No recipients selected.' };
+  if (selectedChannels.length === 0) return { isEnabled: false, blockerReason: 'Select at least one delivery method.' };
+
+  // At least one selected channel must have at least one eligible recipient
+  const hasEligibleSelectedChannel = selectedChannels.some(ch => {
+    if (ch === 'in_app') return (effectiveEligibility?.inApp ?? 0) > 0;
+    if (ch === 'push') return (effectiveEligibility?.push ?? 0) > 0;
+    if (ch === 'email') return emailEnabled && (effectiveEligibility?.email ?? 0) > 0;
+    if (ch === 'whatsapp') return whatsappEnabled && (effectiveEligibility?.whatsappOptedIn ?? 0) > 0;
+    return false;
+  });
+
+  if (!hasEligibleSelectedChannel) {
+    return { isEnabled: false, blockerReason: 'Selected delivery methods have no eligible recipients.' };
+  }
+
+  // Location requirement check for volunteers: Duty reminder or template with {Location}
+  const requiresLocation = isVolAudience && (selectedType === 'duty_reminder' || /\{Location\}/i.test(body) || /\{Location\}/i.test(subject));
+  if (requiresLocation) {
+    const unassigned = targetVolunteers.filter(v => {
+      const loc = v.dutyLocation || (targetVolunteers.length === 1 ? resolvedVolunteerLocation : null);
+      return !loc || !loc.trim();
+    });
+
+    if (unassigned.length > 0) {
+      const names = unassigned.map(v => v.name || 'Selected volunteer').join(', ');
+      return {
+        isEnabled: false,
+        blockerReason: `${names} does not have a duty location assigned yet.`
+      };
+    }
+  }
+
+  return { isEnabled: true, blockerReason: null };
+}
+
 export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: AdminMessagesViewProps) {
   const { showSuccess, showError } = useNotification();
   const isSuperAdmin = adminUser?.role === 'super_admin';
@@ -447,6 +519,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const [selectedVolunteerIds, setSelectedVolunteerIds] = useState<string[]>([]);
   const [volunteerSearchQuery, setVolunteerSearchQuery] = useState('');
   const [previewRepresentativeVolunteer, setPreviewRepresentativeVolunteer] = useState<string | null>(null);
+  const [previewRepresentativeTeam, setPreviewRepresentativeTeam] = useState<string | null>(null);
+  const [previewRepresentativeLocation, setPreviewRepresentativeLocation] = useState<string | null>(null);
   const [volunteerMessageTypes, setVolunteerMessageTypes] = useState<any[]>([]);
   const [channelEligibility, setChannelEligibility] = useState<{
     inApp: number;
@@ -757,14 +831,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           const mappedVolunteers = data.eventVolunteers.map((v: any) => ({
             id: v.id,
             name: v.name,
-            team: v.dutyTeam || v.preferredTeam || v.department || 'Volunteer',
-            dutyLocation: v.dutyLocation || null,
+            team: v.dutyTeam || v.duty_team || v.preferredTeam || v.department || 'Volunteer',
+            dutyLocation: v.dutyLocation || v.duty_location || null,
             status: v.status,
             email: v.email || '',
             phone: v.phone || '',
             whatsappNumber: v.whatsappNumber || v.phone || '',
             whatsappConsentStatus: v.parentConsentStatus || 'unknown',
-            userId: v.userId,
+            userId: v.userId || v.user_id,
             pushCount: Number(v.pushCount || 0),
             isParent: Boolean(v.parentProfileId)
           }));
@@ -871,6 +945,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         setPreviewBody(res.preview.body);
         setPreviewRepresentativeParent(res.preview.representativeParentName || null);
         setPreviewRepresentativeVolunteer(res.preview.representativeVolunteerName || null);
+        const previewData = res.preview as any;
+        if (previewData.representativeTeam) {
+          setPreviewRepresentativeTeam(previewData.representativeTeam);
+        }
+        if (previewData.representativeLocation) {
+          setPreviewRepresentativeLocation(previewData.representativeLocation);
+        }
       }
     } catch (err) {
       console.error('Preview error:', err);
@@ -1150,7 +1231,6 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     }
 
     if (isVolAudience) {
-      const targetVolunteers = isSpecificVolunteers ? selectedVolunteersList : eventVolunteers;
       const validation = validateRequiredVolunteerTokens({
         messageType: selectedType,
         subject,
@@ -1370,8 +1450,64 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const resolvedVolunteerName = previewRepresentativeVolunteer
     || resolvedVolunteerObj?.name
     || 'Approved Volunteer';
-  const resolvedVolunteerTeam = resolvedVolunteerObj?.team || 'Logistics';
-  const resolvedVolunteerLocation = resolvedVolunteerObj?.dutyLocation || '';
+  const resolvedVolunteerTeam = previewRepresentativeTeam
+    || resolvedVolunteerObj?.team
+    || 'Logistics';
+  const resolvedVolunteerLocation = previewRepresentativeLocation
+    || resolvedVolunteerObj?.dutyLocation
+    || '';
+
+  const resolvedVolunteerContext = useMemo(() => ({
+    volunteerName: resolvedVolunteerName,
+    team: resolvedVolunteerTeam,
+    location: resolvedVolunteerLocation,
+    eventName: resolvedEventName
+  }), [resolvedVolunteerName, resolvedVolunteerTeam, resolvedVolunteerLocation, resolvedEventName]);
+
+  const getResolvedVolunteerLocation = (v: any) => {
+    if (!v) return '';
+    if (isSpecificVolunteers && selectedVolunteersList.length === 1) {
+      return resolvedVolunteerLocation || v.dutyLocation || '';
+    }
+    if (v.id === resolvedVolunteerObj?.id) {
+      return resolvedVolunteerLocation || v.dutyLocation || '';
+    }
+    return v.dutyLocation || '';
+  };
+
+  const getResolvedVolunteerTeam = (v: any) => {
+    if (!v) return 'Volunteer';
+    if (isSpecificVolunteers && selectedVolunteersList.length === 1) {
+      return resolvedVolunteerTeam || v.team || 'Volunteer';
+    }
+    if (v.id === resolvedVolunteerObj?.id) {
+      return resolvedVolunteerTeam || v.team || 'Volunteer';
+    }
+    return v.team || 'Volunteer';
+  };
+
+  const targetVolunteers = useMemo(() => {
+    return (isSpecificVolunteers ? selectedVolunteersList : eventVolunteers).map(v => ({
+      ...v,
+      dutyLocation: getResolvedVolunteerLocation(v),
+      team: getResolvedVolunteerTeam(v)
+    }));
+  }, [isSpecificVolunteers, selectedVolunteersList, eventVolunteers, resolvedVolunteerLocation, resolvedVolunteerTeam]);
+
+  const sendEvaluation = evaluateSendButtonState({
+    actionLoading,
+    body,
+    subject,
+    activeGroupRecipients,
+    selectedChannels,
+    emailEnabled,
+    whatsappEnabled,
+    effectiveEligibility,
+    isVolAudience,
+    selectedType,
+    targetVolunteers,
+    resolvedVolunteerLocation
+  });
 
   const resolvedPreviewSubject = isVolAudience
     ? resolveMessageTokens(previewSubject || subject || '', {
@@ -2898,9 +3034,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               </div>
 
               {/* Duty Location Warning before Send */}
-              {isVolAudience && (selectedType === 'duty_reminder' || body.includes('{Location}') || subject.includes('{Location}')) && (() => {
-                const targetVols = isSpecificVolunteers ? selectedVolunteersList : eventVolunteers;
-                const unassigned = targetVols.filter(v => !v.dutyLocation);
+              {isVolAudience && (selectedType === 'duty_reminder' || /\{Location\}/i.test(body) || /\{Location\}/i.test(subject)) && (() => {
+                const unassigned = targetVolunteers.filter(v => !v.dutyLocation);
                 if (unassigned.length === 0) return null;
                 return (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start space-x-2.5">
@@ -2920,9 +3055,16 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
               {/* Footer */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#EAE8E1]">
-                <span className="text-xs text-zinc-500">
-                  Sending to: <strong>{activeGroupRecipients} {isSpecificParents ? (activeGroupRecipients === 1 ? 'parent' : 'parents') : isSpecificVolunteers ? (activeGroupRecipients === 1 ? 'volunteer' : 'volunteers') : (activeGroupRecipients === 1 ? 'recipient' : 'recipients')}</strong>
-                </span>
+                <div className="flex flex-col space-y-1">
+                  <span className="text-xs text-zinc-500">
+                    Sending to: <strong>{activeGroupRecipients} {isSpecificParents ? (activeGroupRecipients === 1 ? 'parent' : 'parents') : isSpecificVolunteers ? (activeGroupRecipients === 1 ? 'volunteer' : 'volunteers') : (activeGroupRecipients === 1 ? 'recipient' : 'recipients')}</strong>
+                  </span>
+                  {!sendEvaluation.isEnabled && sendEvaluation.blockerReason && (
+                    <span className="text-[11px] text-amber-700 font-medium">
+                      {sendEvaluation.blockerReason}
+                    </span>
+                  )}
+                </div>
 
                 <div className="flex items-center space-x-2">
                   <Button
@@ -2938,15 +3080,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   <button
                     type="button"
                     onClick={handleSendRequest}
-                    disabled={
-                      actionLoading ||
-                      !body.trim() ||
-                      activeGroupRecipients === 0 ||
-                      selectedChannels.length === 0 ||
-                      (selectedChannels.includes('email') && !emailEnabled) ||
-                      (selectedChannels.includes('whatsapp') && (!whatsappEnabled || (effectiveEligibility?.whatsappOptedIn === 0))) ||
-                      (isVolAudience && (selectedType === 'duty_reminder' || body.includes('{Location}') || subject.includes('{Location}')) && (isSpecificVolunteers ? selectedVolunteersList : eventVolunteers).some(v => !v.dutyLocation))
-                    }
+                    disabled={!sendEvaluation.isEnabled}
                     className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
                   >
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
