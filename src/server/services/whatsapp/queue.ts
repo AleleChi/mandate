@@ -3,7 +3,8 @@ import { execute, queryOne } from '../../db';
 
 export interface EnqueueWhatsAppJobParams {
   eventId: string;
-  parentId: string;
+  parentId?: string | null;
+  userId?: string | null;
   childId?: string | null;
   ruleId?: string | null;
   idempotencyKey?: string;
@@ -23,6 +24,7 @@ export function buildIdempotencyKey(scope: {
   type: 'campaign' | 'child_event' | 'test';
   campaignId?: string;
   parentId?: string;
+  userId?: string;
   childId?: string;
   eventType?: string;
   entryId?: string;
@@ -33,7 +35,10 @@ export function buildIdempotencyKey(scope: {
     if (scope.childId) {
       return `campaign:${scope.campaignId || 'general'}:parent:${scope.parentId || 'unknown'}:child:${scope.childId}:whatsapp`;
     }
-    return `campaign:${scope.campaignId || 'general'}:parent:${scope.parentId || 'unknown'}:whatsapp`;
+    if (scope.parentId) {
+      return `campaign:${scope.campaignId || 'general'}:parent:${scope.parentId}:whatsapp`;
+    }
+    return `campaign:${scope.campaignId || 'general'}:volunteer:${scope.userId || 'unknown'}:whatsapp`;
   }
   if (scope.type === 'child_event') {
     return `event:${scope.eventType || 'notice'}:entry:${scope.entryId || 'unknown'}:${scope.version || 'v1'}:whatsapp`;
@@ -98,7 +103,8 @@ export async function enqueueWhatsAppJob(params: EnqueueWhatsAppJobParams): Prom
   const idempotencyKey = params.idempotencyKey || buildIdempotencyKey({
     type: 'campaign',
     campaignId: ruleId || 'broadcast',
-    parentId: params.parentId
+    parentId: params.parentId || undefined,
+    userId: params.userId || undefined
   });
 
   // 1. Check for existing job by idempotency_key
@@ -118,10 +124,10 @@ export async function enqueueWhatsAppJob(params: EnqueueWhatsAppJobParams): Prom
   }
 
   // Fallback check for legacy jobs without idempotency_key
-  const legacyExisting = ruleId ? await queryOne(`
+  const legacyExisting = (ruleId && (params.parentId || params.userId)) ? await queryOne(`
     SELECT id FROM notification_jobs 
-    WHERE rule_id = ? AND parent_id = ? AND scheduled_for = ? AND channel = 'whatsapp'
-  `, [ruleId, params.parentId, scheduledFor]) : null;
+    WHERE rule_id = ? AND (parent_id = ? OR user_id = ?) AND scheduled_for = ? AND channel = 'whatsapp'
+  `, [ruleId, params.parentId || null, params.userId || null, scheduledFor]) : null;
 
   if (legacyExisting) {
     return {
@@ -137,18 +143,19 @@ export async function enqueueWhatsAppJob(params: EnqueueWhatsAppJobParams): Prom
   try {
     await execute(`
       INSERT INTO notification_jobs (
-        id, event_id, rule_id, parent_id, child_id, channel, scheduled_for, status, idempotency_key, attempt_count, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 'whatsapp', ?, 'pending', ?, 0, ?, ?)
+        id, event_id, rule_id, parent_id, child_id, channel, scheduled_for, status, idempotency_key, attempt_count, created_at, updated_at, user_id
+      ) VALUES (?, ?, ?, ?, ?, 'whatsapp', ?, 'pending', ?, 0, ?, ?, ?)
     `, [
       jobId,
       params.eventId,
       ruleId,
-      params.parentId,
+      params.parentId || null,
       params.childId || null,
       scheduledFor,
       idempotencyKey || null,
       nowStr,
-      nowStr
+      nowStr,
+      params.userId || null
     ]);
 
     return {

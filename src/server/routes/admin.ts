@@ -4895,6 +4895,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         else if (hasSent) waStatus = 'sent';
         else if (hasFailed && !hasSent && !hasDelivered && !hasRead) waStatus = 'failed';
         else if (hasPending) waStatus = 'queued';
+        else if (log.status === 'failed' || (!hasPending && pendingJobs.length === 0 && delivLogs.length === 0)) waStatus = 'failed';
         else if (log.status === 'sent') waStatus = 'sent';
       }
 
@@ -4913,7 +4914,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
           else if (waStatus === 'delivered') capStatus = 'Delivered';
           else if (waStatus === 'sent') capStatus = 'Sent';
           else if (waStatus === 'failed') capStatus = 'Failed';
-          else capStatus = 'Sending';
+          else if (hasPending) capStatus = 'Sending';
+          else capStatus = 'Failed';
 
           channelStatuses.push({
             channel: 'whatsapp',
@@ -6644,6 +6646,42 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
               }
             }
           }
+        } else if (isVolunteerAudience) {
+          // VOLUNTEER BROADCAST RULE:
+          // Filter strictly for eligible volunteers: active volunteer + current event/system + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
+          const volunteerUserIds = Array.from(new Set(rows.map((r: any) => r.user_id).filter(Boolean))) as string[];
+
+          for (const uid of volunteerUserIds) {
+            const vProfile = await queryOne(`
+              SELECT id, user_id, phone, whatsapp, whatsapp_consent_status, status
+              FROM volunteer_profiles
+              WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+              LIMIT 1
+            `, [uid]);
+
+            if (vProfile && vProfile.whatsapp_consent_status === 'opted_in') {
+              const rawPhone = vProfile.whatsapp || vProfile.phone;
+              const normalized = normalizePhoneNumberToE164(rawPhone);
+              if (normalized) {
+                const idempotencyKey = buildIdempotencyKey({
+                  type: 'campaign',
+                  campaignId: logId,
+                  userId: uid
+                });
+
+                const enqueueRes = await enqueueWhatsAppJob({
+                  eventId,
+                  userId: uid,
+                  parentId: null,
+                  idempotencyKey
+                });
+
+                if (enqueueRes.queued || enqueueRes.duplicate) {
+                  whatsappQueuedCount++;
+                }
+              }
+            }
+          }
         } else {
           // GENERAL BROADCAST RULE:
           // Parent with multiple children: general announcement -> ONE WhatsApp message.
@@ -6695,16 +6733,24 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     // 8. Human result feedback
-    const parentIdsInAudience = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
+    const totalAudienceSize = isVolunteerAudience
+      ? Array.from(new Set(rows.map((r: any) => r.user_id).filter(Boolean))).length
+      : Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))).length;
     const whatsappSkippedCount = activeChannels.includes('whatsapp')
-      ? Math.max(0, parentIdsInAudience.length - whatsappQueuedCount)
+      ? Math.max(0, totalAudienceSize - whatsappQueuedCount)
       : 0;
 
+    // If WhatsApp was the sole channel and 0 jobs could be queued, update admin_message_logs to 'failed'
+    if (activeChannels.includes('whatsapp') && activeChannels.length === 1 && whatsappQueuedCount === 0) {
+      await execute(`UPDATE admin_message_logs SET status = 'failed' WHERE id = ?`, [logId]);
+    }
+
+    const skippedNoun = isVolunteerAudience ? 'volunteer' : 'parent';
     const totalPushFailures = pushFailCount + pushNoSubCount;
     let humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'}.`;
     if (activeChannels.includes('whatsapp')) {
       const skippedNote = whatsappSkippedCount > 0
-        ? `, ${whatsappSkippedCount} selected parent${whatsappSkippedCount === 1 ? '' : 's'} not eligible for WhatsApp`
+        ? `, ${whatsappSkippedCount} selected ${skippedNoun}${whatsappSkippedCount === 1 ? '' : 's'} not eligible for WhatsApp`
         : '';
       const queueFailNote = whatsappEnqueueError ? ' (WhatsApp queueing encountered an error)' : '';
       if (activeChannels.includes('in_app') || activeChannels.includes('push') || activeChannels.includes('email')) {
@@ -6713,7 +6759,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           ? (pushSentCount > 0
             ? ` Push delivered to ${pushSentCount} device${pushSentCount === 1 ? '' : 's'}.`
             : totalPushFailures > 0
-              ? (pushNoSubCount > 0 ? ' Push could not be delivered — selected parent has no active device subscription.' : ' Push notification could not be sent.')
+              ? (pushNoSubCount > 0 ? ` Push could not be delivered — selected ${skippedNoun} has no active device subscription.` : ' Push notification could not be sent.')
               : '')
           : '';
         humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}${queueFailNote}.${pushNote}`;
@@ -6880,7 +6926,9 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
         else if (deliveredCount > 0) capStatus = 'Delivered';
         else if (sentCount > 0) capStatus = 'Sent';
         else if (failedCount > 0 && sentCount === 0 && deliveredCount === 0) capStatus = 'Could not be sent';
-        else capStatus = 'Sending';
+        else if (log.status === 'failed' || (jobs.length === 0 && deliveryLogs.length === 0)) capStatus = 'Could not be sent';
+        else if (queuedCount > 0) capStatus = 'Sending';
+        else capStatus = 'Could not be sent';
 
         channelStatuses.push({
           channel: 'whatsapp',

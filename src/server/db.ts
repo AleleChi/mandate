@@ -384,8 +384,9 @@ function initSqliteSchema(db: Database.Database) {
       id TEXT PRIMARY KEY,
       event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
       rule_id TEXT REFERENCES event_notification_rules(id) ON DELETE CASCADE,
-      parent_id TEXT NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+      parent_id TEXT REFERENCES parent_profiles(id) ON DELETE CASCADE,
       child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
       channel TEXT NOT NULL,
       scheduled_for TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
@@ -490,6 +491,7 @@ function initSqliteSchema(db: Database.Database) {
       campaign_id TEXT,
       parent_profile_id TEXT REFERENCES parent_profiles(id) ON DELETE SET NULL,
       child_event_entry_id TEXT REFERENCES child_event_entries(id) ON DELETE SET NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
       recipient_phone TEXT NOT NULL,
       provider TEXT NOT NULL,
       provider_message_id TEXT,
@@ -1177,7 +1179,8 @@ function initSqliteSchema(db: Database.Database) {
     "attempt_count INTEGER NOT NULL DEFAULT 0",
     "next_attempt_at TEXT",
     "processing_started_at TEXT",
-    "last_error TEXT"
+    "last_error TEXT",
+    "user_id TEXT"
   ];
   for (const col of sqliteJobsCols) {
     try {
@@ -1186,7 +1189,49 @@ function initSqliteSchema(db: Database.Database) {
   }
 
   try {
+    db.exec(`ALTER TABLE whatsapp_delivery_logs ADD COLUMN user_id TEXT;`);
+  } catch (e) {}
+
+  try {
     db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_jobs_idempotency_key ON notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+  } catch (e) {}
+
+  try {
+    const info = db.pragma('table_info(notification_jobs)') as any[];
+    const parentIdCol = info?.find((c: any) => c.name === 'parent_id');
+    if (parentIdCol && parentIdCol.notnull === 1) {
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        CREATE TABLE notification_jobs_mig (
+          id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          rule_id TEXT REFERENCES event_notification_rules(id) ON DELETE CASCADE,
+          parent_id TEXT REFERENCES parent_profiles(id) ON DELETE CASCADE,
+          child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+          user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          channel TEXT NOT NULL,
+          scheduled_for TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          idempotency_key TEXT,
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT,
+          processing_started_at TEXT,
+          last_error TEXT,
+          sent_at TEXT,
+          failure_reason TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(rule_id, parent_id, child_id, scheduled_for)
+        );
+        INSERT INTO notification_jobs_mig (id, event_id, rule_id, parent_id, child_id, user_id, channel, scheduled_for, status, idempotency_key, attempt_count, next_attempt_at, processing_started_at, last_error, sent_at, failure_reason, created_at, updated_at)
+        SELECT id, event_id, rule_id, parent_id, child_id, user_id, channel, scheduled_for, status, idempotency_key, attempt_count, next_attempt_at, processing_started_at, last_error, sent_at, failure_reason, created_at, updated_at
+        FROM notification_jobs;
+        DROP TABLE notification_jobs;
+        ALTER TABLE notification_jobs_mig RENAME TO notification_jobs;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_jobs_idempotency_key ON notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;
+      `);
+      db.pragma('foreign_keys = ON');
+    }
   } catch (e) {}
 
   try {
@@ -2918,7 +2963,8 @@ async function initPostgresSchema(pool: any) {
       "attempt_count INTEGER DEFAULT 0",
       "next_attempt_at TIMESTAMP",
       "processing_started_at TIMESTAMP",
-      "last_error TEXT"
+      "last_error TEXT",
+      "user_id VARCHAR(64)"
     ];
     for (const col of pgJobsCols) {
       try {
@@ -2928,6 +2974,10 @@ async function initPostgresSchema(pool: any) {
         await pool.query(`ALTER TABLE notification_jobs ADD COLUMN IF NOT EXISTS ${colName} ${colDef};`);
       } catch (e) {}
     }
+
+    try {
+      await pool.query(`ALTER TABLE whatsapp_delivery_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);`);
+    } catch (e) {}
 
     try {
       await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_jobs_idempotency_key ON notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;`);

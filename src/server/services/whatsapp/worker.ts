@@ -4,6 +4,8 @@ import { getWhatsAppProvider } from './index';
 import { evaluateWhatsAppEligibility } from './consent';
 import { isTransientError } from './queue';
 import { resolveMessageTokens, buildParentStatusUrl, buildParentPassUrl } from '../../utils/urlHelper';
+import { normalizePhoneNumberToE164 } from '../../utils/phone';
+import { resolveUserDutyLocation } from '../../routes/duty';
 
 export interface WhatsAppWorkerOptions {
   maxBatchSize?: number;
@@ -53,6 +55,7 @@ export async function logWhatsAppDelivery(params: {
   campaignId?: string | null;
   parentProfileId?: string | null;
   childEventEntryId?: string | null;
+  userId?: string | null;
   recipientPhone: string;
   provider: string;
   providerMessageId?: string | null;
@@ -99,6 +102,7 @@ export async function logWhatsAppDelivery(params: {
             delivered_at = COALESCE(?, delivered_at),
             read_at = COALESCE(?, read_at),
             failed_at = COALESCE(?, failed_at),
+            user_id = COALESCE(?, user_id),
             updated_at = ?
           WHERE id = ?
         `, [
@@ -109,6 +113,7 @@ export async function logWhatsAppDelivery(params: {
           params.deliveredAt || null,
           params.readAt || null,
           params.failedAt || null,
+          params.userId || null,
           now,
           existing.id
         ]);
@@ -120,17 +125,18 @@ export async function logWhatsAppDelivery(params: {
   // Insert new log entry
   await execute(`
     INSERT INTO whatsapp_delivery_logs (
-      id, job_id, campaign_id, parent_profile_id, child_event_entry_id,
+      id, job_id, campaign_id, parent_profile_id, child_event_entry_id, user_id,
       recipient_phone, provider, provider_message_id, template_name,
       status, error_code, error_message, sent_at, delivered_at, read_at, failed_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     logId,
     params.jobId || null,
     params.campaignId || null,
     params.parentProfileId || null,
     params.childEventEntryId || null,
+    params.userId || null,
     params.recipientPhone,
     params.provider,
     params.providerMessageId || null,
@@ -177,7 +183,7 @@ export async function processQueuedWhatsAppJobs(
       // 1. Atomic job selection: find eligible job
       // Includes stale processing jobs for crash/restart recovery
       const candidate = await queryOne(`
-        SELECT id, event_id, rule_id, parent_id, child_id, channel, scheduled_for, status, idempotency_key, attempt_count
+        SELECT id, event_id, rule_id, parent_id, child_id, user_id, channel, scheduled_for, status, idempotency_key, attempt_count
         FROM notification_jobs
         WHERE channel = 'whatsapp'
           AND (
@@ -227,44 +233,165 @@ export async function processQueuedWhatsAppJobs(
           }
         }
 
-        // 3. Resolve parent profile & verify consent eligibility
-        const parent = await queryOne(`
-          SELECT id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email
-          FROM parent_profiles
-          WHERE id = ?
-        `, [candidate.parent_id]);
+        // 3. Resolve recipient profile & verify consent eligibility
+        // Supports:
+        // A. Parent job: candidate.parent_id present
+        // B. Volunteer-only job: candidate.user_id present, candidate.parent_id NULL
+        let parent: any = null;
+        let volunteerProfile: any = null;
+        let isVolunteerJob = false;
+        let recipientPhone = '';
+        let recipientName = '';
+        let targetUserId: string | null = candidate.user_id || null;
 
-        if (!parent) {
-          throw new Error('Parent profile does not exist or has been removed.');
-        }
-
-        const eligibility = evaluateWhatsAppEligibility(parent);
-        if (!eligibility.eligible) {
-          // Terminal failure: unconsented or invalid number
-          const termError = eligibility.reason || 'Parent is not eligible for WhatsApp delivery.';
-          await execute(`
-            UPDATE notification_jobs
-            SET status = 'failed',
-                failure_reason = ?,
-                last_error = ?,
-                updated_at = ?
+        if (candidate.parent_id) {
+          parent = await queryOne(`
+            SELECT id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, email
+            FROM parent_profiles
             WHERE id = ?
-          `, [termError, termError, new Date().toISOString(), candidate.id]);
+          `, [candidate.parent_id]);
 
-          await logWhatsAppDelivery({
-            jobId: candidate.id,
-            campaignId: candidate.rule_id || 'manual_broadcast',
-            parentProfileId: candidate.parent_id,
-            childEventEntryId: resolvedEntryId || null,
-            recipientPhone: parent.whatsapp_number || parent.phone_number || 'unknown',
-            provider: provider.name,
-            status: 'failed',
-            errorMessage: termError,
-            failedAt: new Date().toISOString()
-          });
+          if (!parent) {
+            throw new Error('Parent profile does not exist or has been removed.');
+          }
 
-          failed++;
-          continue;
+          if (!targetUserId && parent.user_id) {
+            targetUserId = parent.user_id;
+          }
+
+          const eligibility = evaluateWhatsAppEligibility(parent);
+          if (!eligibility.eligible) {
+            // Terminal failure: unconsented or invalid number
+            const termError = eligibility.reason || 'Parent is not eligible for WhatsApp delivery.';
+            await execute(`
+              UPDATE notification_jobs
+              SET status = 'failed',
+                  failure_reason = ?,
+                  last_error = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `, [termError, termError, new Date().toISOString(), candidate.id]);
+
+            await logWhatsAppDelivery({
+              jobId: candidate.id,
+              campaignId: candidate.rule_id || 'manual_broadcast',
+              parentProfileId: candidate.parent_id,
+              userId: targetUserId,
+              childEventEntryId: resolvedEntryId || null,
+              recipientPhone: parent.whatsapp_number || parent.phone_number || 'unknown',
+              provider: provider.name,
+              status: 'failed',
+              errorMessage: termError,
+              failedAt: new Date().toISOString()
+            });
+
+            failed++;
+            continue;
+          }
+
+          recipientPhone = eligibility.normalizedNumber!;
+          recipientName = (parent.full_name || '').trim() || 'Parent';
+        } else if (candidate.user_id) {
+          isVolunteerJob = true;
+          targetUserId = candidate.user_id;
+
+          volunteerProfile = await queryOne(`
+            SELECT id, user_id, full_name, phone, whatsapp, whatsapp_consent_status, preferred_team, department, status
+            FROM volunteer_profiles
+            WHERE (user_id = ? OR id = ?) AND (is_deleted = 0 OR is_deleted IS NULL)
+            LIMIT 1
+          `, [candidate.user_id, candidate.user_id]);
+
+          if (!volunteerProfile) {
+            throw new Error('Volunteer profile does not exist or has been removed.');
+          }
+
+          const rawConsent = (volunteerProfile.whatsapp_consent_status || 'unknown').toLowerCase();
+          const rawPhone = volunteerProfile.whatsapp || volunteerProfile.phone;
+          const normalized = normalizePhoneNumberToE164(rawPhone);
+
+          if (!normalized) {
+            const termError = 'No valid normalized E.164 WhatsApp number available.';
+            await execute(`
+              UPDATE notification_jobs
+              SET status = 'failed',
+                  failure_reason = ?,
+                  last_error = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `, [termError, termError, new Date().toISOString(), candidate.id]);
+
+            await logWhatsAppDelivery({
+              jobId: candidate.id,
+              campaignId: candidate.rule_id || 'manual_broadcast',
+              userId: targetUserId,
+              recipientPhone: rawPhone || 'unknown',
+              provider: provider.name,
+              status: 'failed',
+              errorMessage: termError,
+              failedAt: new Date().toISOString()
+            });
+
+            failed++;
+            continue;
+          }
+
+          if (rawConsent === 'opted_out') {
+            const termError = 'Volunteer has explicitly opted out of WhatsApp communications.';
+            await execute(`
+              UPDATE notification_jobs
+              SET status = 'failed',
+                  failure_reason = ?,
+                  last_error = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `, [termError, termError, new Date().toISOString(), candidate.id]);
+
+            await logWhatsAppDelivery({
+              jobId: candidate.id,
+              campaignId: candidate.rule_id || 'manual_broadcast',
+              userId: targetUserId,
+              recipientPhone: normalized,
+              provider: provider.name,
+              status: 'failed',
+              errorMessage: termError,
+              failedAt: new Date().toISOString()
+            });
+
+            failed++;
+            continue;
+          }
+
+          if (rawConsent !== 'opted_in') {
+            const termError = 'Volunteer WhatsApp consent status is unknown. Explicit opt-in is required before automated dispatch.';
+            await execute(`
+              UPDATE notification_jobs
+              SET status = 'failed',
+                  failure_reason = ?,
+                  last_error = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `, [termError, termError, new Date().toISOString(), candidate.id]);
+
+            await logWhatsAppDelivery({
+              jobId: candidate.id,
+              campaignId: candidate.rule_id || 'manual_broadcast',
+              userId: targetUserId,
+              recipientPhone: normalized,
+              provider: provider.name,
+              status: 'failed',
+              errorMessage: termError,
+              failedAt: new Date().toISOString()
+            });
+
+            failed++;
+            continue;
+          }
+
+          recipientPhone = normalized;
+          recipientName = (volunteerProfile.full_name || '').trim() || 'Volunteer';
+        } else {
+          throw new Error('Notification job has neither parent_id nor user_id.');
         }
 
         // 4. Resolve message body from admin broadcast or event rule
@@ -329,7 +456,7 @@ export async function processQueuedWhatsAppJobs(
               WHERE parent_id = ? AND child_id = ? AND metadata_json LIKE ?
               ORDER BY created_at DESC LIMIT 1
             `, [candidate.parent_id, candidate.child_id, `%"campaignId":"${broadcastId}"%`]);
-          } else {
+          } else if (candidate.parent_id) {
             childNotif = await queryOne(`
               SELECT message FROM notifications
               WHERE parent_id = ? AND child_id IS NULL AND metadata_json LIKE ?
@@ -341,19 +468,33 @@ export async function processQueuedWhatsAppJobs(
           }
         }
 
-        // Resolve personalized placeholders per recipient parent using canonical URL helper
-        const parentDisplayName = (parent.full_name || '').trim() || 'Parent';
-        messageBody = resolveMessageTokens(messageBody, {
-          parentName: parentDisplayName,
-          eventName,
-          childName,
-          reviewUrl,
-          passUrl,
-          pickupTime: '4:00 PM',
-          supportContact: '+234 803 123 4567'
-        });
+        // Resolve personalized placeholders per recipient
+        if (isVolunteerJob) {
+          const duty = targetUserId ? await resolveUserDutyLocation(targetUserId, candidate.event_id || 'event-ga-2026') : null;
+          const vLocation = (duty?.name || '').trim();
+          const vTeam = (duty?.team || duty?.teamKey || volunteerProfile?.preferred_team || volunteerProfile?.department || '').trim();
 
-        const recipientPhone = eligibility.normalizedNumber!;
+          messageBody = resolveMessageTokens(messageBody, {
+            volunteerName: recipientName,
+            team: vTeam,
+            location: vLocation,
+            parentName: recipientName,
+            childName: recipientName,
+            eventName,
+            supportContact: '+234 803 123 4567'
+          });
+        } else {
+          const parentDisplayName = (parent?.full_name || '').trim() || 'Parent';
+          messageBody = resolveMessageTokens(messageBody, {
+            parentName: parentDisplayName,
+            eventName,
+            childName,
+            reviewUrl,
+            passUrl,
+            pickupTime: '4:00 PM',
+            supportContact: '+234 803 123 4567'
+          });
+        }
 
         // 5. Send message via selected WhatsApp provider
         const sendResult = await provider.sendSessionMessage({
@@ -378,6 +519,7 @@ export async function processQueuedWhatsAppJobs(
             jobId: candidate.id,
             campaignId: resolvedCampaignId,
             parentProfileId: candidate.parent_id,
+            userId: targetUserId,
             childEventEntryId: resolvedEntryId || null,
             recipientPhone,
             provider: provider.name,
@@ -411,6 +553,7 @@ export async function processQueuedWhatsAppJobs(
               jobId: candidate.id,
               campaignId: resolvedCampaignId,
               parentProfileId: candidate.parent_id,
+              userId: targetUserId,
               recipientPhone,
               provider: provider.name,
               status: 'queued',
@@ -433,6 +576,7 @@ export async function processQueuedWhatsAppJobs(
               jobId: candidate.id,
               campaignId: resolvedCampaignId,
               parentProfileId: candidate.parent_id,
+              userId: targetUserId,
               recipientPhone,
               provider: provider.name,
               status: 'failed',

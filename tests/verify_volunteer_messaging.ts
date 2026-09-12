@@ -4,6 +4,12 @@ import http from 'http';
 import { query, queryOne, execute } from '../src/server/db';
 import { generateToken } from '../src/server/auth';
 import volunteerRouter from '../src/server/routes/volunteer';
+import adminRouter from '../src/server/routes/admin';
+import {
+  enqueueWhatsAppJob,
+  processQueuedWhatsAppJobs,
+  resetWhatsAppProviderCache
+} from '../src/server/services/whatsapp';
 import {
   isVolunteerAudience,
   isChildSpecificMessageType,
@@ -1123,6 +1129,189 @@ async function runTests() {
         const finalVol = await queryOne('SELECT whatsapp_consent_status FROM volunteer_profiles WHERE id = ?', [dualHttpVol]);
         assert(finalParent.whatsapp_consent_status === 'opted_in', 'Parent profile consent must REMAIN opted_in (untouched by volunteer opt-out)');
         assert(finalVol.whatsapp_consent_status === 'opted_out', 'Volunteer profile must be updated to opted_out');
+      } finally {
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
+
+    // 20. VOLUNTEER WHATSAPP DELIVERY, WORKER RESOLUTION & STATUS AUDIT
+    await test('Parent WhatsApp job still sends and preserves working delivery', async () => {
+      const now = new Date().toISOString();
+      const pUserId = `u-p-wa-${Date.now()}`;
+      const pProfileId = `pp-wa-${Date.now()}`;
+      await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'parent', 'active', ?, ?)`,
+        [pUserId, `pwa.${Date.now()}@test.com`, now, now]);
+      await execute(`INSERT INTO parent_profiles (id, user_id, full_name, phone_number, whatsapp_number, whatsapp_consent_status, created_at, updated_at)
+        VALUES (?, ?, 'Parent WhatsApp Test', '+2348011223344', '+2348011223344', 'opted_in', ?, ?)`,
+        [pProfileId, pUserId, now, now]);
+
+      const enq = await enqueueWhatsAppJob({
+        eventId: 'event-ga-2026',
+        parentId: pProfileId,
+        idempotencyKey: `campaign:test_parent:${pProfileId}:whatsapp`
+      });
+      assert(enq.queued === true, 'Parent job should enqueue');
+
+      const workerRes = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+      assert(workerRes.succeeded >= 1, 'Parent job should succeed via worker');
+
+      const job = await queryOne('SELECT status, sent_at FROM notification_jobs WHERE id = ?', [enq.jobId]);
+      assert(job.status === 'sent', 'Parent job status should be sent');
+      assert(job.sent_at !== null, 'Parent job sent_at should be populated');
+
+      const log = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE job_id = ?', [enq.jobId]);
+      assert(log && log.status === 'sent', 'Delivery log should be recorded as sent');
+      assert(log.parent_profile_id === pProfileId, 'Delivery log should have parent_profile_id');
+      assert(log.provider_message_id !== null, 'Delivery log should record provider SID');
+    });
+
+    await test('Volunteer-only WhatsApp job with user_id + parent_id NULL processes end-to-end', async () => {
+      const now = new Date().toISOString();
+      const vUserId = `u-vol-wa-${Date.now()}`;
+      const vProfileId = `vp-wa-${Date.now()}`;
+      await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'volunteer', 'active', ?, ?)`,
+        [vUserId, `vwa.${Date.now()}@test.com`, now, now]);
+      await execute(`INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at)
+        VALUES (?, ?, 'Volunteer Worker Test', '08110940296', '08110940296', 'Teens Team', 'approved', 'opted_in', ?, ?)`,
+        [vProfileId, vUserId, now, now]);
+
+      const enq = await enqueueWhatsAppJob({
+        eventId: 'event-ga-2026',
+        userId: vUserId,
+        parentId: null,
+        idempotencyKey: `campaign:test_volunteer:${vUserId}:whatsapp`
+      });
+      assert(enq.queued === true, 'Volunteer job should enqueue');
+
+      // Verify shape: user_id present, parent_id is NULL
+      const queuedJob = await queryOne('SELECT user_id, parent_id, status FROM notification_jobs WHERE id = ?', [enq.jobId]);
+      assert(queuedJob.user_id === vUserId, 'notification_jobs.user_id should equal volunteer user_id');
+      assert(queuedJob.parent_id === null, 'notification_jobs.parent_id should be NULL for volunteer job');
+      assert(queuedJob.status === 'pending', 'Job should start pending');
+
+      // Run worker
+      const workerRes = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+      assert(workerRes.succeeded >= 1, 'Volunteer job should process and succeed in worker');
+
+      const completedJob = await queryOne('SELECT status, sent_at FROM notification_jobs WHERE id = ?', [enq.jobId]);
+      assert(completedJob.status === 'sent', 'Volunteer job status should be sent');
+      assert(completedJob.sent_at !== null, 'Volunteer job sent_at should be recorded');
+
+      // Volunteer phone resolves from Volunteer profile and normalizes to E.164
+      const dLog = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE job_id = ?', [enq.jobId]);
+      assert(dLog !== null, 'whatsapp_delivery_logs entry must exist');
+      assert(dLog.recipient_phone === '+2348110940296', `Phone must normalize to +2348110940296, got ${dLog?.recipient_phone}`);
+      assert(dLog.user_id === vUserId, 'Delivery log user_id must match volunteer user_id');
+      assert(dLog.parent_profile_id === null, 'Delivery log parent_profile_id must be NULL');
+      assert(dLog.provider_message_id !== null, 'Provider message SID must be recorded');
+    });
+
+    await test('Volunteer opted_out does not send and marks terminal failure', async () => {
+      const now = new Date().toISOString();
+      const vUserId = `u-vol-optout-${Date.now()}`;
+      const vProfileId = `vp-optout-${Date.now()}`;
+      await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'volunteer', 'active', ?, ?)`,
+        [vUserId, `voptout.${Date.now()}@test.com`, now, now]);
+      await execute(`INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at)
+        VALUES (?, ?, 'Opted Out Vol', '+2348099887766', '+2348099887766', 'Childcare', 'approved', 'opted_out', ?, ?)`,
+        [vProfileId, vUserId, now, now]);
+
+      const enq = await enqueueWhatsAppJob({
+        eventId: 'event-ga-2026',
+        userId: vUserId,
+        parentId: null,
+        idempotencyKey: `campaign:test_optout:${vUserId}:whatsapp`
+      });
+
+      const workerRes = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+      assert(workerRes.failed >= 1, 'Opted out volunteer job must fail');
+
+      const failedJob = await queryOne('SELECT status, failure_reason FROM notification_jobs WHERE id = ?', [enq.jobId]);
+      assert(failedJob.status === 'failed', 'Job status must be failed');
+      assert(failedJob.failure_reason?.includes('opted out'), 'Failure reason must mention opted out');
+
+      const dLog = await queryOne('SELECT status, error_message FROM whatsapp_delivery_logs WHERE job_id = ?', [enq.jobId]);
+      assert(dLog && dLog.status === 'failed', 'Delivery log must record failed');
+    });
+
+    await test('No duplicate send on worker retry or idempotency reuse', async () => {
+      const vUserId = `u-vol-idemp-${Date.now()}`;
+      const now = new Date().toISOString();
+      await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'volunteer', 'active', ?, ?)`,
+        [vUserId, `videmp.${Date.now()}@test.com`, now, now]);
+      await execute(`INSERT INTO volunteer_profiles (id, user_id, full_name, phone, whatsapp, preferred_team, status, whatsapp_consent_status, created_at, updated_at)
+        VALUES (?, ?, 'Idemp Vol', '+2348011119999', '+2348011119999', 'Teens', 'approved', 'opted_in', ?, ?)`,
+        [`vp-idemp-${Date.now()}`, vUserId, now, now]);
+
+      const key = `campaign:idemp_test:${vUserId}:whatsapp`;
+      const enq1 = await enqueueWhatsAppJob({ eventId: 'event-ga-2026', userId: vUserId, idempotencyKey: key });
+      assert(enq1.queued === true && enq1.duplicate === false, 'First enqueue must succeed');
+
+      const enq2 = await enqueueWhatsAppJob({ eventId: 'event-ga-2026', userId: vUserId, idempotencyKey: key });
+      assert(enq2.queued === false && enq2.duplicate === true, 'Second enqueue must detect duplicate');
+      assert(enq2.jobId === enq1.jobId, 'Job ID must be identical');
+
+      // Process job
+      const res1 = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+      assert(res1.succeeded === 1, 'Job processed once');
+
+      // Second worker run
+      const res2 = await processQueuedWhatsAppJobs({ maxBatchSize: 10 });
+      assert(res2.processed === 0, 'Second worker run must find 0 pending jobs');
+    });
+
+    await test('WhatsApp campaign status eliminates perpetual Sending and reflects channel status accurately', async () => {
+      const testSuffix = Date.now().toString();
+      const app = express();
+      app.use(express.json());
+      app.use('/api/admin', adminRouter);
+
+      let server: any;
+      let baseUrl = '';
+      await new Promise<void>((resolve) => {
+        server = app.listen(0, () => {
+          const port = (server.address() as any).port;
+          baseUrl = `http://127.0.0.1:${port}`;
+          resolve();
+        });
+      });
+
+      try {
+        const adminUser = `u-admin-test-${testSuffix}`;
+        const now = new Date().toISOString();
+        await execute(`INSERT INTO users (id, email, role, status, created_at, updated_at) VALUES (?, ?, 'super_admin', 'active', ?, ?)`,
+          [adminUser, `admin.${testSuffix}@test.com`, now, now]);
+        const adminJwt = generateToken(adminUser);
+
+        // Case A: 0 jobs queued campaign (e.g. all recipients unconsented) -> status resolves to 'Could not be sent', NOT 'Sending'
+        const failedCampaignId = `camp-failed-${testSuffix}`;
+        await execute(`INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+          VALUES (?, 'volunteers', 'operational_update', 'whatsapp', 'Failed Camp', 'Body', 1, 'failed', ?)`,
+          [failedCampaignId, now]);
+
+        const res1 = await fetch(`${baseUrl}/api/admin/messages/campaign-status/${failedCampaignId}`, {
+          headers: { 'Authorization': `Bearer ${adminJwt}` }
+        });
+        const data1 = await res1.json();
+        assert(data1.success === true, 'Status endpoint should succeed');
+        const waStatus1 = data1.channelStatuses?.find((c: any) => c.channel === 'whatsapp');
+        assert(waStatus1 && waStatus1.status === 'Could not be sent', `Expected 'Could not be sent', got: ${waStatus1?.status}`);
+
+        // Case B: Sent campaign -> status resolves to 'Sent'
+        const sentCampaignId = `camp-sent-${testSuffix}`;
+        await execute(`INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at)
+          VALUES (?, 'volunteers', 'operational_update', 'whatsapp', 'Sent Camp', 'Body', 1, 'sent', ?)`,
+          [sentCampaignId, now]);
+        await execute(`INSERT INTO whatsapp_delivery_logs (id, campaign_id, recipient_phone, provider, provider_message_id, status, sent_at, created_at, updated_at)
+          VALUES (?, ?, '+2348110940296', 'simulated', ?, 'sent', ?, ?, ?)`,
+          [`log-${sentCampaignId}`, sentCampaignId, `sim_msg_${testSuffix}`, now, now, now]);
+
+        const res2 = await fetch(`${baseUrl}/api/admin/messages/campaign-status/${sentCampaignId}`, {
+          headers: { 'Authorization': `Bearer ${adminJwt}` }
+        });
+        const data2 = await res2.json();
+        const waStatus2 = data2.channelStatuses?.find((c: any) => c.channel === 'whatsapp');
+        assert(waStatus2 && waStatus2.status === 'Sent', `Expected 'Sent', got: ${waStatus2?.status}`);
       } finally {
         await new Promise((resolve) => server.close(resolve));
       }
