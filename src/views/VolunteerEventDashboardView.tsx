@@ -3590,25 +3590,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             );
           })() : (
             /* ==================== 2. SCANNER VIEW (Refined Clean Layout) ==================== */
-            <div className="max-w-md mx-auto space-y-5 w-full pb-16 px-4" data-view-version="volunteer-scan-refined-v6">
+            <div className="max-w-md mx-auto space-y-4 w-full pb-20 px-4" data-view-version="volunteer-scan-refined-v7">
               
               {cameraUnavailable ? (
                 /* Camera is unavailable: calm fallback */
-                <div className="space-y-4" data-component-version="volunteer-scan-manual-fallback-v2">
-                  <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl p-4 text-center space-y-1">
-                    <p className="font-sans font-medium text-xs text-zinc-900">Camera unavailable</p>
-                    <p className="font-sans text-xs text-zinc-500">
+                <div className="space-y-3" data-component-version="volunteer-scan-manual-fallback-v3">
+                  <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 text-center space-y-1">
+                    <p className="font-sans font-medium text-xs text-stone-900">Camera unavailable</p>
+                    <p className="font-sans text-xs text-stone-500">
                       You can still find the child using search or enter the pass code manually below.
                     </p>
                   </div>
 
-                  <div className="bg-white border border-zinc-200/80 p-5 rounded-2xl shadow-2xs space-y-3.5">
-                    <div className="flex items-center space-x-2 text-zinc-900 pb-2 border-b border-zinc-100">
-                      <Keyboard className="h-4 w-4 text-zinc-400" />
-                      <h4 className="text-xs font-sans font-semibold text-zinc-900">Enter pass reference</h4>
+                  <div className="bg-white border border-stone-200/80 p-4 rounded-xl space-y-3">
+                    <div className="flex items-center space-x-2 text-stone-900 pb-2 border-b border-stone-100">
+                      <Keyboard className="h-4 w-4 text-stone-400" />
+                      <h4 className="text-xs font-sans font-medium text-stone-900">Enter pass reference</h4>
                     </div>
                     
-                    <form onSubmit={handleManualVerifySubmit} className="space-y-3.5">
+                    <form onSubmit={handleManualVerifySubmit} className="space-y-3">
                       <div className="relative">
                         <input
                           type="text"
@@ -3616,15 +3616,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                           placeholder="e.g. 6E80A7"
                           disabled={scanLoading}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-zinc-400 focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
+                          className="w-full bg-stone-50/70 border border-stone-200 rounded-lg px-3.5 py-2.5 text-xs font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-stone-400 focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
                         />
                         {manualCode && (
                           <button
                             type="button"
                             onClick={() => setManualCode('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100"
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-3 w-3" />
                           </button>
                         )}
                       </div>
@@ -3632,7 +3632,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <button
                         type="submit"
                         disabled={scanLoading || !manualCode}
-                        className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 text-white font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                        className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center"
                       >
                         {scanLoading ? (
                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -3645,9 +3645,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
               ) : (
                 /* Camera is active/available: portrait card */
-                <div className="space-y-4" data-component-version="volunteer-scan-viewport-v3">
-                  <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden shadow-2xs relative">
-                    <div className="aspect-[4/3] sm:aspect-[3/4] bg-zinc-950 relative flex flex-col items-center justify-center overflow-hidden">
+                <div className="space-y-3" data-component-version="volunteer-scan-viewport-v4">
+                  <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden relative">
+                    <div className="aspect-[4/3] sm:aspect-[3/4] bg-stone-950 relative flex flex-col items-center justify-center overflow-hidden">
                       {!cameraActive && (
                         <div 
                           className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-35 scale-105"
@@ -3684,7 +3684,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               <button
                                 type="button"
                                 onClick={handleFlipCamera}
-                                className="p-1.5 bg-white/90 text-zinc-900 rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-xs font-sans font-medium text-[10px]"
+                                className="p-1.5 bg-white/90 text-stone-900 rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-xs font-sans font-medium text-[10px]"
                                 title="Flip Camera"
                               >
                                 <RefreshCw className="h-3 w-3" />
@@ -3710,7 +3710,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                           <button
                             onClick={() => setCameraActive(true)}
-                            className="px-6 py-2.5 bg-white text-zinc-900 font-sans font-semibold text-xs rounded-full hover:bg-zinc-100 transition-colors shadow-md flex items-center space-x-2 cursor-pointer"
+                            className="px-5 py-2.5 bg-white text-stone-900 font-sans font-semibold text-xs rounded-full hover:bg-stone-100 transition-colors shadow-sm flex items-center space-x-2 cursor-pointer"
                           >
                             <Camera className="h-4 w-4" />
                             <span>Scan child pass</span>
@@ -3720,21 +3720,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </div>
                   </div>
 
-                  {/* Manual Pass Code Toggle Button */}
-                  <div className="space-y-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowManualInput(!showManualInput)}
-                      className="w-full border border-zinc-200/80 hover:border-zinc-300 text-zinc-700 font-sans font-medium text-xs py-3 px-4 rounded-xl transition-colors flex items-center justify-center space-x-2 bg-white hover:bg-zinc-50 cursor-pointer shadow-2xs"
-                      data-component-version="volunteer-check-in-manual-pass-v3"
-                    >
-                      <Keyboard className="h-4 w-4 text-zinc-400" />
-                      <span>Enter pass code manually</span>
-                    </button>
+                  {/* Manual Pass Code Toggle Action (Quiet secondary) */}
+                  <div className="space-y-2.5">
+                    <div className="text-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowManualInput(!showManualInput)}
+                        className="inline-flex items-center gap-1 text-xs font-sans font-medium text-stone-500 hover:text-stone-800 transition-colors cursor-pointer py-1 px-2"
+                        data-component-version="volunteer-check-in-manual-pass-v4"
+                      >
+                        <span>Enter pass code manually</span>
+                        <span className="text-stone-400" aria-hidden="true">→</span>
+                      </button>
+                    </div>
 
                     {/* Manual Pass Code Input Form */}
                     {showManualInput && (
-                      <form onSubmit={handleManualVerifySubmit} className="flex gap-2.5 animate-fade-in bg-white border border-zinc-200/80 p-3.5 rounded-xl shadow-2xs">
+                      <form onSubmit={handleManualVerifySubmit} className="flex gap-2 animate-fade-in bg-white border border-stone-200/80 p-2.5 rounded-xl">
                         <div className="relative flex-1">
                           <input
                             type="text"
@@ -3742,13 +3744,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                             placeholder="e.g. 6E80A7"
                             disabled={scanLoading}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3.5 py-2.5 text-xs font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-zinc-400 focus:bg-white transition-all disabled:opacity-60 uppercase"
+                            className="w-full bg-stone-50/70 border border-stone-200 rounded-lg px-3 py-2 text-xs font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-stone-400 focus:bg-white transition-all disabled:opacity-60 uppercase"
                           />
                           {manualCode && (
                             <button
                               type="button"
                               onClick={() => setManualCode('')}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100"
                             >
                               <X className="h-3 w-3" />
                             </button>
@@ -3758,10 +3760,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <button
                           type="submit"
                           disabled={scanLoading || !manualCode}
-                          className="px-4 bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                          className="px-3.5 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center shrink-0"
                         >
                           {scanLoading ? (
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                           ) : (
                             <span>Verify</span>
                           )}
@@ -3772,9 +3774,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
               )}
 
-              {/* Child Search Field (Secondary task) */}
+              {/* Child Search Field */}
               <div className="space-y-1.5">
-                <h3 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Find a child</h3>
+                <h3 className="font-sans font-medium text-xs text-stone-500">Find a child</h3>
                 <form 
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -3783,20 +3785,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     }
                   }}
                   className="relative w-full"
-                  data-component-version="volunteer-check-in-search-v3"
+                  data-component-version="volunteer-check-in-search-v4"
                 >
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by child name or parent's phone"
-                    className="w-full bg-white border border-zinc-200/80 rounded-xl pl-10 pr-4 py-3 text-xs text-zinc-800 placeholder-zinc-400 outline-none focus:border-zinc-400 transition-colors shadow-2xs font-sans"
+                    className="w-full bg-stone-50/60 border border-stone-200/80 rounded-xl pl-9 pr-4 py-2.5 text-xs text-stone-900 placeholder-stone-400 outline-none focus:border-stone-400 focus:bg-white transition-colors font-sans"
                   />
                 </form>
               </div>
 
-              {/* Recently Checked In Card */}
+              {/* Recently Checked In Section */}
               {(() => {
                 const lastCheckedInItem = recentScans.find(
                   (log) => log.status === 'checked_in' || log.status === 'inside'
@@ -3825,67 +3827,89 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   Boolean(matchedChild?.needsReview || matchedChild?.status === 'review_needed' || matchedChild?.requires_special_attention);
 
                 return (
-                  <div 
-                    className="bg-white border border-zinc-200/80 rounded-2xl p-4 shadow-2xs space-y-2.5"
-                    data-component-version="volunteer-check-in-recent-v3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Recently checked in</h3>
-                      {hasReviewIssue && (
-                        <span className="text-[11px] font-sans font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/80">
-                          Age needs confirmation
-                        </span>
+                  <div className="space-y-1.5" data-component-version="volunteer-check-in-recent-v4">
+                    <h3 className="font-sans font-medium text-xs text-stone-500">Recently checked in</h3>
+                    <div className="bg-white border border-stone-200/80 rounded-xl p-3.5">
+                      {lastCheckedInItem ? (
+                        <div className="flex items-start space-x-3">
+                          {/* Child photo / avatar */}
+                          <div className="w-10 h-10 rounded-full bg-stone-100 border border-stone-200/80 overflow-hidden flex items-center justify-center shrink-0">
+                            {matchedChild?.photoUrl ? (
+                              <img
+                                src={matchedChild.photoUrl}
+                                alt={lastCheckedInItem.childName}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span className="font-sans font-medium text-xs text-stone-600">
+                                {lastCheckedInItem.childName?.charAt(0)?.toUpperCase() || 'C'}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-sans font-semibold text-sm text-stone-900 leading-tight truncate">
+                                {lastCheckedInItem.childName}
+                              </h4>
+                              {hasReviewIssue && (
+                                <span className="text-[11px] font-sans font-medium text-amber-800 bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-200/60 shrink-0">
+                                  Age check needed
+                                </span>
+                              )}
+                            </div>
+                            <p className="font-sans text-xs text-stone-500 mt-0.5">
+                              {subtitle}
+                            </p>
+                            <p className="font-sans text-xs text-stone-400 mt-0.5 flex items-center gap-1">
+                              <Check className="h-3 w-3 text-stone-400 stroke-[2]" />
+                              <span>Checked in at {formatTime(lastCheckedInItem.timestamp)}</span>
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="font-sans text-xs text-stone-500 py-1 text-center">
+                          No child has been checked in yet.
+                        </p>
                       )}
                     </div>
-
-                    {lastCheckedInItem ? (
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-700 shrink-0">
-                          <Check className="h-5 w-5 stroke-[2]" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-sans font-semibold text-sm text-zinc-900 leading-tight truncate">
-                            {lastCheckedInItem.childName}
-                          </h4>
-                          <p className="font-sans text-xs text-zinc-500 mt-0.5">
-                            {subtitle} · Checked in at {formatTime(lastCheckedInItem.timestamp)}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="font-sans text-xs text-zinc-500 py-1">
-                        No child has been checked in yet.
-                      </p>
-                    )}
                   </div>
                 );
               })()}
 
-              {/* Metrics Strip */}
-              <div className="bg-white border border-zinc-200/80 rounded-2xl p-3.5 shadow-2xs">
-                <div className="grid grid-cols-3 divide-x divide-zinc-100 text-center">
-                  <div className="px-1 first:pl-0">
-                    <span className="block font-sans text-xs text-zinc-500 leading-tight">Expected</span>
-                    <span className="block font-sans font-semibold text-lg text-zinc-900 mt-1">{stats.expected || 0}</span>
-                  </div>
-                  <div className="px-1">
-                    <span className="block font-sans text-xs text-zinc-500 leading-tight">Checked in</span>
-                    <span className="block font-sans font-semibold text-lg text-zinc-900 mt-1">{stats.checkedIn || 0}</span>
-                  </div>
-                  <div className="px-1 last:pr-0">
-                    <span className="block font-sans text-xs text-zinc-500 leading-tight">Waiting</span>
-                    <span className="block font-sans font-semibold text-lg text-zinc-900 mt-1">
-                      {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
-                    </span>
+              {/* Attendance Summary */}
+              <div className="space-y-1.5">
+                <h3 className="font-sans font-medium text-xs text-stone-500">Today</h3>
+                <div className="bg-white border border-stone-200/80 rounded-xl p-3">
+                  <div className="grid grid-cols-3 divide-x divide-stone-100 text-center">
+                    <div className="px-2 first:pl-0">
+                      <span className="block font-sans text-xs text-stone-500">Expected</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 mt-0.5">
+                        {stats.expected || 0}
+                      </span>
+                    </div>
+                    <div className="px-2">
+                      <span className="block font-sans text-xs text-stone-500">Checked in</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 mt-0.5">
+                        {stats.checkedIn || 0}
+                      </span>
+                    </div>
+                    <div className="px-2 last:pr-0">
+                      <span className="block font-sans text-xs text-stone-500">Waiting</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 mt-0.5">
+                        {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Calm Offline Notice (only shown when offline) */}
               {(isOffline || offlineService.isOffline()) && (
-                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl p-4 text-center space-y-1">
-                  <p className="font-sans font-medium text-xs text-zinc-900">You're offline</p>
-                  <p className="font-sans text-xs text-zinc-500">
+                <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 text-center space-y-1">
+                  <p className="font-sans font-medium text-xs text-stone-900">You're offline</p>
+                  <p className="font-sans text-xs text-stone-500">
                     Check-ins will be saved and sent when you're connected again.
                   </p>
                 </div>
