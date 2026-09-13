@@ -3220,6 +3220,8 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
     const eventId = 'event-' + Math.random().toString(36).substring(2, 11);
     const now = new Date().toISOString();
 
+    const initialStatus = (status && status !== 'current') ? status : 'draft';
+
     await execute(`
       INSERT INTO events (
         id, title, section_name, location, starts_at, ends_at,
@@ -3239,7 +3241,7 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
       dailyStartTime,
       dailyEndTime,
       description || '',
-      status,
+      initialStatus,
       parentAccessOpensAt || null,
       parentAccessClosesAt || null,
       parentsCanCreateAccount ? 1 : 0,
@@ -3322,6 +3324,8 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
 
     const now = new Date().toISOString();
 
+    // Server defence: Ordinary event-detail updates preserve existing lifecycle status.
+    // Lifecycle transitions require explicit actions (/publish, /archive, /set-current).
     await execute(`
       UPDATE events SET
         title = COALESCE(?, title),
@@ -3332,7 +3336,7 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
         daily_start_time = COALESCE(?, daily_start_time),
         daily_end_time = COALESCE(?, daily_end_time),
         description = COALESCE(?, description),
-        status = COALESCE(?, status),
+        status = ?,
         parent_access_opens_at = ?,
         parent_access_closes_at = ?,
         parents_can_create_account = COALESCE(?, parents_can_create_account),
@@ -3350,7 +3354,7 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       dailyStartTime || null,
       dailyEndTime || null,
       description !== undefined ? description : null,
-      status || null,
+      event.status,
       parentAccessOpensAt !== undefined ? parentAccessOpensAt : event.parent_access_opens_at,
       parentAccessClosesAt !== undefined ? parentAccessClosesAt : event.parent_access_closes_at,
       parentsCanCreateAccount !== undefined ? (parentsCanCreateAccount ? 1 : 0) : null,

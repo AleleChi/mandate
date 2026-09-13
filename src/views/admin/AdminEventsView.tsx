@@ -430,12 +430,41 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
   const getFilteredEvents = () => {
     return events.filter(e => {
-      if (activeTab === 'current') return e.status === 'current' || e.status === 'open' || e.status === 'active';
-      if (activeTab === 'upcoming') return e.status === 'upcoming';
+      if (activeTab === 'current') return e.status === 'current';
+      if (activeTab === 'upcoming') return e.status === 'upcoming' || e.status === 'open' || e.status === 'active';
       if (activeTab === 'draft') return e.status === 'draft';
       if (activeTab === 'archived') return e.status === 'archived' || e.status === 'closed';
       return false;
     });
+  };
+
+  const renderStatusBadge = (status: EventData['status']) => {
+    if (status === 'current') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center gap-1">
+          <CheckCircle2 className="w-3 h-3" /> Current
+        </span>
+      );
+    }
+    if (status === 'draft') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-600 border border-zinc-200">
+          Draft
+        </span>
+      );
+    }
+    if (status === 'archived' || status === 'closed') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500 border border-zinc-200">
+          Past
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60">
+        Upcoming
+      </span>
+    );
   };
 
   const filteredEvents = getFilteredEvents();
@@ -517,7 +546,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               {filteredEvents.map(event => (
                 <div 
                   key={event.id}
-                  data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-card-v2" : undefined}
+                  data-component-version={event.status === 'current' ? "admin-current-event-card-v2" : undefined}
                   className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-3xs flex flex-col lg:flex-row justify-between lg:items-center gap-6 hover:border-[#C59B27]/30 transition-all"
                 >
                   <div className="space-y-3.5 min-w-0 flex-1">
@@ -526,25 +555,21 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-50 text-zinc-600 border border-zinc-100">
                         {event.sectionName}
                       </span>
-                      {(event.status === 'current' || event.status === 'open' || event.status === 'active') && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Active current
-                        </span>
-                      )}
+                      {renderStatusBadge(event.status)}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs text-zinc-500">
-                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-date-meta-v1" : undefined}>
-                        <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
-                        <span className={event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-zinc-700 font-semibold' : ''}>{event.startsAt}</span>
+                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-date-meta-v1" : undefined}>
+                        <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
+                        <span className={event.status === 'current' ? 'text-zinc-700 font-semibold' : ''}>{event.startsAt}</span>
                       </div>
-                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-time-meta-v1" : undefined}>
-                        <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
-                        <span className={event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-zinc-700 font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
+                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-time-meta-v1" : undefined}>
+                        <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
+                        <span className={event.status === 'current' ? 'text-zinc-700 font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
                       </div>
-                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-venue-meta-v1" : undefined}>
-                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
-                        <span className={`truncate ${event.status === 'current' || event.status === 'open' || event.status === 'active' ? 'text-zinc-700 font-semibold' : ''}`}>{event.location}</span>
+                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-venue-meta-v1" : undefined}>
+                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
+                        <span className={`truncate ${event.status === 'current' ? 'text-zinc-700 font-semibold' : ''}`}>{event.location}</span>
                       </div>
                     </div>
 
@@ -564,22 +589,22 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     <Button
                       type="button"
                       onClick={() => loadEventForEdit(event.id!)}
-                      data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-edit-action-v2" : undefined}
+                      data-component-version={event.status === 'current' ? "admin-current-event-edit-action-v2" : undefined}
                       className={
-                        event.status === 'current' || event.status === 'open' || event.status === 'active'
+                        event.status === 'current'
                           ? "p-2.5 text-white bg-[#C59B27] hover:bg-[#A37B1E] rounded-xl border border-[#C59B27] flex items-center justify-center cursor-pointer transition-colors shadow-sm"
                           : "p-2 text-zinc-600 hover:text-[#C59B27] bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
                       }
                       title="Edit Event details"
                     >
                       <Edit2 className={
-                        event.status === 'current' || event.status === 'open' || event.status === 'active'
+                        event.status === 'current'
                           ? "w-4 h-4 stroke-[2.5]"
                           : "w-3.5 h-3.5"
                       } />
                     </Button>
 
-                    {event.status !== 'current' && event.status !== 'open' && event.status !== 'active' && event.status !== 'archived' && (
+                    {event.status !== 'current' && event.status !== 'archived' && event.status !== 'closed' && (
                       <Button
                         type="button"
                         onClick={() => handleSetCurrentActive(event.id!)}
@@ -587,24 +612,24 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                         title="Set as Active Current Event"
                       >
                         <Play className="w-3 h-3 fill-[#C59B27]" />
-                        <span>Make Current</span>
+                        <span>Make current</span>
                       </Button>
                     )}
 
-                    {event.status !== 'archived' && (
+                    {event.status !== 'archived' && event.status !== 'closed' && (
                       <Button
                         type="button"
                         onClick={() => handleArchiveEvent(event.id!)}
-                        data-component-version={event.status === 'current' || event.status === 'open' || event.status === 'active' ? "admin-current-event-archive-action-v2" : undefined}
+                        data-component-version={event.status === 'current' ? "admin-current-event-archive-action-v2" : undefined}
                         className={
-                          event.status === 'current' || event.status === 'open' || event.status === 'active'
+                          event.status === 'current'
                             ? "p-2.5 text-red-700 bg-red-50 hover:bg-red-100 rounded-xl border border-red-200 flex items-center justify-center cursor-pointer transition-colors"
                             : "p-2 text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
                         }
                         title="Archive Event"
                       >
                         <Archive className={
-                          event.status === 'current' || event.status === 'open' || event.status === 'active'
+                          event.status === 'current'
                             ? "w-4 h-4 stroke-[2.5]"
                             : "w-3.5 h-3.5"
                         } />
@@ -1005,7 +1030,13 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 <Button
                   type="button"
                   disabled={submitting}
-                  onClick={() => handleSaveEvent('upcoming')}
+                  onClick={() => {
+                    if (currentScreen === 'create') {
+                      handleSaveEvent('upcoming');
+                    } else {
+                      handleSaveEvent();
+                    }
+                  }}
                   className="w-full bg-[#C59B27] text-white hover:bg-[#b58c22] py-2.5 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   {submitting ? (
@@ -1015,14 +1046,16 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                   )}
                 </Button>
 
-                <Button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => handleSaveEvent('draft')}
-                  className="w-full bg-white text-zinc-700 hover:bg-zinc-50 py-2.5 rounded-xl text-xs font-medium border border-[#EAE8E1] transition-all cursor-pointer flex items-center justify-center"
-                >
-                  <span>Save as draft</span>
-                </Button>
+                {currentScreen === 'create' && (
+                  <Button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => handleSaveEvent('draft')}
+                    className="w-full bg-white text-zinc-700 hover:bg-zinc-50 py-2.5 rounded-xl text-xs font-medium border border-[#EAE8E1] transition-all cursor-pointer flex items-center justify-center"
+                  >
+                    <span>Save as draft</span>
+                  </Button>
+                )}
 
                 <button
                   type="button"
