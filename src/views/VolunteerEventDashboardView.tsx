@@ -2781,13 +2781,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
             </div>
 
-            {/* 3. My Duty Location Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
+            {/* 3. Duty Location Card */}
+            <div className="bg-white border border-stone-200/80 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-xs" data-component-version="volunteer-dashboard-duty-location">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <MapPin className="w-4 h-4 text-[#C59B27] shrink-0" />
-                  <h2 className="text-xs font-sans font-bold tracking-wider uppercase text-zinc-500">YOUR DUTY LOCATION</h2>
-                </div>
+                <h2 className="text-xs font-sans font-medium text-stone-500">Duty location</h2>
                 {currentDutyLocation && !currentDutyLocation.isAssignedByAdmin && (
                   <button
                     type="button"
@@ -2808,13 +2805,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <div className="space-y-1">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-base sm:text-lg font-serif font-bold text-[#18181B]">
+                        <div className="text-base sm:text-lg font-serif font-semibold text-stone-900 tracking-tight">
                           {currentDutyLocation.name || currentDutyLocation.locationName}
                         </div>
                         {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey) && (
-                          <div className="text-xs text-zinc-600 font-sans mt-0.5">
+                          <div className="text-xs text-stone-500 font-sans mt-0.5">
                             {[
-                              currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
+                              cleanAgeGroup(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey) || currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
                               currentDutyLocation.team || currentDutyLocation.teamKey
                             ].filter(Boolean).join(' · ')}
                           </div>
@@ -2823,14 +2820,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <button
                         type="button"
                         onClick={() => setShowDutyLocationDetailsModal(true)}
-                        className="px-2.5 py-1 text-xs text-zinc-600 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 font-sans font-medium rounded-lg transition-colors cursor-pointer shrink-0"
+                        className="text-xs text-stone-500 hover:text-stone-800 font-sans font-medium transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1 pt-0.5"
                       >
-                        View details
+                        <span>View details</span>
+                        <span className="text-stone-400" aria-hidden="true">→</span>
                       </button>
                     </div>
 
                     {currentDutyLocation.instructions && (
-                      <p className="text-xs text-zinc-600 font-sans pt-1 leading-relaxed line-clamp-2">
+                      <p className="text-xs text-stone-600 font-sans pt-1 leading-relaxed line-clamp-2">
                         {currentDutyLocation.instructions}
                       </p>
                     )}
@@ -2838,20 +2836,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* Presence Status & Arrival Confirmation */}
                   {currentDutyLocation.isPresent ? (
-                    <div className="pt-2 border-t border-[#F4F3EF] flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-xs font-sans font-semibold text-emerald-700">On duty</span>
+                    <div className="pt-2.5 border-t border-stone-100 flex items-center justify-between">
+                      <div className="text-xs font-sans text-stone-600">
+                        <span className="font-medium text-emerald-700">On duty</span>
                         {currentDutyLocation.presentSince && (
-                          <span className="text-xs font-sans text-zinc-500">
-                            · Since {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          <span className="text-stone-500">
+                            {' '}· Since {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="pt-2 border-t border-[#F4F3EF] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-                      <p className="text-xs font-sans text-zinc-500">
+                    <div className="pt-2.5 border-t border-stone-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <p className="text-xs font-sans text-stone-500">
                         Confirm your arrival to let your team know you're here.
                       </p>
                       <button
@@ -2869,10 +2866,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               ) : (
                 /* Unassigned Location State */
                 <div className="space-y-3">
-                  <p className="text-sm font-sans font-medium text-zinc-800">
+                  <p className="text-sm font-sans font-medium text-stone-900">
                     No location assigned yet.
                   </p>
-                  <p className="text-xs text-zinc-500 font-sans leading-relaxed">
+                  <p className="text-xs text-stone-500 font-sans leading-relaxed">
                     Choose where you'll serve
                   </p>
 
@@ -2894,9 +2891,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setShowLocationQRModal(true);
                         startLocationQRScanning();
                       }}
-                      className="py-2.5 px-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                      className="py-2.5 px-3 text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
                     >
-                      <QrCode className="w-3.5 h-3.5 text-zinc-500" />
+                      <QrCode className="w-3.5 h-3.5 text-stone-500" />
                       <span>Scan location QR</span>
                     </button>
                   </div>
@@ -2904,52 +2901,50 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
-            {/* 4. Primary Quick Operational Actions */}
-            <div className="space-y-2.5">
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCameraActive(true);
-                    setScanMode('check_in');
-                    onNavigate('/volunteer/scan');
-                  }}
-                  className="py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-semibold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Start check-in</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/volunteer/pickup')}
-                  className="py-3 px-4 bg-white border border-[#EAE8E1] hover:bg-gray-50 text-[#18181B] font-semibold text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center space-x-2"
-                >
-                  <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
-                  <span>Open pickup</span>
-                </button>
-              </div>
+            {/* 4. Primary Operational Actions */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraActive(true);
+                  setScanMode('check_in');
+                  onNavigate('/volunteer/scan');
+                }}
+                className="py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Start check-in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('/volunteer/pickup')}
+                className="py-3 px-4 bg-white border border-stone-200/90 hover:bg-stone-50 text-stone-900 font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
+                <span>Open pickup</span>
+              </button>
+            </div>
 
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => handleOpenSafetyAlertModal()}
-                  className="flex-1 py-2.5 bg-rose-50/70 border border-rose-150 hover:bg-rose-100/70 text-rose-800 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs"
-                >
-                  <Bell className="h-4 w-4 shrink-0 text-rose-600" />
-                  <span>Request admin help</span>
-                </button>
-                {mySafetyAlerts.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMyAlertsView(true)}
-                    className="py-2.5 px-3 bg-zinc-50 border border-[#EAE8E1] hover:bg-zinc-100 text-zinc-700 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
-                    title="View requested support history"
-                  >
-                    <History className="h-4 w-4 shrink-0 text-zinc-500" />
-                    <span>({mySafetyAlerts.filter(a => a.status !== 'resolved').length})</span>
-                  </button>
-                )}
-              </div>
+            {/* 5. Support Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenSafetyAlertModal()}
+                className="flex-1 py-2.5 px-3 bg-white border border-rose-200 hover:bg-rose-50/50 text-rose-700 font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer text-center"
+              >
+                Request admin help
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMyAlertsView(true)}
+                className="py-2.5 px-3.5 bg-white border border-stone-200/80 hover:bg-stone-50 text-stone-700 font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+                title="View care requests"
+              >
+                <span>My requests</span>
+                <span className="text-stone-400 font-normal">
+                  {mySafetyAlerts.filter(a => a.status !== 'resolved').length}
+                </span>
+              </button>
             </div>
 
             {/* 5. Child Search Field */}
@@ -7482,21 +7477,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       )}
 
       {/* Persistent Bottom Tab Bar */}
-      <nav 
-        className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-[#EAE8E1] px-3 py-1 flex items-center justify-around z-20 shadow-xs" 
+      <nav
+        className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-stone-200/80 px-2 py-1 flex items-center justify-around z-20 shadow-xs"
         data-component-version="volunteer-navigation-v3-safe-routing"
         aria-label="Volunteer navigation"
       >
         <button
           onClick={() => onNavigate('/volunteer/event')}
-          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
             cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' 
               ? 'text-[#C59B27]' 
-              : 'text-zinc-400 hover:text-zinc-600'
+              : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <Calendar className={`h-5 w-5 ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
-          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'font-semibold' : 'font-medium'}`}>
+          <Calendar className="h-5 w-5 stroke-[1.75]" />
+          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+            cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+          }`}>
             Events
           </span>
         </button>
@@ -7506,42 +7503,48 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             setCameraActive(true);
             onNavigate('/volunteer/scan');
           }}
-          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
             cleanRoute === '/volunteer/scan' 
               ? 'text-[#C59B27]' 
-              : 'text-zinc-400 hover:text-zinc-600'
+              : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <QrCode className={`h-5 w-5 ${cleanRoute === '/volunteer/scan' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
-          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/scan' ? 'font-semibold' : 'font-medium'}`}>
+          <QrCode className="h-5 w-5 stroke-[1.75]" />
+          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+            cleanRoute === '/volunteer/scan' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+          }`}>
             Scan
           </span>
         </button>
 
         <button
           onClick={() => onNavigate('/volunteer/children')}
-          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
             cleanRoute === '/volunteer/children' 
               ? 'text-[#C59B27]' 
-              : 'text-zinc-400 hover:text-zinc-600'
+              : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <Users className={`h-5 w-5 ${cleanRoute === '/volunteer/children' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
-          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/children' ? 'font-semibold' : 'font-medium'}`}>
+          <Users className="h-5 w-5 stroke-[1.75]" />
+          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+            cleanRoute === '/volunteer/children' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+          }`}>
             Children
           </span>
         </button>
 
         <button
           onClick={() => onNavigate('/volunteer/reports')}
-          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
             cleanRoute === '/volunteer/reports' 
               ? 'text-[#C59B27]' 
-              : 'text-zinc-400 hover:text-zinc-600'
+              : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <BarChart3 className={`h-5 w-5 ${cleanRoute === '/volunteer/reports' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
-          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/reports' ? 'font-semibold' : 'font-medium'}`}>
+          <BarChart3 className="h-5 w-5 stroke-[1.75]" />
+          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+            cleanRoute === '/volunteer/reports' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+          }`}>
             Summary
           </span>
         </button>
@@ -7550,14 +7553,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           <button
             onClick={() => onNavigate('/volunteer/team-alerts')}
             data-component-version="volunteer-dashboard-icon-route-v2"
-            className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
               cleanRoute === '/volunteer/team-alerts' 
                 ? 'text-[#C59B27]' 
-                : 'text-zinc-400 hover:text-zinc-600'
+                : 'text-stone-400 hover:text-stone-600'
             }`}
           >
-            <ShieldAlert className={`h-5 w-5 ${cleanRoute === '/volunteer/team-alerts' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
-            <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/team-alerts' ? 'font-semibold' : 'font-medium'}`}>
+            <ShieldAlert className="h-5 w-5 stroke-[1.75]" />
+            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+              cleanRoute === '/volunteer/team-alerts' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+            }`}>
               Safety
             </span>
           </button>
@@ -7565,14 +7570,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
         <button
           onClick={() => onNavigate('/volunteer/profile')}
-          className={`flex flex-col items-center justify-center py-1 px-2 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
             cleanRoute === '/volunteer/profile' 
               ? 'text-[#C59B27]' 
-              : 'text-zinc-400 hover:text-zinc-600'
+              : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <User className={`h-5 w-5 ${cleanRoute === '/volunteer/profile' ? 'stroke-[2]' : 'stroke-[1.75]'}`} />
-          <span className={`text-[10px] tracking-tight mt-1 leading-none ${cleanRoute === '/volunteer/profile' ? 'font-semibold' : 'font-medium'}`}>
+          <User className="h-5 w-5 stroke-[1.75]" />
+          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+            cleanRoute === '/volunteer/profile' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+          }`}>
             Profile
           </span>
         </button>
