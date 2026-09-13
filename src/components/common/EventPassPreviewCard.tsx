@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { QrCode, ShieldCheck, Calendar } from 'lucide-react';
-import { StatusBadge, StatusType } from './StatusBadge';
+import { QrCode, Calendar } from 'lucide-react';
+import { StatusType } from './StatusBadge';
 
-interface EventPassPreviewCardProps {
+export interface EventPassPreviewCardProps {
   childName: string;
   ageGroup: string;
-  status: StatusType;
-  photoUrl: string;
+  status?: StatusType;
+  photoUrl?: string;
   eventTitle?: string;
   eventDate?: string;
   passReference?: string;
@@ -15,7 +15,6 @@ interface EventPassPreviewCardProps {
 export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
   childName,
   ageGroup,
-  status,
   photoUrl,
   eventTitle = 'The General Assembly',
   eventDate = '18th to 22nd November 2026',
@@ -30,53 +29,59 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
+  const formattedSection = ageGroup.toLowerCase().includes('section')
+    ? ageGroup
+    : `${ageGroup} Section`;
+
   return (
-    <div className="w-full bg-gradient-to-br from-[#18181B] via-[#222228] to-[#141416] text-white rounded-3xl p-5 border border-[#C59B27]/40 shadow-xl relative overflow-hidden">
-      {/* Decorative background gold glow */}
-      <div className="absolute top-0 right-0 w-36 h-36 bg-[#C59B27]/10 rounded-full blur-2xl pointer-events-none -mr-10 -mt-10" />
-      
-      <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
-        <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 rounded-full bg-[#C59B27]" />
-          <span className="text-xs font-medium tracking-wide text-zinc-300">
-            Event Pass
+    <div className="w-full bg-[#18181B] text-white rounded-2xl p-4 border border-zinc-800 shadow-sm relative select-none">
+      {/* Top pass identification bar */}
+      <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 mb-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          Event Pass
+        </span>
+        {passReference && (
+          <span className="text-[11px] font-mono text-zinc-400">
+            {passReference}
           </span>
-        </div>
-        <div className="flex items-center text-xs text-emerald-400 font-medium space-x-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span>Pass ready</span>
-        </div>
+        )}
       </div>
 
-      <div className="flex items-center space-x-4">
-        <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-[#C59B27] shrink-0 shadow-md bg-[#FAF6EB] flex items-center justify-center font-serif-koinonia text-lg font-bold text-[#9A7326]">
+      {/* Child identity info */}
+      <div className="flex items-center space-x-3.5">
+        <div className="w-12 h-12 rounded-xl overflow-hidden border border-zinc-700/60 shrink-0 bg-[#FAF6EB] flex items-center justify-center font-serif-koinonia text-base font-bold text-[#8C6D23]">
           {photoUrl && photoUrl.trim() !== '' && !imgError ? (
             <img
               src={photoUrl}
               alt=""
               className="w-full h-full object-cover"
               onError={() => setImgError(true)}
+              loading="lazy"
             />
           ) : (
             <span>{getInitials(childName)}</span>
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h4 className="text-lg font-bold tracking-tight text-white truncate">{childName}</h4>
-          <p className="text-xs text-[#D4AF37] font-medium mb-1.5">{ageGroup} Section</p>
-          <StatusBadge status={status} size="sm" />
+          <h4 className="text-sm font-semibold text-white tracking-tight truncate">
+            {childName}
+          </h4>
+          <p className="text-xs text-zinc-400 mt-0.5 truncate">
+            {formattedSection}
+          </p>
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between bg-black/30 -mx-5 -mb-5 px-5 py-3.5 rounded-b-3xl">
-        <div className="text-xs text-white/80 flex flex-col">
-          <span className="font-semibold text-white/90">{eventTitle}</span>
-          <span className="text-[11px] text-white/60 flex items-center mt-0.5">
-            <Calendar className="w-3 h-3 mr-1 inline shrink-0" /> {eventDate}
+      {/* Footer: Event schedule and QR reference */}
+      <div className="mt-3.5 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
+        <div className="text-xs text-zinc-400 flex flex-col min-w-0 pr-2">
+          <span className="font-medium text-zinc-200 truncate">{eventTitle}</span>
+          <span className="text-[11px] text-zinc-400 flex items-center mt-0.5 truncate">
+            <Calendar className="w-3 h-3 mr-1 inline shrink-0 text-zinc-400" /> {eventDate}
           </span>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="bg-white p-1 rounded-xl text-black shadow-inner w-10 h-10 flex items-center justify-center overflow-hidden">
+        <div className="shrink-0">
+          <div className="bg-white p-1 rounded-lg w-9 h-9 flex items-center justify-center overflow-hidden">
             {passReference ? (
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(passReference)}`}
@@ -86,7 +91,7 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <QrCode className="w-7 h-7 text-[#18181B]" />
+              <QrCode className="w-5 h-5 text-zinc-800" />
             )}
           </div>
         </div>

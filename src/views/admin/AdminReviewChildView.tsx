@@ -1007,18 +1007,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           </div>
 
           {/* STATUS STRIP (CURRENT STATUS, EVENT ACCESS, ATTENDANCE) */}
-          <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 text-xs grid grid-cols-3 gap-2 text-center divide-x divide-[#EAE8E1]">
-            <div className="pr-1">
-              <span className="text-zinc-400 text-[11px] font-medium block">Current status</span>
-              <span className="font-semibold text-zinc-900 mt-1 block truncate">{getReviewStatusLabel()}</span>
+          <div className="bg-[#FAF9F8] border border-[#EAE8E1]/80 rounded-xl p-3 grid grid-cols-3 divide-x divide-[#EAE8E1]/80 text-left">
+            <div className="pr-3">
+              <span className="text-[11px] font-medium text-zinc-400 block">Current status</span>
+              <span className="text-xs font-semibold text-zinc-800 mt-0.5 block truncate">{getReviewStatusLabel()}</span>
             </div>
-            <div className="px-1">
-              <span className="text-zinc-400 text-[11px] font-medium block">Event access</span>
-              <span className="font-semibold text-zinc-900 mt-1 block truncate">{getEventAccessLabel()}</span>
+            <div className="px-3">
+              <span className="text-[11px] font-medium text-zinc-400 block">Event access</span>
+              <span className="text-xs font-semibold text-zinc-800 mt-0.5 block truncate">{getEventAccessLabel()}</span>
             </div>
-            <div className="pl-1">
-              <span className="text-zinc-400 text-[11px] font-medium block">Attendance</span>
-              <span className="font-semibold text-zinc-900 mt-1 block truncate">{getAttendanceLabel()}</span>
+            <div className="pl-3">
+              <span className="text-[11px] font-medium text-zinc-400 block">Attendance</span>
+              <span className="text-xs font-semibold text-zinc-800 mt-0.5 block truncate">{getAttendanceLabel()}</span>
             </div>
           </div>
 
@@ -1236,12 +1236,17 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             {/* 5. PASS READY STATUS */}
             {!isRemoved && !isAttendingChild && app.status === 'pass_ready' && (
               <div className="space-y-4">
-                <div className="bg-emerald-50/80 border border-emerald-100 rounded-xl p-3.5 text-xs text-emerald-800 leading-relaxed space-y-1">
-                  <p className="font-semibold text-xs">Event pass issued</p>
-                  <p>The digital event pass is active and available to the parent.</p>
+                <div className="bg-emerald-50/50 border border-emerald-200/60 rounded-xl p-3.5 text-xs text-emerald-900 leading-relaxed">
+                  <div className="flex items-center gap-2 font-semibold text-xs text-emerald-950">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Pass ready</span>
+                  </div>
+                  <p className="text-emerald-800/80 text-[11.5px] mt-0.5 pl-5.5">
+                    The parent can now view and use the event pass.
+                  </p>
                 </div>
 
-                <div className="max-w-[300px] mx-auto py-1">
+                <div className="w-full py-0.5">
                   <EventPassPreviewCard
                     childName={app.child.fullName}
                     ageGroup={app.child.ageGroup || 'Section'}
@@ -1251,24 +1256,24 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   />
                 </div>
 
-                <div className="pt-2 border-t border-[#EAE8E1]/60 flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={() => setIsRevokeModalOpen(true)}
-                    className="flex-1 py-2.5 bg-white border border-red-200 hover:bg-red-50 text-red-600 font-medium rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Revoke pass</span>
-                  </Button>
-
+                <div className="space-y-2 pt-2 border-t border-[#EAE8E1]/80">
                   <Button
                     type="button"
                     onClick={() => setIsReopenModalOpen(true)}
-                    className="flex-1 py-2.5 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 font-medium rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2.5 px-4 bg-white border border-[#EAE8E1] hover:border-zinc-300 hover:bg-zinc-50/80 text-zinc-800 font-medium rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
                   >
-                    <Clock className="w-3.5 h-3.5" />
                     <span>Reopen review</span>
+                    <Clock className="w-3.5 h-3.5 text-zinc-400" />
                   </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsRevokeModalOpen(true)}
+                    className="w-full py-2 px-4 bg-transparent hover:bg-red-50/50 border border-transparent hover:border-red-200/60 text-zinc-500 hover:text-red-600 font-medium rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer group"
+                  >
+                    <span>Revoke pass</span>
+                    <X className="w-3.5 h-3.5 text-zinc-400 group-hover:text-red-500 transition-colors" />
+                  </button>
                 </div>
               </div>
             )}
@@ -1331,91 +1336,99 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
             {/* MORE ▾ ACTIONS MENU (FOR ALL NON-REMOVED STATES) */}
             {!isRemoved && (
-              <div className="pt-3 border-t border-[#EAE8E1]/60 flex items-center justify-between relative">
-                <span className="text-xs text-zinc-400 font-medium">Additional actions</span>
+              <div className="pt-3.5 border-t border-[#EAE8E1]/80 flex items-center justify-between relative">
+                <span className="text-xs text-zinc-500 font-medium">Additional actions</span>
                 
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setIsDecisionMoreOpen(!isDecisionMoreOpen)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-zinc-600 hover:text-zinc-900 px-2.5 py-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 px-2.5 py-1 rounded-lg border border-[#EAE8E1] hover:border-zinc-300 bg-white hover:bg-zinc-50 transition-colors cursor-pointer"
                   >
                     <span>More</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                    <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-150 ${isDecisionMoreOpen ? 'rotate-180' : ''}`} />
                   </button>
 
                   {isDecisionMoreOpen && (
-                    <div className="absolute right-0 mt-1.5 w-52 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1.5 z-20 space-y-1 animate-scale-in text-left">
-                      {/* Revoke pass if active */}
-                      {(app.status === 'pass_ready' || app.hasPass) && !isAttendingChild && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsDecisionMoreOpen(false);
-                            setIsRevokeModalOpen(true);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 rounded-lg cursor-pointer"
-                        >
-                          Revoke event pass
-                        </button>
-                      )}
+                    <>
+                      {/* Backdrop dismiss */}
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setIsDecisionMoreOpen(false)}
+                      />
 
-                      {/* Reopen review if already decided */}
-                      {!['under_review', 'review_reopened'].includes(app.status) && !isAttendingChild && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsDecisionMoreOpen(false);
-                            setIsReopenModalOpen(true);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 rounded-lg cursor-pointer"
-                        >
-                          Reopen review
-                        </button>
-                      )}
-
-                      {/* Super Admin Reset */}
-                      {effectiveSuperAdmin && (
-                        <>
+                      <div className="absolute right-0 mt-1.5 w-52 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1.5 z-20 space-y-0.5 animate-scale-in text-left">
+                        {/* Revoke pass if active */}
+                        {(app.status === 'pass_ready' || app.hasPass) && !isAttendingChild && (
                           <button
                             type="button"
                             onClick={() => {
                               setIsDecisionMoreOpen(false);
-                              setIsResetProgressModalOpen(true);
+                              setIsRevokeModalOpen(true);
                             }}
-                            className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer"
+                            className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 rounded-lg cursor-pointer transition-colors"
                           >
-                            Reset event progress
+                            Revoke event pass
                           </button>
+                        )}
+
+                        {/* Reopen review if already decided */}
+                        {!['under_review', 'review_reopened'].includes(app.status) && !isAttendingChild && (
                           <button
                             type="button"
                             onClick={() => {
                               setIsDecisionMoreOpen(false);
-                              setIsResetAndRemoveModalOpen(true);
+                              setIsReopenModalOpen(true);
                             }}
-                            className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer"
+                            className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 rounded-lg cursor-pointer transition-colors"
                           >
-                            Reset & remove
+                            Reopen review
                           </button>
-                        </>
-                      )}
+                        )}
 
-                      <div className="border-t border-[#EAE8E1] my-1" />
+                        {/* Super Admin Reset */}
+                        {effectiveSuperAdmin && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDecisionMoreOpen(false);
+                                setIsResetProgressModalOpen(true);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer transition-colors"
+                            >
+                              Reset event progress
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDecisionMoreOpen(false);
+                                setIsResetAndRemoveModalOpen(true);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs text-amber-800 hover:bg-amber-50/60 rounded-lg font-medium cursor-pointer transition-colors"
+                            >
+                              Reset & remove
+                            </button>
+                          </>
+                        )}
 
-                      {/* Remove application */}
-                      {!isAttendingChild && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsDecisionMoreOpen(false);
-                            setIsRemoveModalOpen(true);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50/60 rounded-lg cursor-pointer"
-                        >
-                          Remove from this event
-                        </button>
-                      )}
-                    </div>
+                        <div className="border-t border-[#EAE8E1] my-1" />
+
+                        {/* Remove application */}
+                        {!isAttendingChild && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsDecisionMoreOpen(false);
+                              setIsRemoveModalOpen(true);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50/60 rounded-lg cursor-pointer transition-colors"
+                          >
+                            Remove from this event
+                          </button>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
