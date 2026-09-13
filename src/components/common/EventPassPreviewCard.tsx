@@ -34,22 +34,30 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
     : `${ageGroup} Section`;
 
   return (
-    <div className="w-full bg-[#18181B] text-white rounded-2xl p-4 border border-zinc-800 shadow-sm relative select-none">
+    <div className="w-full bg-[#FAF8F5] text-zinc-900 rounded-xl p-4 border border-[#E5D5AE] shadow-none relative select-none">
       {/* Top pass identification bar */}
-      <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 mb-3">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-          Event Pass
-        </span>
-        {passReference && (
-          <span className="text-[11px] font-mono text-zinc-400">
-            {passReference}
+      <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-2.5 mb-3">
+        <div className="flex items-center space-x-1.5 min-w-0 pr-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8C6D23] shrink-0">
+            Event Pass
           </span>
-        )}
+          {passReference && (
+            <>
+              <span className="text-zinc-300 text-xs shrink-0">•</span>
+              <span className="text-[11px] text-zinc-400 font-normal truncate">
+                {passReference}
+              </span>
+            </>
+          )}
+        </div>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60 shrink-0">
+          Pass ready
+        </span>
       </div>
 
       {/* Child identity info */}
       <div className="flex items-center space-x-3.5">
-        <div className="w-12 h-12 rounded-xl overflow-hidden border border-zinc-700/60 shrink-0 bg-[#FAF6EB] flex items-center justify-center font-serif-koinonia text-base font-bold text-[#8C6D23]">
+        <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#E5D5AE] shrink-0 bg-[#FAF6EB] flex items-center justify-center font-serif-koinonia text-base font-bold text-[#8C6D23]">
           {photoUrl && photoUrl.trim() !== '' && !imgError ? (
             <img
               src={photoUrl}
@@ -63,25 +71,25 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-semibold text-white tracking-tight truncate">
+          <h4 className="text-sm font-semibold text-zinc-900 tracking-tight truncate">
             {childName}
           </h4>
-          <p className="text-xs text-zinc-400 mt-0.5 truncate">
+          <p className="text-xs text-zinc-500 mt-0.5 truncate">
             {formattedSection}
           </p>
         </div>
       </div>
 
       {/* Footer: Event schedule and QR reference */}
-      <div className="mt-3.5 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
-        <div className="text-xs text-zinc-400 flex flex-col min-w-0 pr-2">
-          <span className="font-medium text-zinc-200 truncate">{eventTitle}</span>
-          <span className="text-[11px] text-zinc-400 flex items-center mt-0.5 truncate">
-            <Calendar className="w-3 h-3 mr-1 inline shrink-0 text-zinc-400" /> {eventDate}
+      <div className="mt-3.5 pt-3 border-t border-[#EAE8E1] flex items-center justify-between">
+        <div className="text-xs text-zinc-600 flex flex-col min-w-0 pr-2">
+          <span className="font-semibold text-zinc-800 truncate">{eventTitle}</span>
+          <span className="text-[11px] text-zinc-500 flex items-center mt-0.5 truncate">
+            <Calendar className="w-3 h-3 mr-1.5 inline shrink-0 text-zinc-400" /> {eventDate}
           </span>
         </div>
         <div className="shrink-0">
-          <div className="bg-white p-1 rounded-lg w-9 h-9 flex items-center justify-center overflow-hidden">
+          <div className="bg-white border border-[#EAE8E1] p-1 rounded-lg w-10 h-10 flex items-center justify-center overflow-hidden">
             {passReference ? (
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(passReference)}`}
@@ -91,7 +99,7 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <QrCode className="w-5 h-5 text-zinc-800" />
+              <QrCode className="w-6 h-6 text-zinc-700" />
             )}
           </div>
         </div>
