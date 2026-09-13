@@ -211,39 +211,43 @@ const VolunteerDetailedAlertProgress: React.FC<{ alertId: string }> = ({ alertId
   };
 
   return (
-    <div className="mt-2 pt-2 border-t border-gray-100/60" id={`progress-det-${alertId}`}>
+    <div className="pt-2" id={`progress-det-${alertId}`}>
       <button
         onClick={fetchProgress}
-        className="w-full text-left text-[10px] text-[#C59B27] hover:underline font-bold flex items-center justify-between bg-transparent border-none cursor-pointer p-0"
+        className={`w-full text-left text-xs font-sans font-medium flex items-center justify-between bg-transparent border-none cursor-pointer p-0 transition-colors ${
+          expanded ? 'text-stone-900' : 'text-stone-600 hover:text-stone-800'
+        }`}
       >
-        <span>{expanded ? 'Hide Live Response Milestones' : 'View Live Response Milestones'}</span>
+        <span>Response history</span>
         {loading ? (
-          <RefreshCw className="w-3 h-3 animate-spin text-[#C59B27]" />
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-400" />
         ) : (
-          <ChevronDown className={`w-3.5 h-3.5 transform transition-transform text-[#C59B27] ${expanded ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-3.5 h-3.5 transform transition-transform text-stone-400 ${expanded ? 'rotate-180' : ''}`} />
         )}
       </button>
 
       {expanded && (
-        <div className="mt-2 space-y-2.5 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl p-3">
+        <div className="mt-2.5 space-y-2 bg-stone-50 border border-stone-200/80 rounded-lg p-3 font-sans">
           {progress.length > 0 ? (
             progress.map((p, idx) => (
-              <div key={idx} className="flex space-x-2 text-[11px]" id={`milestone-${idx}`}>
+              <div key={idx} className="flex space-x-2.5 text-xs" id={`milestone-${idx}`}>
                 <div className="flex flex-col items-center shrink-0">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27] mt-1" />
-                  {idx !== progress.length - 1 && <div className="w-0.5 bg-gray-200 flex-1 my-0.5" />}
+                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 mt-1" />
+                  {idx !== progress.length - 1 && <div className="w-px bg-stone-200 flex-1 my-0.5" />}
                 </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-gray-800 break-words">{p.updateType || p.type}</p>
-                  {p.note && <p className="text-[10px] text-gray-500 italic break-words">"{p.note}"</p>}
-                  <p className="text-[9px] text-gray-400 font-medium font-mono">
-                    {new Date(p.createdAt || p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-stone-800 break-words">{p.updateType || p.type}</p>
+                    <span className="text-[10px] text-stone-400 shrink-0 font-sans">
+                      {new Date(p.createdAt || p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  {p.note && <p className="text-[11px] text-stone-600 italic break-words mt-0.5">"{p.note}"</p>}
                 </div>
               </div>
             ))
           ) : (
-            <p className="text-[10px] text-gray-400 italic">No structured milestones logged yet.</p>
+            <p className="text-xs text-stone-400 italic">No structured milestones logged yet.</p>
           )}
         </div>
       )}
@@ -6845,195 +6849,236 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
       {/* 12. VOLUNTEER ALERTS HISTORY VIEW / FEEDBACK OVERLAY */}
       {showMyAlertsView && (
-        <div className="fixed inset-0 bg-neutral-950/75 z-50 flex items-end justify-center backdrop-blur-xs animate-fade-in">
-          <div className="bg-white border-t border-[#EAE8E1] rounded-t-[2.5rem] w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col animate-slide-up">
+        <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-end sm:items-center justify-center backdrop-blur-xs animate-fade-in p-0 sm:p-4">
+          <div className="bg-white border-t sm:border border-stone-200 rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[88vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slide-up">
             {/* Header */}
-            <div className="p-6 border-b border-gray-100 shrink-0 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-rose-50 rounded-xl text-rose-700">
-                  <Bell className="h-5 w-5 animate-pulse" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-serif font-bold text-gray-900">My Care Requests</h3>
-                  <p className="text-[10px] text-gray-400 font-medium">Real-time status tracking</p>
-                </div>
+            <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-stone-200/80 shrink-0 flex items-start justify-between bg-white">
+              <div>
+                <h3 className="text-xl font-serif font-semibold text-stone-900 tracking-tight">My Care Requests</h3>
+                <p className="text-xs text-stone-500 font-sans mt-0.5">Requests you've raised and their current status.</p>
               </div>
               <button
                 onClick={() => setShowMyAlertsView(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+                className="p-1.5 -mr-1.5 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition-colors cursor-pointer shrink-0"
+                aria-label="Close"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Scrollable Alerts List */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-gray-50/50" data-view-version="volunteer-help-request-history-v2">
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 flex-1 bg-stone-50/50" data-view-version="volunteer-help-request-history-v2">
               {mySafetyAlerts.length === 0 ? (
-                <div className="py-12 text-center space-y-2">
-                  <span className="text-3xl block">✓</span>
-                  <p className="text-gray-400 font-serif font-bold text-sm">No requests raised yet</p>
-                  <p className="text-[10px] text-gray-400">All alerts you submit will be displayed here.</p>
+                <div className="py-12 text-center space-y-1.5 font-sans">
+                  <p className="text-sm font-medium text-stone-700">No requests raised yet</p>
+                  <p className="text-xs text-stone-500">Care requests you submit will appear here.</p>
                 </div>
               ) : (
-                mySafetyAlerts.map((alert: any) => (
-                  <div 
-                    key={alert.id}
-                    className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-xs space-y-3"
-                  >
-                    {/* Urgency and Category Row */}
-                    <div className="flex items-center justify-between">
-                      <span className={`px-2.5 py-0.5 text-[8px] font-bold font-mono tracking-wider rounded-md uppercase ${
-                        alert.severity === 'urgent' 
-                          ? 'bg-rose-50 text-rose-700 border border-rose-100' 
-                          : alert.severity === 'important'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                          : 'bg-blue-50 text-blue-700 border border-blue-100'
-                      }`}>
-                        {alert.severity} Urgency
-                      </span>
-                      
-                      <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded-full ${
-                        alert.status === 'open' 
-                          ? 'bg-amber-100 text-amber-800' 
-                          : alert.status === 'acknowledged' || alert.status === 'in_progress'
-                          ? 'bg-blue-100 text-blue-800 animate-pulse'
-                          : 'bg-emerald-100 text-emerald-800'
-                      }`}>
-                        {alert.status === 'open' ? 'Waiting' : alert.status === 'resolved' ? 'Resolved' : 'Active'}
-                      </span>
-                    </div>
+                mySafetyAlerts.map((alert: any) => {
+                  const isResolved = alert.status === 'resolved';
+                  const isUnderway = alert.status === 'acknowledged' || alert.status === 'in_progress';
+                  const isUrgent = alert.severity === 'urgent';
 
-                    {/* Category Title & Details */}
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-serif font-bold text-gray-900">{alert.title}</h4>
-                      {alert.location_label && (
-                        <p className="text-[10px] text-gray-400 font-medium flex items-center">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] mr-1.5 shrink-0"></span>
-                          Location: {alert.location_label}
-                        </p>
-                      )}
-                      {alert.child_name && (
-                        <p className="text-[10px] text-gray-400 font-medium flex items-center">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 mr-1.5 shrink-0"></span>
-                          Child: {alert.child_name}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Alert Message */}
-                    {alert.message && (
-                      <p className="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-100 leading-relaxed font-medium">
-                        "{alert.message}"
-                      </p>
-                    )}
-
-                    {/* Real-time Delivery & Response Status Pipeline */}
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2" data-component-version="volunteer-alert-response-progress-v2">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Response Status Pipeline</div>
-                      
-                      <div className="space-y-2 pl-1.5 border-l border-gray-200">
-                        {/* Step 1: Delivered */}
-                        <div className="flex items-start space-x-2 relative">
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                            alert.status === 'open' || alert.status === 'acknowledged' || alert.status === 'in_progress' || alert.status === 'resolved'
-                              ? 'bg-emerald-500 ring-4 ring-emerald-100'
-                              : 'bg-gray-300'
-                          }`} />
-                          <div className="text-[11px]">
-                            <span className="font-semibold text-gray-800">
-                              {alert.severity === 'urgent' ? '🚨 Urgent alert sent' : '📢 Care request sent'}
+                  return (
+                    <div
+                      key={alert.id}
+                      className="bg-white border border-stone-200/80 rounded-xl p-4 sm:p-5 shadow-xs space-y-3 font-sans"
+                    >
+                      {/* Top Row: Single Natural Status + Timestamp */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          {isResolved ? (
+                            <span className="text-xs font-medium text-emerald-700">
+                              Resolved
                             </span>
-                            <span className="text-[10px] text-emerald-600 block">✓ Delivered to admin devices in real-time</span>
-                          </div>
+                          ) : isUnderway ? (
+                            <span className="text-xs font-medium text-amber-700">
+                              Response underway
+                            </span>
+                          ) : isUrgent ? (
+                            <span className="text-xs font-medium text-rose-700">
+                              Needs response
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium text-stone-700">
+                              Needs response
+                            </span>
+                          )}
                         </div>
 
-                        {/* Step 2: Acknowledged */}
-                        <div className="flex items-start space-x-2">
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                            ['acknowledged', 'in_progress', 'resolved'].includes(alert.status)
-                              ? 'bg-blue-500 ring-4 ring-blue-100'
-                              : alert.status === 'open'
-                              ? 'bg-amber-400 ring-4 ring-amber-100 animate-pulse'
-                              : 'bg-gray-300'
-                          }`} />
-                          <div className="text-[11px]">
-                            <span className={`font-semibold ${
-                              ['acknowledged', 'in_progress', 'resolved'].includes(alert.status)
-                                ? 'text-gray-800'
-                                : 'text-gray-400'
-                            }`}>
-                              Admin Acknowledged
-                            </span>
-                            {alert.status === 'open' && (
-                              <span className="text-[10px] text-amber-600 block animate-pulse">⚡ Waiting for admin to acknowledge...</span>
+                        <span className="text-xs text-stone-400 font-sans">
+                          {formatAlertTimestamp(alert.created_at || alert.createdAt) || 'Just now'}
+                        </span>
+                      </div>
+
+                      {/* Title & Clean Metadata */}
+                      <div className="space-y-1">
+                        <h4 className="text-base font-serif font-semibold text-stone-900 tracking-tight leading-snug">
+                          {alert.title}
+                        </h4>
+
+                        {(alert.location_label || alert.child_name) && (
+                          <div className="space-y-0.5 text-xs font-sans text-stone-600">
+                            {alert.location_label && (
+                              <div>
+                                <span className="text-stone-400">Location:</span>{' '}
+                                <span className="text-stone-700 font-medium">{alert.location_label}</span>
+                              </div>
                             )}
-                            {alert.acknowledged_at && (
-                              <span className="text-[10px] text-blue-600 block">
-                                ✓ Admin has acknowledged your alert ({alert.acknowledged_by_name || 'Admin'} at {formatTime(alert.acknowledged_at)})
+                            {alert.child_name && (
+                              <div>
+                                <span className="text-stone-400">Child:</span>{' '}
+                                <span className="text-stone-700 font-medium">{alert.child_name}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Request Message Quote */}
+                      {alert.message && (
+                        <blockquote className="border-l-2 border-stone-300 pl-3 py-1 text-xs text-stone-700 italic font-sans leading-relaxed">
+                          “{alert.message}”
+                        </blockquote>
+                      )}
+
+                      {/* Response Progress & History */}
+                      <div className="pt-3 border-t border-stone-100 space-y-3" data-component-version="volunteer-alert-response-progress-v2">
+                        <div className="text-xs font-semibold text-stone-700 font-sans">Response progress</div>
+
+                        {/* Clean Vertical Timeline */}
+                        <div className="space-y-0">
+                          {/* Step 1: Request sent */}
+                          <div className="flex gap-2.5">
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className="w-2 h-2 rounded-full mt-1 bg-emerald-600" />
+                              <div className="w-px flex-1 bg-stone-200 mt-1" />
+                            </div>
+                            <div className="text-xs min-w-0 pb-3">
+                              <div className="flex items-baseline gap-2">
+                                <span className="font-medium text-stone-800">Request sent</span>
+                                {(alert.created_at || alert.createdAt) && (
+                                  <span className="text-[10px] text-stone-400 font-sans">
+                                    {formatTime(alert.created_at || alert.createdAt)}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-stone-500 block">Sent to the care team</span>
+                            </div>
+                          </div>
+
+                          {/* Step 2: Response underway */}
+                          <div className="flex gap-2.5">
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className={`w-2 h-2 rounded-full mt-1 ${
+                                isResolved
+                                  ? 'bg-emerald-600'
+                                  : isUnderway
+                                  ? 'bg-amber-500'
+                                  : 'bg-stone-300'
+                              }`} />
+                              <div className="w-px flex-1 bg-stone-200 mt-1" />
+                            </div>
+                            <div className="text-xs min-w-0 pb-3">
+                              <div className="flex items-baseline gap-2">
+                                <span className={`font-medium ${
+                                  isResolved || isUnderway ? 'text-stone-800' : 'text-stone-400'
+                                }`}>
+                                  {isResolved ? 'Care team responded' : isUnderway ? 'Response underway' : 'Response pending'}
+                                </span>
+                                {alert.acknowledged_at && (
+                                  <span className="text-[10px] text-stone-400 font-sans">
+                                    {formatTime(alert.acknowledged_at)}
+                                  </span>
+                                )}
+                              </div>
+                              {alert.status === 'open' && (
+                                <span className="text-[11px] text-stone-400 block">
+                                  Waiting for care team to acknowledge
+                                </span>
+                              )}
+                              {(isUnderway || isResolved) && (
+                                <span className="text-[11px] text-stone-500 block">
+                                  {alert.acknowledged_by_name ? `${alert.acknowledged_by_name} acknowledged` : 'Admin responded'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Step 3: Resolved */}
+                          <div className="flex gap-2.5">
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className={`w-2 h-2 rounded-full mt-1 ${
+                                isResolved ? 'bg-emerald-600' : 'bg-stone-300'
+                              }`} />
+                            </div>
+                            <div className="text-xs min-w-0">
+                              <div className="flex items-baseline gap-2">
+                                <span className={`font-medium ${
+                                  isResolved ? 'text-stone-800' : 'text-stone-400'
+                                }`}>
+                                  Resolved
+                                </span>
+                                {alert.resolved_at && (
+                                  <span className="text-[10px] text-stone-400 font-sans">
+                                    {formatTime(alert.resolved_at)}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-stone-500 block">
+                                {isResolved ? 'Request resolved' : 'Pending resolution'}
                               </span>
-                            )}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Step 3: Resolved */}
-                        <div className="flex items-start space-x-2">
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                            alert.status === 'resolved'
-                              ? 'bg-emerald-600 ring-4 ring-emerald-100'
-                              : 'bg-gray-200'
-                          }`} />
-                          <div className="text-[11px]">
-                            <span className={`font-semibold ${
-                              alert.status === 'resolved' ? 'text-gray-800' : 'text-gray-400'
-                            }`}>
-                              Resolved & Secured
-                            </span>
-                            {alert.status === 'resolved' ? (
-                              <span className="text-[10px] text-emerald-600 block">✓ Safety concern has been resolved</span>
-                            ) : (
-                              <span className="text-[10px] text-gray-400 block">Pending action</span>
-                            )}
+                        {/* Resolution Note if resolved and meaningful */}
+                        {isResolved && (() => {
+                          const note = (alert.resolution_note || '').trim();
+                          const isGeneric = !note || note.toLowerCase() === 'resolved' || note.toLowerCase() === 'resolved.';
+                          if (isGeneric && !alert.resolved_by_name) {
+                            return null;
+                          }
+                          return (
+                            <div className="pt-2 border-t border-stone-100 text-xs font-sans text-stone-600 space-y-0.5">
+                              <span className="font-medium text-stone-700 block">Resolution</span>
+                              {isGeneric ? (
+                                <p className="text-stone-500">
+                                  Resolved by {alert.resolved_by_name || 'the care team'}.
+                                </p>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <p className="text-stone-700 italic">"{note}"</p>
+                                  {alert.resolved_by_name && (
+                                    <span className="text-[11px] text-stone-400 block not-italic">
+                                      Resolved by {alert.resolved_by_name}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Response History Disclosure & Child Details Action */}
+                        <div className="pt-2 border-t border-stone-100/80 space-y-2 font-sans">
+                          <VolunteerDetailedAlertProgress alertId={alert.id} />
+
+                          <div className="pt-1">
+                            <button
+                              onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 hover:text-stone-900 transition-colors cursor-pointer py-1 font-sans"
+                            >
+                              <span>Child details</span>
+                              <span className="text-stone-400 text-sm leading-none" aria-hidden="true">→</span>
+                            </button>
                           </div>
                         </div>
                       </div>
-
-                      {/* Display Resolution Notes if resolved */}
-                      {alert.status === 'resolved' && alert.resolution_note && (
-                        <div className="mt-2 bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-emerald-800">
-                          <span className="text-[9px] font-bold uppercase tracking-wider block text-emerald-600">Resolution Note</span>
-                          <p className="text-[10px] italic font-medium mt-0.5 leading-normal">
-                            "{alert.resolution_note}"
-                          </p>
-                          {alert.resolved_by_name && (
-                            <span className="text-[8px] text-emerald-500 block mt-1">Resolved by {alert.resolved_by_name}</span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Collapsible live milestones */}
-                      <VolunteerDetailedAlertProgress alertId={alert.id} />
-
-                      {/* Phase 7 Child Emergency Summary button */}
-                      <button
-                        onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
-                        className="w-full mt-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <Shield className="w-4 h-4 text-white" /> View Need-To-Know Child Summary
-                      </button>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
-            </div>
-
-            {/* Bottom Bar Close Button */}
-            <div className="p-6 border-t border-gray-100 shrink-0">
-              <button
-                onClick={() => setShowMyAlertsView(false)}
-                className="w-full py-3.5 bg-gray-900 hover:bg-black text-white font-bold tracking-wider rounded-2xl uppercase transition-all text-center cursor-pointer"
-              >
-                Close List
-              </button>
             </div>
           </div>
         </div>
