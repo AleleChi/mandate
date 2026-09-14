@@ -2718,12 +2718,11 @@ function getChildAge(c: any): number {
 // GET admin overview dashboard metrics
 router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const currentEvent = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1");
-    const eventId = currentEvent?.id || 'event-ga-2026';
+    const event = await resolveAdminEvent(req.query.eventId as string);
+    const eventId = event?.id || null;
 
+    // Intentionally global persistent counts (not event-scoped)
     const totalChildrenRes = await queryOne('SELECT COUNT(*) as count FROM children WHERE COALESCE(is_deleted, 0) = 0');
-    const underReviewRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND COALESCE(is_deleted, 0) = 0", [eventId]);
-    const approvedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0", [eventId]);
     const totalParentsRes = await queryOne('SELECT COUNT(*) as count FROM parent_profiles');
     const totalVolunteersRes = await queryOne(`
       SELECT COUNT(*) as count 
@@ -2736,8 +2735,12 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
       FROM volunteer_profiles v 
       WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
     `);
-    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]);
-    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up' AND COALESCE(is_deleted, 0) = 0", [eventId]);
+
+    // Event-specific live operational counts
+    const underReviewRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
+    const approvedRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
+    const checkedInRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
+    const pickedUpRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up' AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
 
     // Format admin user info
     let fullName = 'Admin User';
@@ -2752,10 +2755,9 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     }
     const roleTitle = req.user?.role === 'super_admin' ? 'Global Director' : req.user?.role === 'admin' ? 'Senior Director' : 'Ministry Admin';
 
-    // Fetch active event details
-    const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+    // Format active event details
     const formatEventDate = (startsAt: string, endsAt: string) => {
-      if (!startsAt) return '22 Nov 2025';
+      if (!startsAt) return 'No active event';
       try {
         const s = new Date(startsAt);
         const e = endsAt ? new Date(endsAt) : s;
@@ -2769,18 +2771,18 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
       }
     };
 
-    const dateLabel = event ? formatEventDate(event.starts_at, event.ends_at) : '22 Nov 2025';
+    const dateLabel = event ? formatEventDate(event.starts_at || '', event.ends_at || '') : 'No active event';
     const timeLabel = (event?.daily_start_time && event?.daily_end_time)
       ? `${event.daily_start_time} to ${event.daily_end_time}`
-      : '9:00 AM to 7:00 PM';
+      : 'No active hours';
 
     // Fetch demographics and calculate counts dynamically from the DB
-    const childrenData = await query(`
+    const childrenData = eventId ? await query(`
       SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.checked_in_at, e.picked_up_at
       FROM children c
       JOIN child_event_entries e ON c.id = e.child_id
       WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
-    `, [eventId]);
+    `, [eventId]) : [];
 
     const ageGroupsList = [
       { min: 0, max: 0, displayLabel: 'Below 1' },
@@ -2834,31 +2836,31 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     });
 
     // Calculate Needs Attention items
-    // 1. Below event age
+    // 1. Below event age (persistent child identity check)
     const belowAgeCountRes = await queryOne("SELECT COUNT(*) as count FROM children WHERE age_group = 'Under 1 year'");
     const belowAgeCount = belowAgeCountRes?.count || 0;
 
-    // 2. Medical notes
-    const medicalNotesCountRes = await queryOne(`
+    // 2. Medical notes (event-scoped entries)
+    const medicalNotesCountRes = eventId ? await queryOne(`
       SELECT COUNT(*) as count FROM child_event_entries 
       WHERE event_id = ? AND (has_medical_notes = 1 OR (medical_notes IS NOT NULL AND medical_notes != ''))
-    `, [eventId]);
+    `, [eventId]) : { count: 0 };
     const medicalNotesCount = medicalNotesCountRes?.count || 0;
 
-    // 3. Missing pickup photo
+    // 3. Missing pickup photo (persistent child identity check)
     const missingPickupPhotoCountRes = await queryOne(`
       SELECT COUNT(*) as count FROM children WHERE photo_file_id IS NULL OR photo_file_id = ''
     `);
     const missingPickupPhotoCount = missingPickupPhotoCountRes?.count || 0;
 
-    // 4. Special support
-    const specialSupportCountRes = await queryOne(`
+    // 4. Special support (event-scoped entries)
+    const specialSupportCountRes = eventId ? await queryOne(`
       SELECT COUNT(*) as count FROM child_event_entries 
       WHERE event_id = ? AND (needs_extra_support = 1 OR (support_notes IS NOT NULL AND support_notes != ''))
-    `, [eventId]);
+    `, [eventId]) : { count: 0 };
     const specialSupportCount = specialSupportCountRes?.count || 0;
 
-    // 5. Duplicate phone number
+    // 5. Duplicate phone number (persistent parent profiles check)
     const duplicatePhoneCountRes = await queryOne(`
       SELECT COUNT(*) as count FROM (
         SELECT phone_number FROM parent_profiles 
@@ -2878,14 +2880,14 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
 
     const needsAttentionTotal = needsAttentionItems.reduce((acc, item) => acc + item.count, 0);
 
-    // Calculate Review Progress metrics
-    const selCountRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')", [eventId]);
+    // Calculate Review Progress metrics (event-scoped entries)
+    const selCountRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')", [eventId]) : { count: 0 };
     const selectedCount = selCountRes?.count || 0;
 
-    const revCountRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'", [eventId]);
+    const revCountRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'", [eventId]) : { count: 0 };
     const underReviewCount = revCountRes?.count || 0;
 
-    const rejCountRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('not_selected', 'rejected', 'withdrawn')", [eventId]);
+    const rejCountRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('not_selected', 'rejected', 'withdrawn')", [eventId]) : { count: 0 };
     const notSelectedCount = rejCountRes?.count || 0;
 
     // Calculate Today's Attendance metrics
@@ -2896,14 +2898,14 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     const notArrivedCount = Math.max(0, expectedAttendance - checkedInCount);
 
     // Fetch dynamic Recent Activity (real actions)
-    const recentActivityRows = await query(`
+    const recentActivityRows = eventId ? await query(`
       SELECT c.full_name as name, e.status, e.updated_at
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ?
       ORDER BY e.updated_at DESC
       LIMIT 4
-    `, [eventId]);
+    `, [eventId]) : [];
 
     const formatRelativeTime = (isoString: string) => {
       try {
@@ -2957,15 +2959,15 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
         roleTitle,
         photoUrl: null
       },
-      event: {
-        id: eventId,
-        name: event?.section_name || 'The General Assembly',
-        section: event?.title || 'Children and Teens',
+      event: event ? {
+        id: event.id,
+        name: event.section_name || event.title || 'Event',
+        section: event.title || 'Children and Teens',
         dateLabel,
         timeLabel,
-        status: event?.status || 'active',
-        registrationStatus: (event?.status === 'open' || event?.status === 'current' || event?.status === 'upcoming') ? 'open' : 'closed'
-      },
+        status: event.status || '',
+        registrationStatus: (event.status === 'open' || event.status === 'current' || event.status === 'upcoming') ? 'open' : 'closed'
+      } : null,
       metrics: {
         totalChildren: totalChildrenRes?.count || 0,
         totalParents: totalParentsRes?.count || 0,
@@ -2974,6 +2976,7 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
         checkedIn: checkedInCount,
         pickedUp: pickedUpCount
       },
+      checkedInToday: checkedInCount,
       demographics,
       needsAttention: {
         total: needsAttentionTotal,
@@ -3006,7 +3009,7 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     });
   } catch (err: any) {
     console.error('Error in overview API:', err);
-    return res.status(500).json({ error: 'Failed to fetch admin overview stats.' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch admin overview stats.' });
   }
 });
 
@@ -8352,6 +8355,8 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Parent profile not found' });
     }
 
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+
     const kids = await query(`
       SELECT 
         c.*,
@@ -8365,10 +8370,10 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
         e.picked_up_at
       FROM children c
       LEFT JOIN media_files m ON m.id = c.photo_file_id
-      LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = 'event-ga-2026'
+      LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND COALESCE(e.is_deleted, 0) = 0
       WHERE c.parent_profile_id = ?
       ORDER BY c.full_name ASC
-    `, [id]);
+    `, [targetEventId || '', id]);
 
     const linkedChildren = kids.map((c: any) => {
       const careFlags: string[] = [];
@@ -8400,7 +8405,7 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    // Event Summary calculation based on active children in event-ga-2026
+    // Event Summary calculation based on active children in target/current event
     const childrenAdded = kids.length;
     const selected = kids.filter((c: any) => c.entry_status === 'selected' || c.entry_status === 'pass_ready').length;
     const underReview = kids.filter((c: any) => c.entry_status === 'under_review').length;
@@ -8501,7 +8506,7 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
     });
   } catch (err: any) {
     console.error('Error fetching admin parent details:', err);
-    return res.status(500).json({ success: false, error: 'Failed to fetch parent details' });
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to fetch parent details' });
   }
 });
 
