@@ -4,6 +4,8 @@ export interface EventRow {
   id: string;
   title: string;
   section_name?: string;
+  theme?: string;
+  scripture?: string;
   location?: string;
   starts_at?: string;
   ends_at?: string;

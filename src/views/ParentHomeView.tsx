@@ -977,6 +977,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     </div>
   );
 
+  // Canonical child status is rendered in ChildStatusView with 'Confirmed by team' verification
   const renderStatusTab = () => null;
 
   const renderPassesTab = () => {
@@ -993,9 +994,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       !passReadyChildren.some(pr => pr.id === c.id)
     );
 
-    // 3. draftChildren: draft, incomplete, not submitted
+    // 3. draftChildren: draft, incomplete, not registered / not submitted
     const draftChildren = childrenList.filter(c => 
-      (c.status === 'Draft' || c.status === 'Incomplete') &&
+      (c.status === 'Draft' || c.status === 'Incomplete' || c.status === 'Not registered') &&
       !passReadyChildren.some(pr => pr.id === c.id) &&
       !waitingChildren.some(w => w.id === c.id)
     );

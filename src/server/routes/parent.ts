@@ -5,6 +5,7 @@ import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } from '../utils/validation';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
+import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -19,8 +20,6 @@ router.use((req: AuthenticatedRequest, res: Response, next) => {
   }
   next();
 });
-
-const REAL_EVENT_ID = 'event-ga-2026';
 
 function calculateAgeAndGroup(dobStr: string) {
   if (!dobStr) return { calculatedAge: 0, ageGroup: 'Not specified', needsAgeReview: false };
@@ -110,77 +109,108 @@ async function mapChildToFrontend(
   entryRow: any,
   pickupRow: any,
   parentProfileId?: string,
-  isBiometricProtected: boolean = false
+  isBiometricProtected: boolean = false,
+  currentEventId?: string | null
 ) {
-  const status = entryRow ? entryRow.status : 'incomplete';
-  let frontendStatus: any = 'Incomplete';
-  let statusNote = 'Continue entering child details';
+  const isRegisteredForCurrentEvent = Boolean(entryRow);
+  const status = entryRow ? entryRow.status : 'not_registered';
+  let frontendStatus: any = 'Not registered';
+  let statusNote = 'Not registered for this event';
   let passReference = undefined;
   let passObject = undefined;
   let isPassLocked = false;
 
   if (entryRow) {
-    const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
-    if (pass) {
-      if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
-        isPassLocked = true;
-        passReference = undefined;
-        passObject = {
-          id: pass.id,
-          status: pass.status,
-          issuedAt: pass.issued_at,
-          passLocked: true,
-          requiresBiometric: true
-        };
+    if (status === 'incomplete') {
+      frontendStatus = 'Incomplete';
+      statusNote = 'Continue entering child details';
+    } else if (status === 'under_review') {
+      frontendStatus = 'Under review';
+      statusNote = 'Details sent for review';
+    } else if (status === 'review_reopened') {
+      frontendStatus = 'Review reopened';
+      const first_name = childRow.full_name ? childRow.full_name.split(' ')[0] : 'your child';
+      statusNote = `The event team has reopened the review for ${first_name}. We will share an update when a new decision is made.`;
+    } else if (status === 'selected' || status === 'pass_ready') {
+      const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
+      if (pass) {
+        if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
+          isPassLocked = true;
+          passReference = undefined;
+          passObject = {
+            id: pass.id,
+            status: pass.status,
+            issuedAt: pass.issued_at,
+            passLocked: true,
+            requiresBiometric: true
+          };
+        } else {
+          passReference = pass.pass_reference;
+          passObject = {
+            id: pass.id,
+            status: pass.status,
+            passCode: pass.pass_reference,
+            qrPayload: pass.pass_reference,
+            issuedAt: pass.issued_at
+          };
+        }
+      }
+
+      if (passReference || isPassLocked) {
+        frontendStatus = 'Pass ready';
+        statusNote = 'Event pass is available';
       } else {
-        passReference = pass.pass_reference;
-        passObject = {
-          id: pass.id,
-          status: pass.status,
-          passCode: pass.pass_reference,
-          qrPayload: pass.pass_reference,
-          issuedAt: pass.issued_at
-        };
+        frontendStatus = 'Selected';
+        statusNote = 'Event pass will be available shortly.';
+      }
+    } else if (status === 'waiting_list') {
+      frontendStatus = 'Waiting list';
+      statusNote = 'Placed on waiting list';
+    } else if (status === 'not_selected') {
+      frontendStatus = 'Not selected';
+      statusNote = 'Not selected for this session';
+    } else if (status === 'withdrawn') {
+      frontendStatus = 'Withdrawn';
+      statusNote = 'Details withdrawn';
+    } else if (status === 'checked_in') {
+      frontendStatus = 'Checked in';
+      statusNote = 'Successfully checked in';
+    } else if (status === 'inside') {
+      frontendStatus = 'Inside';
+      statusNote = 'Inside the venue';
+    } else if (status === 'picked_up') {
+      frontendStatus = 'Picked up';
+      statusNote = 'Picked up and checked out';
+    } else if (status === 'checked_out') {
+      frontendStatus = 'Checked out';
+      statusNote = 'Checked out';
+    }
+
+    if (!passObject && ['checked_in', 'inside', 'picked_up', 'checked_out'].includes(status)) {
+      const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
+      if (pass) {
+        if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
+          isPassLocked = true;
+          passReference = undefined;
+          passObject = {
+            id: pass.id,
+            status: pass.status,
+            issuedAt: pass.issued_at,
+            passLocked: true,
+            requiresBiometric: true
+          };
+        } else {
+          passReference = pass.pass_reference;
+          passObject = {
+            id: pass.id,
+            status: pass.status,
+            passCode: pass.pass_reference,
+            qrPayload: pass.pass_reference,
+            issuedAt: pass.issued_at
+          };
+        }
       }
     }
-  }
-
-  if (status === 'under_review') {
-    frontendStatus = 'Under review';
-    statusNote = 'Details sent for review';
-  } else if (status === 'review_reopened') {
-    frontendStatus = 'Review reopened';
-    const first_name = childRow.full_name ? childRow.full_name.split(' ')[0] : 'your child';
-    statusNote = `The event team has reopened the review for ${first_name}. We will share an update when a new decision is made.`;
-  } else if (status === 'selected' || status === 'pass_ready') {
-    if (passReference || isPassLocked) {
-      frontendStatus = 'Pass ready';
-      statusNote = 'Event pass is available';
-    } else {
-      frontendStatus = 'Selected';
-      statusNote = 'Event pass will be available shortly.';
-    }
-  } else if (status === 'waiting_list') {
-    frontendStatus = 'Waiting list';
-    statusNote = 'Placed on waiting list';
-  } else if (status === 'not_selected') {
-    frontendStatus = 'Not selected';
-    statusNote = 'Not selected for this session';
-  } else if (status === 'withdrawn') {
-    frontendStatus = 'Withdrawn';
-    statusNote = 'Details withdrawn';
-  } else if (status === 'checked_in') {
-    frontendStatus = 'Checked in';
-    statusNote = 'Successfully checked in';
-  } else if (status === 'inside') {
-    frontendStatus = 'Inside';
-    statusNote = 'Inside the venue';
-  } else if (status === 'picked_up') {
-    frontendStatus = 'Picked up';
-    statusNote = 'Picked up and checked out';
-  } else if (status === 'checked_out') {
-    frontendStatus = 'Checked out';
-    statusNote = 'Checked out';
   }
 
   const resolvedChildPhoto = await resolvePhotoUrlAsync(childRow.photo_file_id);
@@ -256,17 +286,33 @@ async function mapChildToFrontend(
     passReference,
     passLocked: isPassLocked,
     pass: passObject,
-    draftData
+    draftData,
+    registeredForCurrentEvent: isRegisteredForCurrentEvent,
+    currentEventId: currentEventId || null,
+    entryId: entryRow?.id || null
   };
 }
 
-async function getFullChildrenList(parentProfileId: string, isBiometricProtected: boolean = false) {
-  const children = await query('SELECT * FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at DESC', [parentProfileId]);
+async function getFullChildrenList(
+  parentProfileId: string,
+  currentEventId: string | null,
+  isBiometricProtected: boolean = false
+) {
+  const children = await query(
+    'SELECT * FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at DESC',
+    [parentProfileId]
+  );
   const list = [];
   for (const c of children) {
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY (CASE WHEN event_id = ? THEN 0 ELSE 1 END), created_at DESC LIMIT 1', [c.id, REAL_EVENT_ID]);
-    const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
-    list.push(await mapChildToFrontend(c, entry, pickup, parentProfileId, isBiometricProtected));
+    // Child event participation must come strictly from the current event.
+    // If no current event exists or the child has no entry in it, entry is null.
+    const entry = currentEventId
+      ? await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, currentEventId])
+      : null;
+    const pickup = entry
+      ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id])
+      : null;
+    list.push(await mapChildToFrontend(c, entry, pickup, parentProfileId, isBiometricProtected, currentEventId));
   }
   return list;
 }
@@ -473,8 +519,11 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     return res.status(404).json({ error: 'Parent profile not found' });
   }
 
+  const currentEvent = await getCurrentEvent();
+  const currentEventId = currentEvent ? currentEvent.id : null;
+
   const isBioProtected = req.headers['x-biometric-protected'] === 'true';
-  const list = await getFullChildrenList(req.parentProfile.id, isBioProtected);
+  const list = await getFullChildrenList(req.parentProfile.id, currentEventId, isBioProtected);
   const childrenCount = list.length;
   const underReviewCount = list.filter(c => c.status === 'Under review').length;
   const passReadyCount = list.filter(c =>
@@ -486,24 +535,23 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     Boolean(c.passReference || (c.pass && (c.pass.passCode || c.pass.passLocked)))
   ).length;
 
-  const event = await queryOne('SELECT * FROM events WHERE id = ?', [REAL_EVENT_ID]);
-  const activeEvent = event ? {
-    id: event.id,
-    title: event.title,
-    section_name: event.section_name,
-    sectionName: event.section_name,
-    theme: event.theme,
-    scripture: event.scripture,
-    starts_at: event.starts_at,
-    startsAt: event.starts_at,
-    ends_at: event.ends_at,
-    endsAt: event.ends_at,
-    daily_start_time: event.daily_start_time,
-    dailyStartTime: event.daily_start_time,
-    daily_end_time: event.daily_end_time,
-    dailyEndTime: event.daily_end_time,
-    location: event.location,
-    status: event.status
+  const activeEvent = currentEvent ? {
+    id: currentEvent.id,
+    title: currentEvent.title,
+    section_name: currentEvent.section_name,
+    sectionName: currentEvent.section_name,
+    theme: currentEvent.theme,
+    scripture: currentEvent.scripture,
+    starts_at: currentEvent.starts_at,
+    startsAt: currentEvent.starts_at,
+    ends_at: currentEvent.ends_at,
+    endsAt: currentEvent.ends_at,
+    daily_start_time: currentEvent.daily_start_time,
+    dailyStartTime: currentEvent.daily_start_time,
+    daily_end_time: currentEvent.daily_end_time,
+    dailyEndTime: currentEvent.daily_end_time,
+    location: currentEvent.location,
+    status: currentEvent.status
   } : null;
 
   res.json({
@@ -512,18 +560,29 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     underReviewCount,
     passReadyCount,
     childrenList: list,
-    activeEvent
+    activeEvent,
+    message: currentEvent ? undefined : 'No event is currently open for registration.'
   });
 });
 
 router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
+  const currentEventId = await getCurrentEventId();
   const isBioProtected = req.headers['x-biometric-protected'] === 'true';
-  const list = await getFullChildrenList(req.parentProfile.id, isBioProtected);
+  const list = await getFullChildrenList(req.parentProfile.id, currentEventId, isBioProtected);
   res.json(list);
 });
 
 async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, childIdParam?: string) {
+  const currentEvent = await getCurrentEvent();
+  if (!currentEvent) {
+    const err: any = new Error('No event is currently open for registration.');
+    err.statusCode = 400;
+    err.code = 'NO_CURRENT_EVENT';
+    throw err;
+  }
+  const currentEventId = currentEvent.id;
+
   const childId = draft.id && draft.id.startsWith('child-') ? draft.id : (childIdParam || crypto.randomUUID());
   const now = new Date().toISOString();
 
@@ -561,7 +620,7 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     }
 
     const entryId = crypto.randomUUID();
-    const existingEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+    const existingEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
     const actualEntryId = existingEntry ? existingEntry.id : entryId;
 
     const schoolClass = (
@@ -681,7 +740,7 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
       await execute(`
         INSERT INTO child_event_entries (id, child_id, event_id, status, school_class, school_name, previous_children_programme, note_to_team, has_medical_notes, medical_notes, needs_extra_support, support_notes, information_confirmed, details_confirmed, created_at, updated_at)
         VALUES (?, ?, ?, 'incomplete', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-      `, [actualEntryId, childId, REAL_EVENT_ID, schoolClass, schoolName, prevProg, noteTeam, hasMed, medNotes, needsSup, supNotes, infoConf, now, now]);
+      `, [actualEntryId, childId, currentEventId, schoolClass, schoolName, prevProg, noteTeam, hasMed, medNotes, needsSup, supNotes, infoConf, now, now]);
     }
 
     const pickupType = draft.pickup?.pickupType || draft.pickup?.mode || draft.pickupType || 'parent';
@@ -710,10 +769,10 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
   });
 
   const c = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
-  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
-  const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
+  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
+  const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
 
-  return await mapChildToFrontend(c, entry, pickup);
+  return await mapChildToFrontend(c, entry, pickup, req.parentProfile!.id, false, currentEventId);
 }
 
 async function saveDraftHelper(req: AuthenticatedRequest, res: Response) {
@@ -724,6 +783,9 @@ async function saveDraftHelper(req: AuthenticatedRequest, res: Response) {
   } catch (err: any) {
     if (err.message === 'UNAUTHORIZED_CHILD_ACCESS') {
       return res.status(403).json({ error: 'You do not have authorization to modify this child profile' });
+    }
+    if (err.code === 'NO_CURRENT_EVENT') {
+      return res.status(400).json({ error: err.message, code: err.code });
     }
     console.error('Save draft error:', err);
     res.status(500).json({ error: 'Failed to save child draft' });
@@ -737,6 +799,15 @@ router.put('/children/:childId/draft', saveDraftHelper);
 router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
   const { childId } = req.params;
+
+  const currentEvent = await getCurrentEvent();
+  if (!currentEvent) {
+    return res.status(400).json({
+      error: 'No event is currently open for registration.',
+      code: 'NO_CURRENT_EVENT'
+    });
+  }
+  const currentEventId = currentEvent.id;
 
   const checkOwner = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [childId]);
   if (!checkOwner) {
@@ -754,13 +825,16 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
       if (err.message === 'UNAUTHORIZED_CHILD_ACCESS') {
         return res.status(403).json({ error: 'You do not have authorization to access this child profile' });
       }
+      if (err.code === 'NO_CURRENT_EVENT') {
+        return res.status(400).json({ error: err.message, code: err.code });
+      }
     }
   }
 
   const c = await queryOne('SELECT * FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile.id]);
   if (!c) return res.status(404).json({ error: 'Child not found' });
 
-  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
   if (!entry) {
     return res.status(400).json({
       success: false,
@@ -778,7 +852,7 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
 
   // Idempotency: check if already submitted
   if (entry.status === 'under_review' || entry.status === 'selected' || entry.status === 'pass_ready' || entry.status === 'waiting_list' || entry.status === 'not_selected') {
-    const mapped = await mapChildToFrontend(c, entry, pickup);
+    const mapped = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false, currentEventId);
     return res.json({
       success: true,
       childId: childId,
@@ -860,10 +934,10 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   `, [
     parentNotifId,
     req.parentProfile.id,
-    REAL_EVENT_ID,
+    currentEventId,
     childId,
     'Application submitted',
-    `${c.full_name || 'Child'}'s application has been received.`,
+    `${c.full_name || 'Child'}'s application has been received for ${currentEvent.title || 'the event'}.`,
     now
   ]);
 
@@ -875,18 +949,18 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   `, [
     parentGeneralNotifId,
     'Application submitted',
-    `${c.full_name || 'Child'}'s application has been received.`,
+    `${c.full_name || 'Child'}'s application has been received for ${currentEvent.title || 'the event'}.`,
     'application_submitted',
     'parent',
     'individual',
-    REAL_EVENT_ID,
+    currentEventId,
     childId,
     req.parentProfile.id,
     req.user.id,
     now,
     'normal',
     'in-app',
-    JSON.stringify({ childId, applicationId: entry.id, type: 'application_submitted' })
+    JSON.stringify({ childId, applicationId: entry.id, eventId: currentEventId, eventTitle: currentEvent.title, type: 'application_submitted' })
   ]);
 
   // 2. Admin operational notification (parent_id is null so it never leaks to parent view)
@@ -898,18 +972,18 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   `, [
     adminNotifId,
     'New child application',
-    `New application submitted for ${c.full_name || 'child'}.`,
+    `New application submitted for ${c.full_name || 'child'} (${currentEvent.title || 'Current Event'}).`,
     'new_application',
     'admin',
     'all',
-    REAL_EVENT_ID,
+    currentEventId,
     childId,
     null,
     req.user.id,
     now,
     'normal',
     'in-app',
-    JSON.stringify({ childId, applicationId: entry.id, type: 'new_application' })
+    JSON.stringify({ childId, applicationId: entry.id, eventId: currentEventId, eventTitle: currentEvent.title, type: 'new_application' })
   ]);
 
   const updatedEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entry.id]);
@@ -924,7 +998,7 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     }).catch(() => {});
   }
 
-  const mapped = await mapChildToFrontend(c, updatedEntry, pickup);
+  const mapped = await mapChildToFrontend(c, updatedEntry, pickup, req.parentProfile.id, false, currentEventId);
   res.json({
     success: true,
     childId: childId,
@@ -936,9 +1010,13 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
 router.get('/passes', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
   try {
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({ success: true, passes: [] });
+    }
     const isBioProtected = req.headers['x-biometric-protected'] === 'true';
-    const result = await getPassesForParent(req.parentProfile.id, REAL_EVENT_ID);
-    if (isBioProtected) {
+    const result = await getPassesForParent(req.parentProfile.id, currentEventId);
+    if (isBioProtected && result && result.passes) {
       result.passes = await Promise.all(result.passes.map(async p => {
         if (!(await isChildPassAuthorized(req.parentProfile.id, p.childId))) {
           return {
@@ -988,8 +1066,9 @@ router.get('/passes/:passId', async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
+    const currentEventId = await getCurrentEventId();
     const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
-    const mappedChild = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false);
+    const mappedChild = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false, currentEventId);
     res.json({
       success: true,
       passReference: pass.pass_reference,
@@ -1017,15 +1096,24 @@ router.get('/children/:childId/status', async (req: AuthenticatedRequest, res: R
   const c = await queryOne('SELECT * FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile.id]);
   if (!c) return res.status(404).json({ error: 'Child not found' });
 
-  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+  const currentEventId = await getCurrentEventId();
+  const entry = currentEventId
+    ? await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId])
+    : null;
   const pickup = entry ? await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : null;
 
-  res.json(await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, req.headers['x-biometric-protected'] === 'true'));
+  res.json(await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, req.headers['x-biometric-protected'] === 'true', currentEventId));
 });
 
 router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
   const { childId } = req.params;
+
+  const currentEvent = await getCurrentEvent();
+  if (!currentEvent) {
+    return res.status(400).json({ error: 'No event is currently open for registration.', status: 'incomplete' });
+  }
+  const currentEventId = currentEvent.id;
 
   const checkOwner = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [childId]);
   if (!checkOwner) {
@@ -1038,7 +1126,7 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   const c = await queryOne('SELECT * FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile.id]);
   if (!c) return res.status(404).json({ error: 'Child not found' });
 
-  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
   const allowedPassStatuses = ['pass_ready', 'selected', 'checked_in', 'inside', 'picked_up', 'checked_out'];
   const existingPass = entry ? await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']) : null;
   if (!entry || (!existingPass && !allowedPassStatuses.includes(entry.status))) {
@@ -1058,7 +1146,8 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   let pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [entry.id]);
   if (!pass) {
     const passId = crypto.randomUUID();
-    const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const currentYear = new Date().getFullYear();
+    const passRef = `KOI-${currentYear}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     const passHash = crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
 
@@ -1071,7 +1160,7 @@ router.get('/children/:childId/pass', async (req: AuthenticatedRequest, res: Res
   }
 
   const pickup = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
-  const mappedChild = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false);
+  const mappedChild = await mapChildToFrontend(c, entry, pickup, req.parentProfile.id, false, currentEventId);
 
   res.json({
     passReference: pass.pass_reference,
@@ -1096,35 +1185,47 @@ router.delete('/children/:childId', async (req: AuthenticatedRequest, res: Respo
       return res.status(403).json({ error: 'You do not have authorization to access this child profile' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    const entry = currentEventId
+      ? await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId])
+      : null;
     const status = entry ? entry.status : 'incomplete';
 
-    if (status === 'incomplete' || status === 'draft') {
-      // Hard delete draft child and related entry/pickup details
+    if (status === 'incomplete' || status === 'draft' || !entry) {
+      // Check if this child has historical entries in other events
+      const otherEntries = await query(
+        'SELECT id FROM child_event_entries WHERE child_id = ?' + (entry ? ' AND id != ?' : ''),
+        entry ? [childId, entry.id] : [childId]
+      );
+      const hasHistoricalEntries = otherEntries && otherEntries.length > 0;
+
       await transaction(async () => {
         if (entry) {
           await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]);
           await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [entry.id]);
           await execute('DELETE FROM child_event_entries WHERE id = ?', [entry.id]);
         }
-        await execute('DELETE FROM children WHERE id = ?', [childId]);
+        // Only delete the persistent child profile if there are no historical event entries
+        if (!hasHistoricalEntries) {
+          await execute('DELETE FROM children WHERE id = ?', [childId]);
+        }
       });
 
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`[DB Log] Successfully hard-deleted draft child ${childId}`);
+        console.log(`[DB Log] Successfully removed child/entry ${childId}`);
       }
 
       return res.json({ success: true, message: 'Child removed.' });
     } else if (status === 'under_review') {
-      // Soft-withdraw details
+      // Soft-withdraw details for the current event
       await execute(`
         UPDATE child_event_entries
         SET status = 'withdrawn', withdrawn_at = ?, updated_at = ?
-        WHERE child_id = ? AND event_id = ?
-      `, [new Date().toISOString(), new Date().toISOString(), childId, REAL_EVENT_ID]);
+        WHERE id = ?
+      `, [new Date().toISOString(), new Date().toISOString(), entry.id]);
 
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`[DB Log] Successfully withdrew child ${childId} from event entry`);
+        console.log(`[DB Log] Successfully withdrew child ${childId} from current event entry`);
       }
 
       return res.json({ success: true, message: 'Details withdrawn.' });

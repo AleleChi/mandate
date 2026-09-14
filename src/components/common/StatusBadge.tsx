@@ -13,7 +13,8 @@ export type StatusType =
   | 'Checked in' 
   | 'Inside' 
   | 'Picked up' 
-  | 'Checked out';
+  | 'Checked out'
+  | 'Not registered';
 
 interface StatusBadgeProps {
   status: StatusType;
@@ -26,6 +27,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm', c
     switch (status) {
       case 'Incomplete':
       case 'Draft':
+      case 'Not registered':
         return {
           bg: 'bg-[#F3EFE6] text-[#715D3A] border border-[#D9D6CE]',
           icon: <Clock className="w-3.5 h-3.5 mr-1 text-[#9A7326] shrink-0" />

@@ -7,7 +7,7 @@ export interface ChildItem {
   name: string;
   age: number;
   ageGroup: string; // e.g., 'Ages 7 to 9', 'Ages 4 to 6'
-  status: 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected' | 'Withdrawn' | 'Checked in' | 'Inside' | 'Picked up' | 'Checked out';
+  status: 'Draft' | 'Incomplete' | 'Under review' | 'Pass ready' | 'Selected' | 'Waiting list' | 'Not selected' | 'Withdrawn' | 'Checked in' | 'Inside' | 'Picked up' | 'Checked out' | 'Not registered';
   statusNote: string; // e.g., 'Details sent for review', 'Event pass is available'
   photoUrl: string;
   specialNeeds?: string;
@@ -17,6 +17,9 @@ export interface ChildItem {
   passLocked?: boolean;
   pass?: any;
   needsAgeReview?: boolean;
+  registeredForCurrentEvent?: boolean;
+  currentEventId?: string | null;
+  entryId?: string | null;
 }
 
 export interface AddChildDraft {
