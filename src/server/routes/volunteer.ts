@@ -1,7 +1,8 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import multer from 'multer';
-import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute, transaction } from '../db';
+import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmail, sendVolunteerVerificationEmail, sendVolunteerPasswordResetEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
@@ -89,7 +90,11 @@ function rankSearchResults(results: any[], queryStr: string) {
   .sort((a, b) => b._score - a._score);
 }
 
-async function getEventStats() {
+async function getEventStats(eventId?: string | null) {
+  const resolvedEventId = eventId || (await getCurrentEventId());
+  if (!resolvedEventId) {
+    return { expected: 0, checkedIn: 0, pickedUp: 0, attention: 0 };
+  }
   const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
   const demoFilter = !enableDemoData ? "AND e.child_id NOT IN (SELECT id FROM children WHERE full_name LIKE 'Test %')" : "";
 
@@ -105,7 +110,7 @@ async function getEventStats() {
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'
       ${demoFilter}
-  `, [REAL_EVENT_ID]);
+  `, [resolvedEventId]);
 
   // 2. Checked in / Inside
   const checkedInQuery = await queryOne(`
@@ -120,7 +125,7 @@ async function getEventStats() {
       AND e.status != 'removed'
       AND e.status IN ('checked_in', 'inside')
       ${demoFilter}
-  `, [REAL_EVENT_ID]);
+  `, [resolvedEventId]);
 
   // 3. Picked up / Checked out
   const pickedUpQuery = await queryOne(`
@@ -135,7 +140,7 @@ async function getEventStats() {
       AND e.status != 'removed'
       AND e.status IN ('picked_up', 'checked_out')
       ${demoFilter}
-  `, [REAL_EVENT_ID]);
+  `, [resolvedEventId]);
   
   // 4. Attention items for active eligible children in this event only
   const attentionQuery = await queryOne(`
@@ -151,7 +156,7 @@ async function getEventStats() {
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'
       ${demoFilter}
-  `, [REAL_EVENT_ID]);
+  `, [resolvedEventId]);
 
   return {
     expected: expectedQuery ? expectedQuery.count : 0,
@@ -521,8 +526,9 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
     // Optional transactional WhatsApp registration acknowledgement
     if (isConsentGranted && Boolean(cleanWhatsapp || cleanPhone)) {
       try {
+        const currentEventId = await getCurrentEventId();
         await enqueueWhatsAppJob({
-          eventId: REAL_EVENT_ID,
+          eventId: currentEventId || undefined,
           userId,
           idempotencyKey: `registration_ack:volunteer:${userId}`
         });
@@ -1262,27 +1268,24 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       });
     }
 
-    // Real stats: count checkins / pick-ups by this user
-    const checkInCountRow = await queryOne(
-      "SELECT COUNT(*) as count FROM child_event_entries WHERE (checked_in_by = ? OR picked_up_by = ?)",
-      [req.user.id, req.user.id]
-    );
+    const currentEvent = await getCurrentEvent();
+    const currentEventId = currentEvent ? currentEvent.id : null;
+
+    // Real stats: count checkins / pick-ups by this user for the current event
+    const checkInCountRow = currentEventId ? await queryOne(
+      "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (checked_in_by = ? OR picked_up_by = ?)",
+      [currentEventId, req.user.id, req.user.id]
+    ) : null;
     const checkedInByYou = checkInCountRow ? checkInCountRow.count : 0;
 
-    const lastScanRow = await queryOne(
-      "SELECT MAX(COALESCE(checked_in_at, picked_up_at)) as last_scan FROM child_event_entries WHERE checked_in_by = ? OR picked_up_by = ?",
-      [req.user.id, req.user.id]
-    );
+    const lastScanRow = currentEventId ? await queryOne(
+      "SELECT MAX(COALESCE(checked_in_at, picked_up_at)) as last_scan FROM child_event_entries WHERE event_id = ? AND (checked_in_by = ? OR picked_up_by = ?)",
+      [currentEventId, req.user.id, req.user.id]
+    ) : null;
     const lastScanAt = lastScanRow ? lastScanRow.last_scan : null;
 
-    // Fetch active event details
-    const activeEvent = await queryOne(
-      "SELECT title, section_name FROM events WHERE id = ?",
-      [REAL_EVENT_ID]
-    );
-
-    const eventName = activeEvent?.title || 'Children and Teens';
-    const eventSection = activeEvent?.section_name || 'The General Assembly';
+    const eventName = currentEvent?.title || 'Children and Teens';
+    const eventSection = currentEvent?.section_name || 'The General Assembly';
 
     res.json({
       success: true,
@@ -1980,13 +1983,14 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
-    // Fetch active event details
-    const event = await queryOne('SELECT * FROM events WHERE id = ?', [REAL_EVENT_ID]);
+    // Fetch active event details using canonical resolver
+    const event = await getCurrentEvent();
     if (!event) {
-      return res.status(404).json({ error: 'Active event not found' });
+      return res.status(400).json({ error: 'No current event is available.' });
     }
+    const currentEventId = event.id;
 
-    await syncAttentionItems(REAL_EVENT_ID);
+    await syncAttentionItems(currentEventId);
 
     const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
     const demoFilter = !enableDemoData ? "AND c.full_name NOT LIKE 'Test %'" : "";
@@ -2009,7 +2013,7 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
       ${demoFilter}
       ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
       LIMIT 10
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const attentionItems = dbAttentionItems.map((item: any) => {
       let actionText = 'REVIEW';
@@ -2029,8 +2033,8 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
       };
     });
 
-    const stats = await getEventStats();
-    const dutyLocation = req.user?.id ? await resolveUserDutyLocation(req.user.id, REAL_EVENT_ID) : null;
+    const stats = await getEventStats(currentEventId);
+    const dutyLocation = req.user?.id ? await resolveUserDutyLocation(req.user.id, currentEventId) : null;
 
     res.json({
       event,
@@ -2204,6 +2208,18 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       return res.json([]);
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      if (req.query.paginated === 'true') {
+        return res.json({
+          success: true,
+          children: [],
+          pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false }
+        });
+      }
+      return res.json([]);
+    }
+
     const whereClauses: string[] = [
       'e.event_id = ?',
       '(e.is_deleted = 0 OR e.is_deleted IS NULL)',
@@ -2211,7 +2227,7 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       '(p.is_deleted = 0 OR p.is_deleted IS NULL)',
       "e.status != 'removed'"
     ];
-    const params: any[] = [REAL_EVENT_ID];
+    const params: any[] = [currentEventId];
 
     for (const token of tokens) {
       const likeToken = `%${token}%`;
@@ -2356,6 +2372,11 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const { passReference, childId, childEventEntryId } = req.body;
     let entryId = childEventEntryId;
 
@@ -2380,7 +2401,7 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
-        const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+        const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
         if (!entryRow) {
           return res.status(404).json({ error: `Registration not found for child ID "${childId}"` });
         }
@@ -2392,9 +2413,9 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(400).json({ error: 'Please provide passReference, childId, or childEventEntryId' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ? AND event_id = ?', [entryId, currentEventId]);
     if (!entry) {
-      return res.status(404).json({ error: 'Event registration entry not found' });
+      return res.status(404).json({ error: 'Event registration entry not found for this event' });
     }
 
     // Fetch child and parent details
@@ -2486,6 +2507,11 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const { passReference, childId, childEventEntryId } = req.body;
     let entryId = childEventEntryId;
 
@@ -2511,7 +2537,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
-        const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+        const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
         if (!entryRow) {
           return res.status(404).json({ error: 'We could not find this pass. Please contact the event desk.' });
         }
@@ -2523,7 +2549,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       return res.status(400).json({ error: 'Please provide passReference, childId, or childEventEntryId' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ? AND event_id = ?', [entryId, currentEventId]);
     if (!entry) {
       return res.status(404).json({ error: 'We could not find this pass. Please contact the event desk.' });
     }
@@ -2570,7 +2596,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
 
     // Handle Already Checked In
     if (entry.status === 'checked_in' || entry.status === 'inside') {
-      const stats = await getEventStats();
+      const stats = await getEventStats(currentEventId);
       const currentCheckedInAt = entry.checked_in_at || entry.updated_at || new Date().toISOString();
       return res.json({
         success: true,
@@ -2619,7 +2645,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       WHERE id = ?
     `, [now, req.user.id, now, entryId]);
 
-    const stats = await getEventStats();
+    const stats = await getEventStats(currentEventId);
 
     res.json({
       success: true,
@@ -2670,15 +2696,17 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
 });
 
 // Helper to get last picked up child
-async function getLastPickedUp() {
+async function getLastPickedUp(eventId?: string | null) {
+  const resolvedEventId = eventId || (await getCurrentEventId());
+  if (!resolvedEventId) return null;
   const row = await queryOne(`
     SELECT c.full_name as childFullName, c.calculated_age as age, e.picked_up_at
     FROM child_event_entries e
     JOIN children c ON e.child_id = c.id
-    WHERE e.status IN ('picked_up', 'checked_out') AND e.picked_up_at IS NOT NULL
+    WHERE e.event_id = ? AND e.status IN ('picked_up', 'checked_out') AND e.picked_up_at IS NOT NULL
     ORDER BY e.picked_up_at DESC
     LIMIT 1
-  `);
+  `, [resolvedEventId]);
   if (!row) return null;
   return {
     childFullName: row.childFullName,
@@ -2696,6 +2724,11 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
 
     if (req.volunteerProfile && req.volunteerProfile.status === 'pending_review') {
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
     }
 
     const { passReference, childId, childEventEntryId, pickupPersonId } = req.body;
@@ -2719,7 +2752,7 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
         }
         entryId = passRow.child_event_entry_id;
       } else if (childId) {
-        const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+        const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
         if (!entryRow) {
           return res.status(404).json({ error: `Registration not found for child ID "${childId}"` });
         }
@@ -2731,9 +2764,9 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       return res.status(400).json({ error: 'Please provide passReference, childId, or childEventEntryId' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ? AND event_id = ?', [entryId, currentEventId]);
     if (!entry) {
-      return res.status(404).json({ error: 'Event registration entry not found' });
+      return res.status(404).json({ error: 'Event registration entry not found for this event' });
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
@@ -2772,8 +2805,8 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
 
     // Handle Already Checked Out
     if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      const stats = await getEventStats();
-      const lastPickedUpVal = await getLastPickedUp();
+      const stats = await getEventStats(currentEventId);
+      const lastPickedUpVal = await getLastPickedUp(currentEventId);
       return res.json({
         success: true,
         alreadyPickedUp: true,
@@ -2823,7 +2856,7 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
     `, [
       parentNotificationId,
       child.parent_profile_id,
-      REAL_EVENT_ID,
+      currentEventId,
       child.id,
       'Picked up',
       `${childFirstName} has been picked up by an approved pickup person.`,
@@ -2842,15 +2875,15 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       'pickup',
       'parent',
       'specific',
-      REAL_EVENT_ID,
+      currentEventId,
       child.id,
       child.parent_profile_id,
       req.user.id,
       now
     ]);
 
-    const stats = await getEventStats();
-    const lastPickedUpVal = await getLastPickedUp();
+    const stats = await getEventStats(currentEventId);
+    const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
     res.json({
       success: true,
@@ -3046,11 +3079,16 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const { childId, passCode, pickupPersonId } = req.body;
     let entryId = null;
 
     if (childId) {
-      const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+      const entryRow = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
       if (entryRow) {
         entryId = entryRow.id;
       }
@@ -3076,9 +3114,9 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(404).json({ error: 'Child event entry not found for the provided details' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ? AND event_id = ?', [entryId, currentEventId]);
     if (!entry) {
-      return res.status(404).json({ error: 'Event registration entry not found' });
+      return res.status(404).json({ error: 'Event registration entry not found for this event' });
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
@@ -3106,8 +3144,8 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
 
     // Handle Already Picked Up
     if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      const stats = await getEventStats();
-      const lastPickedUpVal = await getLastPickedUp();
+      const stats = await getEventStats(currentEventId);
+      const lastPickedUpVal = await getLastPickedUp(currentEventId);
       const pickedUpAtVal = entry.picked_up_at || entry.updated_at || new Date().toISOString();
       return res.json({
         success: true,
@@ -3167,7 +3205,7 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
     `, [
       parentNotificationId,
       child.parent_profile_id,
-      REAL_EVENT_ID,
+      currentEventId,
       child.id,
       'Picked up',
       `${childFirstName} has been picked up by an approved pickup person.`,
@@ -3186,15 +3224,15 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       'pickup',
       'parent',
       'specific',
-      REAL_EVENT_ID,
+      currentEventId,
       child.id,
       child.parent_profile_id,
       req.user.id,
       now
     ]);
 
-    const stats = await getEventStats();
-    const lastPickedUpVal = await getLastPickedUp();
+    const stats = await getEventStats(currentEventId);
+    const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
     res.json({
       success: true,
@@ -3243,8 +3281,9 @@ router.get('/pickup-home', authMiddleware, async (req: AuthenticatedRequest, res
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
-    const stats = await getEventStats();
-    const lastPickedUpVal = await getLastPickedUp();
+    const currentEventId = await getCurrentEventId();
+    const stats = await getEventStats(currentEventId);
+    const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
     res.json({
       stats: {
@@ -3271,6 +3310,11 @@ router.get('/check-in-history', authMiddleware, async (req: AuthenticatedRequest
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json([]);
+    }
+
     const rows = await query(`
       SELECT c.id as child_id, c.full_name as child_name, c.age_group, c.photo_file_id as child_photo_id,
              e.status as entry_status, e.updated_at
@@ -3279,7 +3323,7 @@ router.get('/check-in-history', authMiddleware, async (req: AuthenticatedRequest
       WHERE e.event_id = ? AND e.status IN ('checked_in', 'inside', 'picked_up', 'checked_out')
       ORDER BY e.updated_at DESC
       LIMIT 20
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const results = [];
     for (const r of rows) {
@@ -3333,6 +3377,21 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
     const limit = Math.min(100, Math.max(1, parseInt((req.query.limit || '25').toString(), 10) || 25));
     const offset = (page - 1) * limit;
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({
+        items: [],
+        pagination: {
+          page: 1,
+          limit,
+          total: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrevious: false
+        }
+      });
+    }
+
     const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
 
     let whereClause = ` WHERE e.event_id = ?
@@ -3340,7 +3399,7 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
       AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'`;
-    const whereParams: any[] = [REAL_EVENT_ID];
+    const whereParams: any[] = [currentEventId];
 
     if (!enableDemoData) {
       whereClause += " AND c.full_name NOT LIKE 'Test %'";
@@ -3490,6 +3549,11 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(404).json({ error: 'This child is no longer available.' });
+    }
+
     const { childId } = req.params;
 
     const entry = await queryOne(`
@@ -3505,7 +3569,7 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
         AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
         AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
         AND e.status != 'removed'
-    `, [childId, childId, REAL_EVENT_ID]);
+    `, [childId, childId, currentEventId]);
 
     if (!entry) {
       return res.status(404).json({ error: 'This child is no longer available.' });
@@ -3597,7 +3661,7 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
       ORDER BY action_time DESC LIMIT 1
     `, [entry.id]);
 
-    const event = await queryOne('SELECT * FROM events WHERE id = ?', [REAL_EVENT_ID]);
+    const event = await queryOne('SELECT * FROM events WHERE id = ?', [currentEventId]);
 
     res.json({
       success: true,
@@ -3662,12 +3726,17 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const { childId } = req.body;
     if (!childId) {
       return res.status(400).json({ error: 'Child ID is required' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
     if (!entry) {
       return res.status(404).json({ error: 'Child registration entry not found for this event' });
     }
@@ -3769,7 +3838,12 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active to view reports' });
     }
 
-    const stats = await getEventStats();
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const stats = await getEventStats(currentEventId);
 
     // Age groups
     const ageGroupRows = await query(`
@@ -3782,7 +3856,7 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       JOIN children c ON e.child_id = c.id
       WHERE e.event_id = ?
       GROUP BY COALESCE(NULLIF(c.age_group, ''), 'Unassigned')
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const standardGroups = ['Creche', 'Preschool', 'Ages 4-6', 'Ages 7-9', 'Teens'];
     const ageGroupsMap = new Map();
@@ -3822,7 +3896,7 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       WHERE e.event_id = ? AND e.status IN ('checked_in', 'inside', 'picked_up', 'checked_out') AND e.checked_in_at IS NOT NULL
       ORDER BY e.checked_in_at DESC
       LIMIT 10
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     // Recent pickups logs
     const recentPickups = await query(`
@@ -3842,7 +3916,7 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       WHERE e.event_id = ? AND e.status IN ('picked_up', 'checked_out') AND e.picked_up_at IS NOT NULL
       ORDER BY e.picked_up_at DESC
       LIMIT 10
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     // Needs attention details
     const missingPhotos = await query(`
@@ -3858,10 +3932,11 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       FROM child_event_entries
       JOIN children ON child_event_entries.child_id = children.id
       JOIN pickup_people ON pickup_people.child_event_entry_id = child_event_entries.id
-      WHERE child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
+      WHERE child_event_entries.event_id = ?
+        AND child_event_entries.status IN ('pass_ready', 'checked_in', 'inside')
         AND (pickup_people.photo_file_id IS NULL OR pickup_people.photo_file_id = '')
       LIMIT 5
-    `);
+    `, [currentEventId]);
 
     const medicalReviews = await query(`
       SELECT 
@@ -3875,12 +3950,13 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
         'REVIEW' as "actionText"
       FROM child_event_entries
       JOIN children ON child_event_entries.child_id = children.id
-      WHERE child_event_entries.status IN ('under_review', 'pass_ready', 'checked_in', 'inside')
+      WHERE child_event_entries.event_id = ?
+        AND child_event_entries.status IN ('under_review', 'pass_ready', 'checked_in', 'inside')
         AND child_event_entries.has_medical_notes = 1
         AND child_event_entries.medical_notes IS NOT NULL
         AND child_event_entries.medical_notes != ''
       LIMIT 5
-    `);
+    `, [currentEventId]);
 
     const ageReviews = await query(`
       SELECT 
@@ -3896,7 +3972,7 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       JOIN child_event_entries ON children.id = child_event_entries.child_id
       WHERE children.needs_age_review = 1 AND child_event_entries.event_id = ?
       LIMIT 5
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const needsAttention = [...missingPhotos, ...medicalReviews, ...ageReviews];
 
@@ -3908,7 +3984,7 @@ router.get('/reports', authMiddleware, async (req: AuthenticatedRequest, res: Re
       WHERE r.event_id = ?
       ORDER BY r.created_at DESC
       LIMIT 1
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     res.json({
       success: true,
@@ -3942,6 +4018,11 @@ router.post('/reports/submit', authMiddleware, async (req: AuthenticatedRequest,
       return res.status(403).json({ error: 'Access denied: Volunteer access must be active' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const { notes } = req.body;
     if (!notes || !notes.trim()) {
       return res.status(400).json({ error: 'Report notes are required' });
@@ -3953,7 +4034,7 @@ router.post('/reports/submit', authMiddleware, async (req: AuthenticatedRequest,
     await execute(`
       INSERT INTO volunteer_event_reports (id, event_id, volunteer_profile_id, report_notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
-    `, [id, REAL_EVENT_ID, req.volunteerProfile.id, notes.trim(), now, now]);
+    `, [id, currentEventId, req.volunteerProfile.id, notes.trim(), now, now]);
 
     res.json({
       success: true,
@@ -4194,7 +4275,12 @@ router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest,
       return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.' });
     }
 
-    await syncAttentionItems(REAL_EVENT_ID);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json([]);
+    }
+
+    await syncAttentionItems(currentEventId);
 
     const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
     const demoFilter = !enableDemoData ? "AND c.full_name NOT LIKE 'Test %'" : "";
@@ -4217,7 +4303,7 @@ router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest,
         AND e.status != 'removed'
       ${demoFilter}
       ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     res.json(items);
   } catch (err) {
@@ -4233,6 +4319,11 @@ router.get('/attention-items/:itemId', authMiddleware, async (req: Authenticated
       return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
     }
     const { itemId } = req.params;
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
 
     const item = await queryOne(`
       SELECT cai.*, 
@@ -4250,7 +4341,7 @@ router.get('/attention-items/:itemId', authMiddleware, async (req: Authenticated
         AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
         AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
         AND e.status != 'removed'
-    `, [itemId, REAL_EVENT_ID]);
+    `, [itemId, currentEventId]);
 
     if (!item) {
       return res.status(404).json({ error: 'Attention item not found' });
@@ -4276,7 +4367,12 @@ router.post('/attention-items/:itemId/review', authMiddleware, async (req: Authe
       return res.status(400).json({ error: 'A review note is required' });
     }
 
-    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, currentEventId]);
     if (!item) {
       return res.status(404).json({ error: 'Attention item not found' });
     }
@@ -4292,7 +4388,7 @@ router.post('/attention-items/:itemId/review', authMiddleware, async (req: Authe
       WHERE id = ?
     `, [req.volunteerProfile.id, now, note.trim(), now, itemId]);
 
-    const stats = await getEventStats();
+    const stats = await getEventStats(currentEventId);
     res.json({ success: true, message: 'Item reviewed and acknowledged.', stats });
   } catch (err) {
     console.error('Review attention item error:', err);
@@ -4313,7 +4409,12 @@ router.post('/attention-items/:itemId/resolve', authMiddleware, async (req: Auth
       return res.status(400).json({ error: 'A resolution note is required' });
     }
 
-    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, currentEventId]);
     if (!item) {
       return res.status(404).json({ error: 'Attention item not found' });
     }
@@ -4329,7 +4430,7 @@ router.post('/attention-items/:itemId/resolve', authMiddleware, async (req: Auth
       WHERE id = ?
     `, [req.volunteerProfile.id, now, note.trim(), now, itemId]);
 
-    const stats = await getEventStats();
+    const stats = await getEventStats(currentEventId);
     res.json({ success: true, message: 'Item resolved successfully.', stats });
   } catch (err) {
     console.error('Resolve attention item error:', err);
@@ -4350,7 +4451,12 @@ router.post('/attention-items/:itemId/verify', authMiddleware, async (req: Authe
       return res.status(400).json({ error: 'A verification note is required' });
     }
 
-    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, currentEventId]);
     if (!item) {
       return res.status(404).json({ error: 'Attention item not found' });
     }
@@ -4371,7 +4477,7 @@ router.post('/attention-items/:itemId/verify', authMiddleware, async (req: Authe
       await execute('UPDATE children SET needs_age_review = 0 WHERE id = ?', [item.child_id]);
     }
 
-    const stats = await getEventStats();
+    const stats = await getEventStats(currentEventId);
     res.json({ success: true, message: 'Item verified successfully.', stats });
   } catch (err) {
     console.error('Verify attention item error:', err);
@@ -4392,7 +4498,12 @@ router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: Aut
       return res.status(400).json({ error: 'An escalation note/reason is required' });
     }
 
-    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ? AND event_id = ?', [itemId, currentEventId]);
     if (!item) {
       return res.status(404).json({ error: 'Attention item not found' });
     }
@@ -4422,7 +4533,7 @@ router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: Aut
       ? `${volFirstName} escalated an item for ${childFirstName}.`
       : 'A volunteer escalated an attention item.';
 
-    const appEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [child.id, REAL_EVENT_ID]);
+    const appEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [child.id, currentEventId]);
     const metadataJson = JSON.stringify({
       childId: child.id,
       applicationId: appEntry?.id || null,
@@ -4441,7 +4552,7 @@ router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: Aut
       'escalation',
       'admin',
       'all',
-      REAL_EVENT_ID,
+      currentEventId,
       child.id,
       child.parent_profile_id,
       req.user.id,
@@ -4449,7 +4560,7 @@ router.post('/attention-items/:itemId/escalate', authMiddleware, async (req: Aut
       metadataJson
     ]);
 
-    const stats = await getEventStats();
+    const stats = await getEventStats(currentEventId);
     res.json({ success: true, message: 'Item escalated to admin/care lead.', stats });
   } catch (err) {
     console.error('Escalate attention item error:', err);
@@ -4463,6 +4574,10 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
     if (req.user?.role !== 'volunteer') {
       return res.status(403).json({ error: 'Access denied: Volunteer role required' });
     }
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({ success: true, alerts: [] });
+    }
     // Fetch safety alerts raised by this volunteer
     const alerts = await query(`
       SELECT a.*, 
@@ -4474,7 +4589,7 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       LEFT JOIN volunteer_profiles v ON a.acknowledged_by = v.user_id
       WHERE a.raised_by_user_id = ? AND a.event_id = ?
       ORDER BY a.created_at DESC
-    `, [req.user.id, REAL_EVENT_ID]);
+    `, [req.user.id, currentEventId]);
 
     res.json({ success: true, alerts });
   } catch (err) {
@@ -4618,25 +4733,32 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
 
     let finalChildId = null;
     let finalEntryId = null;
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     if (childId) {
       const childCheck = await queryOne('SELECT id FROM children WHERE id = ?', [childId]);
       if (!childCheck) {
         return res.status(400).json({ error: 'Selected child profile not found.' });
       }
-      finalChildId = childId;
 
-      const entryCheck = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
-      if (entryCheck) {
-        finalEntryId = entryCheck.id;
+      const entryCheck = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
+      if (!entryCheck) {
+        return res.status(400).json({ error: 'Selected child is not registered for the current event.' });
       }
+      finalChildId = childId;
+      finalEntryId = entryCheck.id;
     }
 
     if (childEventEntryId && !finalChildId) {
-      const entryCheck = await queryOne('SELECT id, child_id FROM child_event_entries WHERE id = ? AND event_id = ?', [childEventEntryId, REAL_EVENT_ID]);
-      if (entryCheck) {
-        finalEntryId = childEventEntryId;
-        finalChildId = entryCheck.child_id;
+      const entryCheck = await queryOne('SELECT id, child_id FROM child_event_entries WHERE id = ? AND event_id = ?', [childEventEntryId, currentEventId]);
+      if (!entryCheck) {
+        return res.status(400).json({ error: 'Selected child registration is not part of the current event.' });
       }
+      finalEntryId = childEventEntryId;
+      finalChildId = entryCheck.child_id;
     }
 
     const now = new Date().toISOString();
@@ -4654,7 +4776,7 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       if (locRecord) {
         finalLocationLabel = locRecord.name;
         // Build path label
-        const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
+        const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [currentEventId]);
         const locMap = new Map<string, any>();
         for (const loc of allLocations) {
           locMap.set(loc.id, loc);
@@ -4688,7 +4810,7 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
     // Automatically attach assigned Event Duty location if no location was explicitly provided
     if (!finalLocationLabel) {
       try {
-        const dutyLoc = await resolveUserDutyLocation(req.user.id, REAL_EVENT_ID);
+        const dutyLoc = await resolveUserDutyLocation(req.user.id, currentEventId);
         if (dutyLoc && dutyLoc.name) {
           finalLocationLabel = dutyLoc.name;
           finalLocationId = dutyLoc.locationId;
@@ -4718,13 +4840,13 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
         structured_details, category_version, location_id, location_path_snapshot, location_detail, location_source, original_location_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     `, [
-      alertId, REAL_EVENT_ID, finalChildId, finalEntryId, req.user.id, 'volunteer',
+      alertId, currentEventId, finalChildId, finalEntryId, req.user.id, 'volunteer',
       severity, category, alertTitle, cleanMessage, finalLocationLabel || null, now, now, idempotencyKey || null,
       JSON.stringify(validatedDetails), finalLocationId, finalLocationPath, finalLocationDetail, finalLocationSource, finalLocationId
     ]);
 
     if (finalChildId) {
-      await captureChildSnapshot(alertId, finalChildId);
+      await captureChildSnapshot(alertId, finalChildId, currentEventId);
     }
 
     const volFirstName = (volProfile.full_name || 'A volunteer').replace(/\s*\d+$/, '').trim().split(' ')[0];
@@ -4753,7 +4875,7 @@ router.post('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, 
       notificationId,
       severity === 'urgent' ? 'Urgent Safety Alert' : 'Safety alert',
       adminMessageText,
-      REAL_EVENT_ID,
+      currentEventId,
       finalChildId,
       req.user.id,
       now,
@@ -4791,6 +4913,11 @@ router.get('/team-safety-alerts', authMiddleware, async (req: AuthenticatedReque
       return res.status(403).json({ error: 'Access denied: Approved active volunteer profile required' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json([]);
+    }
+
     const alerts = await query(`
       SELECT a.*,
              c.full_name as child_name,
@@ -4820,7 +4947,7 @@ router.get('/team-safety-alerts', authMiddleware, async (req: AuthenticatedReque
              ELSE 3
         END,
         a.created_at DESC
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const mappedAlerts = (alerts || []).map((a: any) => ({
       ...a,
@@ -5146,12 +5273,16 @@ export async function logSummaryAccess(options: {
   ]);
 }
 
-export async function captureChildSnapshot(alertId: string, childId: string) {
+export async function captureChildSnapshot(alertId: string, childId: string, eventId?: string | null) {
   try {
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
     if (!child) return;
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, REAL_EVENT_ID]);
+    const alert = await queryOne('SELECT event_id FROM event_safety_alerts WHERE id = ?', [alertId]);
+    const targetEventId = eventId || alert?.event_id || (await getCurrentEventId());
+    if (!targetEventId) return;
+
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
     const ageGroupLabel = child.age_group || 'Unspecified Age Group';
     const assignedRoomLabel = entry?.school_class || entry?.school_name || 'Unspecified Room';
     const statusLabel = entry?.status || 'not_checked_in';
@@ -5203,7 +5334,7 @@ export async function captureChildSnapshot(alertId: string, childId: string) {
       ]);
     }
   } catch (err) {
-    console.error('Failed to capture child snapshot for alert:', alertId, err);
+    console.error('Failed to capture child snapshot for alert:', err);
   }
 }
 
@@ -5274,7 +5405,8 @@ export async function serializeChildEmergencySummary(options: {
     throw new Error('Associated child record not found');
   }
 
-  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert?.event_id || REAL_EVENT_ID]);
+  const resolvedEventId = alert?.event_id || (await getCurrentEventId()) || 'unknown';
+  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, resolvedEventId]);
   const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
   const pickupPeople = entry ? await query('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entry.id]) : [];
 
@@ -5327,7 +5459,7 @@ export async function serializeChildEmergencySummary(options: {
   const safetyEssentials: any[] = [];
   if (checkField('critical_allergy') && entry?.medical_notes) {
     await logSummaryAccess({
-      eventId: alert?.event_id || REAL_EVENT_ID,
+      eventId: resolvedEventId,
       alertId: alertId || null,
       childId: childId!,
       actorUserId: actor.id,
@@ -5345,7 +5477,7 @@ export async function serializeChildEmergencySummary(options: {
   }
   if (checkField('medical_summary') && entry?.medical_notes) {
     await logSummaryAccess({
-      eventId: alert?.event_id || REAL_EVENT_ID,
+      eventId: resolvedEventId,
       alertId: alertId || null,
       childId: childId!,
       actorUserId: actor.id,
@@ -5390,7 +5522,7 @@ export async function serializeChildEmergencySummary(options: {
   let pickupAuthorisation = null;
   if (checkField('authorised_collectors') && entry) {
     await logSummaryAccess({
-      eventId: alert?.event_id || REAL_EVENT_ID,
+      eventId: resolvedEventId,
       alertId: alertId || null,
       childId: childId!,
       actorUserId: actor.id,
@@ -5420,7 +5552,7 @@ export async function serializeChildEmergencySummary(options: {
     const isRevealedPhone = revealedSections.includes('guardian_contact') || actor.role === 'admin' || actor.role === 'super_admin';
     if (isRevealedPhone) {
       await logSummaryAccess({
-        eventId: alert?.event_id || REAL_EVENT_ID,
+        eventId: resolvedEventId,
         alertId: alertId || null,
         childId: childId!,
         actorUserId: actor.id,
@@ -5442,7 +5574,7 @@ export async function serializeChildEmergencySummary(options: {
     const isRevealedPhone = revealedSections.includes('emergency_contact') || actor.role === 'admin' || actor.role === 'super_admin';
     if (isRevealedPhone) {
       await logSummaryAccess({
-        eventId: alert?.event_id || REAL_EVENT_ID,
+        eventId: resolvedEventId,
         alertId: alertId || null,
         childId: childId!,
         actorUserId: actor.id,
@@ -5616,7 +5748,13 @@ router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: Au
       return res.status(400).json({ error: 'Selected child profile not found.' });
     }
 
-    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id || REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    const targetEventId = alert.event_id || currentEventId;
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
     const finalEntryId = entry?.id || null;
 
     const now = new Date().toISOString();
@@ -5637,7 +5775,7 @@ router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: Au
       ) VALUES (?, ?, ?, ?, 'link', ?, ?, ?)
     `, [historyId, alertId, prevChildId, childId, reason || 'Initial child link confirmed', req.user.id, now]);
 
-    await captureChildSnapshot(alertId, childId);
+    await captureChildSnapshot(alertId, childId, targetEventId);
 
     const timelineId = 'timeline-' + crypto.randomUUID();
     await execute(`
@@ -5646,7 +5784,7 @@ router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: Au
       ) VALUES (?, ?, ?, 'child_linked', null, ?, ?)
     `, [timelineId, alertId, req.user.id, `Linked child ${child.full_name}. Reason: ${reason || 'Confirmed'}`, now]);
 
-    broadcastSSEEvent(REAL_EVENT_ID, {
+    broadcastSSEEvent(targetEventId, {
       type: 'alert.child_linked',
       alertId,
       summaryVersion: 1,
@@ -5683,6 +5821,12 @@ router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (re
       return res.status(400).json({ error: 'No child is linked to this alert.' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    const targetEventId = alert.event_id || currentEventId;
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const now = new Date().toISOString();
     const id = 'attempt-' + crypto.randomUUID();
 
@@ -5691,7 +5835,7 @@ router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (re
         id, event_id, alert_id, child_id, contact_type, contact_reference, outcome, safe_note, attempted_by, attempted_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      id, alert.event_id || REAL_EVENT_ID, alertId, alert.child_id, contactType,
+      id, targetEventId, alertId, alert.child_id, contactType,
       contactReference, outcome, safeNote || null, req.user.id, now
     ]);
 
@@ -5702,7 +5846,7 @@ router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (re
       ) VALUES (?, ?, ?, 'contact_attempted', null, ?, ?)
     `, [timelineId, alertId, req.user.id, `Contacted ${contactReference} via ${contactType}. Result: ${outcome}. Note: ${safeNote || 'None'}`, now]);
 
-    broadcastSSEEvent(REAL_EVENT_ID, {
+    broadcastSSEEvent(targetEventId, {
       type: 'child.contact_attempt_recorded',
       alertId,
       summaryVersion: 1,
@@ -5721,6 +5865,11 @@ router.get('/manifest', authMiddleware, async (req: AuthenticatedRequest, res: R
   try {
     if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
       return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
     }
 
     const deviceId = (req.query.deviceId as string) || 'unknown';
@@ -5750,7 +5899,7 @@ router.get('/manifest', authMiddleware, async (req: AuthenticatedRequest, res: R
       JOIN parent_profiles p ON c.parent_profile_id = p.id
       LEFT JOIN event_passes ep ON ep.child_event_entry_id = e.id
       WHERE e.event_id = ? AND e.status IN ('pass_ready', 'selected', 'checked_in', 'inside')
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const pickupPeople = await query(`
       SELECT 
@@ -5764,7 +5913,7 @@ router.get('/manifest', authMiddleware, async (req: AuthenticatedRequest, res: R
       WHERE child_event_entry_id IN (
         SELECT id FROM child_event_entries WHERE event_id = ?
       )
-    `, [REAL_EVENT_ID]);
+    `, [currentEventId]);
 
     const maskName = (name: string): string => {
       if (!name) return '';
@@ -5813,13 +5962,13 @@ router.get('/manifest', authMiddleware, async (req: AuthenticatedRequest, res: R
         id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      recordId, REAL_EVENT_ID, req.user.id, deviceId, 'manifest_download',
+      recordId, currentEventId, req.user.id, deviceId, 'manifest_download',
       passes.length, payloadHash, 'processed', null, new Date().toISOString()
     ]);
 
     res.json({
       success: true,
-      eventId: REAL_EVENT_ID,
+      eventId: currentEventId,
       timestamp: new Date().toISOString(),
       passes
     });
@@ -5835,6 +5984,11 @@ router.post('/sync', authMiddleware, async (req: AuthenticatedRequest, res: Resp
   try {
     if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
       return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
     }
 
     const { deviceId, actions } = req.body;
@@ -5879,7 +6033,7 @@ router.post('/sync', authMiddleware, async (req: AuthenticatedRequest, res: Resp
             id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
-          recordId, REAL_EVENT_ID, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
+          recordId, currentEventId, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
           1, crypto.createHash('sha256').update(idempotencyKey).digest('hex'), 'conflict_detected',
           `Child event entry ${childEventEntryId} not found`, new Date().toISOString()
         ]);
@@ -5903,7 +6057,7 @@ router.post('/sync', authMiddleware, async (req: AuthenticatedRequest, res: Resp
               id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, [
-            recordId, REAL_EVENT_ID, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
+            recordId, currentEventId, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
             1, crypto.createHash('sha256').update(idempotencyKey).digest('hex'), 'conflict_detected',
             errorMsg, new Date().toISOString()
           ]);
@@ -5964,7 +6118,7 @@ router.post('/sync', authMiddleware, async (req: AuthenticatedRequest, res: Resp
           id, event_id, staff_user_id, device_identifier, sync_type, record_count, payload_hash, status, error_summary, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        summaryId, REAL_EVENT_ID, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
+        summaryId, currentEventId, req.user.id, deviceId || 'unknown', 'scan_batch_upload',
         actions.length, payloadHash, conflictCount > 0 ? 'conflict_detected' : 'processed',
         conflictCount > 0 ? `${conflictCount} state conflicts during processing` : null, new Date().toISOString()
       ]);

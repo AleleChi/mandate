@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
+import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
@@ -44,9 +45,18 @@ const handleVerifyLocationToken = async (rawToken: string, userId: string | unde
       });
     }
 
-    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [code.event_location_id, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_current_event',
+        message: 'No current event is available.'
+      });
+    }
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [code.event_location_id, currentEventId]);
     if (!loc) {
-      const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ?', [code.event_location_id, REAL_EVENT_ID]);
+      const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ?', [code.event_location_id, currentEventId]);
       if (existingLoc && (!existingLoc.is_active || existingLoc.archived_at)) {
         return res.status(403).json({
           success: false,
@@ -62,7 +72,7 @@ const handleVerifyLocationToken = async (rawToken: string, userId: string | unde
     }
 
     // Hierarchy path
-    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
+    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [currentEventId]);
     const locMap = new Map<string, any>();
     for (const l of allLocations) {
       locMap.set(l.id, l);
@@ -119,14 +129,14 @@ const handleVerifyLocationToken = async (rawToken: string, userId: string | unde
       WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled'
       ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
       LIMIT 1
-    `, [userId, REAL_EVENT_ID]);
+    `, [userId, currentEventId]);
 
     const activePresence = await queryOne(`
       SELECT * FROM event_duty_location_presence
       WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?
       ORDER BY started_at DESC
       LIMIT 1
-    `, [userId, loc.id, REAL_EVENT_ID]);
+    `, [userId, loc.id, currentEventId]);
 
     let state = 'unassigned_can_join';
     let assignedLocationName: string | null = null;
@@ -153,7 +163,7 @@ const handleVerifyLocationToken = async (rawToken: string, userId: string | unde
       await execute(`
         INSERT INTO event_audit_logs (id, event_id, user_id, action, entity_type, entity_id, details, created_at)
         VALUES (?, ?, ?, 'LOCATION_QR_SCANNED', 'LOCATION', ?, ?, ?)
-      `, [auditId, REAL_EVENT_ID, userId, loc.id, JSON.stringify({ locationName: loc.name, state }), now]);
+      `, [auditId, currentEventId, userId, loc.id, JSON.stringify({ locationName: loc.name, state }), now]);
     } catch (auditErr) {}
 
     return res.json({
@@ -217,8 +227,11 @@ dutyRouter.get('/readiness', async (req: AuthenticatedRequest, res: Response) =>
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const currentEventId = await getCurrentEventId();
     const dutyStatus = await queryOne('SELECT * FROM user_duty_status WHERE user_id = ?', [userId]);
-    const devices = await query('SELECT * FROM event_duty_devices WHERE user_id = ? AND event_id = ?', [userId, REAL_EVENT_ID]);
+    const devices = currentEventId
+      ? await query('SELECT * FROM event_duty_devices WHERE user_id = ? AND event_id = ?', [userId, currentEventId])
+      : [];
 
     return res.json({
       success: true,
@@ -260,6 +273,9 @@ dutyRouter.post('/readiness/check', async (req: AuthenticatedRequest, res: Respo
       return res.status(400).json({ error: 'Device identifier is required' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    const eventIdForDevice = currentEventId || REAL_EVENT_ID;
+
     const now = new Date().toISOString();
     const cleanLabel = (deviceLabel || 'Unnamed Device').trim().substring(0, 50);
 
@@ -290,7 +306,7 @@ dutyRouter.post('/readiness/check', async (req: AuthenticatedRequest, res: Respo
           readiness_checked_at, last_seen_at, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        deviceId, userId, req.user.role, REAL_EVENT_ID, cleanLabel, appGeneratedDeviceId, pushSubscriptionId || null,
+        deviceId, userId, req.user.role, eventIdForDevice, cleanLabel, appGeneratedDeviceId, pushSubscriptionId || null,
         soundEnabled ? 1 : 0, voiceEnabled ? 1 : 0, vibrationEnabled ? 1 : 0,
         liveConnectionStatus || 'disconnected', readinessStatus || 'unknown',
         now, now, now, now
@@ -306,7 +322,7 @@ dutyRouter.post('/readiness/check', async (req: AuthenticatedRequest, res: Respo
         live_connection_state, event_sync_age, check_timestamp, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      logId, REAL_EVENT_ID, userId, req.user.role, deviceId, readinessStatus || 'unknown',
+      logId, eventIdForDevice, userId, req.user.role, deviceId, readinessStatus || 'unknown',
       criticalPassed ? 1 : 0, soundReady ? 1 : 0, pushReady ? 1 : 0, voiceReady ? 1 : 0, vibrationSupported ? 1 : 0,
       liveConnectionStatus || 'disconnected', eventSyncAge || 0, now, now
     ]);
@@ -335,6 +351,11 @@ dutyRouter.post('/start', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ error: 'Device identifier is required' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
     const now = new Date().toISOString();
 
     // 1. Update user_duty_status
@@ -351,7 +372,7 @@ dutyRouter.post('/start', async (req: AuthenticatedRequest, res: Response) => {
         INSERT INTO user_duty_status (
           id, user_id, active, approved, on_duty, alert_enabled, assigned_event_id, created_at, updated_at
         ) VALUES (?, ?, 1, 1, 1, 1, ?, ?, ?)
-      `, [id, userId, REAL_EVENT_ID, now, now]);
+      `, [id, userId, currentEventId, now, now]);
     }
 
     // 2. Update event_duty_devices
@@ -366,7 +387,7 @@ dutyRouter.post('/start', async (req: AuthenticatedRequest, res: Response) => {
       UPDATE event_duty_assignments
       SET status = 'on_duty', updated_at = ?
       WHERE user_id = ? AND event_id = ? AND status IN ('scheduled', 'available', 'temporarily_unavailable')
-    `, [now, userId, REAL_EVENT_ID]);
+    `, [now, userId, currentEventId]);
 
     // Send Realtime SSE Update
     broadcastSSEEvent('duty_status_changed', { userId, onDuty: true });
@@ -394,6 +415,9 @@ dutyRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ error: 'Device identifier is required' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    const targetEventId = currentEventId || REAL_EVENT_ID;
+
     const now = new Date().toISOString();
 
     // 1. Update user_duty_status
@@ -415,7 +439,7 @@ dutyRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => {
       UPDATE event_duty_assignments
       SET status = 'ended', updated_at = ?
       WHERE user_id = ? AND event_id = ? AND status = 'on_duty'
-    `, [now, userId, REAL_EVENT_ID]);
+    `, [now, userId, targetEventId]);
 
     // Send Realtime SSE Update
     broadcastSSEEvent('duty_status_changed', { userId, onDuty: false });
@@ -535,6 +559,17 @@ dutyRouter.get('/current-assignment', async (req: AuthenticatedRequest, res: Res
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+
+    if (!currentEventId) {
+      return res.json({
+        success: true,
+        assignment: null,
+        volunteerProfile: volunteerProfile || null
+      });
+    }
+
     const assignment = await queryOne(`
       SELECT a.*, e.title as event_title
       FROM event_duty_assignments a
@@ -542,9 +577,7 @@ dutyRouter.get('/current-assignment', async (req: AuthenticatedRequest, res: Res
       WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled'
       ORDER BY a.starts_at DESC
       LIMIT 1
-    `, [userId, REAL_EVENT_ID]);
-
-    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+    `, [userId, currentEventId]);
 
     return res.json({
       success: true,
@@ -590,10 +623,11 @@ dutyRouter.post('/assignments/:assignmentId/temporarily-unavailable', async (req
 
     // Record change history
     const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    const targetEventId = assignment.event_id || (await getCurrentEventId()) || REAL_EVENT_ID;
     await execute(`
       INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [historyId, REAL_EVENT_ID, userId, 'assignment_unavailable', 'assignment', assignmentId, `Marked temporarily unavailable: ${reason || 'No reason specified'}`, now]);
+    `, [historyId, targetEventId, userId, 'assignment_unavailable', 'assignment', assignmentId, `Marked temporarily unavailable: ${reason || 'No reason specified'}`, now]);
 
     broadcastSSEEvent('assignment_updated', { assignmentId, status: 'temporarily_unavailable' });
 
@@ -636,10 +670,11 @@ dutyRouter.post('/assignments/:assignmentId/return', async (req: AuthenticatedRe
 
     // Record change history
     const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    const targetEventId = assignment.event_id || (await getCurrentEventId()) || REAL_EVENT_ID;
     await execute(`
       INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [historyId, REAL_EVENT_ID, userId, 'assignment_return', 'assignment', assignmentId, 'Returned to event duty', now]);
+    `, [historyId, targetEventId, userId, 'assignment_return', 'assignment', assignmentId, 'Returned to event duty', now]);
 
     broadcastSSEEvent('assignment_updated', { assignmentId, status: 'on_duty' });
 
@@ -704,7 +739,8 @@ adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response)
     const filterConnection = req.query.connection as string;
     const search = ((req.query.search || req.query.q || '') as string).trim().toLowerCase();
 
-    const eventIdParam = (req.query.eventId as string) || REAL_EVENT_ID;
+    const currentEventId = await getCurrentEventId();
+    const eventIdParam = (req.query.eventId as string) || currentEventId || REAL_EVENT_ID;
     let whereClause = 'WHERE d.event_id = ?';
     const params: any[] = [eventIdParam];
 
@@ -2558,8 +2594,13 @@ adminDutyRouter.get('/events/:eventId/response-coverage', async (req: Authentica
 // ==============================================
 
 // Helper to resolve duty location for a user (Admin assignment priority, then presence session)
-export async function resolveUserDutyLocation(userId: string, eventId: string = REAL_EVENT_ID) {
+export async function resolveUserDutyLocation(userId: string, eventId?: string | null) {
   try {
+    const resolvedEventId = eventId || (await getCurrentEventId());
+    if (!resolvedEventId) {
+      return null;
+    }
+
     // 1. Check Admin assignment first: Admin assignment containing a location takes precedence
     const assignment = await queryOne(`
       SELECT a.id as assignment_id, a.responsibility_key, a.team_key as assignment_team, a.assigned_location_id, a.status as assignment_status,
@@ -2570,9 +2611,9 @@ export async function resolveUserDutyLocation(userId: string, eventId: string = 
       WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled' AND el.is_active = 1 AND el.archived_at IS NULL
       ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
       LIMIT 1
-    `, [userId, eventId]);
+    `, [userId, resolvedEventId]);
 
-    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [eventId]);
+    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [resolvedEventId]);
     const locMap = new Map<string, any>();
     for (const loc of allLocations) {
       locMap.set(loc.id, loc);
@@ -2598,7 +2639,7 @@ export async function resolveUserDutyLocation(userId: string, eventId: string = 
     if (assignment) {
       const activePres = await queryOne(
         'SELECT started_at FROM event_duty_location_presence WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ? LIMIT 1',
-        [userId, assignment.location_id, eventId]
+        [userId, assignment.location_id, resolvedEventId]
       );
       return {
         id: assignment.assignment_id,
@@ -2627,7 +2668,7 @@ export async function resolveUserDutyLocation(userId: string, eventId: string = 
       WHERE p.user_id = ? AND p.ended_at IS NULL AND p.event_id = ? AND el.is_active = 1 AND el.archived_at IS NULL
       ORDER BY p.started_at DESC
       LIMIT 1
-    `, [userId, eventId]);
+    `, [userId, resolvedEventId]);
 
     if (presence) {
       return {
@@ -2664,7 +2705,8 @@ dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) =>
     const limit = parseInt(req.query.limit as string || '100');
     const search = (req.query.search as string || '').trim().toLowerCase();
     const type = req.query.type as string || '';
-    const eventId = (req.query.eventId as string) || REAL_EVENT_ID;
+    const currentEventId = await getCurrentEventId();
+    const eventId = (req.query.eventId as string) || currentEventId || REAL_EVENT_ID;
 
     let queryStr = 'SELECT * FROM event_locations WHERE event_id = ? AND is_active = 1 AND archived_at IS NULL';
     const params: any[] = [eventId];
@@ -2769,7 +2811,16 @@ dutyRouter.get('/current-location', async (req: AuthenticatedRequest, res: Respo
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const dutyLocation = await resolveUserDutyLocation(userId, REAL_EVENT_ID);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({
+        success: true,
+        presence: null,
+        location: null
+      });
+    }
+
+    const dutyLocation = await resolveUserDutyLocation(userId, currentEventId);
 
     return res.json({
       success: true,
@@ -2787,6 +2838,11 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ success: false, error: 'No current event is available.' });
+    }
 
     const { locationId, scannedToken, source } = req.body;
     let resolvedLocationId = locationId;
@@ -2806,8 +2862,8 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       return res.status(400).json({ success: false, error: 'Location ID or scanned token is required.' });
     }
 
-    // Verify location is active, belongs to REAL_EVENT_ID, and not archived
-    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [resolvedLocationId, REAL_EVENT_ID]);
+    // Verify location is active, belongs to currentEventId, and not archived
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [resolvedLocationId, currentEventId]);
     if (!loc) {
       return res.status(400).json({ success: false, error: 'The selected location is invalid or no longer active.' });
     }
@@ -2819,7 +2875,7 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       JOIN event_locations el ON a.assigned_location_id = el.id
       WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled' AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
       LIMIT 1
-    `, [userId, REAL_EVENT_ID]);
+    `, [userId, currentEventId]);
 
     if (adminAssignment && adminAssignment.assigned_location_id !== resolvedLocationId) {
       return res.status(403).json({
@@ -2832,7 +2888,7 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
     const now = new Date().toISOString();
 
     // End previous active presence sessions for this user at other locations
-    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, REAL_EVENT_ID]);
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, currentEventId]);
 
     // Create new active presence
     const presenceId = 'pres-' + crypto.randomBytes(8).toString('hex');
@@ -2840,24 +2896,24 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       INSERT INTO event_duty_location_presence (
         id, event_id, user_id, duty_device_id, event_location_id, source, started_at, ended_at, updated_at
       ) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?)
-    `, [presenceId, REAL_EVENT_ID, userId, resolvedLocationId, resolvedSource, now, now]);
+    `, [presenceId, currentEventId, userId, resolvedLocationId, resolvedSource, now, now]);
 
     // Update assignment status to 'on_duty' if assigned to this location
     await execute(`
       UPDATE event_duty_assignments
       SET status = 'on_duty', updated_at = ?
       WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status != 'cancelled'
-    `, [now, userId, REAL_EVENT_ID, resolvedLocationId]);
+    `, [now, userId, currentEventId, resolvedLocationId]);
 
     // Update assignment assigned_location_id if active assignment exists without location
     await execute(`
       UPDATE event_duty_assignments
       SET assigned_location_id = ?, status = 'on_duty', updated_at = ?
       WHERE user_id = ? AND event_id = ? AND status != 'cancelled' AND (assigned_location_id IS NULL OR assigned_location_id = '')
-    `, [resolvedLocationId, now, userId, REAL_EVENT_ID]);
+    `, [resolvedLocationId, now, userId, currentEventId]);
 
     // Broadcast SSE change for admin/team view sync
-    broadcastSSEEvent('duty_presence_changed', { eventId: REAL_EVENT_ID, userId, locationId: resolvedLocationId });
+    broadcastSSEEvent('duty_presence_changed', { eventId: currentEventId, userId, locationId: resolvedLocationId });
 
     return res.json({
       success: true,
@@ -2891,10 +2947,15 @@ dutyRouter.delete('/current-location', async (req: AuthenticatedRequest, res: Re
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const now = new Date().toISOString();
-    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, REAL_EVENT_ID]);
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({ success: true });
+    }
 
-    broadcastSSEEvent('duty_presence_changed', { eventId: REAL_EVENT_ID, userId, locationId: null });
+    const now = new Date().toISOString();
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, currentEventId]);
+
+    broadcastSSEEvent('duty_presence_changed', { eventId: currentEventId, userId, locationId: null });
 
     return res.json({ success: true });
   } catch (err: any) {
