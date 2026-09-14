@@ -14,6 +14,7 @@ import { broadcastSSEEvent } from '../services/sse';
 import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
+import { setCurrentEvent, getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { adminDutyRouter, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
@@ -3422,17 +3423,21 @@ router.post('/events/:eventId/archive', async (req: AuthenticatedRequest, res: R
   }
 });
 
-// SET CURRENT ACTIVE event
+// SET CURRENT ACTIVE event (atomic transactional switch)
 router.post('/events/:eventId/set-current', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { eventId } = req.params;
-    const now = new Date().toISOString();
-    await execute("UPDATE events SET status = 'upcoming', updated_at = ? WHERE status = 'current'", [now]);
-    await execute("UPDATE events SET status = 'current', updated_at = ? WHERE id = ?", [now, eventId]);
-    res.json({ success: true, message: 'Event is now set as the active current event.' });
+    const result = await setCurrentEvent(eventId);
+    res.json({
+      success: true,
+      message: 'Event is now set as the active current event.',
+      currentEvent: result.currentEvent,
+      previousEventId: result.previousEventId
+    });
   } catch (err: any) {
     console.error('Error setting current event:', err);
-    res.status(500).json({ error: 'Failed to set current event.' });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: err.message || 'Failed to set current event.' });
   }
 });
 

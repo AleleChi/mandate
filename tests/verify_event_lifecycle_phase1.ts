@@ -246,7 +246,7 @@ async function runTests() {
     console.log('   archived -> "Past"');
 
     // Function matching AdminEventsView.tsx getFilteredEvents filter logic
-    const filterEvents = (eventList: { status: string }[], activeTab: string) => {
+    const filterEvents = (eventList: { id: string; title: string; status: string }[], activeTab: string) => {
       return eventList.filter(e => {
         if (activeTab === 'current') return e.status === 'current';
         if (activeTab === 'upcoming') return e.status === 'upcoming' || e.status === 'open' || e.status === 'active';

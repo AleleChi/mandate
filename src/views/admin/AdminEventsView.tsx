@@ -78,6 +78,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   const [events, setEvents] = useState<EventData[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [makeCurrentTargetEvent, setMakeCurrentTargetEvent] = useState<EventData | null>(null);
+  const [isSettingCurrent, setIsSettingCurrent] = useState(false);
 
   // Form states
   const [formTitle, setFormTitle] = useState('');
@@ -372,16 +374,25 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     }
   };
 
-  const handleSetCurrentActive = async (eventId: string) => {
+  const handleOpenMakeCurrentModal = (event: EventData) => {
+    setMakeCurrentTargetEvent(event);
+  };
+
+  const handleConfirmMakeCurrent = async () => {
+    if (!makeCurrentTargetEvent?.id) return;
+    setIsSettingCurrent(true);
     try {
-      const res = await api.admin.setCurrentEvent(eventId);
+      const res = await api.admin.setCurrentEvent(makeCurrentTargetEvent.id);
       if (res.success) {
-        showSuccess('Active Status Updated', 'This event is now designated as the active current event.');
+        showSuccess('Current Event Updated', `“${makeCurrentTargetEvent.title}” is now the current event.`);
+        setMakeCurrentTargetEvent(null);
         fetchEvents();
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
       showError('Action Failed', parsed.message || 'Could not set active current event.');
+    } finally {
+      setIsSettingCurrent(false);
     }
   };
 
@@ -607,7 +618,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     {event.status !== 'current' && event.status !== 'archived' && event.status !== 'closed' && (
                       <Button
                         type="button"
-                        onClick={() => handleSetCurrentActive(event.id!)}
+                        onClick={() => handleOpenMakeCurrentModal(event)}
                         className="text-[10px] font-bold bg-[#C59B27]/5 text-[#C59B27] hover:bg-[#C59B27]/10 px-3 py-2 rounded-xl border border-[#C59B27]/20 flex items-center space-x-1 cursor-pointer"
                         title="Set as Active Current Event"
                       >
@@ -1069,6 +1080,45 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Explicit Confirmation Modal for Make Current */}
+      {makeCurrentTargetEvent && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#EAE8E1] space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold text-[#18181B] leading-snug">
+                Make “{makeCurrentTargetEvent.title}” the current event?
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed font-normal">
+                New registrations and live event operations will use this event. The current event will remain available in event history.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                disabled={isSettingCurrent}
+                onClick={() => setMakeCurrentTargetEvent(null)}
+                className="px-4 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-800 bg-zinc-100 hover:bg-zinc-200/70 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isSettingCurrent}
+                onClick={handleConfirmMakeCurrent}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#b58c22] rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                {isSettingCurrent ? <span>Updating...</span> : <span>Make current</span>}
+              </Button>
+            </div>
           </div>
         </div>
       )}
