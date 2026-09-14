@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import { calculateAnalytics, formatDuration } from './reportAnalyticsService';
 import { compileReportDocument } from '../reports/reportTemplateRegistry';
 import { renderDocumentToPDF } from '../reports/reportRenderer';
+import { getCurrentEventId, getEventById } from './eventService';
 
 const dbUrl = process.env.DATABASE_URL;
 const isPostgres = !!(dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')));
@@ -617,22 +618,17 @@ export async function compileReportSnapshot(
       filters
     };
   } else {
-    // Resolve target event strictly from requested eventId or current event from database
+    // Resolve target event strictly from requested eventId or canonical current event
     let targetEventId = eventId;
     if (!targetEventId) {
-      const currentEv = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1")
-        || await queryOne("SELECT id FROM events WHERE status IN ('active', 'open') LIMIT 1")
-        || await queryOne("SELECT id FROM events ORDER BY starts_at DESC, created_at DESC LIMIT 1");
-      if (currentEv) {
-        targetEventId = currentEv.id;
-      }
+      targetEventId = await getCurrentEventId();
     }
 
     if (!targetEventId) {
       throw new Error('No valid event ID was provided or could be resolved.');
     }
 
-    const event = await queryOne('SELECT * FROM events WHERE id = ?', [targetEventId]);
+    const event = await getEventById(targetEventId);
     if (!event) {
       throw new Error(`The requested event "${targetEventId}" does not exist in the database.`);
     }
@@ -1583,7 +1579,7 @@ export async function getOrRegenerateReportPDF(reportId: string): Promise<Report
     const ev = await queryOne('SELECT title FROM events WHERE id = ?', [job.event_id]);
     if (ev?.title) eventPart = ev.title;
   }
-  if (!eventPart) eventPart = 'The General Assembly';
+  if (!eventPart) eventPart = 'Event';
   const dateObj = new Date(job.completed_at || job.created_at || Date.now());
   const filename = formatReportFilename(eventPart, titlePart, dateObj);
 

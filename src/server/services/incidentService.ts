@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { broadcastSSEEvent } from './sse';
+import { getCurrentEventId, getEventById } from './eventService';
 
 // Proof: data-component-version="shared-incident-service-v1"
 // Proof: data-component-version="incident-schema-v1"
@@ -277,9 +278,18 @@ export async function createIncident(params: {
       }
 
       let eventId = params.eventId;
+      if (eventId && typeof eventId === 'string' && eventId.trim()) {
+        const ev = await getEventById(eventId.trim());
+        if (!ev) {
+          throw new IncidentError(`Event not found: ${eventId}`, 'EVENT_NOT_FOUND', 404);
+        }
+        eventId = ev.id;
+      } else {
+        eventId = await getCurrentEventId();
+      }
+
       if (!eventId) {
-        const curEvent = await queryOne("SELECT id FROM events WHERE status IN ('current', 'active') LIMIT 1");
-        eventId = curEvent?.id || 'event-ga-2026';
+        throw new IncidentError('No active or specified event found for incident.', 'NO_EVENT', 400);
       }
 
       alertId = crypto.randomUUID();
