@@ -217,11 +217,12 @@ export async function seedDefaultRules(eventId: string) {
 
   const now = new Date().toISOString();
   for (const rule of defaultRules) {
+    const ruleId = eventId === 'event-ga-2026' ? rule.id : `${rule.id}-${eventId}`;
     await execute(`
       INSERT INTO event_notification_rules (
         id, event_id, name, trigger_type, trigger_offset_minutes, channel, audience, title, message_template, is_active, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `, [rule.id, eventId, rule.name, rule.trigger_type, rule.trigger_offset_minutes, rule.channel, rule.audience, rule.title, rule.message_template, now, now]);
+    `, [ruleId, eventId, rule.name, rule.trigger_type, rule.trigger_offset_minutes, rule.channel, rule.audience, rule.title, rule.message_template, now, now]);
   }
 }
 

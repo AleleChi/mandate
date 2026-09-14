@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute } from '../db';
 import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
 import { sendWebPush } from '../services/push';
@@ -274,7 +274,10 @@ dutyRouter.post('/readiness/check', async (req: AuthenticatedRequest, res: Respo
     }
 
     const currentEventId = await getCurrentEventId();
-    const eventIdForDevice = currentEventId || REAL_EVENT_ID;
+    const eventIdForDevice = currentEventId;
+    if (!eventIdForDevice) {
+      return res.status(400).json({ error: 'No active or current event found for device registration' });
+    }
 
     const now = new Date().toISOString();
     const cleanLabel = (deviceLabel || 'Unnamed Device').trim().substring(0, 50);
@@ -416,7 +419,7 @@ dutyRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const currentEventId = await getCurrentEventId();
-    const targetEventId = currentEventId || REAL_EVENT_ID;
+    const targetEventId = currentEventId;
 
     const now = new Date().toISOString();
 
@@ -435,11 +438,19 @@ dutyRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => {
     `, [now, now, now, appGeneratedDeviceId, userId]);
 
     // Update matching event_duty_assignments to 'ended'
-    await execute(`
-      UPDATE event_duty_assignments
-      SET status = 'ended', updated_at = ?
-      WHERE user_id = ? AND event_id = ? AND status = 'on_duty'
-    `, [now, userId, targetEventId]);
+    if (targetEventId) {
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'ended', updated_at = ?
+        WHERE user_id = ? AND event_id = ? AND status = 'on_duty'
+      `, [now, userId, targetEventId]);
+    } else {
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'ended', updated_at = ?
+        WHERE user_id = ? AND status = 'on_duty'
+      `, [now, userId]);
+    }
 
     // Send Realtime SSE Update
     broadcastSSEEvent('duty_status_changed', { userId, onDuty: false });
@@ -623,7 +634,7 @@ dutyRouter.post('/assignments/:assignmentId/temporarily-unavailable', async (req
 
     // Record change history
     const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
-    const targetEventId = assignment.event_id || (await getCurrentEventId()) || REAL_EVENT_ID;
+    const targetEventId = assignment.event_id || (await getCurrentEventId());
     await execute(`
       INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -670,7 +681,7 @@ dutyRouter.post('/assignments/:assignmentId/return', async (req: AuthenticatedRe
 
     // Record change history
     const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
-    const targetEventId = assignment.event_id || (await getCurrentEventId()) || REAL_EVENT_ID;
+    const targetEventId = assignment.event_id || (await getCurrentEventId());
     await execute(`
       INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -740,7 +751,17 @@ adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response)
     const search = ((req.query.search || req.query.q || '') as string).trim().toLowerCase();
 
     const currentEventId = await getCurrentEventId();
-    const eventIdParam = (req.query.eventId as string) || currentEventId || REAL_EVENT_ID;
+    const eventIdParam = (req.query.eventId as string) || currentEventId;
+    if (!eventIdParam) {
+      return res.json({
+        devices: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        summary: { total: 0, onDuty: 0, offDuty: 0, checkedIn: 0, connected: 0, batteryLow: 0 }
+      });
+    }
     let whereClause = 'WHERE d.event_id = ?';
     const params: any[] = [eventIdParam];
 
@@ -925,6 +946,7 @@ adminDutyRouter.post('/devices/:deviceId/remind', async (req: AuthenticatedReque
 
     const now = new Date().toISOString();
     const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
+    const targetEventId = device.event_id || (await getCurrentEventId());
 
     await execute(`
       INSERT INTO notifications (
@@ -937,7 +959,7 @@ adminDutyRouter.post('/devices/:deviceId/remind', async (req: AuthenticatedReque
       'info',
       device.role,
       'user',
-      REAL_EVENT_ID,
+      targetEventId,
       req.user.id,
       now,
       'high'
@@ -1004,13 +1026,17 @@ adminDutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, r
 // PHASE 3 PREMIUM ON-DUTY TEAM ENDPOINTS
 // ==========================================
 
-async function ensureDefaultRules() {
+async function ensureDefaultRules(targetEventId?: string) {
   try {
-    const existing = await queryOne('SELECT id FROM alert_routing_rules WHERE event_id = ? LIMIT 1', [REAL_EVENT_ID]);
+    const eventId = targetEventId || (await getCurrentEventId());
+    if (!eventId) {
+      return; // No active event to seed rules for
+    }
+    const existing = await queryOne('SELECT id FROM alert_routing_rules WHERE event_id = ? LIMIT 1', [eventId]);
     if (existing) {
       return; // Already initialized
     }
-    console.log('[Routing Rules Seeder] Seeding default premium routing rules...');
+    console.log(`[Routing Rules Seeder] Seeding default premium routing rules for event ${eventId}...`);
     
     const now = new Date().toISOString();
     const rules = [
@@ -1095,20 +1121,21 @@ async function ensureDefaultRules() {
     ];
 
     for (const rule of rules) {
+      const ruleId = `rule-${eventId}-${rule.category}`;
       await execute(`
         INSERT INTO alert_routing_rules (
           id, event_id, category_key, severity_key, requires_acknowledgement, escalation_delay_seconds, is_active, created_at, updated_at
         ) VALUES (?, ?, ?, 'all', ?, ?, 1, ?, ?)
-      `, [rule.id, REAL_EVENT_ID, rule.category, rule.requires_ack, rule.escalation, now, now]);
+      `, [ruleId, eventId, rule.category, rule.requires_ack, rule.escalation, now, now]);
 
       for (let i = 0; i < rule.recipients.length; i++) {
         const recip = rule.recipients[i];
-        const recipId = `rule-recip-${rule.category}-${i}`;
+        const recipId = `rule-recip-${eventId}-${rule.category}-${i}`;
         await execute(`
           INSERT INTO alert_routing_recipients (
             id, routing_rule_id, recipient_type, responsibility_key, delivery_tier, sort_order, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [recipId, rule.id, recip.type, recip.key, recip.tier, i, now]);
+        `, [recipId, ruleId, recip.type, recip.key, recip.tier, i, now]);
       }
     }
   } catch (err) {
@@ -1687,12 +1714,13 @@ export async function resolveAlertRecipients(alertId: string, category: string, 
   const now = new Date().toISOString();
   console.log(`[Recipient Resolution] Resolving for Alert: ${alertId}, Category: ${category}, Severity: ${severity}`);
 
-  // Fetch alert info to find location_id
-  const alert = await queryOne('SELECT location_id FROM event_safety_alerts WHERE id = ?', [alertId]);
+  // Fetch alert info to find location_id and event_id
+  const alert = await queryOne('SELECT location_id, event_id FROM event_safety_alerts WHERE id = ?', [alertId]);
   const alertLocationId = alert ? alert.location_id : null;
+  const targetEventId = alert?.event_id || (await getCurrentEventId());
 
   // Load all event locations for hierarchy lookup
-  const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [REAL_EVENT_ID]);
+  const allLocations = targetEventId ? await query('SELECT * FROM event_locations WHERE event_id = ?', [targetEventId]) : [];
   const locMap = new Map<string, any>();
   for (const loc of allLocations) {
     locMap.set(loc.id, loc);
@@ -1711,10 +1739,10 @@ export async function resolveAlertRecipients(alertId: string, category: string, 
   }
 
   // 1. Fetch matching rule using location-aware specificity ranking
-  const rules = await query(`
+  const rules = targetEventId ? await query(`
     SELECT * FROM alert_routing_rules
     WHERE event_id = ? AND category_key = ? AND (severity_key = ? OR severity_key = 'all') AND is_active = 1
-  `, [REAL_EVENT_ID, category, severity]);
+  `, [targetEventId, category, severity]) : [];
 
   let rule = null;
 
@@ -1782,25 +1810,25 @@ export async function resolveAlertRecipients(alertId: string, category: string, 
   }
 
   // 2. Fetch all on-duty users / assignments for current event
-  const assignments = await query(`
+  const assignments = targetEventId ? await query(`
     SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, COALESCE(vp.is_deleted, pp.is_deleted, 0) as is_deleted, u.role as user_role
     FROM event_duty_assignments a
     JOIN users u ON a.user_id = u.id
     LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
     LEFT JOIN parent_profiles pp ON pp.user_id = u.id
     WHERE a.event_id = ? AND a.status != 'cancelled'
-  `, [REAL_EVENT_ID]);
+  `, [targetEventId]) : [];
 
   // Fetch all users' duty status
   const dutyStatuses = await query('SELECT * FROM user_duty_status');
   const dutyStatusMap = new Map(dutyStatuses.map((d: any) => [d.user_id, d]));
 
   // Fetch active duty presences
-  const activePresences = await query('SELECT * FROM event_duty_location_presence WHERE event_id = ? AND ended_at IS NULL', [REAL_EVENT_ID]);
+  const activePresences = targetEventId ? await query('SELECT * FROM event_duty_location_presence WHERE event_id = ? AND ended_at IS NULL', [targetEventId]) : [];
   const userPresenceMap = new Map(activePresences.map((p: any) => [p.user_id, p]));
 
   // Fetch devices
-  const devices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [REAL_EVENT_ID]);
+  const devices = targetEventId ? await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [targetEventId]) : [];
   const userDevicesMap = new Map<string, any[]>();
   for (const d of devices) {
     if (!userDevicesMap.has(d.user_id)) {
@@ -2132,6 +2160,11 @@ adminDutyRouter.post('/events/:eventId/alert-routing/preview', async (req: Authe
       return res.status(400).json({ error: 'Category and severity are required for routing preview' });
     }
 
+    const targetEventId = req.params.eventId || (await getCurrentEventId());
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Event not found' });
+    }
+
     // Preview mode: Run resolution algorithm using a fake temporary alert ID, without committing real notifications
     console.log(`[Preview Alert Routing] Previewing Category: ${category}, Severity: ${severity}`);
 
@@ -2141,7 +2174,7 @@ adminDutyRouter.post('/events/:eventId/alert-routing/preview', async (req: Authe
       WHERE event_id = ? AND category_key = ? AND (severity_key = ? OR severity_key = 'all') AND is_active = 1
       ORDER BY CASE WHEN severity_key = ? THEN 1 ELSE 2 END ASC
       LIMIT 1
-    `, [REAL_EVENT_ID, category, severity, severity]);
+    `, [targetEventId, category, severity, severity]);
 
     let ruleRecipients = [];
     if (rule) {
@@ -2173,12 +2206,12 @@ adminDutyRouter.post('/events/:eventId/alert-routing/preview', async (req: Authe
       LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
       LEFT JOIN parent_profiles pp ON pp.user_id = u.id
       WHERE a.event_id = ? AND a.status != 'cancelled'
-    `, [REAL_EVENT_ID]);
+    `, [targetEventId]);
 
     const dutyStatuses = await query('SELECT * FROM user_duty_status');
     const dutyMap = new Map(dutyStatuses.map((d: any) => [d.user_id, d]));
 
-    const devices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [REAL_EVENT_ID]);
+    const devices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [targetEventId]);
     const userDevicesMap = new Map<string, any[]>();
     for (const d of devices) {
       if (!userDevicesMap.has(d.user_id)) {
@@ -2277,6 +2310,11 @@ adminDutyRouter.post('/events/:eventId/alert-routing/test', async (req: Authenti
       return res.status(400).json({ error: 'Category key is required for routing test' });
     }
 
+    const targetEventId = req.params.eventId || (await getCurrentEventId());
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Event not found' });
+    }
+
     const now = new Date().toISOString();
     const alertId = `test-alert-${crypto.randomBytes(8).toString('hex')}`;
 
@@ -2285,7 +2323,7 @@ adminDutyRouter.post('/events/:eventId/alert-routing/test', async (req: Authenti
       INSERT INTO event_safety_alerts (
         id, event_id, child_id, child_event_entry_id, raised_by_user_id, raised_by_role, severity, category, title, message, status, created_at, updated_at
       ) VALUES (?, ?, NULL, NULL, ?, ?, 'important', ?, 'Event alert test', 'This is a controlled alert routing and delivery test.', 'open', ?, ?)
-    `, [alertId, REAL_EVENT_ID, req.user.id, 'admin', category, now, now]);
+    `, [alertId, targetEventId, req.user.id, 'admin', category, now, now]);
 
     // Resolve and notify test recipients using backend resolution engine
     const recipients = await resolveAlertRecipients(alertId, category, 'important', req.user.id);
@@ -2295,7 +2333,7 @@ adminDutyRouter.post('/events/:eventId/alert-routing/test', async (req: Authenti
     await execute(`
       INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [historyId, REAL_EVENT_ID, req.user.id, 'test_alert_sent', 'test', alertId, `Triggered alert routing test for: ${category}`, now]);
+    `, [historyId, targetEventId, req.user.id, 'test_alert_sent', 'test', alertId, `Triggered alert routing test for: ${category}`, now]);
 
     return res.json({
       success: true,
@@ -2706,7 +2744,16 @@ dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) =>
     const search = (req.query.search as string || '').trim().toLowerCase();
     const type = req.query.type as string || '';
     const currentEventId = await getCurrentEventId();
-    const eventId = (req.query.eventId as string) || currentEventId || REAL_EVENT_ID;
+    const eventId = (req.query.eventId as string) || currentEventId;
+    if (!eventId) {
+      return res.json({
+        locations: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0
+      });
+    }
 
     let queryStr = 'SELECT * FROM event_locations WHERE event_id = ? AND is_active = 1 AND archived_at IS NULL';
     const params: any[] = [eventId];

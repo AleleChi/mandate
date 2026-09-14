@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute, transaction } from '../db';
 import { broadcastSSEEvent } from './sse';
 import { cancelActiveEscalationCycles } from './escalationService';
 
@@ -81,10 +81,9 @@ export async function canPerformAlertResponseAction(params: {
     return { allowed: false, reason: 'Alert not found.', code: 'ALERT_NOT_FOUND' };
   }
 
-  // Current event isolation check
-  // TEST Q — Current event isolation: actor cannot access another event’s alert.
-  if (alert.event_id !== REAL_EVENT_ID) {
-    return { allowed: false, reason: 'Event isolation boundary violation. This alert belongs to another event.', code: 'EVENT_ISOLATION_VIOLATION' };
+  // Event isolation check
+  if (!alert.event_id) {
+    return { allowed: false, reason: 'Event isolation boundary violation. This alert has no associated event.', code: 'EVENT_ISOLATION_VIOLATION' };
   }
 
   // Check actor status (suspended or inactive)
@@ -292,8 +291,13 @@ export async function getAlertResponseState(alertIdOrRef: string, actor: Actor) 
 
   const alertId = alert.id;
 
-  if (alert.event_id !== REAL_EVENT_ID) {
+  if (!alert.event_id) {
     throw new AlertResponseError('Event isolation boundary violation', 'EVENT_ISOLATION_VIOLATION', 403);
+  }
+
+  const actorCheck = await verifyActorStatus(actor, alert.event_id);
+  if (!actorCheck.success) {
+    throw new AlertResponseError(actorCheck.message || 'Event isolation boundary violation', actorCheck.code || 'EVENT_ISOLATION_VIOLATION', 403);
   }
 
   // Get active assignments
@@ -418,8 +422,8 @@ export async function acknowledgeAndRespond(params: {
       throw new AlertResponseError('Alert not found.', 'ALERT_NOT_FOUND', 404);
     }
 
-    // Current event isolation boundary
-    if (alert.event_id !== REAL_EVENT_ID) {
+    // Event isolation boundary
+    if (!alert.event_id) {
       throw new AlertResponseError('Event boundary violation.', 'EVENT_ISOLATION_VIOLATION', 403);
     }
 
@@ -1464,7 +1468,7 @@ export async function getVolunteerSafeAlertProgress(alertId: string) {
     throw new AlertResponseError('Alert not found.', 'ALERT_NOT_FOUND', 404);
   }
 
-  if (alert.event_id !== REAL_EVENT_ID) {
+  if (!alert.event_id) {
     throw new AlertResponseError('Event isolation boundary violation', 'EVENT_ISOLATION_VIOLATION', 403);
   }
 

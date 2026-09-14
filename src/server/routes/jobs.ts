@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { processPendingNotifications } from '../services/notifications';
+import { getCurrentEventId } from '../services/eventService';
 
 const router = Router();
-const REAL_EVENT_ID = 'event-ga-2026';
 
 router.post('/process-notifications', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
@@ -14,7 +14,18 @@ router.post('/process-notifications', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await processPendingNotifications(REAL_EVENT_ID);
+    const eventId = (req.body?.eventId || req.query?.eventId || (await getCurrentEventId())) as string;
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        processed: 0,
+        failures: 0,
+        message: 'No current event configured. Skipping event notification processing.'
+      });
+    }
+
+    const result = await processPendingNotifications(eventId);
     res.json({
       success: true,
       processed: result.processed,

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute, transaction } from '../db';
 import { sendWebPush } from './push';
 import { sendWhatsApp } from './notifications';
 import { sendEmail, sendEscalationAlertEmail } from './email';

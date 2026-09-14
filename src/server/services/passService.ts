@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute, transaction } from '../db';
+import { getCurrentEventId } from './eventService';
 
 interface IssuePassParams {
   childId: string;
@@ -14,7 +15,7 @@ interface IssuePassParams {
  */
 export async function issuePassForChild({
   childId,
-  eventId = REAL_EVENT_ID,
+  eventId,
   parentId,
   issuedBy
 }: IssuePassParams) {
@@ -23,7 +24,16 @@ export async function issuePassForChild({
     throw new Error('Child not found');
   }
 
-  const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
+  let entry = null;
+  if (eventId) {
+    entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
+  } else {
+    const currentEventId = await getCurrentEventId();
+    if (currentEventId) {
+      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
+    }
+  }
+
   if (!entry) {
     throw new Error('Child event registration not found');
   }
@@ -39,8 +49,18 @@ export async function issuePassForChild({
     throw new Error('Missing required child photo for pass generation');
   }
 
+  let eventYear = '2026';
+  const eventRecord = await queryOne('SELECT starts_at FROM events WHERE id = ?', [entry.event_id]);
+  if (eventRecord?.starts_at) {
+    const y = new Date(eventRecord.starts_at).getFullYear();
+    if (!isNaN(y)) eventYear = String(y);
+  } else if (entry.event_id) {
+    const match = String(entry.event_id).match(/\d{4}/);
+    if (match) eventYear = match[0];
+  }
+
   const passId = crypto.randomUUID();
-  const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+  const passRef = `KOI-${eventYear}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
   const passHash = crypto.randomBytes(16).toString('hex');
   const now = new Date().toISOString();
 
@@ -63,8 +83,10 @@ export async function issuePassForChild({
 /**
  * Gets the active pass for a child event registration
  */
-export async function getPassForChild(childId: string, eventId: string = REAL_EVENT_ID) {
-  const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
+export async function getPassForChild(childId: string, eventId?: string) {
+  const targetEventId = eventId || (await getCurrentEventId());
+  if (!targetEventId) return null;
+  const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
   if (!entry) return null;
   return await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
 }
@@ -73,7 +95,18 @@ export async function getPassForChild(childId: string, eventId: string = REAL_EV
  * Optimized and memory-safe lookup for parent passes.
  * Returns both ready and pending passes.
  */
-export async function getPassesForParent(parentId: string, eventId: string = REAL_EVENT_ID) {
+export async function getPassesForParent(parentId: string, eventId?: string) {
+  const targetEventId = eventId || (await getCurrentEventId());
+  if (!targetEventId) {
+    return {
+      passes: [],
+      pending: []
+    };
+  }
+
+  const currentEvent = await queryOne('SELECT id, title FROM events WHERE id = ?', [targetEventId]);
+  const eventName = currentEvent?.title || 'Koinonia Event';
+
   // Query only essential columns for parent children
   const children = await query('SELECT id, full_name, photo_file_id FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [parentId]);
   
@@ -81,7 +114,7 @@ export async function getPassesForParent(parentId: string, eventId: string = REA
   const pendingList = [];
 
   for (const c of children) {
-    const entry = await queryOne('SELECT id, status FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, eventId]);
+    const entry = await queryOne('SELECT id, status FROM child_event_entries WHERE child_id = ? AND event_id = ?', [c.id, targetEventId]);
     if (!entry) continue;
 
     const pass = await queryOne('SELECT id, pass_reference, issued_at, status FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
@@ -90,7 +123,7 @@ export async function getPassesForParent(parentId: string, eventId: string = REA
         id: pass.id,
         childId: c.id,
         childName: c.full_name,
-        eventName: 'Koinonia Children and Teens Event 2026',
+        eventName,
         status: 'ready',
         passCode: pass.pass_reference,
         qrPayload: pass.pass_reference,
@@ -100,7 +133,7 @@ export async function getPassesForParent(parentId: string, eventId: string = REA
       pendingList.push({
         childId: c.id,
         childName: c.full_name,
-        eventName: 'Koinonia Children and Teens Event 2026',
+        eventName,
         status: 'pending'
       });
     }
@@ -115,8 +148,13 @@ export async function getPassesForParent(parentId: string, eventId: string = REA
 /**
  * Revokes a pass and puts the child back to review_reopened status
  */
-export async function revokePassForChild(childId: string, eventId: string = REAL_EVENT_ID, reason: string, adminId: string) {
-  const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
+export async function revokePassForChild(childId: string, eventId?: string, reason?: string, adminId?: string) {
+  const targetEventId = eventId || (await getCurrentEventId());
+  if (!targetEventId) {
+    throw new Error('Registration not found');
+  }
+
+  const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
   if (!entry) {
     throw new Error('Registration not found');
   }
@@ -145,7 +183,7 @@ export async function revokePassForChild(childId: string, eventId: string = REAL
 /**
  * Securely validates an incoming scanned pass barcode or pass code.
  */
-export async function validatePassForScan(passCode: string) {
+export async function validatePassForScan(passCode: string, expectedEventId?: string | null) {
   const cleanRef = String(passCode).trim().toUpperCase();
   const pass = await queryOne('SELECT * FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
   if (!pass) {
@@ -159,6 +197,16 @@ export async function validatePassForScan(passCode: string) {
   const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [pass.child_event_entry_id]);
   if (!entry) {
     return { valid: false, reason: 'missing_registration' };
+  }
+
+  // Cross-event validation: check against expected or current event
+  const targetEventId = expectedEventId !== undefined ? expectedEventId : (await getCurrentEventId());
+  if (targetEventId && entry.event_id !== targetEventId) {
+    return {
+      valid: false,
+      reason: 'wrong_event',
+      message: 'This pass belongs to a different event.'
+    };
   }
 
   const allowedStatuses = ['pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out'];
@@ -177,6 +225,25 @@ export async function validatePassForScan(passCode: string) {
     entry,
     child
   };
+}
+
+/**
+ * Retrieves a pass by pass ID for administrative/history inspection.
+ */
+export async function getPassById(passId: string) {
+  return await queryOne(`
+    SELECT p.*, e.event_id, e.child_id
+    FROM event_passes p
+    JOIN child_event_entries e ON p.child_event_entry_id = e.id
+    WHERE p.id = ?
+  `, [passId]);
+}
+
+/**
+ * Retrieves an active pass by child_event_entry_id for administrative/history inspection.
+ */
+export async function getPassByEntryId(entryId: string) {
+  return await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryId, 'active']);
 }
 
 const SECRET_KEY = process.env.JWT_SECRET || 'koinonia-secret-key-default-2026';
