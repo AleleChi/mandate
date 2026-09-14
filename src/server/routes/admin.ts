@@ -3016,9 +3016,21 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
 // GET Demographics breakdown report
 router.get('/reports/demographics', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const currentEvent = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1");
-    const defaultEventId = currentEvent?.id || 'event-ga-2026';
-    const eventId = (req.query.eventId as string) || defaultEventId;
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    if (!eventId) {
+      return res.json({
+        success: true,
+        eventId: null,
+        generatedAt: new Date().toISOString(),
+        groups: [],
+        summary: {
+          totalChildren: 0,
+          totalUnderReview: 0,
+          totalSelected: 0,
+          totalCheckedIn: 0
+        }
+      });
+    }
 
     const childrenData = await query(`
       SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.checked_in_at, e.picked_up_at
@@ -3103,7 +3115,7 @@ router.get('/reports/demographics', async (req: AuthenticatedRequest, res: Respo
     });
   } catch (err: any) {
     console.error('Error fetching demographics report:', err);
-    res.status(500).json({ error: 'Failed to generate demographics report.' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate demographics report.' });
   }
 });
 
@@ -3594,8 +3606,11 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
     const queryOne = safeReportQueryOne;
     const query = safeReportQuery;
 
-    const currentEvent = await queryOne("SELECT id FROM events WHERE status = 'current' LIMIT 1");
-    const eventId = currentEvent?.id || 'event-ga-2026';
+    const event = await resolveAdminEvent(req.query.eventId as string);
+    if (!event) {
+      return res.status(404).json({ error: 'No active or specified event found for reports.' });
+    }
+    const eventId = event.id;
     let reportType = typeof req.query.reportType === 'string' ? req.query.reportType.trim().toLowerCase() : 'end_of_event';
     if (reportType === 'pre_event' || reportType === 'pre-event') {
       reportType = 'pre_event';
@@ -3607,20 +3622,19 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
       reportType = 'end_of_event';
     }
 
-    // 1. Get Event
-    const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
-    const eventName = event?.section_name || 'The General Assembly';
-    const eventSection = event?.title || 'Children and Teens';
+    // 1. Event metadata
+    const eventName = event?.title || event?.section_name || 'Event';
+    const eventSection = event?.section_name || '';
     const dateRangeLabel = event?.starts_at && event?.ends_at 
       ? `${event.starts_at} - ${event.ends_at}` 
-      : 'Oct 12 - Oct 14, 2023';
+      : (event?.starts_at || 'No date set');
 
     // Fetch demographics and calculate counts dynamically from the DB
     const childrenData = await query(`
       SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.has_medical_notes, e.needs_extra_support, c.needs_age_review, e.checked_in_at, e.picked_up_at
       FROM children c
-      LEFT JOIN child_event_entries e ON c.id = e.child_id AND e.event_id = ?
-      WHERE COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
+      JOIN child_event_entries e ON c.id = e.child_id
+      WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
     `, [eventId]);
 
     const ageGroupsList = [
@@ -4011,7 +4025,7 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
 
   } catch (err: any) {
     console.error('Error fetching admin reports:', err);
-    return res.status(500).json({ error: 'Failed to fetch report metrics.' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch report metrics.' });
   }
 });
 
@@ -4051,7 +4065,10 @@ router.get('/reports/export', async (req: AuthenticatedRequest, res: Response) =
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const eventId = 'event-ga-2026';
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    if (!eventId) {
+      return res.status(404).json({ error: 'No active or specified event found for export.' });
+    }
     const type = typeof req.query.type === 'string' ? req.query.type : 'attendance';
     const format = typeof req.query.format === 'string' ? req.query.format : 'csv';
 
@@ -4338,7 +4355,7 @@ router.get('/reports/export', async (req: AuthenticatedRequest, res: Response) =
 
   } catch (err: any) {
     console.error('Error generating CSV export:', err);
-    return res.status(500).json({ error: 'Failed to generate export file.' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate export file.' });
   }
 });
 
