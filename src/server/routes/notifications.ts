@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { query, queryOne, execute, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { getVapidPublicKey, sendWebPush } from '../services/push';
 import { addSSEClient } from '../services/sse';
+import { getCurrentEventId, getEventById } from '../services/eventService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -631,7 +632,7 @@ router.post('/admin/notifications', async (req: AuthenticatedRequest, res: Respo
       type = 'info',
       audienceRole = 'parent',
       audienceScope = 'all',
-      eventId = 'event-ga-2026',
+      eventId: rawEventId,
       childId,
       parentId,
       priority = 'normal',
@@ -642,6 +643,19 @@ router.post('/admin/notifications', async (req: AuthenticatedRequest, res: Respo
 
     if (!title || !message) {
       return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    let eventId: string | null = null;
+    if (rawEventId !== undefined && rawEventId !== null && rawEventId !== '') {
+      const ev = await getEventById(rawEventId);
+      if (!ev) {
+        return res.status(400).json({ error: 'Invalid eventId' });
+      }
+      eventId = ev.id;
+    } else if (rawEventId === null) {
+      eventId = null;
+    } else {
+      eventId = await getCurrentEventId();
     }
 
     const notificationId = `notif-${crypto.randomUUID()}`;
@@ -1039,7 +1053,14 @@ router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) =>
     const searchQuery = (req.query.search as string || '').trim().toLowerCase();
     const dateFrom = req.query.dateFrom as string;
     const dateTo = req.query.dateTo as string;
-    const eventId = req.query.eventId as string;
+    const rawEventId = req.query.eventId as string;
+    let targetEventId: string | null = null;
+    if (rawEventId) {
+      const ev = await getEventById(rawEventId);
+      targetEventId = ev ? ev.id : null;
+    } else {
+      targetEventId = await getCurrentEventId();
+    }
 
     // We build the query dynamically
     let queryStr = `
@@ -1087,9 +1108,13 @@ router.get('/admin/updates', async (req: AuthenticatedRequest, res: Response) =>
       queryStr += ` AND n.created_at <= ?`;
       params.push(dateTo);
     }
-    if (eventId) {
+    if (targetEventId) {
       queryStr += ` AND (n.event_id = ? OR n.event_id IS NULL)`;
-      params.push(eventId);
+      params.push(targetEventId);
+    } else if (rawEventId) {
+      queryStr += ` AND 1 = 0`;
+    } else {
+      queryStr += ` AND n.event_id IS NULL`;
     }
 
     // Query execution
@@ -1260,7 +1285,14 @@ router.get('/admin/updates/summary', async (req: AuthenticatedRequest, res: Resp
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
-    const eventId = req.query.eventId as string;
+    const rawEventId = req.query.eventId as string;
+    let targetEventId: string | null = null;
+    if (rawEventId) {
+      const ev = await getEventById(rawEventId);
+      targetEventId = ev ? ev.id : null;
+    } else {
+      targetEventId = await getCurrentEventId();
+    }
 
     // 1. Fetch all notifications matching audience roles
     let notifsQuery = `
@@ -1268,17 +1300,20 @@ router.get('/admin/updates/summary', async (req: AuthenticatedRequest, res: Resp
       WHERE (n.audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR n.audience_role IS NULL)
     `;
     const notifsParams: any[] = [];
-    if (eventId) {
+    if (targetEventId) {
       notifsQuery += ` AND (n.event_id = ? OR n.event_id IS NULL)`;
-      notifsParams.push(eventId);
+      notifsParams.push(targetEventId);
+    } else if (rawEventId) {
+      notifsQuery += ` AND 1 = 0`;
+    } else {
+      notifsQuery += ` AND n.event_id IS NULL`;
     }
     const rawNotifs = await query(notifsQuery, notifsParams);
 
     // Query open safety alerts directly from the database table for perfect, independent stats integrity
-    const targetEventId = eventId || REAL_EVENT_ID;
     const openAlertsRow = targetEventId
       ? await queryOne(`SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?`, [targetEventId])
-      : await queryOne(`SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open'`);
+      : { cnt: 0 };
     const openAlerts = openAlertsRow ? Number(openAlertsRow.cnt || 0) : 0;
 
     let total = 0;

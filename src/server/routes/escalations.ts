@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute } from '../db';
 import { broadcastSSEEvent } from '../services/sse';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
+import { getCurrentEventId, getEventById } from '../services/eventService';
 import {
   getEscalationPolicies,
   getEscalationPolicy,
@@ -16,6 +17,14 @@ import {
 
 const router = Router();
 
+async function resolveEscalationEventId(rawEventId?: string | null): Promise<string | null> {
+  if (rawEventId) {
+    const ev = await getEventById(rawEventId);
+    return ev ? ev.id : null;
+  }
+  return await getCurrentEventId();
+}
+
 // Validate that only admin/super_admin/superadmin can manage policies and view logs
 function verifyAdmin(req: AuthenticatedRequest, res: Response, next: any) {
   if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'superadmin' && req.user.role !== 'super_admin')) {
@@ -27,7 +36,11 @@ function verifyAdmin(req: AuthenticatedRequest, res: Response, next: any) {
 // 1. Get all policies
 router.get('/policies', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    const eventId = (req.query.eventId as string) || 'event-ga-2026';
+    const rawEventId = req.query.eventId as string;
+    const eventId = await resolveEscalationEventId(rawEventId);
+    if (!eventId) {
+      return res.json({ success: true, policies: [] });
+    }
     const policies = await getEscalationPolicies(eventId);
     res.json({ success: true, policies });
   } catch (err: any) {
@@ -53,7 +66,22 @@ router.get('/policies/:id', authMiddleware, verifyAdmin, async (req: Authenticat
 // 3. Create a policy
 router.post('/policies', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    const eventId = req.body.eventId || 'event-ga-2026';
+    const rawEventId = req.body.eventId as string;
+    let eventId: string | null = null;
+    if (rawEventId) {
+      const ev = await getEventById(rawEventId);
+      if (!ev) {
+        return res.status(400).json({ success: false, error: 'Invalid eventId', code: 'INVALID_EVENT' });
+      }
+      eventId = ev.id;
+    } else {
+      eventId = await getCurrentEventId();
+    }
+
+    if (!eventId) {
+      return res.status(400).json({ success: false, error: 'No active or specified event found for escalation policy', code: 'NO_EVENT' });
+    }
+
     const { name, policy_scope, severity, category_key, location_id, location_type, condition_key, priority, is_enabled, steps } = req.body;
 
     if (!name || !policy_scope || !condition_key || !steps || !Array.isArray(steps)) {
@@ -85,7 +113,20 @@ router.post('/policies', authMiddleware, verifyAdmin, async (req: AuthenticatedR
 // 4. Update a policy
 router.put('/policies/:id', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    const eventId = req.body.eventId || 'event-ga-2026';
+    const existing = await getEscalationPolicy(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Policy not found', code: 'NOT_FOUND' });
+    }
+
+    let eventId = existing.event_id;
+    if (req.body.eventId && req.body.eventId !== existing.event_id) {
+      const ev = await getEventById(req.body.eventId);
+      if (!ev) {
+        return res.status(400).json({ success: false, error: 'Invalid eventId', code: 'INVALID_EVENT' });
+      }
+      eventId = ev.id;
+    }
+
     const { name, policy_scope, severity, category_key, location_id, location_type, condition_key, priority, is_enabled, steps } = req.body;
 
     if (!name || !policy_scope || !condition_key || !steps || !Array.isArray(steps)) {
@@ -128,7 +169,11 @@ router.delete('/policies/:id', authMiddleware, verifyAdmin, async (req: Authenti
 // 6. Get history logs
 router.get('/history', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    const eventId = (req.query.eventId as string) || 'event-ga-2026';
+    const rawEventId = req.query.eventId as string;
+    const eventId = await resolveEscalationEventId(rawEventId);
+    if (!eventId) {
+      return res.json({ success: true, history: [] });
+    }
     const history = await getEscalationHistory(eventId);
     res.json({ success: true, history });
   } catch (err: any) {
@@ -140,7 +185,11 @@ router.get('/history', authMiddleware, verifyAdmin, async (req: AuthenticatedReq
 // 7. Get active cycles
 router.get('/cycles', authMiddleware, verifyAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    const eventId = (req.query.eventId as string) || 'event-ga-2026';
+    const rawEventId = req.query.eventId as string;
+    const eventId = await resolveEscalationEventId(rawEventId);
+    if (!eventId) {
+      return res.json({ success: true, cycles: [] });
+    }
     const cycles = await query(`
       SELECT c.*, p.name as policy_name, a.title as alert_title, a.severity as alert_severity, a.category as alert_category
       FROM escalation_cycles c
