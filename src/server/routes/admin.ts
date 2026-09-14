@@ -10214,6 +10214,11 @@ router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest,
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+    if (!targetEventId) {
+      return res.json([]);
+    }
+
     const items = await query(`
       SELECT cai.*, 
              c.full_name as child_name, 
@@ -10227,12 +10232,12 @@ router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest,
       LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
       WHERE cai.event_id = ?
       ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
-    `, [REAL_EVENT_ID]);
+    `, [targetEventId]);
 
     res.json(items);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Get admin attention items error:', err);
-    res.status(500).json({ error: 'Failed to retrieve attention items' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve attention items' });
   }
 });
 
@@ -10306,6 +10311,27 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+    const page = parseInt(req.query.page as string, 10);
+    const limit = parseInt(req.query.limit as string, 10);
+    const offset = page && limit ? (page - 1) * limit : 0;
+
+    if (!targetEventId) {
+      if (page && limit) {
+        return res.json({
+          success: true,
+          alerts: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            pages: 0
+          }
+        });
+      }
+      return res.json([]);
+    }
+
     const now = new Date().toISOString();
 
     // Auto-escalation: Escalate open safety concerns to urgent after 45 seconds of no responder acknowledgement
@@ -10313,7 +10339,7 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       const openUnacknowledgedAlerts = await query(`
         SELECT id, created_at, severity, title FROM event_safety_alerts 
         WHERE status = 'open' AND severity != 'urgent' AND event_id = ?
-      `, [REAL_EVENT_ID]);
+      `, [targetEventId]);
 
       for (const alert of openUnacknowledgedAlerts) {
         const elapsedMs = Date.now() - new Date(alert.created_at).getTime();
@@ -10352,7 +10378,7 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
     }
 
     // Auto-register this admin as a recipient for active alerts if not already tracked
-    const openAlerts = await query(`SELECT id, severity, status FROM event_safety_alerts WHERE status != 'resolved' AND event_id = ?`, [REAL_EVENT_ID]);
+    const openAlerts = await query(`SELECT id, severity, status FROM event_safety_alerts WHERE status != 'resolved' AND event_id = ?`, [targetEventId]);
     for (const alert of openAlerts) {
       const exists = await queryOne(`SELECT id FROM safety_alert_recipients WHERE alert_id = ? AND recipient_user_id = ?`, [alert.id, req.user.id]);
       if (!exists) {
@@ -10383,14 +10409,10 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
       WHERE recipient_user_id = ? AND delivered_in_app_at IS NULL
     `, [now, req.user.id]);
 
-    const page = parseInt(req.query.page as string, 10);
-    const limit = parseInt(req.query.limit as string, 10);
-    const offset = page && limit ? (page - 1) * limit : 0;
-
-    let countRes = await queryOne(`SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ?`, [REAL_EVENT_ID]);
+    let countRes = await queryOne(`SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ?`, [targetEventId]);
     const totalCount = countRes ? countRes.count : 0;
 
-    const queryParams: any[] = [req.user.id, REAL_EVENT_ID];
+    const queryParams: any[] = [req.user.id, targetEventId];
     let sql = `
       SELECT a.*,
              c.full_name as child_name,
@@ -10474,9 +10496,9 @@ router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, r
     } else {
       res.json(mappedAlerts);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('Get admin safety alerts error:', err);
-    res.status(500).json({ error: 'Failed to retrieve safety alerts' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve safety alerts' });
   }
 });
 
@@ -10541,7 +10563,7 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
         FROM children c
         LEFT JOIN child_event_entries e ON (c.id = e.child_id AND e.event_id = ?)
         WHERE c.id = ?
-      `, [REAL_EVENT_ID, alert.child_id]);
+      `, [alert.event_id, alert.child_id]);
 
       if (dbChild) {
         const dbPass = await queryOne('SELECT status FROM event_passes WHERE child_event_entry_id = ?', [alert.child_event_entry_id || '']);
@@ -10655,9 +10677,9 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
       pickup,
       careSummary
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Get admin safety alert detail error:', err);
-    res.status(500).json({ error: 'Failed to retrieve safety alert detail' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve safety alert detail' });
   }
 });
 
@@ -11003,10 +11025,14 @@ router.get('/updates/summary', authMiddleware, async (req: AuthenticatedRequest,
     `, []);
 
     // Query open safety alerts directly from the database table for perfect, independent stats integrity
-    const openAlertsRow = await queryOne(`
-      SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?
-    `, [REAL_EVENT_ID]);
-    const openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+    let openAlerts = 0;
+    if (targetEventId) {
+      const openAlertsRow = await queryOne(`
+        SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?
+      `, [targetEventId]);
+      openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
+    }
 
     let total = 0;
     let unread = 0;
@@ -11099,7 +11125,7 @@ router.get('/updates/summary', authMiddleware, async (req: AuthenticatedRequest,
 
   } catch (err: any) {
     console.error('Error fetching admin updates summary in admin.ts:', err);
-    return res.status(500).json({ error: 'Failed to retrieve updates summary' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve updates summary' });
   }
 });
 
@@ -12095,7 +12121,7 @@ router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: Au
       return res.status(400).json({ error: 'Selected child profile not found.' });
     }
 
-    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id || REAL_EVENT_ID]);
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id]);
     const finalEntryId = entry?.id || null;
 
     const now = new Date().toISOString();
@@ -12125,7 +12151,7 @@ router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: Au
       ) VALUES (?, ?, ?, 'child_linked', null, ?, ?)
     `, [timelineId, alertId, req.user.id, `Admin linked child ${child.full_name}. Reason: ${reason || 'Admin override'}`, now]);
 
-    broadcastSSEEvent(REAL_EVENT_ID, {
+    broadcastSSEEvent(alert.event_id, {
       type: 'alert.child_linked',
       alertId,
       summaryVersion: 1,
@@ -12167,7 +12193,7 @@ router.post('/safety-alerts/:alertId/correct-child-link', authMiddleware, async 
       return res.status(400).json({ error: 'Selected child profile not found.' });
     }
 
-    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id || REAL_EVENT_ID]);
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id]);
     const finalEntryId = entry?.id || null;
 
     const now = new Date().toISOString();
@@ -12197,7 +12223,7 @@ router.post('/safety-alerts/:alertId/correct-child-link', authMiddleware, async 
       ) VALUES (?, ?, ?, 'child_link_corrected', null, ?, ?)
     `, [timelineId, alertId, req.user.id, `Corrected child link to ${child.full_name}. Reason: ${reason}`, now]);
 
-    broadcastSSEEvent(REAL_EVENT_ID, {
+    broadcastSSEEvent(alert.event_id, {
       type: 'alert.child_link_corrected',
       alertId,
       summaryVersion: 1,
@@ -12242,7 +12268,7 @@ router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (re
         id, event_id, alert_id, child_id, contact_type, contact_reference, outcome, safe_note, attempted_by, attempted_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      id, alert.event_id || REAL_EVENT_ID, alertId, alert.child_id, contactType,
+      id, alert.event_id, alertId, alert.child_id, contactType,
       contactReference, outcome, safeNote || null, req.user.id, now
     ]);
 
@@ -12253,7 +12279,7 @@ router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (re
       ) VALUES (?, ?, ?, 'contact_attempted', null, ?, ?)
     `, [timelineId, alertId, req.user.id, `Contacted ${contactReference} via ${contactType}. Result: ${outcome}. Note: ${safeNote || 'None'}`, now]);
 
-    broadcastSSEEvent(REAL_EVENT_ID, {
+    broadcastSSEEvent(alert.event_id, {
       type: 'child.contact_attempt_recorded',
       alertId,
       summaryVersion: 1,
