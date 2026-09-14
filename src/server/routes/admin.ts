@@ -14,7 +14,7 @@ import { broadcastSSEEvent } from '../services/sse';
 import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
-import { setCurrentEvent, getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
+import { setCurrentEvent, getCurrentEvent, getCurrentEventId, getEventById, EventRow } from '../services/eventService';
 import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { adminDutyRouter, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
@@ -31,6 +31,48 @@ import {
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+/**
+ * Resolves the operational event ID for Admin routes.
+ * 1. If explicitEventId is provided, validates that the event exists; throws 404 if not found.
+ * 2. Otherwise resolves canonical current event via getCurrentEventId().
+ * 3. Returns null if no current event exists.
+ * Strictly avoids fallbacks to 'open', 'active', 'latest', or hardcoded constants.
+ */
+async function resolveAdminEventId(explicitEventId?: string | null): Promise<string | null> {
+  if (explicitEventId && typeof explicitEventId === 'string' && explicitEventId.trim()) {
+    const cleanId = explicitEventId.trim();
+    const ev = await getEventById(cleanId);
+    if (!ev) {
+      const err: any = new Error(`Event not found: ${cleanId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    return ev.id;
+  }
+  return await getCurrentEventId();
+}
+
+/**
+ * Resolves the operational event record for Admin routes.
+ * 1. If explicitEventId is provided, validates that the event exists; throws 404 if not found.
+ * 2. Otherwise resolves canonical current event via getCurrentEvent().
+ * 3. Returns null if no current event exists.
+ * Strictly avoids fallbacks to 'open', 'active', 'latest', or hardcoded constants.
+ */
+async function resolveAdminEvent(explicitEventId?: string | null): Promise<EventRow | null> {
+  if (explicitEventId && typeof explicitEventId === 'string' && explicitEventId.trim()) {
+    const cleanId = explicitEventId.trim();
+    const ev = await getEventById(cleanId);
+    if (!ev) {
+      const err: any = new Error(`Event not found: ${cleanId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    return ev;
+  }
+  return await getCurrentEvent();
+}
 
 // Public Auth Endpoints for Admin Access
 router.post('/sign-in', async (req, res) => {
@@ -852,6 +894,11 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const nowStr = new Date().toISOString();
 
+    const targetEventId = await resolveAdminEventId(req.body.eventId || childDetails?.eventId);
+    if (childDetails?.registerForCurrentEvent && !targetEventId) {
+      return res.status(400).json({ success: false, error: 'No active or current event available for registration.' });
+    }
+
     if (!overrideDuplicate) {
       const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
       if (existingUser) {
@@ -882,17 +929,15 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
       // 2. Create Parent Profile
       await execute(`
         INSERT INTO parent_profiles (
-          id, user_id, full_name, preferred_name, first_name, last_name, email, phone_number,
-          whatsapp_number, address, city, state_province, postal_code, country,
-          preferred_contact_method, emergency_contact_name, emergency_contact_phone,
-          is_koinonia_worker, worker_department, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, user_id, full_name, email, phone_number,
+          whatsapp_number, home_address, city, state_region, country,
+          preferred_contact, is_koinonia_worker, department, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        parentProfileId, parentUserId, fullName, preferredName || null, firstName.trim(), lastName.trim(),
-        cleanEmail, cleanPhone || null, whatsappPhone || null, homeAddress || null,
-        city || null, stateProvince || null, postalCode || null, country || 'UK',
-        preferredContactMethod || 'email', emergencyContactName || null, emergencyContactPhone || null,
-        isKoinoniaWorker ? 1 : 0, workerDepartment || null, nowStr, nowStr
+        parentProfileId, parentUserId, fullName, cleanEmail, cleanPhone || null,
+        whatsappPhone || null, homeAddress || null, city || null, stateProvince || null, country || 'UK',
+        preferredContactMethod || 'email', isKoinoniaWorker ? 1 : 0, workerDepartment || null,
+        nowStr, nowStr
       ]);
 
       // 3. Optional Child Creation
@@ -902,25 +947,29 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
 
         await execute(`
           INSERT INTO children (
-            id, parent_profile_id, full_name, first_name, last_name, preferred_name,
-            date_of_birth, gender, age_group, medical_notes, allergies, special_needs,
-            media_consent, medical_consent, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, parent_profile_id, full_name, date_of_birth, gender, age_group, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, [
-          childId, parentProfileId, childFullName, childDetails.firstName.trim(), childDetails.lastName.trim(),
-          childDetails.preferredName || null, childDetails.dateOfBirth || null, childDetails.gender || null,
-          childDetails.ageGroup || null, childDetails.medicalNotes || null, childDetails.allergies || null,
-          childDetails.specialNeeds || null, childDetails.mediaConsent ? 1 : 0, childDetails.medicalConsent ? 1 : 0,
-          nowStr, nowStr
+          childId, parentProfileId, childFullName, childDetails.dateOfBirth || null, childDetails.gender || null,
+          childDetails.ageGroup || null, nowStr, nowStr
         ]);
 
-        if (childDetails.registerForCurrentEvent) {
+        if (childDetails.registerForCurrentEvent && targetEventId) {
           const entryId = crypto.randomUUID();
+          const hasMed = (childDetails.medicalNotes || childDetails.allergies) ? 1 : 0;
+          const medNotes = [childDetails.medicalNotes, childDetails.allergies].filter(Boolean).join('; ');
+          const hasSupport = childDetails.specialNeeds ? 1 : 0;
+          const supNotes = childDetails.specialNeeds || null;
+
           await execute(`
             INSERT INTO child_event_entries (
-              id, child_id, event_id, status, review_status, registration_date, created_at, updated_at
-            ) VALUES (?, ?, ?, 'registered', 'selected', ?, ?, ?)
-          `, [entryId, childId, REAL_EVENT_ID, nowStr, nowStr, nowStr]);
+              id, child_id, event_id, status, has_medical_notes, medical_notes,
+              needs_extra_support, support_notes, submitted_at, created_at, updated_at
+            ) VALUES (?, ?, ?, 'selected', ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            entryId, childId, targetEventId, hasMed, medNotes || null,
+            hasSupport, supNotes, nowStr, nowStr, nowStr
+          ]);
         }
       }
 
@@ -941,7 +990,7 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
       // 5. Audit Log
       try {
         await execute(`
-          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, timestamp)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [
           crypto.randomUUID(), req.user.id, 'ADMIN_ADD_PARENT', 'parent_profile', parentProfileId,
@@ -950,6 +999,7 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
       } catch (e) {}
     });
 
+    // 6. Send Invitation Email if requested
     if (sendInvitation && inviteTokenRaw) {
       const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
       await sendInvitationEmail({
@@ -975,7 +1025,7 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
     });
   } catch (err: any) {
     console.error('Admin Add Parent Error:', err);
-    return res.status(500).json({ success: false, error: 'Failed to create parent record.' });
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create parent record.' });
   }
 });
 
@@ -1016,10 +1066,15 @@ router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: 
     const childFullName = `${firstName.trim()} ${lastName.trim()}`;
     const nowStr = new Date().toISOString();
 
+    const targetEventId = await resolveAdminEventId(req.body.eventId);
+    if (registerForCurrentEvent && !targetEventId) {
+      return res.status(400).json({ success: false, error: 'No active or current event available for registration.' });
+    }
+
     if (!overrideDuplicate) {
       const existingChild = await queryOne(
-        'SELECT * FROM children WHERE LOWER(first_name) = ? AND LOWER(last_name) = ? AND parent_profile_id = ?',
-        [firstName.trim().toLowerCase(), lastName.trim().toLowerCase(), parentProfileId]
+        'SELECT id FROM children WHERE LOWER(full_name) = ? AND parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+        [childFullName.toLowerCase(), parentProfileId]
       );
       if (existingChild) {
         return res.status(409).json({
@@ -1032,20 +1087,17 @@ router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: 
     }
 
     const childId = crypto.randomUUID();
+    const entryId = (registerForCurrentEvent && targetEventId) ? crypto.randomUUID() : null;
 
     await transaction(async () => {
       // 1. Insert child record
       await execute(`
         INSERT INTO children (
-          id, parent_profile_id, full_name, first_name, last_name, preferred_name,
-          date_of_birth, gender, age_group, medical_notes, allergies, special_needs,
-          media_consent, medical_consent, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, parent_profile_id, full_name, date_of_birth, gender, age_group, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        childId, parentProfileId, childFullName, firstName.trim(), lastName.trim(),
-        preferredName || null, dateOfBirth || null, gender || null, ageGroup || null,
-        medicalNotes || null, allergies || null, specialNeeds || null,
-        mediaConsent ? 1 : 0, medicalConsent ? 1 : 0, nowStr, nowStr
+        childId, parentProfileId, childFullName, dateOfBirth || null, gender || null, ageGroup || null,
+        nowStr, nowStr
       ]);
 
       // 2. Insert pickup people
@@ -1053,24 +1105,29 @@ router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: 
         for (const pickup of authorizedPickups) {
           if (pickup.fullName) {
             await execute(`
-              INSERT INTO pickup_people (id, child_id, full_name, phone_number, relationship_to_child, created_at)
-              VALUES (?, ?, ?, ?, ?, ?)
-            `, [crypto.randomUUID(), childId, pickup.fullName.trim(), pickup.phone || null, pickup.relationship || null, nowStr]);
+              INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, phone_number, relationship_to_child, created_at, updated_at)
+              VALUES (?, ?, 'authorized_pickup', ?, ?, ?, ?, ?)
+            `, [crypto.randomUUID(), entryId, pickup.fullName.trim(), pickup.phone || null, pickup.relationship || null, nowStr, nowStr]);
           }
         }
       }
 
       // 3. Register for event if requested
-      if (registerForCurrentEvent) {
-        const entryId = crypto.randomUUID();
+      if (registerForCurrentEvent && targetEventId && entryId) {
+        const hasMed = (medicalNotes || allergies) ? 1 : 0;
+        const medNotes = [medicalNotes, allergies].filter(Boolean).join('; ');
+        const hasSupport = specialNeeds ? 1 : 0;
+        const supNotes = specialNeeds || null;
+
         await execute(`
           INSERT INTO child_event_entries (
-            id, child_id, event_id, status, review_status, registration_date, created_at, updated_at
-          ) VALUES (?, ?, ?, 'registered', 'selected', ?, ?, ?)
-        `, [entryId, childId, REAL_EVENT_ID, nowStr, nowStr, nowStr]);
+            id, child_id, event_id, status, has_medical_notes, medical_notes,
+            needs_extra_support, support_notes, submitted_at, created_at, updated_at
+          ) VALUES (?, ?, ?, 'selected', ?, ?, ?, ?, ?, ?, ?)
+        `, [entryId, childId, targetEventId, hasMed, medNotes || null, hasSupport, supNotes, nowStr, nowStr, nowStr]);
 
         try {
-          await issuePassForChild({ childId, eventId: REAL_EVENT_ID });
+          await issuePassForChild({ childId, eventId: targetEventId });
         } catch (e) {
           console.error('Error generating event pass for admin created child:', e);
         }
@@ -1079,7 +1136,7 @@ router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: 
       // 4. Audit log
       try {
         await execute(`
-          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, timestamp)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [
           crypto.randomUUID(), req.user.id, 'ADMIN_ADD_CHILD', 'child', childId,
@@ -1095,7 +1152,7 @@ router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: 
     });
   } catch (err: any) {
     console.error('Admin Add Child Error:', err);
-    return res.status(500).json({ success: false, error: 'Failed to create child record.' });
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create child record.' });
   }
 });
 
@@ -1240,12 +1297,32 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
 // GET list of child applications
 router.get('/applications', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const eventId = 'event-ga-2026';
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = parseInt(req.query.limit as string, 10) || 25;
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        applications: [],
+        stats: {
+          sentReview: 0,
+          selected: 0,
+          waitingList: 0,
+          notSelected: 0,
+          removed: 0
+        },
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          pages: 0
+        }
+      });
+    }
 
     // Build WHERE clauses
     const whereClauses = ['e.event_id = ?'];
@@ -1362,9 +1439,8 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
             fullName: p.full_name,
             relationship: p.relationship_to_child,
             phone: p.phone_number,
-            whatsapp: p.whatsapp_number,
-            photoUrl: p.photo_url,
-            approved: p.approved_by_parent === 1
+            photoUrl: p.photo_url || null,
+            approvedByParent: !!p.approved_by_parent
           }));
 
         const pass = eventPasses.find((p: any) => p.child_event_entry_id === app.entry_id);
@@ -1438,7 +1514,7 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
     });
   } catch (err: any) {
     console.error('Error fetching applications list:', err);
-    return res.status(500).json({ error: 'Failed to fetch child applications.' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch child applications.' });
   }
 });
 
@@ -1449,12 +1525,36 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const eventId = (typeof req.query.eventId === 'string' && req.query.eventId.trim()) ? req.query.eventId.trim() : 'event-ga-2026';
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = parseInt(req.query.limit as string, 10) || 25;
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const filter = typeof req.query.filter === 'string' ? req.query.filter : '';
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        stats: {
+          totalChildren: 0,
+          selected: 0,
+          checkedIn: 0,
+          inside: 0,
+          pickedUp: 0,
+          removed: 0,
+          needsAttention: 0
+        },
+        children: [],
+        total: 0,
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          pages: 0
+        },
+        nextCursor: null
+      });
+    }
 
     // 1. Fetch overall canonical stats
     const summaryStats = await getChildSummaryStats(eventId);
@@ -1640,7 +1740,7 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
     });
   } catch (err: any) {
     console.error('Error in /api/admin/children:', err);
-    return res.status(500).json({ error: 'Failed to fetch children records.' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch children records.' });
   }
 });
 
@@ -1651,9 +1751,29 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const eventId = 'event-ga-2026';
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
     const status = typeof req.query.status === 'string' ? req.query.status : 'all';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        stats: {
+          expected: 0,
+          checkedIn: 0,
+          inside: 0,
+          pickedUp: 0,
+          notArrived: 0,
+          needsAttention: 0
+        },
+        rows: [],
+        ageGroups: [],
+        recentScans: [],
+        teamActivity: [],
+        total: 0,
+        nextCursor: null
+      });
+    }
 
     const formatTime = (isoString?: string) => {
       if (!isoString) return 'No activity';
@@ -1908,7 +2028,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     });
   } catch (err: any) {
     console.error('Error in /api/admin/attendance:', err);
-    return res.status(500).json({ error: 'Failed to fetch attendance records.' });
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attendance records.' });
   }
 });
 
