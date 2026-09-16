@@ -7,12 +7,36 @@ import { validateEmailAddress, validatePhoneNumber, validateName } from '../util
 import { buildPublicAppUrl } from '../utils/urlHelper';
 import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
+import { getCurrentEventId, getEventById } from '../services/eventService';
 
 const router = Router();
+
+export async function enqueueRegistrationAck(params: {
+  eventId: string;
+  parentId: string;
+  userId?: string | null;
+}): Promise<void> {
+  await enqueueWhatsAppJob({
+    eventId: params.eventId,
+    parentId: params.parentId,
+    userId: params.userId || undefined,
+    idempotencyKey: `registration_ack:parent:${params.parentId}`
+  });
+}
 
 router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { email, password, fullName, phone, whatsapp, whatsappConsent } = req.body;
+
+    // Resolve registration event context once at registration entry
+    const rawEventId = (req.body?.eventId || req.query?.eventId) as string | undefined;
+    let registrationEventId: string | null = null;
+    if (rawEventId && typeof rawEventId === 'string' && rawEventId.trim().length > 0) {
+      const ev = await getEventById(rawEventId.trim());
+      registrationEventId = ev ? ev.id : null;
+    } else {
+      registrationEventId = await getCurrentEventId();
+    }
 
     // Validate Full Name
     const nameVal = validateName(fullName, 'fullName');
@@ -160,12 +184,13 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
     // Optional transactional WhatsApp registration acknowledgement
     if (isConsentGranted && Boolean(cleanWhatsapp || cleanPhone)) {
       try {
-        await enqueueWhatsAppJob({
-          eventId: 'event-ga-2026',
-          parentId: profileId,
-          userId,
-          idempotencyKey: `registration_ack:parent:${profileId}`
-        });
+        if (registrationEventId) {
+          await enqueueRegistrationAck({
+            eventId: registrationEventId,
+            parentId: profileId,
+            userId
+          });
+        }
       } catch (waErr) {
         console.error('WhatsApp registration acknowledgement enqueue failed (non-fatal):', waErr);
       }
