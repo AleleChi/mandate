@@ -222,12 +222,12 @@ export async function processQueuedWhatsAppJobs(
 
       try {
         let resolvedEntryId: string | null = null;
-        if (candidate.child_id) {
+        if (candidate.child_id && candidate.event_id) {
           const entryRow = await queryOne(`
             SELECT id FROM child_event_entries
             WHERE child_id = ? AND event_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
             LIMIT 1
-          `, [candidate.child_id, candidate.event_id || 'event-ga-2026']);
+          `, [candidate.child_id, candidate.event_id]);
           if (entryRow) {
             resolvedEntryId = entryRow.id;
           }
@@ -485,7 +485,7 @@ export async function processQueuedWhatsAppJobs(
 
         // Resolve personalized placeholders per recipient
         if (isVolunteerJob) {
-          const duty = targetUserId ? await resolveUserDutyLocation(targetUserId, candidate.event_id || 'event-ga-2026') : null;
+          const duty = (targetUserId && candidate.event_id) ? await resolveUserDutyLocation(targetUserId, candidate.event_id) : null;
           const vLocation = (duty?.name || '').trim();
           const vTeam = (duty?.team || duty?.teamKey || volunteerProfile?.preferred_team || volunteerProfile?.department || '').trim();
 
