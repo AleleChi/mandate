@@ -404,7 +404,8 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
           setSelectedUserIds([]);
           fetchAssignments(assignmentPagination.page);
         } else {
-          setFormError(data.error || 'We couldn’t save this assignment. Try again');
+          console.error('[Duty Assignment] Update failed:', data?.error);
+          setFormError("We couldn't assign the selected team member. Please try again.");
         }
       } else {
         const uniqueUserIds = Array.from(new Set(selectedUserIds.filter(Boolean)));
@@ -457,17 +458,24 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         }
 
         if (failures.length > 0) {
-          const firstError = failures[0].error || 'We couldn’t save the assignment.';
+          console.error('[Duty Assignment] Assignment failures:', failures);
+          const friendlyMessage = uniqueUserIds.length > 1
+            ? "We couldn't assign the selected team members. Please try again."
+            : "We couldn't assign the selected team member. Please try again.";
+
           setFormError(
             successCount > 0
-              ? `${successCount} assigned, but ${failures.length} failed: ${firstError}`
-              : firstError
+              ? `${successCount} assigned. We couldn't assign the remaining team members. Please try again.`
+              : friendlyMessage
           );
         }
       }
     } catch (err) {
       console.error('Failed saving assignment:', err);
-      setFormError('We couldn’t save this assignment. Try again');
+      const friendlyMessage = (!editingAssignment && selectedUserIds.length > 1)
+        ? "We couldn't assign the selected team members. Please try again."
+        : "We couldn't assign the selected team member. Please try again.";
+      setFormError(friendlyMessage);
     } finally {
       setIsSubmitting(false);
     }

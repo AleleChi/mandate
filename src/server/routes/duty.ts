@@ -1257,62 +1257,119 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
       return res.status(400).json({ error: 'Shift end time must be later than start time.' });
     }
 
-    const targetUser = await queryOne('SELECT id, role, is_deleted FROM users WHERE id = ?', [userId]);
-    if (!targetUser || targetUser.is_deleted === 1) {
+    const targetUser = await queryOne(`
+      SELECT u.id, u.role, u.status as user_status, vp.id as volunteer_profile_id, vp.status as volunteer_status
+      FROM users u
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+      WHERE u.id = ?
+    `, [userId]);
+
+    if (!targetUser || targetUser.user_status === 'inactive' || targetUser.user_status === 'suspended') {
       return res.status(400).json({ error: 'Selected user is inactive or does not exist' });
     }
 
-    const now = new Date().toISOString();
-    const assignmentId = `assign-${crypto.randomBytes(8).toString('hex')}`;
+    if (!targetUser.volunteer_profile_id || !['approved', 'active'].includes(targetUser.volunteer_status)) {
+      return res.status(400).json({ error: 'Selected user does not have an approved volunteer profile' });
+    }
 
-    await execute(`
-      INSERT INTO event_duty_assignments (
-        id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, now, now
-    ]);
+    const now = new Date().toISOString();
+
+    // Check for existing active or scheduled assignment for this user in this event (duplicate protection)
+    const existingAssignment = await queryOne(`
+      SELECT id FROM event_duty_assignments
+      WHERE event_id = ? AND user_id = ? AND status NOT IN ('cancelled', 'ended')
+      LIMIT 1
+    `, [eventId, userId]);
+
+    let assignmentId: string;
+
+    if (existingAssignment) {
+      assignmentId = existingAssignment.id;
+      await execute(`
+        UPDATE event_duty_assignments
+        SET responsibility_key = ?,
+            team_key = ?,
+            assignment_level = ?,
+            status = ?,
+            starts_at = ?,
+            ends_at = ?,
+            note = ?,
+            assigned_by = ?,
+            assigned_location_id = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [
+        responsibilityKey,
+        teamKey || null,
+        assignmentLevel || 'primary',
+        status || 'scheduled',
+        startsAt,
+        endsAt,
+        note || null,
+        req.user.id,
+        assignedLocationId || null,
+        now,
+        assignmentId
+      ]);
+    } else {
+      assignmentId = `assign-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO event_duty_assignments (
+          id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, now, now
+      ]);
+    }
 
     // Send notification to volunteer
-    const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
-    const friendlyResponsibility = responsibilityKey.replace('_', ' ');
-    await execute(`
-      INSERT INTO notifications (
-        id, title, message, type, audience_role, audience_scope, event_id, created_by_user_id, created_at, priority
-      ) VALUES (?, ?, ?, 'info', 'volunteer', 'user', ?, ?, ?, 'high')
-    `, [
-      notifId,
-      'New Event Duty Assignment',
-      `You have been assigned as "${friendlyResponsibility}" for the upcoming event. Please review and start duty when shift starts.`,
-      eventId,
-      req.user.id,
-      now
-    ]);
+    try {
+      const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
+      const friendlyResponsibility = responsibilityKey.replace('_', ' ');
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, created_by_user_id, created_at, priority
+        ) VALUES (?, ?, ?, 'info', 'volunteer', 'user', ?, ?, ?, 'high')
+      `, [
+        notifId,
+        'New Event Duty Assignment',
+        `You have been assigned as "${friendlyResponsibility}" for the upcoming event. Please review and start duty when shift starts.`,
+        eventId,
+        req.user.id,
+        now
+      ]);
+    } catch (notifErr) {
+      console.error('[Duty Assignment] Non-blocking notification insert failed:', notifErr);
+    }
 
     // Async push notification
     sendWebPush(userId, {
       title: 'New Duty Assignment',
-      body: `You are assigned as ${friendlyResponsibility}. Please complete your device readiness check.`
-    }).catch(err => console.error('Failed to send assignment push:', err));
+      body: `You are assigned as ${responsibilityKey.replace('_', ' ')}. Please complete your device readiness check.`
+    }).catch(err => console.error('[Duty Assignment] Failed to send assignment push:', err));
 
     // Change history log
-    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
-    await execute(`
-      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [historyId, eventId, req.user.id, 'assignment_created', 'assignment', assignmentId, `Assigned user ${userId} to responsibility ${responsibilityKey}`, now]);
+    try {
+      const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [historyId, eventId, req.user.id, existingAssignment ? 'assignment_updated' : 'assignment_created', 'assignment', assignmentId, `Assigned user ${userId} to responsibility ${responsibilityKey}`, now]);
+    } catch (historyErr) {
+      console.error('[Duty Assignment] Non-blocking change history log failed:', historyErr);
+    }
 
     // SSE update
-    broadcastSSEEvent('assignment_updated', { assignmentId, action: 'create' });
+    broadcastSSEEvent('assignment_updated', { assignmentId, action: existingAssignment ? 'update' : 'create' });
 
     return res.json({
       success: true,
       assignmentId,
-      message: 'Event duty assignment created successfully'
+      message: existingAssignment ? 'Event duty assignment updated successfully' : 'Event duty assignment created successfully'
     });
   } catch (err: any) {
     console.error('Error creating assignment:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: "We couldn't assign the selected team member. Please try again." });
   }
 });
 
@@ -1649,24 +1706,24 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
+    const { eventId } = req.params;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 25;
     const offset = (page - 1) * limit;
-    const queryStr = req.query.query as string || '';
+    const queryStr = ((req.query.query as string) || '').trim();
 
-    let whereClause = "WHERE u.role IN ('volunteer', 'team', 'admin', 'super_admin') AND COALESCE(vp.is_deleted, 0) = 0";
+    let whereClause = "WHERE (u.status = 'active' OR u.status IS NULL) AND vp.id IS NOT NULL AND vp.status IN ('approved', 'active') AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)";
     const params: any[] = [];
 
     if (queryStr) {
-      whereClause += ' AND (COALESCE(vp.full_name, pp.full_name, u.email) LIKE ? OR u.email LIKE ?)';
+      whereClause += ' AND (COALESCE(vp.full_name, u.email) LIKE ? OR u.email LIKE ?)';
       params.push(`%${queryStr}%`, `%${queryStr}%`);
     }
 
     const countQuery = `
       SELECT COUNT(*) as total
       FROM users u
-      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
-      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
+      JOIN volunteer_profiles vp ON u.id = vp.user_id
       ${whereClause}
     `;
     const countResult = await queryOne(countQuery, params);
@@ -1674,17 +1731,17 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
     const totalPages = Math.ceil(total / limit);
 
     const itemsQuery = `
-      SELECT u.id, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, u.role, u.created_at,
-             COALESCE(vp.status, 'active') as volunteer_status,
-             (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = u.id) as device_count
+      SELECT u.id, vp.full_name, u.email, u.role, u.created_at,
+             vp.status as volunteer_status,
+             (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = u.id AND d.event_id = ?) as device_count,
+             (SELECT COUNT(*) FROM event_duty_assignments a WHERE a.user_id = u.id AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended')) as active_assignments_count
       FROM users u
-      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
-      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
+      JOIN volunteer_profiles vp ON u.id = vp.user_id
       ${whereClause}
-      ORDER BY COALESCE(vp.full_name, pp.full_name, u.email) ASC
+      ORDER BY vp.full_name ASC
       LIMIT ? OFFSET ?
     `;
-    const queryParams = [...params, limit, offset];
+    const queryParams = [eventId, eventId, ...params, limit, offset];
     const items = await query(itemsQuery, queryParams);
 
     return res.json({
@@ -1701,7 +1758,7 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
     });
   } catch (err: any) {
     console.error('Error searching eligible members:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: "We couldn't load eligible team members. Please try again." });
   }
 });
 
