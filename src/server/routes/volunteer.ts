@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import multer from 'multer';
 import { query, queryOne, execute, transaction } from '../db';
-import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
+import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmail, sendVolunteerVerificationEmail, sendVolunteerPasswordResetEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
@@ -253,6 +253,38 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       note,
       photoFileId
     } = req.body;
+
+    // Resolve target event context
+    const rawEventId = (req.body?.eventId || req.query?.eventId) as string | undefined;
+    let targetEvent: any = null;
+    if (rawEventId && typeof rawEventId === 'string' && rawEventId.trim().length > 0) {
+      targetEvent = await getEventById(rawEventId.trim());
+    } else {
+      const currentEventId = await getCurrentEventId();
+      if (currentEventId) {
+        targetEvent = await getEventById(currentEventId);
+      }
+    }
+
+    if (targetEvent) {
+      const nowIso = new Date().toISOString();
+      if (targetEvent.volunteer_registration_opens_at && nowIso < targetEvent.volunteer_registration_opens_at) {
+        return res.status(403).json({
+          success: false,
+          code: 'VOLUNTEER_REGISTRATION_NOT_OPEN',
+          message: 'Volunteer registration for this event is not open yet.',
+          error: 'Volunteer registration for this event is not open yet.'
+        });
+      }
+      if (targetEvent.volunteer_registration_closes_at && nowIso > targetEvent.volunteer_registration_closes_at) {
+        return res.status(403).json({
+          success: false,
+          code: 'VOLUNTEER_REGISTRATION_CLOSED',
+          message: 'Volunteer registration for this event has closed.',
+          error: 'Volunteer registration for this event has closed.'
+        });
+      }
+    }
 
     let resolvedPhotoId: string | null = null;
 

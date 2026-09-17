@@ -20,6 +20,9 @@ export interface EventRow {
   allow_multiple_children?: number | boolean;
   allow_save_and_continue?: number | boolean;
   allow_edit_after_submission?: number | boolean;
+  volunteer_registration_opens_at?: string;
+  volunteer_registration_closes_at?: string;
+  capacity?: number;
   created_at?: string;
   updated_at?: string;
   archived_at?: string;

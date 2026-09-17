@@ -255,6 +255,9 @@ function initSqliteSchema(db: Database.Database) {
       daily_end_time TEXT,
       location TEXT,
       status TEXT DEFAULT 'open',
+      volunteer_registration_opens_at TEXT,
+      volunteer_registration_closes_at TEXT,
+      capacity INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -998,7 +1001,10 @@ function initSqliteSchema(db: Database.Database) {
     "created_by TEXT",
     "updated_by TEXT",
     "archived_at TEXT",
-    "description TEXT"
+    "description TEXT",
+    "volunteer_registration_opens_at TEXT",
+    "volunteer_registration_closes_at TEXT",
+    "capacity INTEGER"
   ];
   for (const col of sqliteEventCols) {
     try {
@@ -1007,6 +1013,10 @@ function initSqliteSchema(db: Database.Database) {
       // Column likely already exists
     }
   }
+
+  try {
+    db.exec(`ALTER TABLE event_locations ADD COLUMN volunteer_capacity INTEGER;`);
+  } catch (e) {}
 
   try {
     db.exec(`ALTER TABLE parent_profiles ADD COLUMN country TEXT;`);
@@ -1378,6 +1388,7 @@ function initSqliteSchema(db: Database.Database) {
         description TEXT,
         instructions TEXT,
         capacity INTEGER,
+        volunteer_capacity INTEGER,
         age_group_key TEXT,
         team_key TEXT,
         emergency_label TEXT,
@@ -1966,6 +1977,9 @@ async function initPostgresSchema(pool: any) {
         daily_end_time VARCHAR(64),
         location TEXT,
         status VARCHAR(64) DEFAULT 'open',
+        volunteer_registration_opens_at VARCHAR(64),
+        volunteer_registration_closes_at VARCHAR(64),
+        capacity INTEGER,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -2744,7 +2758,10 @@ async function initPostgresSchema(pool: any) {
       "created_by VARCHAR(64)",
       "updated_by VARCHAR(64)",
       "archived_at VARCHAR(64)",
-      "description VARCHAR(1000)"
+      "description VARCHAR(1000)",
+      "volunteer_registration_opens_at VARCHAR(64)",
+      "volunteer_registration_closes_at VARCHAR(64)",
+      "capacity INTEGER"
     ];
     for (const col of pgEventCols) {
       try {
@@ -2756,6 +2773,10 @@ async function initPostgresSchema(pool: any) {
         // Ignore column addition error if any
       }
     }
+
+    try {
+      await pool.query(`ALTER TABLE event_locations ADD COLUMN IF NOT EXISTS volunteer_capacity INTEGER;`);
+    } catch (e) {}
 
     try {
       await pool.query(`ALTER TABLE parent_profiles ADD COLUMN IF NOT EXISTS country VARCHAR(255);`);
@@ -3142,6 +3163,7 @@ async function initPostgresSchema(pool: any) {
           description TEXT,
           instructions TEXT,
           capacity INTEGER,
+          volunteer_capacity INTEGER,
           age_group_key VARCHAR(255),
           team_key VARCHAR(255),
           emergency_label VARCHAR(255),

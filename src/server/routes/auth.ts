@@ -31,11 +31,61 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
     // Resolve registration event context once at registration entry
     const rawEventId = (req.body?.eventId || req.query?.eventId) as string | undefined;
     let registrationEventId: string | null = null;
+    let targetEvent: any = null;
     if (rawEventId && typeof rawEventId === 'string' && rawEventId.trim().length > 0) {
-      const ev = await getEventById(rawEventId.trim());
-      registrationEventId = ev ? ev.id : null;
+      targetEvent = await getEventById(rawEventId.trim());
+      registrationEventId = targetEvent ? targetEvent.id : null;
     } else {
       registrationEventId = await getCurrentEventId();
+      if (registrationEventId) {
+        targetEvent = await getEventById(registrationEventId);
+      }
+    }
+
+    if (targetEvent) {
+      if (targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_CLOSED',
+          message: 'New parent account registration is not permitted for this event.',
+          error: 'New parent account registration is not permitted for this event.'
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_NOT_OPEN',
+          message: 'Registration for this event is not open yet.',
+          error: 'Registration for this event is not open yet.'
+        });
+      }
+
+      if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_CLOSED',
+          message: 'Registration for this event has closed.',
+          error: 'Registration for this event has closed.'
+        });
+      }
+
+      if (targetEvent.capacity !== null && targetEvent.capacity !== undefined && Number(targetEvent.capacity) > 0) {
+        const appsRes = await queryOne(
+          'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)',
+          [targetEvent.id]
+        );
+        const registeredCount = Number(appsRes?.count || 0);
+        if (registeredCount >= Number(targetEvent.capacity)) {
+          return res.status(403).json({
+            success: false,
+            code: 'REGISTRATION_FULL',
+            message: 'Registration is full for this event.',
+            error: 'Registration is full for this event.'
+          });
+        }
+      }
     }
 
     // Validate Full Name

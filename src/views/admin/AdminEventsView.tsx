@@ -45,6 +45,12 @@ interface EventData {
   status: 'draft' | 'upcoming' | 'current' | 'closed' | 'archived' | 'open' | 'active';
   parentAccessOpensAt: string;
   parentAccessClosesAt: string;
+  volunteerRegistrationOpensAt?: string | null;
+  volunteerRegistrationClosesAt?: string | null;
+  capacity?: number | null;
+  eventCapacity?: number | null;
+  registeredChildrenCount?: number;
+  spacesRemaining?: number | null;
   parentsCanCreateAccount: boolean;
   allowMultipleChildren: boolean;
   allowSaveAndContinue: boolean;
@@ -94,6 +100,10 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
   const [formParentAccessOpensAt, setFormParentAccessOpensAt] = useState('');
   const [formParentAccessClosesAt, setFormParentAccessClosesAt] = useState('');
+  const [formVolunteerRegistrationOpensAt, setFormVolunteerRegistrationOpensAt] = useState('');
+  const [formVolunteerRegistrationClosesAt, setFormVolunteerRegistrationClosesAt] = useState('');
+  const [formCapacity, setFormCapacity] = useState<string>('');
+  const [formRegisteredChildren, setFormRegisteredChildren] = useState<number>(0);
   const [formParentsCanCreateAccount, setFormParentsCanCreateAccount] = useState(true);
   const [formAllowMultipleChildren, setFormAllowMultipleChildren] = useState(true);
   const [formAllowSaveAndContinue, setFormAllowSaveAndContinue] = useState(true);
@@ -138,12 +148,17 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
         setFormDescription(ev.description || '');
         setFormStatus(ev.status || 'draft');
 
-        setFormParentAccessOpensAt(ev.parentAccessOpensAt || '');
-        setFormParentAccessClosesAt(ev.parentAccessClosesAt || '');
-        setFormParentsCanCreateAccount(ev.parentsCanCreateAccount);
-        setFormAllowMultipleChildren(ev.allowMultipleChildren);
-        setFormAllowSaveAndContinue(ev.allowSaveAndContinue);
-        setFormAllowEditAfterSubmission(ev.allowEditAfterSubmission);
+        const evData = res.event || ev;
+        setFormParentAccessOpensAt(evData.parentAccessOpensAt || '');
+        setFormParentAccessClosesAt(evData.parentAccessClosesAt || '');
+        setFormVolunteerRegistrationOpensAt(evData.volunteerRegistrationOpensAt || '');
+        setFormVolunteerRegistrationClosesAt(evData.volunteerRegistrationClosesAt || '');
+        setFormCapacity(evData.capacity !== undefined && evData.capacity !== null ? String(evData.capacity) : (evData.eventCapacity !== undefined && evData.eventCapacity !== null ? String(evData.eventCapacity) : ''));
+        setFormRegisteredChildren(evData.registeredChildrenCount ?? evData.applicationsCount ?? 0);
+        setFormParentsCanCreateAccount(evData.parentsCanCreateAccount ?? true);
+        setFormAllowMultipleChildren(evData.allowMultipleChildren ?? true);
+        setFormAllowSaveAndContinue(evData.allowSaveAndContinue ?? true);
+        setFormAllowEditAfterSubmission(evData.allowEditAfterSubmission ?? false);
 
         if (res.ageGroups && res.ageGroups.length > 0) {
           setFormAgeGroups(res.ageGroups);
@@ -176,6 +191,10 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
     setFormParentAccessOpensAt('');
     setFormParentAccessClosesAt('');
+    setFormVolunteerRegistrationOpensAt('');
+    setFormVolunteerRegistrationClosesAt('');
+    setFormCapacity('');
+    setFormRegisteredChildren(0);
     setFormParentsCanCreateAccount(true);
     setFormAllowMultipleChildren(true);
     setFormAllowSaveAndContinue(true);
@@ -341,6 +360,10 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       status: targetStatus,
       parentAccessOpensAt: formParentAccessOpensAt || null,
       parentAccessClosesAt: formParentAccessClosesAt || null,
+      volunteerRegistrationOpensAt: formVolunteerRegistrationOpensAt || null,
+      volunteerRegistrationClosesAt: formVolunteerRegistrationClosesAt || null,
+      capacity: formCapacity ? parseInt(formCapacity, 10) : null,
+      eventCapacity: formCapacity ? parseInt(formCapacity, 10) : null,
       parentsCanCreateAccount: formParentsCanCreateAccount,
       allowMultipleChildren: formAllowMultipleChildren,
       allowSaveAndContinue: formAllowSaveAndContinue,
@@ -586,11 +609,16 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
                     {/* Meta capacity & access windows info */}
                     <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 text-xs text-zinc-500 font-normal">
-                      <span>Total capacity: <strong className="text-zinc-700 font-semibold">{event.totalCapacity || 0}</strong></span>
-                      <span>Applications: <strong className="text-zinc-700 font-semibold">{event.applicationsCount || 0}</strong></span>
-                      <span>Confirmed seats: <strong className="text-zinc-700 font-semibold">{event.selectedCount || 0}</strong></span>
+                      <span>Event capacity: <strong className="text-zinc-700 font-semibold">{event.capacity ?? event.totalCapacity ?? 'Unlimited'}</strong></span>
+                      <span>Registered: <strong className="text-zinc-700 font-semibold">{event.applicationsCount || 0}</strong></span>
+                      {event.spacesRemaining !== null && event.spacesRemaining !== undefined && (
+                        <span>Spaces remaining: <strong className="text-emerald-700 font-semibold">{event.spacesRemaining}</strong></span>
+                      )}
                       {event.parentAccessOpensAt && (
-                        <span>Registration window: <span className="text-zinc-600">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0]}</span></span>
+                        <span>Parent window: <span className="text-zinc-600">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0] || 'open'}</span></span>
+                      )}
+                      {event.volunteerRegistrationOpensAt && (
+                        <span>Volunteer window: <span className="text-zinc-600">{event.volunteerRegistrationOpensAt.split('T')[0]} to {event.volunteerRegistrationClosesAt?.split('T')[0] || 'open'}</span></span>
                       )}
                     </div>
                   </div>
@@ -780,40 +808,71 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 </div>
               </div>
 
-              {/* Card 2: Parent Access */}
+              {/* Card 2: REGISTRATION */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
-                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-parent-access-v1" : "admin-create-event-parent-access-v1"}
+                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-registration-v1" : "admin-create-event-registration-v1"}
               >
                 <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
-                  <h3 className="text-lg font-semibold text-[#18181B]">Parent access</h3>
-                  <p className="text-xs text-zinc-500">Choose when parents can register and what they can update.</p>
+                  <h3 className="text-lg font-semibold text-[#18181B]">Registration</h3>
+                  <p className="text-xs text-zinc-500">Configure parent and volunteer registration deadlines and access rules.</p>
                 </div>
 
-                <div className="space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Registration opens</label>
-                      <input
-                        type="datetime-local"
-                        value={formParentAccessOpensAt}
-                        onChange={e => setFormParentAccessOpensAt(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
-                      />
-                    </div>
+                <div className="space-y-6">
+                  {/* Parent Registration Window */}
+                  <div className="space-y-3">
+                    <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider block">Parent Registration</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Parent registration opens</label>
+                        <input
+                          type="datetime-local"
+                          value={formParentAccessOpensAt}
+                          onChange={e => setFormParentAccessOpensAt(e.target.value)}
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Registration closes</label>
-                      <input
-                        type="datetime-local"
-                        value={formParentAccessClosesAt}
-                        onChange={e => setFormParentAccessClosesAt(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
-                      />
+                      <div>
+                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Parent registration closes</label>
+                        <input
+                          type="datetime-local"
+                          value={formParentAccessClosesAt}
+                          onChange={e => setFormParentAccessClosesAt(e.target.value)}
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
+                  {/* Volunteer Registration Window */}
+                  <div className="space-y-3 pt-4 border-t border-[#EAE8E1]/40">
+                    <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider block">Volunteer Registration</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Volunteer registration opens</label>
+                        <input
+                          type="datetime-local"
+                          value={formVolunteerRegistrationOpensAt}
+                          onChange={e => setFormVolunteerRegistrationOpensAt(e.target.value)}
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Volunteer registration closes</label>
+                        <input
+                          type="datetime-local"
+                          value={formVolunteerRegistrationClosesAt}
+                          onChange={e => setFormVolunteerRegistrationClosesAt(e.target.value)}
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Access Toggles */}
+                  <div className="space-y-1 pt-4 border-t border-[#EAE8E1]/40">
                     <ToggleSwitch
                       checked={formParentsCanCreateAccount}
                       onChange={setFormParentsCanCreateAccount}
@@ -845,15 +904,15 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 </div>
               </div>
 
-              {/* Card 3: Age Groups & Capacity */}
+              {/* Card 3: CAPACITY */}
               <div 
                 className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
-                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-age-groups-v1" : "admin-create-event-age-capacity-v1"}
+                data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-capacity-v1" : "admin-create-event-capacity-v1"}
               >
                 <div className="flex justify-between items-center border-b border-[#EAE8E1]/60 pb-4">
                   <div className="space-y-1">
-                    <h3 className="text-lg font-semibold text-[#18181B]">Age groups & capacity</h3>
-                    <p className="text-xs text-zinc-500">Define sections, age limits, and headcount.</p>
+                    <h3 className="text-lg font-semibold text-[#18181B]">Capacity</h3>
+                    <p className="text-xs text-zinc-500">Configure total child capacity and age group headcount limits.</p>
                   </div>
                   <button
                     type="button"
@@ -863,6 +922,41 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add group</span>
                   </button>
+                </div>
+
+                {/* Total Event Capacity Field & Stats */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event child capacity</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formCapacity}
+                        onChange={e => setFormCapacity(e.target.value)}
+                        placeholder="e.g. 500 children"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      />
+                      <p className="text-[11px] text-zinc-400 mt-1">Maximum number of children that can register for this event.</p>
+                    </div>
+
+                    <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 flex flex-col justify-center space-y-1.5 text-xs">
+                      <div className="flex justify-between items-center text-zinc-600">
+                        <span>Registered children:</span>
+                        <span className="font-semibold text-zinc-900">{formRegisteredChildren}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-zinc-600">
+                        <span>Capacity:</span>
+                        <span className="font-semibold text-zinc-900">{formCapacity ? `${formCapacity} children` : 'Unlimited'}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-zinc-600 border-t border-[#EAE8E1]/60 pt-1.5 mt-0.5">
+                        <span>Spaces remaining:</span>
+                        <span className={`font-semibold ${formCapacity && parseInt(formCapacity, 10) - formRegisteredChildren <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {formCapacity ? Math.max(0, parseInt(formCapacity, 10) - formRegisteredChildren) : 'Unlimited'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">

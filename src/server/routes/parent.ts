@@ -621,6 +621,48 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
 
     const entryId = crypto.randomUUID();
     const existingEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
+    if (!existingEntry) {
+      const nowIso = new Date().toISOString();
+      if (currentEvent.parent_access_opens_at && nowIso < currentEvent.parent_access_opens_at) {
+        const err: any = new Error('Registration for this event is not open yet.');
+        err.statusCode = 403;
+        err.code = 'REGISTRATION_NOT_OPEN';
+        throw err;
+      }
+      if (currentEvent.parent_access_closes_at && nowIso > currentEvent.parent_access_closes_at) {
+        const err: any = new Error('Registration for this event has closed.');
+        err.statusCode = 403;
+        err.code = 'REGISTRATION_CLOSED';
+        throw err;
+      }
+      if (currentEvent.allow_multiple_children === 0 || currentEvent.allow_multiple_children === false) {
+        const existingParentChildrenCount = await queryOne(`
+          SELECT COUNT(*) as count
+          FROM child_event_entries e
+          JOIN children c ON c.id = e.child_id
+          WHERE e.event_id = ? AND c.parent_profile_id = ? AND (e.is_deleted IS NULL OR e.is_deleted = 0)
+        `, [currentEventId, req.parentProfile!.id]);
+        if (Number(existingParentChildrenCount?.count || 0) > 0) {
+          const err: any = new Error('Multiple child registrations are not permitted for this event.');
+          err.statusCode = 403;
+          err.code = 'MULTIPLE_CHILDREN_NOT_ALLOWED';
+          throw err;
+        }
+      }
+      if (currentEvent.capacity !== null && currentEvent.capacity !== undefined && Number(currentEvent.capacity) > 0) {
+        const appsRes = await queryOne(
+          'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)',
+          [currentEventId]
+        );
+        const registeredCount = Number(appsRes?.count || 0);
+        if (registeredCount >= Number(currentEvent.capacity)) {
+          const err: any = new Error('Registration is full for this event.');
+          err.statusCode = 403;
+          err.code = 'REGISTRATION_FULL';
+          throw err;
+        }
+      }
+    }
     const actualEntryId = existingEntry ? existingEntry.id : entryId;
 
     const schoolClass = (
@@ -787,6 +829,14 @@ async function saveDraftHelper(req: AuthenticatedRequest, res: Response) {
     if (err.code === 'NO_CURRENT_EVENT') {
       return res.status(400).json({ error: err.message, code: err.code });
     }
+    if (err.statusCode && err.code) {
+      return res.status(err.statusCode).json({
+        success: false,
+        code: err.code,
+        message: err.message,
+        error: err.message
+      });
+    }
     console.error('Save draft error:', err);
     res.status(500).json({ error: 'Failed to save child draft' });
   }
@@ -828,6 +878,15 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
       if (err.code === 'NO_CURRENT_EVENT') {
         return res.status(400).json({ error: err.message, code: err.code });
       }
+      if (err.statusCode && err.code) {
+        return res.status(err.statusCode).json({
+          success: false,
+          code: err.code,
+          message: err.message,
+          error: err.message
+        });
+      }
+      throw err;
     }
   }
 
@@ -913,6 +972,41 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
       errors: errorsList,
       errorsMap: childVal.errors
     });
+  }
+
+  if (entry.status === 'draft') {
+    const nowIso = new Date().toISOString();
+    if (currentEvent.parent_access_opens_at && nowIso < currentEvent.parent_access_opens_at) {
+      return res.status(403).json({
+        success: false,
+        code: 'REGISTRATION_NOT_OPEN',
+        message: 'Registration for this event is not open yet.',
+        error: 'Registration for this event is not open yet.'
+      });
+    }
+    if (currentEvent.parent_access_closes_at && nowIso > currentEvent.parent_access_closes_at) {
+      return res.status(403).json({
+        success: false,
+        code: 'REGISTRATION_CLOSED',
+        message: 'Registration for this event has closed.',
+        error: 'Registration for this event has closed.'
+      });
+    }
+    if (currentEvent.capacity !== null && currentEvent.capacity !== undefined && Number(currentEvent.capacity) > 0) {
+      const appsRes = await queryOne(
+        'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)',
+        [currentEventId]
+      );
+      const registeredCount = Number(appsRes?.count || 0);
+      if (registeredCount >= Number(currentEvent.capacity)) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_FULL',
+          message: 'Registration is full for this event.',
+          error: 'Registration is full for this event.'
+        });
+      }
+    }
   }
 
   const now = new Date().toISOString();

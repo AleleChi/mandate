@@ -3130,6 +3130,10 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
   }
 
   const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
+  const appsRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [eventId]);
+  const registeredCount = Number(appsRes?.count || 0);
+  const totalCap = event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null;
+  const remaining = totalCap !== null ? Math.max(0, totalCap - registeredCount) : null;
 
   res.json({
     // flat fields for backward compatibility
@@ -3151,6 +3155,14 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     pickupReminderAt: event.pickup_reminder_at || '',
     timezone: event.timezone || 'Africa/Lagos',
     status: event.status,
+    capacity: totalCap,
+    eventCapacity: totalCap,
+    volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
+    volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
+    volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
+    volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
+    registeredChildrenCount: registeredCount,
+    spacesRemaining: remaining,
 
     // nested objects for structured events client
     success: true,
@@ -3179,7 +3191,15 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
       allowMultipleChildren: event.allow_multiple_children === 1,
       allowSaveAndContinue: event.allow_save_and_continue === 1,
       allowEditAfterSubmission: event.allow_edit_after_submission === 1,
-      description: event.description
+      description: event.description,
+      capacity: totalCap,
+      eventCapacity: totalCap,
+      volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
+      volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
+      volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
+      volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
+      registeredChildrenCount: registeredCount,
+      spacesRemaining: remaining
     },
     ageGroups: ageGroups.map((g: any) => ({
       id: g.id,
@@ -3296,6 +3316,14 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
         allowEditAfterSubmission: event.allow_edit_after_submission === 1 || event.allow_edit_after_submission === true,
         description: event.description,
         totalCapacity,
+        capacity: event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null,
+        eventCapacity: event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null,
+        volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
+        volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
+        volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
+        volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
+        registeredChildrenCount: applicationsCount,
+        spacesRemaining: (event.capacity !== null && event.capacity !== undefined) ? Math.max(0, Number(event.capacity) - applicationsCount) : null,
         applicationsCount,
         selectedCount
       });
@@ -3326,6 +3354,12 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
       allowMultipleChildren,
       allowSaveAndContinue,
       allowEditAfterSubmission,
+      volunteerRegistrationOpensAt,
+      volunteerRegistrationClosesAt,
+      volunteerAccessOpensAt,
+      volunteerAccessClosesAt,
+      capacity,
+      eventCapacity,
       status = 'draft',
       ageGroups = []
     } = req.body;
@@ -3359,6 +3393,9 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
     const now = new Date().toISOString();
 
     const initialStatus = (status && status !== 'current') ? status : 'draft';
+    const resolvedCapacity = capacity !== undefined ? (capacity ? parseInt(String(capacity), 10) : null) : (eventCapacity !== undefined ? (eventCapacity ? parseInt(String(eventCapacity), 10) : null) : null);
+    const resolvedVolOpens = volunteerRegistrationOpensAt || volunteerAccessOpensAt || null;
+    const resolvedVolCloses = volunteerRegistrationClosesAt || volunteerAccessClosesAt || null;
 
     await execute(`
       INSERT INTO events (
@@ -3367,8 +3404,10 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
         parent_access_opens_at, parent_access_closes_at,
         parents_can_create_account, allow_multiple_children,
         allow_save_and_continue, allow_edit_after_submission,
+        volunteer_registration_opens_at, volunteer_registration_closes_at,
+        capacity,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       eventId,
       title,
@@ -3386,6 +3425,9 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
       allowMultipleChildren ? 1 : 0,
       allowSaveAndContinue ? 1 : 0,
       allowEditAfterSubmission ? 1 : 0,
+      resolvedVolOpens,
+      resolvedVolCloses,
+      resolvedCapacity,
       now,
       now
     ]);
@@ -3439,6 +3481,12 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       allowMultipleChildren,
       allowSaveAndContinue,
       allowEditAfterSubmission,
+      volunteerRegistrationOpensAt,
+      volunteerRegistrationClosesAt,
+      volunteerAccessOpensAt,
+      volunteerAccessClosesAt,
+      capacity,
+      eventCapacity,
       status,
       ageGroups
     } = req.body;
@@ -3461,6 +3509,9 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
     }
 
     const now = new Date().toISOString();
+    const resolvedCapacity = capacity !== undefined ? (capacity ? parseInt(String(capacity), 10) : null) : (eventCapacity !== undefined ? (eventCapacity ? parseInt(String(eventCapacity), 10) : null) : event.capacity);
+    const resolvedVolOpens = volunteerRegistrationOpensAt !== undefined ? volunteerRegistrationOpensAt : (volunteerAccessOpensAt !== undefined ? volunteerAccessOpensAt : event.volunteer_registration_opens_at);
+    const resolvedVolCloses = volunteerRegistrationClosesAt !== undefined ? volunteerRegistrationClosesAt : (volunteerAccessClosesAt !== undefined ? volunteerAccessClosesAt : event.volunteer_registration_closes_at);
 
     // Server defence: Ordinary event-detail updates preserve existing lifecycle status.
     // Lifecycle transitions require explicit actions (/publish, /archive, /set-current).
@@ -3481,6 +3532,9 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
         allow_multiple_children = COALESCE(?, allow_multiple_children),
         allow_save_and_continue = COALESCE(?, allow_save_and_continue),
         allow_edit_after_submission = COALESCE(?, allow_edit_after_submission),
+        volunteer_registration_opens_at = ?,
+        volunteer_registration_closes_at = ?,
+        capacity = ?,
         updated_at = ?
       WHERE id = ?
     `, [
@@ -3499,6 +3553,9 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       allowMultipleChildren !== undefined ? (allowMultipleChildren ? 1 : 0) : null,
       allowSaveAndContinue !== undefined ? (allowSaveAndContinue ? 1 : 0) : null,
       allowEditAfterSubmission !== undefined ? (allowEditAfterSubmission ? 1 : 0) : null,
+      resolvedVolOpens || null,
+      resolvedVolCloses || null,
+      resolvedCapacity !== undefined ? resolvedCapacity : null,
       now,
       eventId
     ]);
@@ -11312,6 +11369,7 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
         description: loc.description,
         instructions: loc.instructions,
         capacity: loc.capacity,
+        volunteerCapacity: loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined ? Number(loc.volunteer_capacity) : null,
         ageGroupKey: loc.age_group_key,
         teamKey: loc.team_key,
         emergencyLabel: loc.emergency_label,
@@ -11392,7 +11450,7 @@ router.post('/events/:eventId/locations', authMiddleware, async (req: Authentica
     const { eventId } = req.params;
     const {
       name, shortName, type, parentLocationId, description, instructions,
-      capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder
+      capacity, volunteerCapacity, volunteer_capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -11414,16 +11472,18 @@ router.post('/events/:eventId/locations', authMiddleware, async (req: Authentica
       }
     }
 
+    const resolvedVolCap = volunteerCapacity !== undefined ? (volunteerCapacity ? parseInt(String(volunteerCapacity), 10) : null) : (volunteer_capacity !== undefined ? (volunteer_capacity ? parseInt(String(volunteer_capacity), 10) : null) : null);
+
     await execute(`
       INSERT INTO event_locations (
         id, event_id, parent_location_id, location_type, name, short_name, description,
-        instructions, capacity, age_group_key, team_key, emergency_label, sort_order,
+        instructions, capacity, volunteer_capacity, age_group_key, team_key, emergency_label, sort_order,
         is_active, created_by, updated_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `, [
       id, eventId, parentId, type, name.trim(), shortName ? shortName.trim() : null,
       description ? description.trim() : null, instructions ? instructions.trim() : null,
-      capacity ? parseInt(String(capacity)) : null, ageGroupKey || null, teamKey || null,
+      capacity ? parseInt(String(capacity)) : null, resolvedVolCap, ageGroupKey || null, teamKey || null,
       emergencyLabel ? emergencyLabel.trim() : null, sortOrder ? parseInt(String(sortOrder)) : 0,
       req.user?.id || null, req.user?.id || null, now, now
     ]);
@@ -11431,7 +11491,18 @@ router.post('/events/:eventId/locations', authMiddleware, async (req: Authentica
     // Broadcast change
     broadcastSSEEvent('event_locations_changed', { eventId, action: 'create', locationId: id });
 
-    return res.json({ success: true, locationId: id });
+    return res.json({
+      success: true,
+      locationId: id,
+      location: {
+        id,
+        eventId,
+        name: name.trim(),
+        type,
+        capacity: capacity ? parseInt(String(capacity), 10) : null,
+        volunteerCapacity: resolvedVolCap
+      }
+    });
   } catch (err: any) {
     console.error('Error creating event location:', err);
     return res.status(500).json({ success: false, error: 'Failed to create event location' });
@@ -11462,6 +11533,7 @@ router.get('/events/:eventId/locations/:locationId', authMiddleware, async (req:
         description: loc.description,
         instructions: loc.instructions,
         capacity: loc.capacity,
+        volunteerCapacity: loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined ? Number(loc.volunteer_capacity) : null,
         ageGroupKey: loc.age_group_key,
         teamKey: loc.team_key,
         emergencyLabel: loc.emergency_label,
@@ -11484,7 +11556,7 @@ router.patch('/events/:eventId/locations/:locationId', authMiddleware, async (re
     const { eventId, locationId } = req.params;
     const {
       name, shortName, type, parentLocationId, description, instructions,
-      capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, isActive
+      capacity, volunteerCapacity, volunteer_capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, isActive
     } = req.body;
 
     const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
@@ -11501,6 +11573,8 @@ router.patch('/events/:eventId/locations/:locationId', authMiddleware, async (re
     }
 
     const now = new Date().toISOString();
+    const rawVolCap = volunteerCapacity !== undefined ? volunteerCapacity : volunteer_capacity;
+    const resolvedVolCap = rawVolCap === '' ? null : (rawVolCap !== undefined ? parseInt(String(rawVolCap), 10) : existingLoc.volunteer_capacity);
 
     await execute(`
       UPDATE event_locations SET
@@ -11511,6 +11585,7 @@ router.patch('/events/:eventId/locations/:locationId', authMiddleware, async (re
         description = ?,
         instructions = ?,
         capacity = ?,
+        volunteer_capacity = ?,
         age_group_key = ?,
         team_key = ?,
         emergency_label = ?,
@@ -11527,6 +11602,7 @@ router.patch('/events/:eventId/locations/:locationId', authMiddleware, async (re
       description === '' ? null : (description ? description.trim() : existingLoc.description),
       instructions === '' ? null : (instructions ? instructions.trim() : existingLoc.instructions),
       capacity === '' ? null : (capacity !== undefined ? parseInt(String(capacity)) : existingLoc.capacity),
+      resolvedVolCap,
       ageGroupKey === '' ? null : (ageGroupKey ? ageGroupKey : existingLoc.age_group_key),
       teamKey === '' ? null : (teamKey ? teamKey : existingLoc.team_key),
       emergencyLabel === '' ? null : (emergencyLabel ? emergencyLabel.trim() : existingLoc.emergency_label),

@@ -1272,6 +1272,28 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
       return res.status(400).json({ error: 'Selected user does not have an approved volunteer profile' });
     }
 
+    if (assignedLocationId) {
+      const loc = await queryOne('SELECT id, name, capacity, volunteer_capacity FROM event_locations WHERE id = ? AND event_id = ?', [assignedLocationId, eventId]);
+      if (loc) {
+        const effectiveCap = loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined
+          ? Number(loc.volunteer_capacity)
+          : null;
+        if (effectiveCap !== null && effectiveCap >= 0) {
+          const countRow = await queryOne(`
+            SELECT COUNT(DISTINCT user_id) as count
+            FROM event_duty_assignments
+            WHERE event_id = ? AND assigned_location_id = ? AND status NOT IN ('cancelled', 'ended') AND user_id != ?
+          `, [eventId, assignedLocationId, userId]);
+          const currentCount = Number(countRow?.count || 0);
+          if (currentCount + 1 > effectiveCap) {
+            return res.status(400).json({
+              error: `Location capacity reached for ${loc.name}. Maximum volunteer capacity is ${effectiveCap}.`
+            });
+          }
+        }
+      }
+    }
+
     const now = new Date().toISOString();
 
     // Check for existing active or scheduled assignment for this user in this event (duplicate protection)
@@ -1393,6 +1415,29 @@ adminDutyRouter.patch('/events/:eventId/duty-assignments/:assignmentId', async (
     const effectiveEnd = endsAt || assignment.ends_at;
     if (effectiveStart && effectiveEnd && new Date(effectiveEnd).getTime() <= new Date(effectiveStart).getTime()) {
       return res.status(400).json({ error: 'Shift end time must be later than start time.' });
+    }
+
+    const effectiveLocId = assignedLocationId !== undefined ? (assignedLocationId === '' ? null : assignedLocationId) : assignment.assigned_location_id;
+    if (effectiveLocId && (assignedLocationId !== undefined || (status && status !== 'cancelled' && status !== 'ended'))) {
+      const loc = await queryOne('SELECT id, name, capacity, volunteer_capacity FROM event_locations WHERE id = ? AND event_id = ?', [effectiveLocId, assignment.event_id]);
+      if (loc) {
+        const effectiveCap = loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined
+          ? Number(loc.volunteer_capacity)
+          : null;
+        if (effectiveCap !== null && effectiveCap >= 0) {
+          const countRow = await queryOne(`
+            SELECT COUNT(DISTINCT user_id) as count
+            FROM event_duty_assignments
+            WHERE event_id = ? AND assigned_location_id = ? AND status NOT IN ('cancelled', 'ended') AND id != ?
+          `, [assignment.event_id, effectiveLocId, assignmentId]);
+          const currentCount = Number(countRow?.count || 0);
+          if (currentCount + 1 > effectiveCap) {
+            return res.status(400).json({
+              error: `Location capacity reached for ${loc.name}. Maximum volunteer capacity is ${effectiveCap}.`
+            });
+          }
+        }
+      }
     }
 
     const now = new Date().toISOString();

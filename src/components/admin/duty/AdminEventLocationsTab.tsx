@@ -39,6 +39,7 @@ interface EventLocation {
   description: string | null;
   instructions: string | null;
   capacity: number | null;
+  volunteerCapacity?: number | null;
   ageGroupKey: string | null;
   teamKey: string | null;
   emergencyLabel: string | null;
@@ -96,6 +97,7 @@ export default function AdminEventLocationsTab({
   const [formName, setFormName] = useState<string>('');
   const [formType, setFormType] = useState<string>('room');
   const [formCapacity, setFormCapacity] = useState<string>('');
+  const [formVolunteerCapacity, setFormVolunteerCapacity] = useState<string>('');
   const [formAgeGroup, setFormAgeGroup] = useState<string>('Ages 4 to 6');
   const [formTeamKey, setFormTeamKey] = useState<string>('General Response');
   const [formDescription, setFormDescription] = useState<string>('');
@@ -210,6 +212,7 @@ export default function AdminEventLocationsTab({
             description: loc.description || null,
             instructions: loc.instructions || null,
             capacity: loc.capacity !== undefined && loc.capacity !== null ? Number(loc.capacity) : null,
+            volunteerCapacity: loc.volunteerCapacity !== undefined && loc.volunteerCapacity !== null ? Number(loc.volunteerCapacity) : (loc.volunteer_capacity !== undefined && loc.volunteer_capacity !== null ? Number(loc.volunteer_capacity) : null),
             ageGroupKey: loc.ageGroupKey || loc.age_group_key || null,
             teamKey: loc.teamKey || loc.team_key || null,
             emergencyLabel: loc.emergencyLabel || loc.emergency_label || null,
@@ -335,6 +338,7 @@ export default function AdminEventLocationsTab({
     setFormName('');
     setFormType('room');
     setFormCapacity('');
+    setFormVolunteerCapacity('');
     setFormAgeGroup('Ages 4 to 6');
     setFormTeamKey('General Response');
     setFormDescription('');
@@ -350,6 +354,7 @@ export default function AdminEventLocationsTab({
     setFormName(loc.name);
     setFormType(loc.type);
     setFormCapacity(loc.capacity ? String(loc.capacity) : '');
+    setFormVolunteerCapacity(loc.volunteerCapacity ? String(loc.volunteerCapacity) : '');
     setFormAgeGroup(loc.ageGroupKey || 'Ages 4 to 6');
     setFormTeamKey(loc.teamKey || 'General Response');
     setFormDescription(loc.description || '');
@@ -380,6 +385,7 @@ export default function AdminEventLocationsTab({
         locationType: formType,
         type: formType,
         capacity: formCapacity ? parseInt(formCapacity, 10) : null,
+        volunteerCapacity: formVolunteerCapacity ? parseInt(formVolunteerCapacity, 10) : null,
         ageGroupKey: formAgeGroup,
         teamKey: formTeamKey,
         description: formDescription.trim() || null,
@@ -788,7 +794,7 @@ export default function AdminEventLocationsTab({
                       </h3>
                       <p className="text-xs font-sans text-zinc-500 mt-0.5">
                         {loc.ageGroupKey || 'All ages'}
-                        {loc.capacity ? ` · ${loc.capacity} capacity` : ''}
+                        {loc.capacity ? ` · ${loc.capacity} child cap` : ''}
                       </p>
                     </div>
 
@@ -801,7 +807,7 @@ export default function AdminEventLocationsTab({
                   </div>
 
                   <div className="text-xs font-sans text-zinc-600 pt-0.5">
-                    <span>{loc.assignedCount || 0} volunteers assigned · {loc.presentCount || 0} currently on duty</span>
+                    <span>{loc.assignedCount || 0} / {loc.volunteerCapacity ?? '—'} assigned · {loc.presentCount || 0} on duty</span>
                   </div>
                 </div>
               );
@@ -826,7 +832,11 @@ export default function AdminEventLocationsTab({
                   <div className="text-xs font-sans text-zinc-600">
                     <span>{selectedLocation.ageGroupKey || 'All ages'}</span>
                     <span> · </span>
-                    <span>Capacity {selectedLocation.capacity ? selectedLocation.capacity : '—'}</span>
+                    <span>Child capacity: {selectedLocation.capacity ? selectedLocation.capacity : '—'}</span>
+                    <span> · </span>
+                    <span>Volunteer capacity: {selectedLocation.volunteerCapacity ? selectedLocation.volunteerCapacity : '—'}</span>
+                    <span> · </span>
+                    <span>Assigned: {selectedLocation.assignedCount || 0} / {selectedLocation.volunteerCapacity ?? '—'}</span>
                     <span> · </span>
                     <span>Team {selectedLocation.teamKey || 'General'}</span>
                   </div>
@@ -992,9 +1002,16 @@ export default function AdminEventLocationsTab({
                   </div>
 
                   <div>
-                    <span className="text-zinc-500 block">Capacity</span>
+                    <span className="text-zinc-500 block">Child capacity</span>
                     <span className="font-semibold text-[#18181B] mt-0.5 block">
-                      {selectedLocation.capacity ? `${selectedLocation.capacity} persons` : 'No limit set'}
+                      {selectedLocation.capacity ? `${selectedLocation.capacity} children` : 'No limit set'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-zinc-500 block">Volunteer capacity</span>
+                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                      {selectedLocation.volunteerCapacity ? `${selectedLocation.volunteerCapacity} duty staff (${selectedLocation.assignedCount || 0} / ${selectedLocation.volunteerCapacity} assigned)` : 'No limit set'}
                     </span>
                   </div>
 
@@ -1139,14 +1156,30 @@ export default function AdminEventLocationsTab({
 
                 <div>
                   <label className="block text-zinc-700 font-medium mb-1">
-                    Capacity
+                    Child capacity
                   </label>
                   <input
                     type="number"
                     min="1"
                     value={formCapacity}
                     onChange={(e) => setFormCapacity(e.target.value)}
-                    placeholder="e.g. 40"
+                    placeholder="e.g. 40 (children)"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-zinc-700 font-medium mb-1">
+                    Volunteer capacity
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formVolunteerCapacity}
+                    onChange={(e) => setFormVolunteerCapacity(e.target.value)}
+                    placeholder="e.g. 10 (duty staff)"
                     className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                   />
                 </div>
