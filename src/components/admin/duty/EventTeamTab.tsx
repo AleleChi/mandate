@@ -102,7 +102,38 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
   // Eligible members for assign modal
   const [eligibleMembers, setEligibleMembers] = useState<any[]>([]);
   const [memberSearch, setMemberSearch] = useState<string>('');
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+
+  const getMemberId = (m: any): string => String(m.user_id || m.id || '');
+
+  const visibleEligibleMembers = eligibleMembers.filter((m) => {
+    if (!memberSearch.trim()) return true;
+    const query = memberSearch.toLowerCase().trim();
+    const name = (m.full_name || '').toLowerCase();
+    const email = (m.email || '').toLowerCase();
+    return name.includes(query) || email.includes(query);
+  });
+
+  const toggleMemberSelection = (memberId: string) => {
+    if (!memberId) return;
+    setSelectedUserIds((prev) =>
+      prev.includes(memberId)
+        ? prev.filter((id) => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    const visibleIds = visibleEligibleMembers
+      .map((m) => getMemberId(m))
+      .filter((id): id is string => Boolean(id));
+    setSelectedUserIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedUserIds([]);
+  };
+
 
   // Event Locations
   const [eventLocations, setEventLocations] = useState<any[]>([]);
@@ -243,7 +274,8 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
 
   const openAddModal = () => {
     setEditingAssignment(null);
-    setSelectedUserId('');
+    setSelectedUserIds([]);
+    setMemberSearch('');
     setFormResponsibility('Room Operator');
     setFormStatus('scheduled');
     setFormLocationId('');
@@ -265,7 +297,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
 
   const openEditModal = (assignment: EventDutyAssignmentItem) => {
     setEditingAssignment(assignment);
-    setSelectedUserId(assignment.user_id);
+    setSelectedUserIds([assignment.user_id]);
     setFormResponsibility(assignment.responsibility_key || 'Room Operator');
     setFormStatus(assignment.status || 'scheduled');
     setFormLocationId(assignment.assigned_location_id || '');
@@ -306,9 +338,10 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
   }, [showAddAssignModal, detailAssignment, deletingAssignment]);
 
   const handleSaveAssignment = async () => {
+    if (isSubmitting) return;
     setFormError(null);
 
-    if (!editingAssignment && !selectedUserId) {
+    if (!editingAssignment && selectedUserIds.length === 0) {
       setFormError('Choose a team member.');
       return;
     }
@@ -340,39 +373,97 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const payload = {
-        userId: selectedUserId,
-        responsibilityKey: formResponsibility,
-        teamKey: 'general_response',
-        assignmentLevel: 'primary',
-        status: formStatus,
-        assignedLocationId: formLocationId || null,
-        startsAt: new Date(formStartsAt).toISOString(),
-        endsAt: new Date(formEndsAt).toISOString(),
-        note: formNote
-      };
+      if (editingAssignment) {
+        const payload = {
+          userId: selectedUserIds[0] || editingAssignment.user_id,
+          responsibilityKey: formResponsibility,
+          teamKey: 'general_response',
+          assignmentLevel: 'primary',
+          status: formStatus,
+          assignedLocationId: formLocationId || null,
+          startsAt: new Date(formStartsAt).toISOString(),
+          endsAt: new Date(formEndsAt).toISOString(),
+          note: formNote
+        };
 
-      const url = editingAssignment
-        ? `/api/admin/duty/events/${eventId}/duty-assignments/${editingAssignment.id}`
-        : `/api/admin/duty/events/${eventId}/duty-assignments`;
+        const res = await fetch(
+          buildApiUrl(`/api/admin/duty/events/${eventId}/duty-assignments/${editingAssignment.id}`),
+          {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify(payload)
+          }
+        );
 
-      const method = editingAssignment ? 'PATCH' : 'POST';
-
-      const res = await fetch(buildApiUrl(url), {
-        method,
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSuccess(editingAssignment ? 'Assignment updated.' : 'Team member assigned.');
-        setTimeout(() => setSuccess(null), 3000);
-        setShowAddAssignModal(false);
-        setEditingAssignment(null);
-        fetchAssignments(assignmentPagination.page);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setSuccess('Assignment updated.');
+          setTimeout(() => setSuccess(null), 3000);
+          setShowAddAssignModal(false);
+          setEditingAssignment(null);
+          setSelectedUserIds([]);
+          fetchAssignments(assignmentPagination.page);
+        } else {
+          setFormError(data.error || 'We couldn’t save this assignment. Try again');
+        }
       } else {
-        setFormError(data.error || 'We couldn’t save this assignment. Try again');
+        const uniqueUserIds = Array.from(new Set(selectedUserIds.filter(Boolean)));
+        if (uniqueUserIds.length === 0) {
+          setFormError('Choose a team member.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const results = await Promise.all(
+          uniqueUserIds.map(async (uId) => {
+            const payload = {
+              userId: uId,
+              responsibilityKey: formResponsibility,
+              teamKey: 'general_response',
+              assignmentLevel: 'primary',
+              status: formStatus,
+              assignedLocationId: formLocationId || null,
+              startsAt: new Date(formStartsAt).toISOString(),
+              endsAt: new Date(formEndsAt).toISOString(),
+              note: formNote
+            };
+            try {
+              const res = await fetch(
+                buildApiUrl(`/api/admin/duty/events/${eventId}/duty-assignments`),
+                {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify(payload)
+                }
+              );
+              const data = await res.json();
+              return { ok: res.ok && data.success, error: data?.error, userId: uId };
+            } catch (err: any) {
+              return { ok: false, error: err?.message || 'Network request failed', userId: uId };
+            }
+          })
+        );
+
+        const successCount = results.filter((r) => r.ok).length;
+        const failures = results.filter((r) => !r.ok);
+
+        if (successCount > 0) {
+          const msg = successCount === 1 ? 'Team member assigned.' : `${successCount} team members assigned.`;
+          setSuccess(msg);
+          setTimeout(() => setSuccess(null), 3000);
+          setShowAddAssignModal(false);
+          setSelectedUserIds([]);
+          fetchAssignments(1);
+        }
+
+        if (failures.length > 0) {
+          const firstError = failures[0].error || 'We couldn’t save the assignment.';
+          setFormError(
+            successCount > 0
+              ? `${successCount} assigned, but ${failures.length} failed: ${firstError}`
+              : firstError
+          );
+        }
       }
     } catch (err) {
       console.error('Failed saving assignment:', err);
@@ -753,7 +844,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
             <div className="flex items-start justify-between border-b border-[#EAE8E1] px-6 py-4 shrink-0">
               <div>
                 <h3 id="assign-modal-title" className="text-base font-bold text-[#18181B]">
-                  {editingAssignment ? 'Edit assignment' : 'Assign team member'}
+                  {editingAssignment
+                    ? 'Edit assignment'
+                    : selectedUserIds.length > 1
+                      ? 'Assign team members'
+                      : 'Assign team member'}
                 </h3>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   Choose who is serving, what they are responsible for, and where they will serve.
@@ -795,34 +890,71 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                         className="w-full text-xs min-h-[44px] pl-9 pr-3 py-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white text-zinc-900 transition-colors"
                       />
                     </div>
-                    <div className="max-h-36 overflow-y-auto border border-[#EAE8E1] rounded-xl divide-y divide-[#EAE8E1] bg-white">
-                      {eligibleMembers.length === 0 ? (
+                    <div className="flex items-center justify-between px-1 text-xs">
+                      <span className="font-medium text-zinc-600">
+                        {selectedUserIds.length === 1 ? '1 selected' : `${selectedUserIds.length} selected`}
+                      </span>
+                      <div className="flex items-center space-x-3">
+                        <button
+                          type="button"
+                          onClick={handleSelectAll}
+                          className="text-[#C59B27] hover:text-[#A8821B] font-semibold text-xs cursor-pointer hover:underline"
+                        >
+                          Select all
+                        </button>
+                        <span className="text-zinc-300">•</span>
+                        <button
+                          type="button"
+                          onClick={handleClearSelection}
+                          className="text-zinc-500 hover:text-zinc-700 font-medium text-xs cursor-pointer hover:underline"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto border border-[#EAE8E1] rounded-xl divide-y divide-[#EAE8E1] bg-white">
+                      {visibleEligibleMembers.length === 0 ? (
                         <div className="p-3 text-center text-zinc-400 text-xs">
                           No team members found.
                         </div>
                       ) : (
-                        eligibleMembers.map((m) => {
-                          const isSelected = selectedUserId === m.user_id;
+                        visibleEligibleMembers.map((m) => {
+                          const memberId = getMemberId(m);
+                          const isSelected = selectedUserIds.includes(memberId);
+                          const activeCount = m.active_assignments_count ?? assignments.filter(
+                            (a) => a.user_id === memberId && a.status !== 'cancelled' && a.status !== 'ended'
+                          ).length;
+
                           return (
                             <button
-                              key={m.user_id}
+                              key={memberId}
                               type="button"
-                              onClick={() => setSelectedUserId(m.user_id)}
+                              onClick={() => toggleMemberSelection(memberId)}
                               className={`w-full text-left p-2.5 flex items-center justify-between hover:bg-zinc-50 cursor-pointer transition-colors ${
-                                isSelected ? 'bg-[#FAF9F5] border-l-3 border-l-[#C59B27]' : ''
+                                isSelected ? 'bg-amber-50/50 border-l-4 border-l-[#C59B27]' : ''
                               }`}
                             >
-                              <div>
-                                <div className="font-semibold text-zinc-900 text-xs flex items-center space-x-1.5">
-                                  <span>{m.full_name || m.email}</span>
-                                  {isSelected && <Check className="w-3.5 h-3.5 text-[#C59B27]" />}
+                              <div className="flex items-center space-x-2.5 min-w-0">
+                                <div
+                                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                                    isSelected
+                                      ? 'bg-[#C59B27] border-[#C59B27] text-white'
+                                      : 'border-zinc-300 bg-white hover:border-zinc-400'
+                                  }`}
+                                >
+                                  {isSelected && <Check className="w-3 h-3 text-white stroke-[2.5]" />}
                                 </div>
-                                <div className="text-[11px] text-zinc-500">
-                                  {m.email}{m.user_role === 'volunteer' ? ' • Volunteer' : ''}
+                                <div className="truncate">
+                                  <div className="font-semibold text-zinc-900 text-xs truncate">
+                                    {m.full_name || m.email}
+                                  </div>
+                                  <div className="text-[11px] text-zinc-500 truncate">
+                                    {m.email}{m.user_role === 'volunteer' || m.role === 'volunteer' ? ' • Volunteer' : ''}
+                                  </div>
                                 </div>
                               </div>
-                              <span className="text-[11px] text-zinc-400 font-normal">
-                                {m.active_assignments_count > 0 ? `${m.active_assignments_count} active duty` : 'Available'}
+                              <span className="text-[11px] text-zinc-400 font-normal shrink-0 ml-2">
+                                {activeCount > 0 ? `${activeCount} active duty` : 'Available'}
                               </span>
                             </button>
                           );
@@ -930,10 +1062,16 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
               <button
                 type="button"
                 onClick={handleSaveAssignment}
-                disabled={isSubmitting}
-                className="min-h-[44px] px-5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                disabled={isSubmitting || (!editingAssignment && selectedUserIds.length === 0)}
+                className="min-h-[44px] px-5 py-2 bg-[#C59B27] hover:bg-[#A8821B] text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? (editingAssignment ? 'Saving…' : 'Assigning…') : editingAssignment ? 'Save changes' : 'Assign member'}
+                {editingAssignment
+                  ? (isSubmitting ? 'Saving…' : 'Save changes')
+                  : isSubmitting
+                    ? 'Assigning…'
+                    : selectedUserIds.length > 1
+                      ? `Assign ${selectedUserIds.length} members`
+                      : 'Assign member'}
               </button>
             </div>
           </div>
