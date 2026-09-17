@@ -9,18 +9,15 @@ import {
   QrCode,
   Printer,
   AlertTriangle,
-  Users,
-  Check,
   X,
   CheckCircle2,
   Clock,
   Download,
   AlertCircle,
-  FileText,
-  Shield,
-  Phone,
   Pause,
-  Play
+  Play,
+  UserCheck,
+  LogOut
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
 import { buildApiUrl } from '../../../utils/urlHelper';
@@ -79,7 +76,7 @@ export default function AdminEventLocationsTab({
     locations: 0,
     volunteersAssigned: 0,
     currentlyOnDuty: 0,
-    needAssignment: 0,
+    stillExpected: 0,
     locationsNeedingAttention: 0
   });
 
@@ -140,7 +137,8 @@ export default function AdminEventLocationsTab({
   useEffect(() => {
     if (qrToken) {
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia12.netlify.app';
-      const accessUrl = `${origin}/duty/scan/${qrToken}`;
+      // Use hash route so mobile phone scans route directly inside the SPA without server rewrites
+      const accessUrl = `${origin}/#/duty/location/${qrToken}`;
       QRCode.toDataURL(accessUrl, {
         margin: 2,
         width: 340,
@@ -154,9 +152,8 @@ export default function AdminEventLocationsTab({
     }
   }, [qrToken]);
 
-  // Format time display helper
   const formatDisplayTime = (isoString?: string | null) => {
-    if (!isoString) return '';
+    if (!isoString) return '—';
     try {
       const d = new Date(isoString);
       return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -165,34 +162,33 @@ export default function AdminEventLocationsTab({
     }
   };
 
-  // Format type label helper
-  const formatTypeLabel = (type?: string) => {
-    if (!type) return 'Location';
-    if (type === 'room') return 'Room';
-    if (type === 'hall') return 'Hall';
-    if (type === 'gate' || type === 'check_in_point') return 'Entry Point';
-    if (type === 'pickup_point') return 'Pickup Point';
-    if (type === 'zone') return 'Zone';
-    return type.replace(/_/g, ' ');
+  const formatTypeLabel = (type: string) => {
+    switch (type) {
+      case 'room': return 'Room';
+      case 'hall': return 'Main Hall';
+      case 'gate': return 'Gate';
+      case 'pickup_point': return 'Pickup Point';
+      case 'check_in_point': return 'Check-in Point';
+      case 'zone': return 'Zone';
+      default: return 'Location';
+    }
   };
 
-  // Fetch Locations
+  // Fetch Locations list
   const fetchLocations = async () => {
     setLoading(true);
     setError(null);
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const queryParams = new URLSearchParams();
-      if (filterType && filterType !== 'all') {
-        queryParams.append('type', filterType);
-      }
-      if (searchTerm) {
-        queryParams.append('search', searchTerm);
+      if (searchTerm) queryParams.set('search', searchTerm);
+      if (filterType !== 'all') {
+        if (filterType === 'rooms') queryParams.set('type', 'room');
+        if (filterType === 'entry') queryParams.set('type', 'gate');
+        if (filterType === 'pickup') queryParams.set('type', 'pickup_point');
       }
 
       let res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations?${queryParams.toString()}`), { headers });
@@ -229,16 +225,22 @@ export default function AdminEventLocationsTab({
           setLocations(normItems);
 
           if (data.summary) {
+            const assigned = data.summary.volunteersAssigned || 0;
+            const onDuty = data.summary.currentlyOnDuty || 0;
+            const expected = data.summary.stillExpected !== undefined
+              ? data.summary.stillExpected
+              : Math.max(0, assigned - onDuty);
+
             setSummary({
               locations: data.summary.locations || data.summary.totalLocations || normItems.length,
-              volunteersAssigned: data.summary.volunteersAssigned || 0,
-              currentlyOnDuty: data.summary.currentlyOnDuty || 0,
-              needAssignment: data.summary.needAssignment || 0,
+              volunteersAssigned: assigned,
+              currentlyOnDuty: onDuty,
+              stillExpected: expected,
               locationsNeedingAttention: data.summary.locationsNeedingAttention || 0
             });
           }
 
-          // Select first location by default if none selected or refreshed
+          // Preserve selection or select first
           if (!selectedLocation && normItems.length > 0) {
             setSelectedLocation(normItems[0]);
           } else if (selectedLocation) {
@@ -246,14 +248,14 @@ export default function AdminEventLocationsTab({
             if (found) setSelectedLocation(found);
           }
         } else {
-          setError(data.message || data.error || 'We couldn’t load event locations. Try again');
+          setError(data.message || data.error || 'Could not load event locations.');
         }
       } else {
-        setError('We couldn’t load event locations. Try again');
+        setError('Could not load event locations.');
       }
     } catch (err) {
       console.error('Error fetching event locations:', err);
-      setError('We couldn’t load event locations. Try again');
+      setError('Could not load event locations.');
     } finally {
       setLoading(false);
     }
@@ -293,34 +295,12 @@ export default function AdminEventLocationsTab({
 
   useEffect(() => {
     fetchLocations();
-  }, [eventId, filterType]);
-
-  useEffect(() => {
-    if (showFormModal || showQRModal || locToToggleActive || confirmReplaceModal || showBatchPrintModal) {
-      const prevOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          if (showFormModal) setShowFormModal(false);
-          if (showQRModal) setShowQRModal(false);
-          if (locToToggleActive) setLocToToggleActive(null);
-          if (confirmReplaceModal) setConfirmReplaceModal(false);
-          if (showBatchPrintModal) setShowBatchPrintModal(false);
-        }
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => {
-        document.body.style.overflow = prevOverflow;
-        window.removeEventListener('keydown', handleKeyDown);
-      };
-    }
-  }, [showFormModal, showQRModal, locToToggleActive, confirmReplaceModal, showBatchPrintModal]);
+  }, [eventId, searchTerm, filterType]);
 
   useEffect(() => {
     if (selectedLocation) {
       fetchLocationCoverage(selectedLocation.id);
 
-      // Load active QR token for the selected location
       const fetchQR = async () => {
         try {
           const token = safeStorage.getItem('koinonia_token');
@@ -430,8 +410,8 @@ export default function AdminEventLocationsTab({
         const data = await res.json();
         if (data.success !== false) {
           setShowFormModal(false);
-          setSuccess(isEditing ? 'Location updated successfully.' : 'Location added successfully.');
-          setTimeout(() => setSuccess(null), 4000);
+          setSuccess(isEditing ? 'Location updated.' : 'Location added.');
+          setTimeout(() => setSuccess(null), 3500);
           await fetchLocations();
         } else {
           setFormError(data.error || data.message || 'Failed to save location.');
@@ -447,7 +427,7 @@ export default function AdminEventLocationsTab({
     }
   };
 
-  // Toggle Active / Pause Location
+  // Toggle Active / Close Location
   const handleToggleLocationActive = async (loc: EventLocation) => {
     try {
       const token = safeStorage.getItem('koinonia_token');
@@ -473,8 +453,8 @@ export default function AdminEventLocationsTab({
 
       if (res.ok) {
         setLocToToggleActive(null);
-        setSuccess(newActive ? `${loc.name} is now open for duty.` : `${loc.name} has been paused.`);
-        setTimeout(() => setSuccess(null), 4000);
+        setSuccess(newActive ? `${loc.name} is now open.` : `${loc.name} is now closed.`);
+        setTimeout(() => setSuccess(null), 3500);
         await fetchLocations();
       }
     } catch (err) {
@@ -507,8 +487,8 @@ export default function AdminEventLocationsTab({
         const data = await res.json();
         if (data.success && (data.token || data.code?.token_hash)) {
           setQrToken(data.token || data.code?.token_hash);
-          setSuccess('QR code replaced. Previously printed physical codes will no longer work.');
-          setTimeout(() => setSuccess(null), 5000);
+          setSuccess('QR replaced. A new code was generated.');
+          setTimeout(() => setSuccess(null), 4000);
         }
       }
     } catch (err) {
@@ -516,6 +496,31 @@ export default function AdminEventLocationsTab({
     } finally {
       setQrLoading(false);
       setConfirmReplaceModal(false);
+    }
+  };
+
+  // Admin Manual Presence Action (Mark Arrived / End Duty)
+  const handleModifyPresence = async (userId: string, action: 'check_in' | 'end_duty') => {
+    if (!selectedLocation) return;
+    try {
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(buildApiUrl(`/api/admin/events/${eventId}/locations/${selectedLocation.id}/presence`), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, action })
+      });
+
+      if (res.ok) {
+        setSuccess(action === 'check_in' ? 'Volunteer marked arrived.' : 'Duty ended.');
+        setTimeout(() => setSuccess(null), 3500);
+        await fetchLocationCoverage(selectedLocation.id);
+        await fetchLocations();
+      }
+    } catch (err) {
+      console.error('Error modifying duty presence:', err);
     }
   };
 
@@ -554,7 +559,7 @@ export default function AdminEventLocationsTab({
             const data = await res.json();
             const tokenStr = data.code?.token_hash || data.token;
             if (tokenStr) {
-              const accessUrl = `${origin}/duty/scan/${tokenStr}`;
+              const accessUrl = `${origin}/#/duty/location/${tokenStr}`;
               const dataUrl = await QRCode.toDataURL(accessUrl, {
                 margin: 2,
                 width: 320,
@@ -588,16 +593,30 @@ export default function AdminEventLocationsTab({
     return true;
   });
 
+  // Derived Coverage lists for selected location
+  const onDutyResponders = selectedCoverage?.activeResponders || [];
+  const assignedResponders = selectedCoverage?.assignedResponders || [];
+  const stillExpectedResponders = assignedResponders.filter(
+    a => !a.isPresent && !onDutyResponders.some(p => p.userId === a.userId)
+  );
+
   return (
-    <div className="space-y-6" data-view-version="admin-event-locations-v6">
-      {/* Toast Alert */}
+    <div className="space-y-6" data-view-version="admin-event-locations-v7">
+
+      {/* Success Notification */}
       {success && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-sans flex items-center space-x-2 animate-fade-in shadow-xs">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{success}</span>
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-sans flex items-center justify-between animate-fade-in shadow-2xs">
+          <div className="flex items-center space-x-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{success}</span>
+          </div>
+          <button onClick={() => setSuccess(null)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
+      {/* Error Notification */}
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-sans flex items-center justify-between animate-fade-in shadow-xs">
           <div className="flex items-center space-x-2">
@@ -610,8 +629,8 @@ export default function AdminEventLocationsTab({
         </div>
       )}
 
-      {/* SUMMARY BAR: Clean operational metrics (Part 5) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+      {/* TOP SUMMARY (Section 9): Practical operational metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
           <span className="text-[11px] font-sans font-medium text-zinc-500 block">
             Locations
@@ -650,32 +669,18 @@ export default function AdminEventLocationsTab({
 
         <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
           <span className="text-[11px] font-sans font-medium text-zinc-500 block">
-            Need assignment
+            Still expected
           </span>
           <span
             className="text-2xl font-bold text-[#A47E1F] block"
             style={{ fontFamily: "'Cormorant Garamond', serif" }}
           >
-            {summary.needAssignment}
+            {summary.stillExpected}
           </span>
         </div>
-
-        {summary.locationsNeedingAttention > 0 && (
-          <div className="col-span-2 sm:col-span-4 lg:col-span-1 bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-1 shadow-2xs">
-            <span className="text-[11px] font-sans font-medium text-amber-800 block">
-              Needing attention
-            </span>
-            <span
-              className="text-2xl font-bold text-amber-900 block"
-              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-            >
-              {summary.locationsNeedingAttention}
-            </span>
-          </div>
-        )}
       </div>
 
-      {/* FILTER & SEARCH BAR (Part 7) */}
+      {/* FILTER & SEARCH BAR */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0">
           <button
@@ -736,10 +741,10 @@ export default function AdminEventLocationsTab({
         </div>
       </div>
 
-      {/* TWO-COLUMN WORKFLOW: Location List (Left) & Location Detail (Right) */}
+      {/* TWO-COLUMN LAYOUT: Location List (Left) & Location Detail (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-        {/* LEFT PANEL: Clean Location List (Part 6) */}
+        {/* LEFT PANEL: Clean Location List (Section 10) */}
         <div className="lg:col-span-5 bg-white border border-[#EAE8E1] rounded-2xl divide-y divide-[#EAE8E1] overflow-hidden shadow-xs">
           {loading && locations.length === 0 ? (
             <div className="p-8 text-center space-y-2 text-xs text-zinc-400">
@@ -781,29 +786,22 @@ export default function AdminEventLocationsTab({
                       <h3 className="text-sm font-sans font-semibold text-[#18181B]">
                         {loc.name}
                       </h3>
-                      {loc.ageGroupKey && (
-                        <p className="text-xs font-sans text-[#A47E1F] font-medium mt-0.5">
-                          {loc.ageGroupKey}
-                        </p>
-                      )}
+                      <p className="text-xs font-sans text-zinc-500 mt-0.5">
+                        {loc.ageGroupKey || 'All ages'}
+                        {loc.capacity ? ` · ${loc.capacity} capacity` : ''}
+                      </p>
                     </div>
-                    <span className="text-[10px] font-sans font-medium text-zinc-500 uppercase tracking-wider bg-zinc-100 px-2 py-0.5 rounded-md shrink-0">
-                      {formatTypeLabel(loc.type)}
+
+                    <span className="flex items-center space-x-1.5 shrink-0 text-[11px] font-sans">
+                      <span className={`w-1.5 h-1.5 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                      <span className={loc.isActive ? 'text-zinc-700 font-medium' : 'text-zinc-400'}>
+                        {loc.isActive ? 'Open' : 'Closed'}
+                      </span>
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs font-sans text-zinc-500 pt-1">
-                    <span>
-                      {loc.capacity ? `${loc.capacity} capacity` : 'No capacity set'}
-                      {loc.assignedCount !== undefined ? ` · ${loc.assignedCount} volunteers assigned` : ''}
-                    </span>
-
-                    <span className="flex items-center space-x-1.5 shrink-0 text-[11px]">
-                      <span className={`w-1.5 h-1.5 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
-                      <span className={loc.isActive ? 'text-zinc-700 font-medium' : 'text-zinc-400'}>
-                        {loc.isActive ? 'Open for duty' : 'Paused'}
-                      </span>
-                    </span>
+                  <div className="text-xs font-sans text-zinc-600 pt-0.5">
+                    <span>{loc.assignedCount || 0} volunteers assigned · {loc.presentCount || 0} currently on duty</span>
                   </div>
                 </div>
               );
@@ -811,7 +809,7 @@ export default function AdminEventLocationsTab({
           )}
         </div>
 
-        {/* RIGHT PANEL: Clean Location Detail (Part 8, 9, 10, 11) */}
+        {/* RIGHT PANEL: Location Details (Section 11, 12, 14) */}
         <div className="lg:col-span-7">
           {selectedLocation ? (
             <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 space-y-6 shadow-xs">
@@ -825,16 +823,15 @@ export default function AdminEventLocationsTab({
                   >
                     {selectedLocation.name}
                   </h2>
-                  <div className="flex items-center space-x-2 text-xs font-sans text-zinc-500">
-                    <span>{formatTypeLabel(selectedLocation.type)}</span>
-                    <span>•</span>
-                    <span className={`font-medium ${selectedLocation.isActive ? 'text-emerald-700' : 'text-zinc-500'}`}>
-                      {selectedLocation.isActive ? 'Open for duty' : 'Paused'}
-                    </span>
+                  <div className="text-xs font-sans text-zinc-600">
+                    <span>{selectedLocation.ageGroupKey || 'All ages'}</span>
+                    <span> · </span>
+                    <span>Capacity {selectedLocation.capacity ? selectedLocation.capacity : '—'}</span>
+                    <span> · </span>
+                    <span>Team {selectedLocation.teamKey || 'General'}</span>
                   </div>
-                  <div className="text-xs font-sans text-zinc-600 pt-0.5">
-                    {selectedLocation.ageGroupKey || 'All ages'}
-                    {selectedLocation.capacity ? ` · Capacity ${selectedLocation.capacity}` : ''}
+                  <div className="text-xs font-sans font-medium text-emerald-800 pt-0.5">
+                    On duty: {onDutyResponders.length} of {assignedResponders.length} present
                   </div>
                 </div>
 
@@ -845,7 +842,7 @@ export default function AdminEventLocationsTab({
                     className="px-3 py-1.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
                     <Edit className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>Edit location</span>
+                    <span>Edit</span>
                   </button>
 
                   <button
@@ -869,112 +866,124 @@ export default function AdminEventLocationsTab({
                     {selectedLocation.isActive ? (
                       <>
                         <Pause className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>Pause location</span>
+                        <span>Close location</span>
                       </>
                     ) : (
                       <>
                         <Play className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Open for duty</span>
+                        <span>Reopen location</span>
                       </>
                     )}
                   </button>
                 </div>
               </div>
 
-              {/* VOLUNTEERS SECTION (Part 11) */}
-              <div className="space-y-3 pb-5 border-b border-[#EAE8E1]">
-                <div className="flex items-center justify-between">
-                  <div>
+              {/* STAFF ON-DUTY SECTION (Section 14) */}
+              <div className="space-y-4 pb-5 border-b border-[#EAE8E1]">
+                {/* On duty now */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
                     <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
-                      Volunteers
+                      On duty now
                     </h3>
-                    <div className="flex items-center space-x-3 text-xs font-sans text-zinc-500 mt-0.5">
-                      <span><strong>{selectedCoverage?.activeResponders?.length || 0}</strong> here now</span>
-                      <span>•</span>
-                      <span><strong>{selectedCoverage?.assignedResponders?.length || 0}</strong> assigned</span>
-                    </div>
+                    <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                      {onDutyResponders.length} present
+                    </span>
                   </div>
 
-                  {onNavigateTab && (
+                  {coverageLoading ? (
+                    <div className="p-4 text-center text-xs text-zinc-400 space-y-1">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto text-[#C59B27]" />
+                      <span>Checking presence…</span>
+                    </div>
+                  ) : onDutyResponders.length === 0 ? (
+                    <p className="text-xs text-zinc-500 font-sans italic bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                      No volunteers currently on duty at this location.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl overflow-hidden">
+                      {onDutyResponders.map((resp: any) => (
+                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white hover:bg-zinc-50/50">
+                          <div>
+                            <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
+                            <div className="text-[11px] text-zinc-500 flex items-center space-x-1 pt-0.5">
+                              <Clock className="w-3 h-3 text-zinc-400" />
+                              <span>Reported {formatDisplayTime(resp.startedAt)}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleModifyPresence(resp.userId, 'end_duty')}
+                            className="px-2.5 py-1 text-zinc-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
+                            title="End duty for this volunteer"
+                          >
+                            <LogOut className="w-3 h-3" />
+                            <span>End duty</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Still expected */}
+                <div className="space-y-2.5 pt-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                      Still expected
+                    </h3>
+                    <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                      {stillExpectedResponders.length} expected
+                    </span>
+                  </div>
+
+                  {stillExpectedResponders.length === 0 ? (
+                    <p className="text-xs text-zinc-500 font-sans italic bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                      All assigned volunteers have reported.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl overflow-hidden">
+                      {stillExpectedResponders.map((resp: any) => (
+                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white hover:bg-zinc-50/50">
+                          <div>
+                            <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
+                            <div className="text-[11px] text-zinc-500">{resp.responsibilityKey || 'General Response'}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleModifyPresence(resp.userId, 'check_in')}
+                            className="px-2.5 py-1 text-[#C59B27] hover:text-[#A47E1F] hover:bg-[#C59B27]/10 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
+                            title="Mark volunteer arrived manually"
+                          >
+                            <UserCheck className="w-3 h-3" />
+                            <span>Mark arrived</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {onNavigateTab && (
+                  <div className="pt-1 text-right">
                     <button
                       type="button"
                       onClick={() => onNavigateTab('event_team')}
                       className="text-xs text-[#C59B27] hover:text-[#A47E1F] font-sans font-medium transition-colors cursor-pointer"
                     >
-                      Manage assignments
+                      Manage team assignments ›
                     </button>
-                  )}
-                </div>
-
-                {coverageLoading ? (
-                  <div className="p-4 text-center text-xs text-zinc-400 space-y-1.5">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto text-[#C59B27]" />
-                    <span>Loading team presence…</span>
-                  </div>
-                ) : (selectedCoverage?.assignedResponders?.length || 0) === 0 && (selectedCoverage?.activeResponders?.length || 0) === 0 ? (
-                  <div className="p-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center space-y-2">
-                    <p className="text-xs text-zinc-500 font-sans">No volunteers assigned yet.</p>
-                    {onNavigateTab && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigateTab('event_team')}
-                        className="text-xs font-sans font-semibold text-[#C59B27] hover:underline cursor-pointer"
-                      >
-                        Assign volunteers
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl overflow-hidden">
-                    {/* Render assigned volunteers with real presence indicators */}
-                    {(selectedCoverage?.assignedResponders || []).map((resp: any) => (
-                      <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white hover:bg-zinc-50/50">
-                        <div>
-                          <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
-                          <div className="text-[11px] text-zinc-500">{resp.responsibilityKey || resp.role || 'General'}</div>
-                        </div>
-                        <div>
-                          {resp.isPresent ? (
-                            <span className="inline-flex items-center space-x-1.5 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                              <span>Here since {formatDisplayTime(resp.presentSince)}</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center space-x-1.5 text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full text-[11px]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
-                              <span>Not here yet</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Also show unassigned volunteers who scanned in here */}
-                    {(selectedCoverage?.activeResponders || [])
-                      .filter((p: any) => !(selectedCoverage?.assignedResponders || []).some((a: any) => a.userId === p.userId))
-                      .map((resp: any) => (
-                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-amber-50/30 hover:bg-amber-50/60">
-                          <div>
-                            <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
-                            <div className="text-[11px] text-zinc-500">Joined at venue</div>
-                          </div>
-                          <span className="inline-flex items-center space-x-1.5 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                            <span>Here since {formatDisplayTime(resp.startedAt)}</span>
-                          </span>
-                        </div>
-                      ))}
                   </div>
                 )}
               </div>
 
-              {/* LOCATION DETAILS SECTION (Part 8) */}
+              {/* LOCATION DETAILS SECTION (Section 11) */}
               <div className="space-y-3 pb-5 border-b border-[#EAE8E1]">
                 <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
-                  Location details
+                  Duty instructions
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-sans">
                   <div>
                     <span className="text-zinc-500 block">Age group</span>
                     <span className="font-semibold text-[#18181B] mt-0.5 block">
@@ -990,20 +999,11 @@ export default function AdminEventLocationsTab({
                   </div>
 
                   <div>
-                    <span className="text-zinc-500 block">Team</span>
+                    <span className="text-zinc-500 block">Assigned team</span>
                     <span className="font-semibold text-[#18181B] mt-0.5 block">
                       {selectedLocation.teamKey || 'General Response'}
                     </span>
                   </div>
-
-                  {selectedLocation.emergencyLabel && (
-                    <div>
-                      <span className="text-zinc-500 block">Emergency identifier</span>
-                      <span className="font-semibold text-rose-700 mt-0.5 block">
-                        {selectedLocation.emergencyLabel}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 {selectedLocation.description && (
@@ -1018,23 +1018,21 @@ export default function AdminEventLocationsTab({
                 {selectedLocation.instructions && (
                   <div className="pt-1">
                     <span className="text-zinc-500 text-xs block">Special instructions</span>
-                    <p className="text-xs text-zinc-700 font-sans mt-1 leading-relaxed bg-amber-50/50 p-3 rounded-xl border border-amber-200/60 whitespace-pre-line">
+                    <p className="text-xs text-zinc-700 font-sans mt-1 leading-relaxed bg-amber-50/40 p-3 rounded-xl border border-amber-200/60 whitespace-pre-line">
                       {selectedLocation.instructions}
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* QR CODE SECTION (Part 9) */}
+              {/* LOCATION SIGN-IN QR SECTION (Section 12) */}
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
-                    Location QR code
-                  </h3>
-                </div>
+                <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                  Location sign-in QR
+                </h3>
 
                 <p className="text-xs text-zinc-600 font-sans leading-relaxed">
-                  Volunteers can scan this code when they arrive at {selectedLocation.name} to confirm their duty location.
+                  Display this QR at the location so assigned volunteers can report for duty.
                 </p>
 
                 <div className="pt-2 flex flex-wrap items-center gap-2">
@@ -1053,7 +1051,7 @@ export default function AdminEventLocationsTab({
                     className="px-3.5 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
                     <Printer className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>Print</span>
+                    <span>Print QR</span>
                   </button>
 
                   <button
@@ -1061,7 +1059,7 @@ export default function AdminEventLocationsTab({
                     onClick={() => setConfirmReplaceModal(true)}
                     className="px-3.5 py-2 text-zinc-500 hover:text-zinc-800 text-xs font-medium rounded-xl transition-all cursor-pointer"
                   >
-                    Replace QR code
+                    Replace QR
                   </button>
                 </div>
               </div>
@@ -1072,7 +1070,7 @@ export default function AdminEventLocationsTab({
               <MapPin className="w-8 h-8 text-zinc-300 mx-auto" />
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-zinc-800">Select a location</h3>
-                <p className="text-xs text-zinc-500">Choose a location from the left to view details and manage QR codes.</p>
+                <p className="text-xs text-zinc-500">Choose a location to view duty details and manage QR codes.</p>
               </div>
             </div>
           )}
@@ -1100,115 +1098,136 @@ export default function AdminEventLocationsTab({
             </div>
 
             {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-sans">
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-sans">
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleSaveLocation} className="space-y-4 text-xs font-sans">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 block">
-                  Location name <span className="text-rose-500">*</span>
+              <div>
+                <label className="block text-zinc-700 font-medium mb-1">
+                  Location name *
                 </label>
                 <input
                   type="text"
+                  required
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Grace Hall Primary"
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
-                  required
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-zinc-700 block">Type</label>
+                <div>
+                  <label className="block text-zinc-700 font-medium mb-1">
+                    Location type
+                  </label>
                   <select
                     value={formType}
                     onChange={(e) => setFormType(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] bg-white"
                   >
                     <option value="room">Room</option>
-                    <option value="hall">Hall</option>
-                    <option value="gate">Entry point</option>
-                    <option value="pickup_point">Pickup point</option>
+                    <option value="hall">Main Hall</option>
+                    <option value="gate">Gate / Entry</option>
+                    <option value="check_in_point">Check-in Point</option>
+                    <option value="pickup_point">Pickup Point</option>
                     <option value="zone">Zone</option>
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-zinc-700 block">Capacity</label>
+                <div>
+                  <label className="block text-zinc-700 font-medium mb-1">
+                    Capacity
+                  </label>
                   <input
                     type="number"
+                    min="1"
                     value={formCapacity}
                     onChange={(e) => setFormCapacity(e.target.value)}
                     placeholder="e.g. 40"
-                    min="1"
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-zinc-700 block">Age group</label>
-                  <input
-                    type="text"
+                <div>
+                  <label className="block text-zinc-700 font-medium mb-1">
+                    Age group
+                  </label>
+                  <select
                     value={formAgeGroup}
                     onChange={(e) => setFormAgeGroup(e.target.value)}
-                    placeholder="e.g. Ages 4 to 6"
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
-                  />
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] bg-white"
+                  >
+                    <option value="Ages 4 to 6">Ages 4 to 6</option>
+                    <option value="Ages 7 to 9">Ages 7 to 9</option>
+                    <option value="Ages 10 to 12">Ages 10 to 12</option>
+                    <option value="Teens">Teens</option>
+                    <option value="All Ages">All Ages</option>
+                  </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-zinc-700 block">Team</label>
-                  <input
-                    type="text"
+                <div>
+                  <label className="block text-zinc-700 font-medium mb-1">
+                    Assigned team
+                  </label>
+                  <select
                     value={formTeamKey}
                     onChange={(e) => setFormTeamKey(e.target.value)}
-                    placeholder="e.g. Protocol"
-                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
-                  />
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] bg-white"
+                  >
+                    <option value="General Response">General Response</option>
+                    <option value="Child Care">Child Care</option>
+                    <option value="Security & Safety">Security & Safety</option>
+                    <option value="Registration & Entry">Registration & Entry</option>
+                    <option value="Medical & Support">Medical & Support</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 block">Description</label>
-                <textarea
+              <div>
+                <label className="block text-zinc-700 font-medium mb-1">
+                  Description
+                </label>
+                <input
+                  type="text"
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Brief description for volunteers arriving at this area"
-                  rows={2}
-                  className="w-full px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  placeholder="e.g. Ground floor west wing room"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 block">Special instructions</label>
+              <div>
+                <label className="block text-zinc-700 font-medium mb-1">
+                  Duty instructions
+                </label>
                 <textarea
+                  rows={2}
                   value={formInstructions}
                   onChange={(e) => setFormInstructions(e.target.value)}
-                  placeholder="Specific instructions shown to volunteers on duty"
-                  rows={2}
-                  className="w-full px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  placeholder="e.g. Ensure all children have name tags before entry."
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                 />
               </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-4 border-t border-[#EAE8E1]">
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#EAE8E1]">
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl text-xs transition-all cursor-pointer"
+                  className="px-4 py-2 border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 rounded-xl font-medium cursor-pointer transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingLocation}
-                  className="px-5 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-semibold rounded-xl text-xs transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  className="px-4 py-2 bg-[#C59B27] hover:bg-[#A47E1F] text-white rounded-xl font-semibold cursor-pointer transition-all shadow-xs disabled:opacity-50"
                 >
-                  {savingLocation ? 'Saving…' : isEditing ? 'Save changes' : 'Add location'}
+                  {savingLocation ? 'Saving…' : (isEditing ? 'Save changes' : 'Add location')}
                 </button>
               </div>
             </form>
@@ -1216,10 +1235,10 @@ export default function AdminEventLocationsTab({
         </div>
       )}
 
-      {/* MODAL 2: CLEAN QR MODAL (Part 10) */}
+      {/* MODAL 2: VIEW QR PREVIEW (Section 13) */}
       {showQRModal && selectedLocation && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-7 w-full max-w-sm shadow-xl space-y-5 text-center">
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-xl space-y-5 text-center">
             <div className="flex items-center justify-end">
               <button
                 type="button"
@@ -1230,19 +1249,26 @@ export default function AdminEventLocationsTab({
               </button>
             </div>
 
+            {/* Clean Editorial Poster Header */}
             <div className="space-y-1">
+              <div className="text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-[#A47E1F]">
+                Koinonia
+              </div>
+              <div className="text-xs font-sans text-zinc-500 font-medium">
+                Children &amp; Teens
+              </div>
               <h3
-                className="text-2xl font-bold text-[#18181B] tracking-tight"
+                className="text-2xl font-bold text-[#18181B] tracking-tight pt-2"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
                 {selectedLocation.name}
               </h3>
-              <p className="text-xs text-zinc-500 font-sans">
-                The General Assembly {selectedLocation.ageGroupKey ? `· ${selectedLocation.ageGroupKey}` : ''}
+              <p className="text-xs text-zinc-600 font-sans pt-1">
+                Scan to report for duty
               </p>
             </div>
 
-            {/* Clean High-Contrast QR Code */}
+            {/* High-Contrast QR Code */}
             <div className="w-56 h-56 bg-white border border-[#EAE8E1] rounded-2xl mx-auto flex items-center justify-center p-3 shadow-2xs">
               {qrLoading ? (
                 <RefreshCw className="w-6 h-6 animate-spin text-[#C59B27]" />
@@ -1253,18 +1279,28 @@ export default function AdminEventLocationsTab({
               )}
             </div>
 
-            <p className="text-xs text-zinc-500 font-sans">
-              Scan to open this duty location.
-            </p>
+            {/* Event Dates & Notice */}
+            <div className="space-y-1 font-sans">
+              <p className="text-xs font-semibold text-zinc-800">
+                The General Assembly
+              </p>
+              <p className="text-[11px] text-zinc-500">
+                18–22 November 2026
+              </p>
+              <p className="text-[10px] text-zinc-400 pt-1">
+                For assigned team members only.
+              </p>
+            </div>
 
-            <div className="flex flex-col gap-2 pt-2">
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-[#EAE8E1]">
               <button
                 type="button"
                 onClick={handlePrintSingleQR}
                 className="w-full py-3 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center space-x-2"
               >
                 <Printer className="w-4 h-4" />
-                <span>Print</span>
+                <span>Print QR</span>
               </button>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1291,7 +1327,7 @@ export default function AdminEventLocationsTab({
         </div>
       )}
 
-      {/* MODAL 3: CONFIRM REPLACE QR CODE (Part 3, Part 9) */}
+      {/* MODAL 3: CONFIRM REPLACE QR CODE (Section 12) */}
       {confirmReplaceModal && selectedLocation && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
@@ -1304,10 +1340,10 @@ export default function AdminEventLocationsTab({
                 className="text-xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
-                Replace QR code?
+                Replace QR?
               </h4>
               <p className="text-xs text-zinc-600 font-sans leading-relaxed">
-                Previously printed physical codes for <strong>{selectedLocation.name}</strong> will stop working immediately.
+                The current QR will stop working and a new one will be created.
               </p>
             </div>
 
@@ -1325,14 +1361,14 @@ export default function AdminEventLocationsTab({
                 disabled={qrLoading}
                 className="py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs disabled:opacity-50"
               >
-                {qrLoading ? 'Replacing…' : 'Replace QR code'}
+                {qrLoading ? 'Replacing…' : 'Replace QR'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 4: CONFIRM PAUSE / RESUME LOCATION */}
+      {/* MODAL 4: CONFIRM CLOSE / REOPEN LOCATION (Section 19) */}
       {locToToggleActive && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
@@ -1345,12 +1381,12 @@ export default function AdminEventLocationsTab({
                 className="text-xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
-                {locToToggleActive.isActive ? 'Pause location?' : 'Open location for duty?'}
+                {locToToggleActive.isActive ? 'Close location?' : 'Reopen location?'}
               </h4>
               <p className="text-xs text-zinc-600 font-sans leading-relaxed">
                 {locToToggleActive.isActive
-                  ? `Pausing ${locToToggleActive.name} will deactivate the location and prevent volunteer check-ins.`
-                  : `Opening ${locToToggleActive.name} will allow volunteers to check in and serve.`}
+                  ? 'Volunteers will no longer be able to report for duty at this location.'
+                  : 'Volunteers will be able to report for duty at this location.'}
               </p>
             </div>
 
@@ -1367,7 +1403,7 @@ export default function AdminEventLocationsTab({
                 onClick={() => handleToggleLocationActive(locToToggleActive)}
                 className="py-2.5 bg-[#18181B] hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs"
               >
-                {locToToggleActive.isActive ? 'Pause location' : 'Open for duty'}
+                {locToToggleActive.isActive ? 'Close location' : 'Reopen location'}
               </button>
             </div>
           </div>
@@ -1383,7 +1419,7 @@ export default function AdminEventLocationsTab({
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
-                Print location codes
+                Print duty QR codes
               </h3>
               <p className="text-xs text-zinc-500 font-sans">
                 Print physical venue posters for all active duty locations.
@@ -1433,7 +1469,7 @@ export default function AdminEventLocationsTab({
         </div>
       )}
 
-      {/* PRINT-ONLY VENUE POSTER LAYOUT (Part 10) */}
+      {/* PRINT-ONLY VENUE POSTER LAYOUT */}
       <style>{`
         @media print {
           body * {
@@ -1470,18 +1506,19 @@ export default function AdminEventLocationsTab({
         {/* Single print poster if only selectedLocation is active */}
         {selectedLocation && !showBatchPrintModal && (
           <div className="venue-poster-page text-center">
-            <div className="space-y-3 pt-6">
-              <div className="text-sm font-bold uppercase tracking-[0.25em] text-zinc-700">
-                KOINONIA CHILDREN &amp; TEENS
+            <div className="space-y-2 pt-6">
+              <div className="text-base font-bold uppercase tracking-[0.25em] text-[#A47E1F]">
+                KOINONIA
               </div>
-              <h1 className="text-4xl sm:text-5xl font-serif font-black uppercase tracking-tight text-zinc-950">
+              <div className="text-sm font-medium text-zinc-600">
+                Children &amp; Teens
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-serif font-black tracking-tight text-zinc-950 pt-4">
                 {selectedLocation.name}
               </h1>
-              {selectedLocation.ageGroupKey && (
-                <p className="text-lg font-medium text-zinc-700">
-                  {selectedLocation.ageGroupKey}
-                </p>
-              )}
+              <p className="text-lg font-medium text-zinc-700 pt-1">
+                Scan to report for duty
+              </p>
             </div>
 
             <div className="w-80 h-80 my-auto p-4 border-4 border-zinc-950 rounded-3xl flex items-center justify-center">
@@ -1492,12 +1529,15 @@ export default function AdminEventLocationsTab({
               )}
             </div>
 
-            <div className="space-y-1 pb-8">
-              <div className="text-xl font-bold uppercase tracking-wider text-zinc-950">
-                VOLUNTEERS
+            <div className="space-y-1 pb-8 font-sans">
+              <div className="text-lg font-bold uppercase tracking-wider text-zinc-950">
+                The General Assembly
               </div>
-              <p className="text-base text-zinc-700">
-                Scan when you arrive.
+              <p className="text-sm text-zinc-600">
+                18–22 November 2026
+              </p>
+              <p className="text-xs text-zinc-400 pt-2">
+                For assigned team members only.
               </p>
             </div>
           </div>
@@ -1508,18 +1548,19 @@ export default function AdminEventLocationsTab({
           const locQR = batchQRMap[loc.id] || (selectedLocation?.id === loc.id ? qrDataUrl : null);
           return (
             <div key={loc.id} className="venue-poster-page text-center">
-              <div className="space-y-3 pt-6">
-                <div className="text-sm font-bold uppercase tracking-[0.25em] text-zinc-700">
-                  KOINONIA CHILDREN &amp; TEENS
+              <div className="space-y-2 pt-6">
+                <div className="text-base font-bold uppercase tracking-[0.25em] text-[#A47E1F]">
+                  KOINONIA
                 </div>
-                <h1 className="text-4xl sm:text-5xl font-serif font-black uppercase tracking-tight text-zinc-950">
+                <div className="text-sm font-medium text-zinc-600">
+                  Children &amp; Teens
+                </div>
+                <h1 className="text-4xl sm:text-5xl font-serif font-black tracking-tight text-zinc-950 pt-4">
                   {loc.name}
                 </h1>
-                {loc.ageGroupKey && (
-                  <p className="text-lg font-medium text-zinc-700">
-                    {loc.ageGroupKey}
-                  </p>
-                )}
+                <p className="text-lg font-medium text-zinc-700 pt-1">
+                  Scan to report for duty
+                </p>
               </div>
 
               <div className="w-80 h-80 my-auto p-4 border-4 border-zinc-950 rounded-3xl flex items-center justify-center">
@@ -1530,12 +1571,15 @@ export default function AdminEventLocationsTab({
                 )}
               </div>
 
-              <div className="space-y-1 pb-8">
-                <div className="text-xl font-bold uppercase tracking-wider text-zinc-950">
-                  VOLUNTEERS
+              <div className="space-y-1 pb-8 font-sans">
+                <div className="text-lg font-bold uppercase tracking-wider text-zinc-950">
+                  The General Assembly
                 </div>
-                <p className="text-base text-zinc-700">
-                  Scan when you arrive.
+                <p className="text-sm text-zinc-600">
+                  18–22 November 2026
+                </p>
+                <p className="text-xs text-zinc-400 pt-2">
+                  For assigned team members only.
                 </p>
               </div>
             </div>

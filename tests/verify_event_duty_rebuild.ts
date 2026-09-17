@@ -82,7 +82,7 @@ async function runTests() {
 
     // Ensure test environment (SQLite or local DB) has locations populated
     let locations = await query(
-      'SELECT id, name, age_group_key, capacity, is_active FROM event_locations WHERE event_id = ? ORDER BY name ASC',
+      'SELECT id, name, age_group_key, capacity, is_active FROM event_locations WHERE event_id = ? AND is_active = 1 ORDER BY name ASC',
       [REAL_EVENT_ID]
     );
     if (!locations || locations.length === 0) {

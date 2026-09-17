@@ -78,7 +78,7 @@ export function AdminDutyDevicesView() {
             Event Duty
           </h1>
           <p className="text-xs text-zinc-500 mt-1 font-normal">
-            Manage event locations, volunteer assignments and duty presence.
+            Manage where teams are serving and see who is currently on duty.
           </p>
         </div>
 
@@ -117,7 +117,7 @@ export function AdminDutyDevicesView() {
             title="Print printable venue posters for all locations"
           >
             <Printer className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Print location codes</span>
+            <span>Print duty QR codes</span>
           </button>
 
           <button

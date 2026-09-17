@@ -2932,6 +2932,37 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       });
     }
 
+    // Check if user is already actively present at this location (avoid duplicate presence records)
+    const existingPresence = await queryOne(`
+      SELECT * FROM event_duty_location_presence
+      WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?
+      ORDER BY started_at DESC LIMIT 1
+    `, [userId, resolvedLocationId, currentEventId]);
+
+    if (existingPresence) {
+      return res.json({
+        success: true,
+        alreadyPresent: true,
+        presence: {
+          id: existingPresence.id,
+          locationId: resolvedLocationId,
+          name: loc.name,
+          type: loc.location_type,
+          ageGroup: loc.age_group_key,
+          ageGroupKey: loc.age_group_key,
+          team: loc.team_key,
+          teamKey: loc.team_key,
+          instructions: loc.instructions,
+          description: loc.description,
+          source: existingPresence.source,
+          startedAt: existingPresence.started_at,
+          isPresent: true,
+          presentSince: existingPresence.started_at,
+          isAssignedByAdmin: !!adminAssignment
+        }
+      });
+    }
+
     const now = new Date().toISOString();
 
     // End previous active presence sessions for this user at other locations

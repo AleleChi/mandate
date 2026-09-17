@@ -8,6 +8,7 @@ import { Button } from '../components/common/Button';
 import { AuthFormField } from '../components/common/AuthFormField';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
 import { isWebAuthnSupported, base64URLToBuffer } from '../utils/passkey';
+import { safeStorage } from '../utils/storage';
 
 interface VolunteerSignInViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -81,6 +82,13 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
         showSuccess('Welcome back', 'Signed in securely with your device.');
         if (onSignInSuccess) {
           onSignInSuccess(loginRes.user, loginRes.volunteerProfile || loginRes.profile);
+        }
+
+        const returnRoute = safeStorage.getItem('koinonia_return_route');
+        if (returnRoute) {
+          safeStorage.removeItem('koinonia_return_route');
+          onNavigate(returnRoute as AppRoute);
+          return;
         }
 
         if (loginRes.user.role === 'volunteer') {
@@ -177,6 +185,13 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       }
 
       showSuccess('Signed in successfully', 'Welcome back to Koinonia Volunteer Access.');
+
+      const returnRoute = safeStorage.getItem('koinonia_return_route');
+      if (returnRoute) {
+        safeStorage.removeItem('koinonia_return_route');
+        onNavigate(returnRoute as AppRoute);
+        return;
+      }
 
       // Route checks
       if (res.nextRoute) {

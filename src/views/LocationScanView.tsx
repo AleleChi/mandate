@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, CheckCircle2, AlertCircle, ArrowRight, LogIn, Clock, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { MapPin, CheckCircle2, AlertCircle, ArrowRight, LogIn, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import { safeStorage } from '../utils/storage';
 import { BrandLogo } from '../components/common/BrandLogo';
@@ -43,6 +43,7 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
   const [assignedLocationName, setAssignedLocationName] = useState<string | null>(null);
   const [presentSince, setPresentSince] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [justReported, setJustReported] = useState(false);
 
   const formatDisplayTime = (isoString?: string | null) => {
     if (!isoString) {
@@ -101,7 +102,7 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
     }
   }, [token, user?.id]);
 
-  const handleConfirmPresence = async () => {
+  const handleReportForDuty = async () => {
     if (!location) return;
     setActionLoading(true);
     setActionError(null);
@@ -116,25 +117,22 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
       });
 
       if (res && res.success) {
+        setJustReported(true);
         setScanState('assigned_here_present');
         setPresentSince(res.presence?.startedAt || new Date().toISOString());
       } else {
-        setActionError(res?.message || res?.error || 'Could not confirm presence. Please try again.');
+        setActionError(res?.message || res?.error || 'Could not report for duty. Please try again.');
       }
     } catch (err: any) {
-      console.error('Error confirming location presence:', err);
-      setActionError(err?.message || 'Could not confirm presence. Please try again.');
+      console.error('Error reporting for duty:', err);
+      setActionError(err?.message || 'Could not report for duty. Please try again.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleJoinLocation = async () => {
-    return handleConfirmPresence();
-  };
-
   const handleSignInRedirect = () => {
-    // Store current route so volunteer returns directly here after signing in
+    // Preserve scanned location context so volunteer returns directly here after signing in
     safeStorage.setItem('koinonia_return_route', `/duty/location/${encodeURIComponent(token)}`);
     onNavigate('/volunteer/sign-in');
   };
@@ -142,7 +140,7 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
   return (
     <div 
       className="min-h-screen bg-[#FAF9F6] text-[#18181B] flex flex-col justify-between p-4 sm:p-6" 
-      data-view-version="location-scan-view-v1"
+      data-view-version="location-scan-view-v2"
     >
       {/* Top Brand Bar */}
       <header className="w-full max-w-md mx-auto pt-4 pb-6 flex items-center justify-between">
@@ -172,7 +170,7 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
             </div>
           </div>
         ) : scanState === 'code_inactive' ? (
-          /* STATE F: INVALID / EXPIRED / DISABLED QR */
+          /* STATE: INVALID / EXPIRED / CLOSED QR */
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 text-center shadow-xs animate-fade-in">
             <div className="w-12 h-12 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center mx-auto">
               <AlertCircle className="w-6 h-6 text-zinc-500" />
@@ -183,10 +181,10 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
-                Location code inactive
+                Location closed
               </h1>
               <p className="text-xs text-zinc-600 font-sans leading-relaxed">
-                This location code is no longer active.
+                This location sign-in code is no longer active.
                 <br />
                 Please contact your team lead or a ministry administrator.
               </p>
@@ -203,12 +201,13 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
             </div>
           </div>
         ) : scanState === 'unauthenticated' ? (
-          /* STATE E: NOT SIGNED IN */
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in">
-            <div className="space-y-2 text-center">
-              <div className="w-11 h-11 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center mx-auto mb-3">
-                <MapPin className="w-5 h-5" />
-              </div>
+          /* STATE: NOT SIGNED IN */
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in text-center">
+            <div className="w-11 h-11 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center mx-auto">
+              <MapPin className="w-5 h-5" />
+            </div>
+
+            <div className="space-y-1.5">
               <h1 
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -218,14 +217,15 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
               {location?.ageGroupKey && (
                 <p className="text-xs text-[#C59B27] font-sans font-medium">
                   {location.ageGroupKey}
+                  {location.capacity ? ` · Capacity ${location.capacity}` : ''}
                 </p>
               )}
               <p className="text-xs text-zinc-500 font-sans pt-1">
-                Sign in to continue.
+                Sign in to report for duty at this location.
               </p>
             </div>
 
-            <div className="space-y-2 pt-2">
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={handleSignInRedirect}
@@ -237,51 +237,52 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
             </div>
           </div>
         ) : scanState === 'assigned_here_present' ? (
-          /* STATE A (Confirmed): VOLUNTEER CHECKED IN FOR DUTY */
+          /* STATE: VOLUNTEER ON DUTY (JUST REPORTED OR DUPLICATE SCAN) */
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 text-center shadow-xs animate-fade-in">
             <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-6 h-6 text-emerald-600" />
             </div>
 
             <div className="space-y-2">
-              <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-3 py-1 rounded-full inline-block">
-                You're checked in for duty
-              </span>
               <h1 
-                className="text-2xl font-bold text-[#18181B] tracking-tight pt-1"
+                className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
-                {location?.name}
+                {justReported ? "You're on duty" : "You're already on duty here."}
               </h1>
+              <p className="text-sm font-semibold text-zinc-800 font-sans">
+                {location?.name}
+              </p>
               {location?.ageGroupKey && (
-                <p className="text-xs text-zinc-500 font-sans font-medium">
+                <p className="text-xs text-zinc-500 font-sans">
                   {location.ageGroupKey}
                 </p>
               )}
-              <p className="text-xs text-zinc-600 font-sans flex items-center justify-center space-x-1 pt-1">
+              <p className="text-xs text-zinc-600 font-sans flex items-center justify-center space-x-1.5 pt-1">
                 <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Here since {formatDisplayTime(presentSince)}</span>
+                <span>Reported at {formatDisplayTime(presentSince)}</span>
               </p>
             </div>
 
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => onNavigate('/volunteer/dashboard')}
+                onClick={() => onNavigate('/volunteer/event')}
                 className="w-full py-3.5 px-4 bg-[#18181B] hover:bg-zinc-800 text-white font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2"
               >
-                <span>View Event Duty dashboard</span>
+                <span>View duty details</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
         ) : scanState === 'assigned_here_not_present' ? (
-          /* STATE A (Unconfirmed): VOLUNTEER ALREADY ASSIGNED TO THIS LOCATION */
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in">
-            <div className="text-center space-y-2">
-              <div className="w-11 h-11 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center mx-auto mb-2">
-                <MapPin className="w-5 h-5" />
-              </div>
+          /* STATE: VOLUNTEER ASSIGNED TO THIS LOCATION, READY TO REPORT */
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in text-center">
+            <div className="w-11 h-11 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center mx-auto">
+              <MapPin className="w-5 h-5" />
+            </div>
+
+            <div className="space-y-1.5">
               <h1 
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -291,23 +292,24 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
               {location?.ageGroupKey && (
                 <p className="text-xs text-[#C59B27] font-sans font-medium">
                   {location.ageGroupKey}
+                  {location.capacity ? ` · Capacity ${location.capacity}` : ''}
                 </p>
               )}
               <p className="text-xs text-zinc-600 font-sans pt-1">
-                You're assigned here today.
+                You're assigned to serve here today.
               </p>
             </div>
 
             {actionError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-sans">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-sans text-left">
                 {actionError}
               </div>
             )}
 
-            <div className="pt-2 space-y-2">
+            <div className="pt-2">
               <button
                 type="button"
-                onClick={handleConfirmPresence}
+                onClick={handleReportForDuty}
                 disabled={actionLoading}
                 className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:opacity-50"
               >
@@ -316,18 +318,18 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
                 ) : (
                   <CheckCircle2 className="w-4 h-4" />
                 )}
-                <span>Confirm I'm here</span>
+                <span>Report for duty</span>
               </button>
             </div>
           </div>
         ) : scanState === 'assigned_elsewhere' ? (
-          /* STATE B: VOLUNTEER ASSIGNED ELSEWHERE */
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in">
+          /* STATE: VOLUNTEER ASSIGNED ELSEWHERE */
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in text-center">
             <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-5 h-5" />
             </div>
 
-            <div className="space-y-3 text-center">
+            <div className="space-y-2">
               <h1 
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -335,20 +337,17 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
                 Different location
               </h1>
               
-              <div className="space-y-1.5 py-1">
-                <p className="text-xs text-zinc-800 font-sans">
-                  You're assigned to <strong className="font-semibold text-[#18181B]">{assignedLocationName}</strong>.
-                </p>
-                <p className="text-xs text-zinc-500 font-sans">
-                  This code is for <span className="font-medium text-zinc-700">{location?.name}</span>.
-                </p>
-              </div>
+              <p className="text-xs text-zinc-700 font-sans leading-relaxed">
+                You're assigned to <strong className="font-semibold text-[#18181B]">{assignedLocationName}</strong>.
+                <br />
+                <span className="text-zinc-500">This code is for {location?.name}. Admin assignments cannot be overridden.</span>
+              </p>
             </div>
 
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => onNavigate('/volunteer/dashboard')}
+                onClick={() => onNavigate('/volunteer/event')}
                 className="w-full py-3.5 px-4 bg-[#18181B] hover:bg-zinc-800 text-white font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2 shadow-xs"
               >
                 <span>View my assignment</span>
@@ -357,12 +356,13 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
             </div>
           </div>
         ) : scanState === 'unassigned_can_join' ? (
-          /* STATE C: UNASSIGNED + SELF-SELECTION ALLOWED */
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in">
-            <div className="text-center space-y-2">
-              <div className="w-11 h-11 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center mx-auto mb-2">
-                <MapPin className="w-5 h-5" />
-              </div>
+          /* STATE: UNASSIGNED VOLUNTEER REPORTING HERE */
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in text-center">
+            <div className="w-11 h-11 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center mx-auto">
+              <MapPin className="w-5 h-5" />
+            </div>
+
+            <div className="space-y-1.5">
               <h1 
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -372,23 +372,24 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
               {location?.ageGroupKey && (
                 <p className="text-xs text-[#C59B27] font-sans font-medium">
                   {location.ageGroupKey}
+                  {location.capacity ? ` · Capacity ${location.capacity}` : ''}
                 </p>
               )}
               <p className="text-xs text-zinc-600 font-sans pt-1">
-                Serve at this location?
+                Report for duty at this location
               </p>
             </div>
 
             {actionError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-sans">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-sans text-left">
                 {actionError}
               </div>
             )}
 
-            <div className="pt-2 space-y-2">
+            <div className="pt-2">
               <button
                 type="button"
-                onClick={handleJoinLocation}
+                onClick={handleReportForDuty}
                 disabled={actionLoading}
                 className="w-full py-3.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:opacity-50"
               >
@@ -397,37 +398,35 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
                 ) : (
                   <CheckCircle2 className="w-4 h-4" />
                 )}
-                <span>Join this location</span>
+                <span>Report for duty</span>
               </button>
             </div>
           </div>
         ) : (
-          /* STATE D: UNASSIGNED + SELF-SELECTION NOT ALLOWED */
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in">
-            <div className="text-center space-y-2">
-              <div className="w-11 h-11 rounded-2xl bg-zinc-100 text-zinc-600 flex items-center justify-center mx-auto mb-2">
-                <MapPin className="w-5 h-5" />
-              </div>
+          /* STATE: UNASSIGNED VOLUNTEER, MUST BE ASSIGNED BY ADMIN */
+          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-fade-in text-center">
+            <div className="w-11 h-11 rounded-2xl bg-zinc-100 text-zinc-600 flex items-center justify-center mx-auto">
+              <MapPin className="w-5 h-5" />
+            </div>
+
+            <div className="space-y-1.5">
               <h1 
                 className="text-2xl font-bold text-[#18181B] tracking-tight"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
                 {location?.name}
               </h1>
-              <div className="space-y-1.5 py-1">
-                <p className="text-xs text-zinc-700 font-sans">
-                  You haven't been assigned to a location yet.
-                </p>
-                <p className="text-xs text-zinc-500 font-sans">
-                  Please contact your team lead.
-                </p>
-              </div>
+              <p className="text-xs text-zinc-700 font-sans leading-relaxed">
+                You haven't been assigned to a duty location yet.
+                <br />
+                <span className="text-zinc-500">Please speak with your team lead or a ministry administrator.</span>
+              </p>
             </div>
 
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => onNavigate('/volunteer/dashboard')}
+                onClick={() => onNavigate('/volunteer/event')}
                 className="w-full py-3.5 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2"
               >
                 <span>View Event Duty</span>

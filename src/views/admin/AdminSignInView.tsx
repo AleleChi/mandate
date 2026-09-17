@@ -7,6 +7,7 @@ import { validateEmailSyntax } from '../../utils/validation';
 import { Button } from '../../components/common/Button';
 import { AuthScreenShell } from '../../components/common/AuthScreenShell';
 import { DeviceSecurityModal } from '../../components/common/DeviceSecurityModal';
+import { safeStorage } from '../../utils/storage';
 
 interface AdminSignInViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -69,6 +70,12 @@ export const AdminSignInView: React.FC<AdminSignInViewProps> = ({
       showSuccess('Access Granted', 'Signed in successfully.');
       if (onSignInSuccess) {
         onSignInSuccess(meRes.user, null);
+      }
+      const returnRoute = safeStorage.getItem('koinonia_return_route');
+      if (returnRoute) {
+        safeStorage.removeItem('koinonia_return_route');
+        onNavigate(returnRoute);
+        return;
       }
       onNavigate('/admin/overview');
     } catch (err) {
@@ -138,6 +145,12 @@ export const AdminSignInView: React.FC<AdminSignInViewProps> = ({
         onSignInSuccess(res.user, null);
       }
       
+      const returnRoute = safeStorage.getItem('koinonia_return_route');
+      if (returnRoute) {
+        safeStorage.removeItem('koinonia_return_route');
+        onNavigate(returnRoute);
+        return;
+      }
       onNavigate('/admin/overview');
     } catch (err: any) {
       const parsed = extractApiError(err);

@@ -246,6 +246,16 @@ export default function App() {
       let hash = window.location.hash || '';
       // Strip all leading '#' and ensure there is exactly one leading '/'
       hash = (hash || '').replace(/^#+/, '');
+
+      // Fallback: If hash is empty or root, check if pathname provides a valid route (e.g. phone camera QR scans)
+      if ((!hash || hash === '/') && typeof window !== 'undefined' && window.location.pathname && window.location.pathname !== '/') {
+        const path = window.location.pathname;
+        if (isValidRoute(path)) {
+          hash = path + (window.location.search || '');
+          window.location.hash = hash;
+        }
+      }
+
       if (!hash.startsWith('/')) {
         hash = '/' + hash;
       }
@@ -1530,6 +1540,7 @@ export default function App() {
             />
           </VolunteerProtectedRoute>
         );
+      case '/volunteer/dashboard':
       case '/volunteer/event':
       case '/volunteer/scan':
       case '/volunteer/children':
