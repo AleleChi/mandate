@@ -73,10 +73,10 @@ export function buildChildSafetyIncidentReport(
 
     sections.push({
       id: 'safety-overview',
-      title: 'What this report shows',
+      title: 'Executive Summary',
       type: 'narrative',
       content: {
-        text: `This safeguarding report summarizes care notices, medical alerts, and safety items recorded for "${analytics.eventTitle}". All child identity references, medical details, and incident records are processed with strict confidentiality to protect children and families.\n\nDuring the event, a total of ${totalAlerts} safety notices were logged, of which ${resolvedAlerts} were resolved and ${openAlerts + inProgressAlerts} remain active. ${timingText} A total of ${totalEscalated} item(s) were escalated to senior coordinators.`
+        text: `Safeguarding and care response summary for "${analytics.eventTitle}". All child identity references, medical notices, and incident logs are aggregated with strict confidentiality. During the event, ${totalAlerts} safety notices were logged, with ${resolvedAlerts} resolved on site and ${openAlerts + inProgressAlerts} currently active. ${timingText} A total of ${totalEscalated} item(s) were escalated to senior coordinators.`
       }
     });
   }

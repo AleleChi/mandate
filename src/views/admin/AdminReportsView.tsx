@@ -1538,7 +1538,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   <ReportChartRenderer
                     chart={{
                       id: 'overview-reg-outcomes',
-                      kind: 'horizontalBar',
+                      kind: 'donut',
                       title: 'Registration outcomes',
                       subtitle: 'Status of all applications received',
                       labels: liveOverviewAnalytics.registrations.registrationOutcomes.map((o: any) => o.label),
@@ -1548,7 +1548,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                         values: liveOverviewAnalytics.registrations.registrationOutcomes.map((o: any) => o.count)
                       }],
                       caption: 'Distribution of reviewed applications.',
-                      accessibleSummary: 'Horizontal bar chart of application review outcomes.'
+                      accessibleSummary: 'Donut chart of application review outcomes.'
                     }}
                   />
                 ) : (
@@ -1658,7 +1658,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   <ReportChartRenderer
                     chart={{
                       id: 'overview-safety',
-                      kind: 'horizontalBar',
+                      kind: 'donut',
                       title: 'Safety matters by status',
                       subtitle: 'Resolved vs active safety alerts',
                       labels: ['Resolved', 'Active / open'],
@@ -1671,7 +1671,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                         ]
                       }],
                       caption: 'Recorded safeguarding alerts and status.',
-                      accessibleSummary: 'Horizontal bar chart of safety alerts by status.'
+                      accessibleSummary: 'Donut chart of safety alerts by status.'
                     }}
                   />
                 ) : (

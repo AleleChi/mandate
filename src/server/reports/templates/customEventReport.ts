@@ -72,10 +72,10 @@ export function buildCustomEventReport(
   if (isSectionSelected(['Executive summary', 'Executive Summary', 'What this report shows', 'Custom summary'])) {
     sections.push({
       id: 'full-report-summary',
-      title: 'What this report shows',
+      title: 'Executive Summary',
       type: 'narrative',
       content: {
-        text: `This comprehensive event report gives ministry leadership a full operational overview for "${analytics.eventTitle}". It brings together registration intake, actual turnout, volunteer staffing, room supervision, and child care in a single, verified report.\n\nA total of ${regTotal} children registered, with ${selTotal} selected to attend. On event day, ${checkedInTotal} children checked in (${attendanceRate.toFixed(0)}% of selected children), supported by ${activeVolunteers} on-duty supervisors across active venue rooms. All figures reflect verified database records up to the reporting cutoff.`
+        text: `Operational overview for "${analytics.eventTitle}". Intake received ${regTotal} registrations, with ${selTotal} selected to attend. Turnout reached ${checkedInTotal} verified check-ins (${attendanceRate.toFixed(0)}% of selected children), supported by ${activeVolunteers} on-duty supervisors across active venue rooms. All figures reflect verified database records up to the reporting cutoff.`
       }
     });
   }

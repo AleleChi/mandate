@@ -204,11 +204,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     currentY = drawKPIBand(doc, marginX, currentY, contentWidth, model.kpis);
   }
 
-  // Section C: "What this report shows" (First narrative section)
+  // Section C: Executive Summary (First narrative section)
   const firstNarrativeSec = model.sections.find(s => s.type === 'narrative');
   if (firstNarrativeSec) {
     ensureHeight(25);
-    currentY = drawSectionHeading(doc, firstNarrativeSec.title || 'What this report shows', marginX, currentY, contentWidth);
+    currentY = drawSectionHeading(doc, firstNarrativeSec.title || 'Executive Summary', marginX, currentY, contentWidth);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.2);

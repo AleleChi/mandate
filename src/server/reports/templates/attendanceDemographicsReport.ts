@@ -69,7 +69,7 @@ export function buildAttendanceDemographicsReport(
   // 2. Report Sections
   const sections: ReportSection[] = [];
 
-  // Section C: "What this report shows"
+  // Section C: Executive Summary
   const summaryIncluded = selectedSections.length === 0 ||
     selectedSections.includes('Executive Summary') ||
     selectedSections.includes('Leadership overview') ||
@@ -82,12 +82,12 @@ export function buildAttendanceDemographicsReport(
       ? `Arrivals peaked during the ${analytics.attendance.peakCheckInHour} window.`
       : 'Arrivals were recorded at reception check-in stations.';
 
-    const narrativeText = `This report gives ministry leadership a clear picture of attendance, age group turnout, and child movement for "${analytics.eventTitle}". It shows how many children were invited, how many arrived on the day, how many have been picked up, and who is still in our care.\n\nA total of ${totalRegistrations} children registered, and ${selectedTotal} were selected to attend (${selectionRate.toFixed(1)}% selection rate). On event day, ${checkedInTotal} children arrived and checked in, giving an attendance rate of ${attendanceRate.toFixed(1)}% among selected children. ${arrivalNarrative} So far, ${releasedTotal} children have been safely picked up by registered parents or guardians, while ${insideTotal} children are still inside their activity rooms. ${notArrivedTotal} selected children did not arrive.`;
+    const narrativeText = `Attendance and movement summary for "${analytics.eventTitle}". Out of ${selectedTotal} selected children (${totalRegistrations} total applications), ${checkedInTotal} arrived and checked in (${attendanceRate.toFixed(1)}% attendance rate). Currently, ${insideTotal} children are in care rooms, ${releasedTotal} have been released to authorized parents or guardians, and ${notArrivedTotal} selected children have not arrived. ${arrivalNarrative}`;
 
     sections.push({
       id: 'attendance-overview',
-      title: 'What this report shows',
-      description: 'Overview of attendance, participant selection, and movement flow on event day.',
+      title: 'Executive Summary',
+      description: 'Turnout metrics, participant selection, and room movement flow on event day.',
       type: 'narrative',
       content: { text: narrativeText }
     });

@@ -713,7 +713,13 @@ export async function compileReportSnapshot(
     const compEvent = await queryOne("SELECT * FROM events WHERE id != ? ORDER BY created_at DESC LIMIT 1", [targetEventId]);
     let comparisonData: any = null;
     if (compEvent) {
-      const compChildEntries = await query('SELECT count(*) as count, count(checked_in_at) as checked_in, count(picked_up_at) as picked_up FROM child_event_entries WHERE event_id = ?', [compEvent.id]);
+      const compChildEntries = await query(`
+        SELECT count(*) as count, count(checked_in_at) as checked_in, count(picked_up_at) as picked_up
+        FROM child_event_entries
+        WHERE event_id = ?
+          AND (is_deleted = 0 OR is_deleted IS NULL)
+          AND status NOT IN ('incomplete', 'draft', 'removed')
+      `, [compEvent.id]);
       const compAlerts = await query('SELECT count(*) as count FROM event_safety_alerts WHERE event_id = ?', [compEvent.id]);
       const compDuty = await query('SELECT count(*) as count FROM event_duty_assignments WHERE event_id = ?', [compEvent.id]);
       const compIncidents = await query('SELECT count(*) as count FROM incident_records WHERE event_id = ?', [compEvent.id]);
@@ -743,6 +749,10 @@ export async function compileReportSnapshot(
       FROM child_event_entries cee
       JOIN children c ON cee.child_id = c.id
       WHERE cee.event_id = ?
+        AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND cee.status NOT IN ('incomplete', 'draft', 'removed')
+        AND cee.status IS NOT NULL
     `, [targetEventId]);
 
     // Apply ageGroup filter if specified

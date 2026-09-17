@@ -69,10 +69,10 @@ export function buildVolunteerTeamReport(
     
     sections.push({
       id: 'vol-summary',
-      title: 'What this report shows',
+      title: 'Executive Summary',
       type: 'narrative',
       content: {
-        text: `This report gives ministry leadership a clear picture of volunteer staffing and room supervision for "${analytics.eventTitle}". It shows how many volunteers were assigned, who arrived on duty, how our teams are deployed, and whether all children's activity rooms are properly covered.\n\nA total of ${totalAssigned} volunteers were scheduled for this event, with ${activeOnDuty} currently on duty (${attendanceRate.toFixed(0)}% turnout). ${ratioSummary} Designated event rooms have ${staffedLocations} of ${totalLocations} rooms covered with active volunteers.`
+        text: `Volunteer staffing and room supervision overview for "${analytics.eventTitle}". A total of ${totalAssigned} volunteers were scheduled, with ${activeOnDuty} currently on active duty (${attendanceRate.toFixed(0)}% turnout). ${ratioSummary} Active volunteers cover ${staffedLocations} of ${totalLocations} designated event rooms.`
       }
     });
   }

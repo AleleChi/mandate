@@ -59,10 +59,10 @@ export function buildRegistrationSelectionReport(
 
   sections.push({
     id: 'reg-demand-summary',
-    title: 'What this report shows',
+    title: 'Executive Summary',
     type: 'narrative',
     content: {
-      text: `This report outlines application demand, review decisions, and age group breakdown for "${analytics.eventTitle}". It shows how many families applied, who has been selected to attend, who is on the waiting list, and which applications are still awaiting review.\n\nThe ministry received ${reg.totalRegistrations} applications. Following administrative review, ${reg.selectedTotal} children were selected (${reg.selectionRate.toFixed(0)}% selection rate), ${reg.underReviewTotal} applications are waiting for review, and ${reg.waitlistTotal} children were placed on the waiting list.`
+      text: `Intake and selection summary for "${analytics.eventTitle}". Program intake received ${reg.totalRegistrations} applications. To date, ${reg.selectedTotal} children have been selected (${reg.selectionRate.toFixed(0)}% selection rate), ${reg.underReviewTotal} applications remain under review, and ${reg.waitlistTotal} children are placed on reserve.`
     }
   });
 

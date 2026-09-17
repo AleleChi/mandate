@@ -58,7 +58,7 @@ export function buildEventExecutiveReport(
   // 2. Sections
   const sections: ReportSection[] = [];
 
-  // PAGE 1: What this report shows
+  // PAGE 1: Executive Summary
   const execSummaryIncluded = selectedSections.length === 0 || 
     selectedSections.includes('Executive summary') || 
     selectedSections.includes('Executive Summary') ||
@@ -67,10 +67,10 @@ export function buildEventExecutiveReport(
   if (execSummaryIncluded) {
     sections.push({
       id: 'exec-summary',
-      title: 'What this report shows',
+      title: 'Executive Summary',
       type: 'narrative',
       content: {
-        text: `This executive dashboard gives ministry leadership a complete operational summary of "${analytics.eventTitle}". It brings together application demand, attendance turnout, volunteer staffing, room supervision, and child care in a single leadership view.\n\nA total of ${regTotal} children registered, with ${selTotal} selected to attend. On event day, ${checkedInTotal} children arrived and checked in (${attRate.toFixed(0)}% attendance rate). Supervised care was supported by ${volunteersOnDuty} volunteers on duty across designated venue rooms. All operations adhered to established child safety and care protocols.`
+        text: `Operational summary for "${analytics.eventTitle}". Program intake received ${regTotal} registrations with ${selTotal} selected to attend. Turnout reached ${checkedInTotal} verified check-ins (${attRate.toFixed(0)}% attendance rate of selected participants). Event care was staffed by ${volunteersOnDuty} volunteers on active duty across designated areas.`
       }
     });
   }
