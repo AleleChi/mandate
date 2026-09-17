@@ -1,16 +1,17 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { RefreshCw, ChevronDown, Plus, Users, Printer } from 'lucide-react';
 import { safeStorage } from '../../utils/storage';
 import { buildApiUrl } from '../../utils/urlHelper';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 export type DutyTabType = 'event_locations' | 'event_team' | 'response_coverage' | 'devices_readiness' | 'alert_routing';
 
-const DevicesReadinessTab = lazy(() => import('./duty/DevicesReadinessTab'));
-const EventTeamTab = lazy(() => import('./duty/EventTeamTab'));
-const AlertRoutingTab = lazy(() => import('./duty/AlertRoutingTab'));
-const ResponseCoverageTab = lazy(() => import('./duty/ResponseCoverageTab'));
-const AdminEventLocationsTab = lazy(() => import('./duty/AdminEventLocationsTab'));
+const DevicesReadinessTab = lazyWithRetry(() => import('./duty/DevicesReadinessTab'), 'devices_readiness');
+const EventTeamTab = lazyWithRetry(() => import('./duty/EventTeamTab'), 'event_team');
+const AlertRoutingTab = lazyWithRetry(() => import('./duty/AlertRoutingTab'), 'alert_routing');
+const ResponseCoverageTab = lazyWithRetry(() => import('./duty/ResponseCoverageTab'), 'response_coverage');
+const AdminEventLocationsTab = lazyWithRetry(() => import('./duty/AdminEventLocationsTab'), 'event_locations');
 
 const TabLoading = () => (
   <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
@@ -213,7 +214,10 @@ export function AdminDutyDevicesView() {
       {/* 3. Tab Contents with Event Scoping */}
       <div className="relative">
         {activeTab === 'event_locations' && (
-          <ErrorBoundary fallbackTitle="Locations panel failed to load">
+          <ErrorBoundary
+            fallbackTitle="Locations couldn't load"
+            fallbackDescription="We couldn't open this section right now. Refresh the page and try again."
+          >
             <Suspense fallback={<TabLoading />}>
               <AdminEventLocationsTab
                 eventId={selectedEventId}
@@ -226,7 +230,10 @@ export function AdminDutyDevicesView() {
         )}
 
         {activeTab === 'event_team' && (
-          <ErrorBoundary fallbackTitle="Team Assignments panel failed to load">
+          <ErrorBoundary
+            fallbackTitle="Team Assignments couldn't load"
+            fallbackDescription="We couldn't open this section right now. Refresh the page and try again."
+          >
             <Suspense fallback={<TabLoading />}>
               <EventTeamTab eventId={selectedEventId} />
             </Suspense>
@@ -234,7 +241,10 @@ export function AdminDutyDevicesView() {
         )}
 
         {activeTab === 'response_coverage' && (
-          <ErrorBoundary fallbackTitle="Team Coverage panel failed to load">
+          <ErrorBoundary
+            fallbackTitle="Team Coverage couldn't load"
+            fallbackDescription="We couldn't open this section right now. Refresh the page and try again."
+          >
             <Suspense fallback={<TabLoading />}>
               <ResponseCoverageTab
                 eventId={selectedEventId}
@@ -245,7 +255,10 @@ export function AdminDutyDevicesView() {
         )}
 
         {activeTab === 'devices_readiness' && (
-          <ErrorBoundary fallbackTitle="Devices panel failed to load">
+          <ErrorBoundary
+            fallbackTitle="Devices couldn't load"
+            fallbackDescription="We couldn't open this section right now. Refresh the page and try again."
+          >
             <Suspense fallback={<TabLoading />}>
               <DevicesReadinessTab eventId={selectedEventId} />
             </Suspense>
@@ -253,7 +266,10 @@ export function AdminDutyDevicesView() {
         )}
 
         {activeTab === 'alert_routing' && (
-          <ErrorBoundary fallbackTitle="Alert Rules panel failed to load">
+          <ErrorBoundary
+            fallbackTitle="Alert Rules couldn't load"
+            fallbackDescription="We couldn't open this section right now. Refresh the page and try again."
+          >
             <Suspense fallback={<TabLoading />}>
               <AlertRoutingTab eventId={selectedEventId} />
             </Suspense>

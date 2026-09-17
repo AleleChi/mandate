@@ -144,11 +144,8 @@ export const LocationScanView: React.FC<LocationScanViewProps> = ({ token, user,
     >
       {/* Top Brand Bar */}
       <header className="w-full max-w-md mx-auto pt-4 pb-6 flex items-center justify-between">
-        <div className="flex items-center space-x-2.5">
-          <BrandLogo className="h-7 w-7" />
-          <span className="font-serif font-bold text-base tracking-tight text-[#18181B]">
-            Koinonia
-          </span>
+        <div className="flex items-center">
+          <BrandLogo context="compact" className="h-7 w-auto" />
         </div>
         <span className="text-[11px] font-sans font-medium uppercase tracking-wider text-[#A47E1F] bg-[#C59B27]/10 px-2.5 py-1 rounded-full">
           Event Duty

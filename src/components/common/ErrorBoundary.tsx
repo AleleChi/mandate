@@ -4,6 +4,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 interface Props {
   children?: ReactNode;
   fallbackTitle?: string;
+  fallbackDescription?: string;
   onReset?: () => void;
 }
 
@@ -23,7 +24,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an unhandled error:', error, errorInfo);
+    // Technical details are logged to developer console only
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
   private handleReset = () => {
@@ -33,36 +35,50 @@ export class ErrorBoundary extends React.Component<Props, State> {
     this.setState({ hasError: false, error: null });
   };
 
+  private handleRefresh = () => {
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
+
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="p-6 bg-rose-50/50 border border-rose-200 rounded-3xl space-y-4 max-w-2xl mx-auto my-4 animate-fade-in" id="error-boundary-fallback">
-          <div className="flex items-start space-x-3.5">
-            <div className="p-2.5 bg-rose-100 text-rose-700 rounded-2xl shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-zinc-900">
-                {this.props.fallbackTitle || 'A non-critical view failed to load'}
-              </h3>
-              <p className="text-xs text-zinc-500 leading-relaxed font-semibold">
-                An unexpected error occurred while rendering this feature. The rest of the application remains fully functional.
-              </p>
-              {this.state.error && (
-                <div className="mt-2 p-3 bg-zinc-900/5 text-zinc-700 font-mono text-[10px] rounded-xl overflow-x-auto max-w-full">
-                  {this.state.error.toString()}
-                </div>
-              )}
-            </div>
+        <div
+          className="p-6 sm:p-8 bg-white border border-[#EAE8E1] rounded-3xl space-y-4 max-w-lg mx-auto my-6 shadow-xs animate-fade-in text-center"
+          id="error-boundary-fallback"
+        >
+          <div className="w-12 h-12 rounded-full bg-amber-50 text-[#C59B27] flex items-center justify-center mx-auto border border-amber-200/60">
+            <AlertTriangle className="w-6 h-6 text-[#A47E1F]" />
           </div>
-          
-          <div className="flex items-center justify-end pt-2 border-t border-rose-100">
-            <button
-              onClick={this.handleReset}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-rose-200 hover:bg-rose-50 text-rose-900 text-xs font-bold rounded-xl shadow-2xs transition-all cursor-pointer"
+
+          <div className="space-y-1.5">
+            <h3
+              className="text-lg font-bold text-[#18181B] tracking-tight"
+              style={{ fontFamily: "'Cormorant Garamond', serif" }}
             >
-              <RefreshCw className="w-3.5 h-3.5 text-rose-700" />
-              <span>Retry Component</span>
+              {this.props.fallbackTitle || "This section couldn't load"}
+            </h3>
+            <p className="text-xs text-zinc-600 font-sans leading-relaxed max-w-sm mx-auto">
+              {this.props.fallbackDescription || "We couldn't open this section right now. Refresh the page and try again."}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center gap-2.5 pt-3 border-t border-[#EAE8E1]">
+            <button
+              type="button"
+              onClick={this.handleReset}
+              className="px-4 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl shadow-2xs transition-all cursor-pointer"
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              onClick={this.handleRefresh}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-[#18181B] hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh page</span>
             </button>
           </div>
         </div>
