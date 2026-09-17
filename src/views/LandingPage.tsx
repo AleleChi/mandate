@@ -516,23 +516,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Stacked Action Buttons / Registration Status */}
             {regStatus && !regStatus.parent?.isOpen ? (
-              <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl p-4.5 space-y-3 text-left shadow-2xs">
-                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[11px] font-bold uppercase tracking-wider">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{regStatus.parent?.state === 'not_open_yet' ? 'Registration is not open yet' : 'Registration has closed'}</span>
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] leading-snug">
+              <div className="bg-white/95 border border-[#E7E3D8] rounded-2xl p-5 space-y-4 text-left shadow-xs backdrop-blur-xs">
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-semibold text-[#9A7326] uppercase tracking-wider">
+                    {regStatus.parent?.state === 'not_open_yet' ? 'Registration opening soon' : 'Registration closed'}
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] leading-snug">
                     {regStatus.parent?.state === 'not_open_yet'
                       ? `Registration for ${regStatus.eventName} has not started yet.`
                       : `Registration for ${regStatus.eventName} is now closed.`}
                   </h3>
-                  <p className="text-xs text-[#6B7280] leading-relaxed">
+                  <p className="text-xs text-[#52525B] leading-relaxed">
                     {regStatus.parent?.state === 'not_open_yet'
                       ? (regStatus.parent?.opensAtFormatted
-                          ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in to view your child’s information and event updates.`
-                          : 'If you already have an account, you can still sign in to view your child’s information and event updates.')
-                      : 'If you already have an account, you can still sign in to view your child’s information and event updates.'}
+                          ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, sign in below anytime.`
+                          : 'If you already have an account, you can still sign in below anytime.')
+                      : 'Existing families can sign in below to view child details and event passes.'}
                   </p>
                 </div>
                 <div className="space-y-2 pt-1">
@@ -982,23 +981,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Buttons or Registration Status */}
             {regStatus && !regStatus.parent?.isOpen ? (
-              <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl p-5 space-y-3.5 text-left max-w-xl shadow-2xs">
-                <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{regStatus.parent?.state === 'not_open_yet' ? 'Registration is not open yet' : 'Registration has closed'}</span>
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-lg font-serif-koinonia font-bold text-[#18181B] leading-snug">
+              <div className="bg-white/95 border border-[#E7E3D8] rounded-2xl p-6 space-y-4 text-left max-w-xl shadow-xs backdrop-blur-xs">
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-semibold text-[#9A7326] uppercase tracking-wider">
+                    {regStatus.parent?.state === 'not_open_yet' ? 'Registration opening soon' : 'Registration closed'}
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-snug">
                     {regStatus.parent?.state === 'not_open_yet'
                       ? `Registration for ${regStatus.eventName} has not started yet.`
                       : `Registration for ${regStatus.eventName} is now closed.`}
                   </h3>
-                  <p className="text-xs sm:text-sm text-[#6B7280] leading-relaxed">
+                  <p className="text-sm text-[#52525B] leading-relaxed">
                     {regStatus.parent?.state === 'not_open_yet'
                       ? (regStatus.parent?.opensAtFormatted
-                          ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in to view your child’s information and event updates.`
-                          : 'If you already have an account, you can still sign in to view your child’s information and event updates.')
-                      : 'If you already have an account, you can still sign in to view your child’s information and event updates.'}
+                          ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in anytime to view your child’s information and updates.`
+                          : 'If you already have an account, you can still sign in anytime to view your child’s information and updates.')
+                      : 'Existing families can sign in below anytime to view child details and keep event passes ready.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -1213,14 +1211,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </button>
 
             <div className="space-y-2">
-              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
-                <Clock className="w-3.5 h-3.5" />
-                <span>Notice</span>
-              </div>
+              <span className="text-[11px] font-semibold text-[#9A7326] tracking-wider uppercase block">
+                Notice
+              </span>
               <h3 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
                 {infoModal.title}
               </h3>
-              <p className="text-sm text-[#6B7280] leading-relaxed">
+              <p className="text-sm text-[#52525B] leading-relaxed">
                 {infoModal.message}
               </p>
             </div>
