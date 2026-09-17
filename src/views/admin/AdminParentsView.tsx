@@ -42,6 +42,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
   const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
   const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
+  const bulkMoreDropdownRef = useRef<HTMLDivElement>(null);
 
   // Bulk Permanent Delete
   const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
@@ -176,10 +177,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     }
   };
 
-  const handleBulkPurge = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (bulkPurgeConfirmText.trim() !== 'DELETE' || submittingBulkPurge) return;
-    if (selectedParentIds.length === 0) return;
+  const handleBulkPurge = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (submittingBulkPurge || selectedParentIds.length === 0) return;
     setSubmittingBulkPurge(true);
     try {
       const res = await api.admin.bulkPermanentlyDeleteParents({
@@ -187,12 +187,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         confirmText: 'DELETE',
         reason: 'Bulk permanent deletion by Super Admin'
       });
-      if (res.success) {
-        showSuccess('Parents deleted', `${res.count || selectedParentIds.length} parent(s) permanently deleted.`);
+      if (res.success && (res.count > 0 || !res.failures || res.failures.length === 0)) {
+        showSuccess('Parents permanently deleted', `${res.count ?? selectedParentIds.length} parent(s) permanently deleted.`);
         setShowBulkPurgeModal(false);
         setBulkPurgeConfirmText('');
         setSelectedParentIds([]);
         fetchParents();
+      } else if (res.failures && res.failures.length > 0) {
+        showError('Permanent delete failed', res.failures[0]?.reason || "We couldn't permanently delete selected parents.");
+      } else {
+        showError('Permanent delete failed', res.message || "We couldn't permanently delete selected parents. Nothing was changed.");
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -208,7 +212,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
         setOpenActionMenuId(null);
       }
-      setBulkMoreDropdownOpen(false);
+      if (bulkMoreDropdownRef.current && !bulkMoreDropdownRef.current.contains(e.target as Node)) {
+        setBulkMoreDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -261,18 +267,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     }
   };
 
-  const handlePermanentDeleteSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!parentToDelete) return;
-    if (deleteConfirmationText.trim() !== 'DELETE') {
-      showError('Confirmation required', 'Please type DELETE to confirm.');
-      return;
-    }
+  const handlePermanentDeleteSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!parentToDelete || submittingDelete) return;
     setSubmittingDelete(true);
     try {
       const res = await api.admin.permanentlyDeleteParent(parentToDelete.id, {
         reason: 'Single permanent deletion by Super Admin',
-        confirmation: deleteConfirmationText.trim()
+        confirmation: 'DELETE'
       });
       if (res.success) {
         showSuccess('Parent permanently deleted', `${getDisplayName(parentToDelete)} was permanently deleted.`);
@@ -409,7 +411,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-single-parent-delete-modal">
       <div
         className="fixed inset-0 bg-black/50"
-        onClick={() => setParentToDelete(null)}
+        onClick={() => !submittingDelete && setParentToDelete(null)}
         style={{ backdropFilter: 'blur(2px)' }}
       />
       <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -420,42 +422,28 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           </h3>
         </div>
         <p className="text-xs text-zinc-600 leading-relaxed">
-          Their profile and associated personal information will be permanently removed and cannot be restored.
+          This cannot be undone. The selected parent record will be permanently removed.
         </p>
-        <form onSubmit={handlePermanentDeleteSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 block">
-              Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
-            </label>
-            <input
-              required
-              type="text"
-              value={deleteConfirmationText}
-              onChange={(e) => setDeleteConfirmationText(e.target.value)}
-              placeholder="DELETE"
-              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
-              id="single-parent-delete-confirm-input"
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
-            <Button
-              type="button"
-              onClick={() => setParentToDelete(null)}
-              variant="secondary"
-              className="px-4 py-2 text-xs"
-            >
-              Cancel
-            </Button>
-            <button
-              type="submit"
-              disabled={submittingDelete || deleteConfirmationText.trim() !== 'DELETE'}
-              className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
-              id="confirm-single-parent-delete-btn"
-            >
-              {submittingDelete ? 'Deleting…' : 'Delete permanently'}
-            </button>
-          </div>
-        </form>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <Button
+            type="button"
+            onClick={() => setParentToDelete(null)}
+            variant="secondary"
+            disabled={submittingDelete}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={() => handlePermanentDeleteSubmit()}
+            disabled={submittingDelete}
+            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+            id="confirm-single-parent-delete-btn"
+          >
+            {submittingDelete ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
       </div>
     </div>,
     document.body
@@ -476,43 +464,28 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           </h3>
         </div>
         <p className="text-xs text-zinc-600 leading-relaxed">
-          These profiles and their associated personal information will be permanently removed and cannot be restored.
+          This cannot be undone. The selected parent records will be permanently removed.
         </p>
-        <form onSubmit={handleBulkPurge} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 block">
-              Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
-            </label>
-            <input
-              required
-              type="text"
-              value={bulkPurgeConfirmText}
-              onChange={(e) => setBulkPurgeConfirmText(e.target.value)}
-              placeholder="DELETE"
-              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
-              id="bulk-parent-purge-confirm-input"
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
-            <Button
-              type="button"
-              onClick={() => setShowBulkPurgeModal(false)}
-              variant="secondary"
-              disabled={submittingBulkPurge}
-              className="px-4 py-2 text-xs"
-            >
-              Cancel
-            </Button>
-            <button
-              type="submit"
-              disabled={submittingBulkPurge || bulkPurgeConfirmText.trim() !== 'DELETE'}
-              className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
-              id="confirm-bulk-parent-purge-btn"
-            >
-              {submittingBulkPurge ? 'Deleting…' : 'Delete permanently'}
-            </button>
-          </div>
-        </form>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkPurgeModal(false)}
+            variant="secondary"
+            disabled={submittingBulkPurge}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={() => handleBulkPurge()}
+            disabled={submittingBulkPurge}
+            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+            id="confirm-bulk-parent-purge-btn"
+          >
+            {submittingBulkPurge ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
       </div>
     </div>,
     document.body
@@ -754,32 +727,20 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                     {submittingBulkRestore ? 'Restoring…' : 'Restore'}
                   </button>
                   {isSuperAdmin && (
-                    <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
-                      >
-                        <span>More</span>
-                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                      </button>
-                      {bulkMoreDropdownOpen && (
-                        <div className="absolute left-0 mt-1 w-44 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBulkMoreDropdownOpen(false);
-                              setBulkPurgeConfirmText('');
-                              setShowBulkPurgeModal(true);
-                            }}
-                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                            <span>Delete permanently</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkMoreDropdownOpen(false);
+                        setBulkPurgeConfirmText('');
+                        setShowBulkPurgeModal(true);
+                      }}
+                      disabled={submittingBulkPurge}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      id="bulk-parent-permanent-delete-btn"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      <span>Delete permanently</span>
+                    </button>
                   )}
                 </>
               )}
@@ -991,6 +952,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         onClose={() => setShowAddParentModal(false)}
         onSuccess={() => fetchParents()}
       />
+
+      {/* Action and Confirmation Modals */}
+      {removeModal}
+      {restoreModal}
+      {permanentDeleteModal}
+      {bulkPurgeModal}
+      {bulkRemoveModal}
+      {bulkRestoreModal}
     </div>
   );
 };

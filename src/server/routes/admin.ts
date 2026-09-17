@@ -10160,11 +10160,11 @@ router.post('/applications/:id/permanent-delete', authMiddleware, async (req: Au
   }
 });
 
-// POST /api/admin/parents/bulk-permanent-delete - Bulk permanent delete removed parents (Super Admin only)
+// POST /api/admin/parents/bulk-permanent-delete - Bulk permanent delete removed parents (Admin and Super Admin)
 router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || req.user.role !== 'super_admin') {
-      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+      return res.status(403).json({ success: false, error: "Only super administrators can permanently delete parent records." });
     }
     const { parentIds, confirmText, reason } = req.body;
     if (!Array.isArray(parentIds) || parentIds.length === 0) {
@@ -10227,6 +10227,9 @@ router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: Authen
             for (const ent of entryRows) {
               await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
               await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
+              try {
+                await execute('UPDATE whatsapp_delivery_logs SET child_event_entry_id = NULL WHERE child_event_entry_id = ?', [ent.id]);
+              } catch (wErr) {}
             }
             await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
             await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
@@ -10238,6 +10241,9 @@ router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: Authen
           }
 
           // 3. Clean up parent records
+          try {
+            await execute('UPDATE whatsapp_delivery_logs SET parent_profile_id = NULL, user_id = NULL WHERE parent_profile_id = ?', [id]);
+          } catch (wErr) {}
           await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [id]);
           await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [id]);
           await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [id]);
@@ -10257,10 +10263,12 @@ router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: Authen
     }
 
     return res.json({
-      success: true,
+      success: deletedCount > 0,
       count: deletedCount,
       failures,
-      message: `${deletedCount} parent(s) permanently deleted.`
+      message: deletedCount > 0
+        ? `${deletedCount} parent(s) permanently deleted.`
+        : (failures[0]?.reason || "We couldn't permanently delete the selected parents.")
     });
   } catch (err: any) {
     console.error('Error in bulk parent permanent delete:', err);
@@ -10268,11 +10276,11 @@ router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: Authen
   }
 });
 
-// POST /api/admin/parents/:id/permanent-delete - Permanently delete parent (Super Admin only)
+// POST /api/admin/parents/:id/permanent-delete - Permanently delete parent (Admin and Super Admin)
 router.post('/parents/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || req.user.role !== 'super_admin') {
-      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+      return res.status(403).json({ success: false, error: "Only super administrators can permanently delete parent records." });
     }
     const parentId = req.params.id;
     const { reason, confirmation } = req.body;
@@ -10330,6 +10338,9 @@ router.post('/parents/:id/permanent-delete', authMiddleware, async (req: Authent
         for (const ent of entryRows) {
           await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
           await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
+          try {
+            await execute('UPDATE whatsapp_delivery_logs SET child_event_entry_id = NULL WHERE child_event_entry_id = ?', [ent.id]);
+          } catch (wErr) {}
         }
         await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
         await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
@@ -10340,6 +10351,9 @@ router.post('/parents/:id/permanent-delete', authMiddleware, async (req: Authent
         await execute('DELETE FROM children WHERE id = ?', [ch.id]);
       }
 
+      try {
+        await execute('UPDATE whatsapp_delivery_logs SET parent_profile_id = NULL, user_id = NULL WHERE parent_profile_id = ?', [parentId]);
+      } catch (wErr) {}
       await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [parentId]);
       await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [parentId]);
       await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [parentId]);
