@@ -28,8 +28,11 @@ interface AgeGroup {
   label: string;
   minAge: number;
   maxAge: number;
-  capacity: number;
+  capacity?: number | null;
   manualReview: boolean;
+  registered?: number;
+  selected?: number;
+  remaining?: number | null;
 }
 
 interface EventData {
@@ -104,6 +107,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   const [formVolunteerRegistrationClosesAt, setFormVolunteerRegistrationClosesAt] = useState('');
   const [formCapacity, setFormCapacity] = useState<string>('');
   const [formRegisteredChildren, setFormRegisteredChildren] = useState<number>(0);
+  const [formSelectedChildren, setFormSelectedChildren] = useState<number>(0);
   const [formParentsCanCreateAccount, setFormParentsCanCreateAccount] = useState(true);
   const [formAllowMultipleChildren, setFormAllowMultipleChildren] = useState(true);
   const [formAllowSaveAndContinue, setFormAllowSaveAndContinue] = useState(true);
@@ -154,7 +158,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
         setFormVolunteerRegistrationOpensAt(evData.volunteerRegistrationOpensAt || '');
         setFormVolunteerRegistrationClosesAt(evData.volunteerRegistrationClosesAt || '');
         setFormCapacity(evData.capacity !== undefined && evData.capacity !== null ? String(evData.capacity) : (evData.eventCapacity !== undefined && evData.eventCapacity !== null ? String(evData.eventCapacity) : ''));
-        setFormRegisteredChildren(evData.registeredChildrenCount ?? evData.applicationsCount ?? 0);
+        setFormRegisteredChildren(evData.applicationsCount ?? evData.registeredChildrenCount ?? 0);
+        setFormSelectedChildren(evData.selectedCount ?? evData.selectedChildrenCount ?? 0);
         setFormParentsCanCreateAccount(evData.parentsCanCreateAccount ?? true);
         setFormAllowMultipleChildren(evData.allowMultipleChildren ?? true);
         setFormAllowSaveAndContinue(evData.allowSaveAndContinue ?? true);
@@ -195,6 +200,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     setFormVolunteerRegistrationClosesAt('');
     setFormCapacity('');
     setFormRegisteredChildren(0);
+    setFormSelectedChildren(0);
     setFormParentsCanCreateAccount(true);
     setFormAllowMultipleChildren(true);
     setFormAllowSaveAndContinue(true);
@@ -316,8 +322,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
         showError('Validation Error', `Min Age cannot exceed Max Age at row ${i + 1}.`);
         return false;
       }
-      if (group.capacity <= 0) {
-        showError('Validation Error', `Capacity at row ${i + 1} must be a positive integer.`);
+      if (group.capacity !== undefined && group.capacity !== null && group.capacity < 0) {
+        showError('Validation Error', `Capacity at row ${i + 1} must be a positive integer or left empty.`);
         return false;
       }
     }
@@ -609,11 +615,10 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
                     {/* Meta capacity & access windows info */}
                     <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 text-xs text-zinc-500 font-normal">
-                      <span>Event capacity: <strong className="text-zinc-700 font-semibold">{event.capacity ?? event.totalCapacity ?? 'Unlimited'}</strong></span>
-                      <span>Registered: <strong className="text-zinc-700 font-semibold">{event.applicationsCount || 0}</strong></span>
-                      {event.spacesRemaining !== null && event.spacesRemaining !== undefined && (
-                        <span>Spaces remaining: <strong className="text-emerald-700 font-semibold">{event.spacesRemaining}</strong></span>
-                      )}
+                      <span>Event capacity: <strong className="text-zinc-700 font-semibold">{event.capacity ? Number(event.capacity).toLocaleString() : (event.eventCapacity ? Number(event.eventCapacity).toLocaleString() : 'Not set')}</strong></span>
+                      <span>Registrations: <strong className="text-zinc-700 font-semibold">{event.applicationsCount ?? event.registeredChildrenCount ?? 0}</strong></span>
+                      <span>Selected: <strong className="text-zinc-700 font-semibold">{event.selectedCount ?? 0}</strong></span>
+                      <span>Places remaining: <strong className="text-emerald-700 font-semibold">{event.capacity ? Math.max(0, Number(event.capacity) - (event.selectedCount ?? 0)).toLocaleString() : '—'}</strong></span>
                       {event.parentAccessOpensAt && (
                         <span>Parent window: <span className="text-zinc-600">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0] || 'open'}</span></span>
                       )}
@@ -937,22 +942,26 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                         placeholder="e.g. 500 children"
                         className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                       />
-                      <p className="text-[11px] text-zinc-400 mt-1">Maximum number of children that can register for this event.</p>
+                      <p className="text-[11px] text-zinc-400 mt-1">Maximum number of selected children the event can accommodate.</p>
                     </div>
 
                     <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 flex flex-col justify-center space-y-1.5 text-xs">
                       <div className="flex justify-between items-center text-zinc-600">
-                        <span>Registered children:</span>
-                        <span className="font-semibold text-zinc-900">{formRegisteredChildren}</span>
+                        <span>Registrations:</span>
+                        <span className="font-semibold text-zinc-900">{formRegisteredChildren.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between items-center text-zinc-600">
-                        <span>Capacity:</span>
-                        <span className="font-semibold text-zinc-900">{formCapacity ? `${formCapacity} children` : 'Unlimited'}</span>
+                        <span>Selected children:</span>
+                        <span className="font-semibold text-zinc-900">{formSelectedChildren.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-zinc-600">
+                        <span>Event capacity:</span>
+                        <span className="font-semibold text-zinc-900">{formCapacity ? Number(formCapacity).toLocaleString() : 'Not set'}</span>
                       </div>
                       <div className="flex justify-between items-center text-zinc-600 border-t border-[#EAE8E1]/60 pt-1.5 mt-0.5">
-                        <span>Spaces remaining:</span>
-                        <span className={`font-semibold ${formCapacity && parseInt(formCapacity, 10) - formRegisteredChildren <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                          {formCapacity ? Math.max(0, parseInt(formCapacity, 10) - formRegisteredChildren) : 'Unlimited'}
+                        <span>Places remaining:</span>
+                        <span className={`font-semibold ${formCapacity && Number(formCapacity) - formSelectedChildren <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {formCapacity ? Math.max(0, Number(formCapacity) - formSelectedChildren).toLocaleString() : '—'}
                         </span>
                       </div>
                     </div>
@@ -964,68 +973,96 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     <thead>
                       <tr className="border-b border-[#EAE8E1] text-zinc-500 font-medium pb-2">
                         <th className="py-2 pr-4 font-medium">Age group</th>
-                        <th className="py-2 pr-4 font-medium">Min age</th>
-                        <th className="py-2 pr-4 font-medium">Max age</th>
+                        <th className="py-2 pr-4 font-medium text-center">Registered</th>
+                        <th className="py-2 pr-4 font-medium text-center">Selected</th>
                         <th className="py-2 pr-4 font-medium">Capacity</th>
-                        <th className="py-2 pr-4 font-medium">Manual review</th>
+                        <th className="py-2 pr-4 font-medium text-center">Remaining</th>
+                        <th className="py-2 pr-4 font-medium text-center">Manual review</th>
                         <th className="py-2 font-medium text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {formAgeGroups.map((group, idx) => (
-                        <tr key={idx} className="hover:bg-[#FAF9F6]/40">
-                          <td className="py-2.5 pr-4">
-                            <input
-                              type="text"
-                              value={group.label}
-                              onChange={e => handleAgeGroupChange(idx, 'label', e.target.value)}
-                              placeholder="Ages 4"
-                              className="w-24 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2.5 pr-4">
-                            <input
-                              type="number"
-                              value={group.minAge}
-                              onChange={e => handleAgeGroupChange(idx, 'minAge', parseInt(e.target.value) || 0)}
-                              className="w-16 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2.5 pr-4">
-                            <input
-                              type="number"
-                              value={group.maxAge}
-                              onChange={e => handleAgeGroupChange(idx, 'maxAge', parseInt(e.target.value) || 0)}
-                              className="w-16 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2.5 pr-4">
-                            <input
-                              type="number"
-                              value={group.capacity}
-                              onChange={e => handleAgeGroupChange(idx, 'capacity', parseInt(e.target.value) || 0)}
-                              className="w-16 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
-                            />
-                          </td>
-                          <td className="py-2.5 pr-4">
-                            <input
-                              type="checkbox"
-                              checked={group.manualReview}
-                              onChange={e => handleAgeGroupChange(idx, 'manualReview', e.target.checked)}
-                              className="h-3.5 w-3.5 rounded-sm border-zinc-300 text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer"
-                            />
-                          </td>
-                          <td className="py-2.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveAgeGroupRow(idx)}
-                              className="p-1 text-zinc-400 hover:text-red-600 rounded-lg"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {formAgeGroups.map((group, idx) => {
+                        const hasCap = group.capacity !== undefined && group.capacity !== null && group.capacity > 0;
+                        const remaining = hasCap ? Math.max(0, group.capacity! - (group.selected || 0)) : null;
+
+                        return (
+                          <tr key={idx} className="hover:bg-[#FAF9F6]/40">
+                            <td className="py-2.5 pr-4">
+                              <div className="space-y-1">
+                                <input
+                                  type="text"
+                                  value={group.label}
+                                  onChange={e => handleAgeGroupChange(idx, 'label', e.target.value)}
+                                  placeholder="e.g. Ages 4-6"
+                                  className="w-32 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
+                                />
+                                <div className="flex items-center gap-1 text-[11px] text-zinc-400">
+                                  <span>Ages:</span>
+                                  <input
+                                    type="number"
+                                    value={group.minAge}
+                                    onChange={e => handleAgeGroupChange(idx, 'minAge', parseInt(e.target.value) || 0)}
+                                    className="w-10 px-1 py-0.5 text-xs rounded border border-[#EAE8E1] bg-[#FAF9F6] text-center"
+                                  />
+                                  <span>–</span>
+                                  <input
+                                    type="number"
+                                    value={group.maxAge}
+                                    onChange={e => handleAgeGroupChange(idx, 'maxAge', parseInt(e.target.value) || 0)}
+                                    className="w-10 px-1 py-0.5 text-xs rounded border border-[#EAE8E1] bg-[#FAF9F6] text-center"
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2.5 pr-4 text-center font-medium text-zinc-800">
+                              {(group.registered ?? 0).toLocaleString()}
+                            </td>
+                            <td className="py-2.5 pr-4 text-center font-medium text-zinc-800">
+                              {(group.selected ?? 0).toLocaleString()}
+                            </td>
+                            <td className="py-2.5 pr-4">
+                              <input
+                                type="number"
+                                min="0"
+                                value={group.capacity ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                                  handleAgeGroupChange(idx, 'capacity', val);
+                                }}
+                                placeholder="Not set"
+                                className="w-20 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
+                              />
+                            </td>
+                            <td className="py-2.5 pr-4 text-center font-medium">
+                              {remaining !== null ? (
+                                <span className={remaining === 0 ? 'text-rose-600' : 'text-emerald-700'}>
+                                  {remaining.toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 pr-4 text-center">
+                              <input
+                                type="checkbox"
+                                checked={group.manualReview}
+                                onChange={e => handleAgeGroupChange(idx, 'manualReview', e.target.checked)}
+                                className="h-3.5 w-3.5 rounded-sm border-zinc-300 text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAgeGroupRow(idx)}
+                                className="p-1 text-zinc-400 hover:text-red-600 rounded-lg cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

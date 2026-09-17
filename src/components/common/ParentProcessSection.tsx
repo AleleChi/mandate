@@ -29,11 +29,13 @@ const STEPS: ProcessStep[] = [
 interface ParentProcessSectionProps {
   onNavigate?: (route: AppRoute) => void;
   parentCtaRoute?: string;
+  onRegisterClick?: () => void;
 }
 
 export const ParentProcessSection: React.FC<ParentProcessSectionProps> = ({
   onNavigate,
   parentCtaRoute = '/parent/create-account',
+  onRegisterClick,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -95,7 +97,7 @@ export const ParentProcessSection: React.FC<ParentProcessSectionProps> = ({
 
           <div className="pt-2">
             <button
-              onClick={() => onNavigate && onNavigate(parentCtaRoute as AppRoute)}
+              onClick={() => onRegisterClick ? onRegisterClick() : (onNavigate && onNavigate(parentCtaRoute as AppRoute))}
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold py-3.5 px-8 rounded-xl text-sm shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
             >
               <span>Register your child</span>

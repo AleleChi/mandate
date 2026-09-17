@@ -74,6 +74,138 @@ async function resolveAdminEvent(explicitEventId?: string | null): Promise<Event
   return await getCurrentEvent();
 }
 
+function getChildAge(c: any): number {
+  let age = -1;
+  if (c.date_of_birth) {
+    try {
+      const dob = new Date(c.date_of_birth);
+      if (!isNaN(dob.getTime())) {
+        const now = new Date();
+        age = now.getFullYear() - dob.getFullYear();
+        const m = now.getMonth() - dob.getMonth();
+        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
+          age--;
+        }
+      }
+    } catch (_) {}
+  }
+  if (age < 0 && c.calculated_age !== null && c.calculated_age !== undefined) {
+    age = Number(c.calculated_age);
+  }
+  return age;
+}
+
+// Canonical statuses representing genuine completed/submitted registrations
+export const SUBMITTED_REGISTRATION_STATUSES = [
+  'submitted',
+  'under_review',
+  'review_reopened',
+  'pending_review',
+  'pending',
+  'waiting_list',
+  'selected',
+  'pass_ready',
+  'checked_in',
+  'inside',
+  'picked_up',
+  'not_selected',
+  'rejected',
+  'withdrawn'
+] as const;
+
+export const EXCLUDED_REGISTRATION_STATUSES = [
+  'incomplete',
+  'draft',
+  'removed'
+] as const;
+
+export const SUBMITTED_REGISTRATION_SQL_CONDITION = `e.status NOT IN ('incomplete', 'draft', 'removed') AND e.status IS NOT NULL`;
+
+export function isSubmittedRegistrationStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return !EXCLUDED_REGISTRATION_STATUSES.includes(s as any);
+}
+
+function isChildInAgeGroup(c: any, group: { min_age?: number; minAge?: number; max_age?: number; maxAge?: number; label?: string }): boolean {
+  const minAge = group.min_age !== undefined ? group.min_age : (group.minAge !== undefined ? group.minAge : 0);
+  const maxAge = group.max_age !== undefined ? group.max_age : (group.maxAge !== undefined ? group.maxAge : 999);
+  const groupLabel = (group.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (c.age_group && groupLabel) {
+    const normChild = String(c.age_group).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normChild === groupLabel || normChild.includes(groupLabel) || groupLabel.includes(normChild)) {
+      return true;
+    }
+  }
+
+  const age = getChildAge(c);
+  if (age >= 0) {
+    return age >= minAge && age <= maxAge;
+  }
+  return false;
+}
+
+async function validateChildSelectionCapacity(
+  eventId: string,
+  childId: string,
+  currentStatus?: string
+): Promise<{ allowed: boolean; error?: string }> {
+  // If already in an accepted/selected state, selection is not increasing
+  if (['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(currentStatus || '')) {
+    return { allowed: true };
+  }
+
+  // 1. Enforce Event Total Capacity
+  const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+  if (event && event.capacity !== null && event.capacity !== undefined && Number(event.capacity) > 0) {
+    const selRes = await queryOne(`
+      SELECT COUNT(*) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+    `, [eventId]);
+    const currentSelected = Number(selRes?.count || 0);
+    if (currentSelected >= Number(event.capacity)) {
+      return { allowed: false, error: 'This event has reached its child capacity.' };
+    }
+  }
+
+  // 2. Enforce Age Group Capacity
+  const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+  if (child) {
+    const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
+    const matchedGroup = ageGroups.find((g: any) => isChildInAgeGroup(child, g));
+    if (matchedGroup && matchedGroup.capacity !== null && matchedGroup.capacity !== undefined && Number(matchedGroup.capacity) > 0) {
+      const selectedChildren = await query(`
+        SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+      `, [eventId]);
+
+      let groupSelected = 0;
+      for (const selChild of selectedChildren) {
+        if (isChildInAgeGroup(selChild, matchedGroup)) {
+          groupSelected++;
+        }
+      }
+
+      if (groupSelected >= Number(matchedGroup.capacity)) {
+        return { allowed: false, error: `The ${matchedGroup.label} group has reached its capacity.` };
+      }
+    }
+  }
+
+  return { allowed: true };
+}
+
 // Public Auth Endpoints for Admin Access
 router.post('/sign-in', async (req, res) => {
   try {
@@ -2241,6 +2373,15 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     let passErrorReason = null;
 
     if (status === 'selected' || status === 'pass_ready') {
+      const capCheck = await validateChildSelectionCapacity(app.event_id, app.child_id, app.status);
+      if (!capCheck.allowed) {
+        return res.status(400).json({
+          success: false,
+          error: capCheck.error,
+          message: capCheck.error
+        });
+      }
+
       // First update to selected so we have an approved status before issuing
       await execute(`
         UPDATE child_event_entries 
@@ -2498,6 +2639,16 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
       let finalDecision = decision;
 
       if (decision === 'selected') {
+        const capCheck = await validateChildSelectionCapacity(app.event_id, app.child_id, app.status);
+        if (!capCheck.allowed) {
+          failures.push({
+            id,
+            childName: app.child_name,
+            reason: capCheck.error || 'Capacity reached'
+          });
+          continue;
+        }
+
         const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [app.child_id]);
         if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
           // Required pass data exists (valid photo) -> Promote to 'pass_ready'
@@ -2643,6 +2794,15 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
     let passErrorReason = null;
 
     if (status === 'selected' || status === 'pass_ready') {
+      const capCheck = await validateChildSelectionCapacity(entry.event_id, entry.child_id, entry.status);
+      if (!capCheck.allowed) {
+        return res.status(400).json({
+          success: false,
+          error: capCheck.error,
+          message: capCheck.error
+        });
+      }
+
       // First update to selected so we have an approved status before issuing
       if (noteToTeam !== undefined) {
         await execute(`
@@ -2696,26 +2856,6 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
   }
 });
 
-function getChildAge(c: any): number {
-  let age = -1;
-  if (c.date_of_birth) {
-    try {
-      const dob = new Date(c.date_of_birth);
-      if (!isNaN(dob.getTime())) {
-        const now = new Date();
-        age = now.getFullYear() - dob.getFullYear();
-        const m = now.getMonth() - dob.getMonth();
-        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
-          age--;
-        }
-      }
-    } catch (_) {}
-  }
-  if (age < 0 && c.calculated_age !== null && c.calculated_age !== undefined) {
-    age = Number(c.calculated_age);
-  }
-  return age;
-}
 
 // GET admin overview dashboard metrics
 router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
@@ -3130,10 +3270,68 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
   }
 
   const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
-  const appsRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [eventId]);
+  const appsRes = await queryOne(`
+    SELECT COUNT(*) as count
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND ${SUBMITTED_REGISTRATION_SQL_CONDITION}
+  `, [eventId]);
   const registeredCount = Number(appsRes?.count || 0);
+
+  const selRes = await queryOne(`
+    SELECT COUNT(*) as count
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+  `, [eventId]);
+  const selectedCount = Number(selRes?.count || 0);
+
   const totalCap = event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null;
-  const remaining = totalCap !== null ? Math.max(0, totalCap - registeredCount) : null;
+  const remaining = totalCap !== null ? Math.max(0, totalCap - selectedCount) : null;
+
+  const activeChildren = await query(`
+    SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND ${SUBMITTED_REGISTRATION_SQL_CONDITION}
+  `, [eventId]);
+
+  const enrichedAgeGroups = ageGroups.map((g: any) => {
+    let groupRegistered = 0;
+    let groupSelected = 0;
+    for (const ch of activeChildren) {
+      if (isChildInAgeGroup(ch, g)) {
+        groupRegistered++;
+        if (['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(ch.status)) {
+          groupSelected++;
+        }
+      }
+    }
+    const groupCap = (g.capacity !== null && g.capacity !== undefined && g.capacity !== '') ? Number(g.capacity) : null;
+    const groupRemaining = (groupCap !== null && groupCap > 0) ? Math.max(0, groupCap - groupSelected) : null;
+
+    return {
+      id: g.id,
+      label: g.label,
+      minAge: g.min_age,
+      maxAge: g.max_age,
+      capacity: groupCap,
+      manualReview: g.manual_review === 1 || g.manual_review === true,
+      sortOrder: g.sort_order,
+      registered: groupRegistered,
+      selected: groupSelected,
+      remaining: groupRemaining
+    };
+  });
 
   res.json({
     // flat fields for backward compatibility
@@ -3162,6 +3360,10 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
     volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
     registeredChildrenCount: registeredCount,
+    applicationsCount: registeredCount,
+    selectedCount,
+    selectedChildrenCount: selectedCount,
+    placesRemaining: remaining,
     spacesRemaining: remaining,
 
     // nested objects for structured events client
@@ -3199,17 +3401,13 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
       volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
       volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
       registeredChildrenCount: registeredCount,
+      applicationsCount: registeredCount,
+      selectedCount,
+      selectedChildrenCount: selectedCount,
+      placesRemaining: remaining,
       spacesRemaining: remaining
     },
-    ageGroups: ageGroups.map((g: any) => ({
-      id: g.id,
-      label: g.label,
-      minAge: g.min_age,
-      maxAge: g.max_age,
-      capacity: g.capacity,
-      manualReview: g.manual_review === 1 || g.manual_review === true,
-      sortOrder: g.sort_order
-    }))
+    ageGroups: enrichedAgeGroups
   });
 });
 
@@ -3289,12 +3487,30 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
       const totalCapacity = capRes?.total_capacity || 0;
 
       // Get applications count
-      const appsRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [event.id]);
-      const applicationsCount = appsRes?.count || 0;
+      const appsRes = await queryOne(`
+        SELECT COUNT(*) as count
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND ${SUBMITTED_REGISTRATION_SQL_CONDITION}
+      `, [event.id]);
+      const applicationsCount = Number(appsRes?.count || 0);
 
       // Get pass ready / selected count
-      const selectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')", [event.id]);
-      const selectedCount = selectedRes?.count || 0;
+      const selectedRes = await queryOne(`
+        SELECT COUNT(*) as count
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+      `, [event.id]);
+      const selectedCount = Number(selectedRes?.count || 0);
+      const totalCap = event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null;
+      const placesRemaining = totalCap !== null ? Math.max(0, totalCap - selectedCount) : null;
 
       enrichedEvents.push({
         id: event.id,
@@ -3316,16 +3532,18 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
         allowEditAfterSubmission: event.allow_edit_after_submission === 1 || event.allow_edit_after_submission === true,
         description: event.description,
         totalCapacity,
-        capacity: event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null,
-        eventCapacity: event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null,
+        capacity: totalCap,
+        eventCapacity: totalCap,
         volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
         volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
         volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
         volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
         registeredChildrenCount: applicationsCount,
-        spacesRemaining: (event.capacity !== null && event.capacity !== undefined) ? Math.max(0, Number(event.capacity) - applicationsCount) : null,
         applicationsCount,
-        selectedCount
+        selectedCount,
+        selectedChildrenCount: selectedCount,
+        placesRemaining,
+        spacesRemaining: placesRemaining
       });
     }
 

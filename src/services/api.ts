@@ -222,6 +222,31 @@ export const api = {
         body: JSON.stringify({ token })
       });
     },
+    async getRegistrationStatus(eventId?: string) {
+      const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{
+        success: boolean;
+        hasEvent: boolean;
+        eventName: string;
+        eventId: string | null;
+        parent: {
+          isOpen: boolean;
+          state: 'open' | 'not_open_yet' | 'closed' | 'disabled';
+          opensAt: string | null;
+          closesAt: string | null;
+          opensAtFormatted: string | null;
+          closesAtFormatted: string | null;
+        };
+        volunteer: {
+          isOpen: boolean;
+          state: 'open' | 'not_open_yet' | 'closed';
+          opensAt: string | null;
+          closesAt: string | null;
+          opensAtFormatted: string | null;
+          closesAtFormatted: string | null;
+        };
+      }>(`/api/auth/registration-status${qs}`);
+    },
     async resendVerification(email: string) {
       return api.request<any>('/api/auth/resend-verification', {
         method: 'POST',

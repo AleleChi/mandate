@@ -199,6 +199,69 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     site_logo: (window as any)._site_logo || ''
   });
 
+  const [regStatus, setRegStatus] = useState<any>(null);
+  const [infoModal, setInfoModal] = useState<{
+    isOpen: boolean;
+    type: 'parent' | 'volunteer';
+    title: string;
+    message: string;
+    note?: string;
+    signInRoute: AppRoute;
+    signInLabel: string;
+  } | null>(null);
+
+  useEffect(() => {
+    api.auth.getRegistrationStatus().then((res) => {
+      if (res && res.success) {
+        setRegStatus(res);
+      }
+    }).catch((err) => {
+      console.error('Failed to load registration status', err);
+    });
+  }, []);
+
+  const handleParentRegisterClick = () => {
+    if (regStatus && !regStatus.parent?.isOpen) {
+      const isNotOpen = regStatus.parent?.state === 'not_open_yet';
+      const eventName = regStatus.eventName || 'The General Assembly';
+
+      setInfoModal({
+        isOpen: true,
+        type: 'parent',
+        title: isNotOpen ? 'Registration is not open yet' : 'Registration has closed',
+        message: isNotOpen
+          ? `Registration for ${eventName} has not started yet.${regStatus.parent?.opensAtFormatted ? ` Registration opens ${regStatus.parent.opensAtFormatted}.` : ''}`
+          : `Registration for ${eventName} is no longer accepting new applications.`,
+        note: 'Already registered?\nYou can still sign in to access your account.',
+        signInRoute: '/parent/sign-in',
+        signInLabel: 'Sign in'
+      });
+      return;
+    }
+    onNavigate(parentCtaRoute as AppRoute);
+  };
+
+  const handleVolunteerRegisterClick = () => {
+    if (regStatus && !regStatus.volunteer?.isOpen) {
+      const isNotOpen = regStatus.volunteer?.state === 'not_open_yet';
+      const eventName = regStatus.eventName || 'The General Assembly';
+
+      setInfoModal({
+        isOpen: true,
+        type: 'volunteer',
+        title: isNotOpen ? 'Registration is not open yet' : 'Registration has closed',
+        message: isNotOpen
+          ? `Volunteer registration for ${eventName} has not started yet.${regStatus.volunteer?.opensAtFormatted ? ` Registration opens ${regStatus.volunteer.opensAtFormatted}.` : ''}`
+          : `Volunteer registration for ${eventName} is no longer accepting new applications.`,
+        note: 'Already registered?\nYou can still sign in to access your account.',
+        signInRoute: '/volunteer/sign-in',
+        signInLabel: 'Sign in'
+      });
+      return;
+    }
+    onNavigate(volunteerCtaRoute as AppRoute);
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setLoaded(true);
@@ -451,22 +514,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Parents and guardians can create an account, add each child’s details, follow review updates, and keep event passes ready for the day.
             </p>
 
-            {/* Stacked Action Buttons */}
-            <div className="space-y-3 pt-1" data-component-version="landing-hero-cta-v2-clean">
-              <button
-                onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-                className="w-full h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all flex items-center justify-center space-x-2 uppercase tracking-wider cursor-pointer"
-              >
-                <span>Register your child</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-                className="w-full h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
-              >
-                <span>Volunteer sign in</span>
-              </button>
-            </div>
+            {/* Stacked Action Buttons / Registration Status */}
+            {regStatus && !regStatus.parent?.isOpen ? (
+              <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl p-4.5 space-y-3 text-left shadow-2xs">
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[11px] font-bold uppercase tracking-wider">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{regStatus.parent?.state === 'not_open_yet' ? 'Registration is not open yet' : 'Registration has closed'}</span>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                    {regStatus.parent?.state === 'not_open_yet'
+                      ? `Registration for ${regStatus.eventName} has not started yet.`
+                      : `Registration for ${regStatus.eventName} is now closed.`}
+                  </h3>
+                  <p className="text-xs text-[#6B7280] leading-relaxed">
+                    {regStatus.parent?.state === 'not_open_yet'
+                      ? (regStatus.parent?.opensAtFormatted
+                          ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in to view your child’s information and event updates.`
+                          : 'If you already have an account, you can still sign in to view your child’s information and event updates.')
+                      : 'If you already have an account, you can still sign in to view your child’s information and event updates.'}
+                  </p>
+                </div>
+                <div className="space-y-2 pt-1">
+                  <button
+                    onClick={() => onNavigate('/parent/sign-in')}
+                    className="w-full h-[46px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
+                  >
+                    <span>Sign in</span>
+                  </button>
+                  <button
+                    onClick={() => onNavigate('/volunteer/sign-in')}
+                    className="w-full h-[46px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-xs transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
+                  >
+                    <span>Volunteer sign in</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 pt-1" data-component-version="landing-hero-cta-v2-clean">
+                <button
+                  onClick={handleParentRegisterClick}
+                  className="w-full h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all flex items-center justify-center space-x-2 uppercase tracking-wider cursor-pointer"
+                >
+                  <span>Register your child</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleVolunteerRegisterClick}
+                  className="w-full h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all flex items-center justify-center uppercase tracking-wider cursor-pointer"
+                >
+                  <span>Volunteer sign in</span>
+                </button>
+              </div>
+            )}
 
             {/* Small trust badge */}
             <div className="flex items-center space-x-2 text-xs text-[#6B7280] pt-1">
@@ -550,7 +650,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </p>
               <div className="pt-2">
                 <button
-                  onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+                  onClick={handleParentRegisterClick}
                   className="w-full inline-flex items-center justify-center space-x-2 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold py-3.5 px-6 rounded-xl text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer group"
                 >
                   <span>Register your child</span>
@@ -633,7 +733,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* Sticky Bottom Action Bar */}
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-[#EAE8E1] p-3 flex items-center space-x-3 shadow-2xl">
           <button
-            onClick={() => onNavigate(parentCtaRoute as AppRoute)}
+            onClick={handleParentRegisterClick}
             className="flex-1 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
           >
             <span>Register your child</span>
@@ -713,7 +813,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Parent Sign In
             </button>
             <button
-              onClick={() => onNavigate('/parent/create-account')}
+              onClick={handleParentRegisterClick}
               className="bg-[#C59B27] hover:bg-[#B89047] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all cursor-pointer"
             >
               Register Your Child
@@ -880,22 +980,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Parents and guardians can create an account, add each child’s details, follow review updates, and keep event passes ready for the day.
             </p>
 
-            {/* Buttons */}
-            <div className="flex flex-wrap items-center gap-4 pt-2" data-component-version="landing-hero-cta-v2-clean">
-              <button
-                onClick={() => onNavigate(parentCtaRoute as AppRoute)}
-                className="w-full sm:w-64 h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
-              >
-                <span>Register your child</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onNavigate(volunteerCtaRoute as AppRoute)}
-                className="w-full sm:w-64 h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
-              >
-                <span>Volunteer sign in</span>
-              </button>
-            </div>
+            {/* Buttons or Registration Status */}
+            {regStatus && !regStatus.parent?.isOpen ? (
+              <div className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl p-5 space-y-3.5 text-left max-w-xl shadow-2xs">
+                <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{regStatus.parent?.state === 'not_open_yet' ? 'Registration is not open yet' : 'Registration has closed'}</span>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                    {regStatus.parent?.state === 'not_open_yet'
+                      ? `Registration for ${regStatus.eventName} has not started yet.`
+                      : `Registration for ${regStatus.eventName} is now closed.`}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#6B7280] leading-relaxed">
+                    {regStatus.parent?.state === 'not_open_yet'
+                      ? (regStatus.parent?.opensAtFormatted
+                          ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in to view your child’s information and event updates.`
+                          : 'If you already have an account, you can still sign in to view your child’s information and event updates.')
+                      : 'If you already have an account, you can still sign in to view your child’s information and event updates.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <button
+                    onClick={() => onNavigate('/parent/sign-in')}
+                    className="w-full sm:w-56 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-all flex items-center justify-center cursor-pointer"
+                  >
+                    <span>Sign in</span>
+                  </button>
+                  <button
+                    onClick={() => onNavigate('/volunteer/sign-in')}
+                    className="w-full sm:w-56 h-[48px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center cursor-pointer"
+                  >
+                    <span>Volunteer sign in</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-4 pt-2" data-component-version="landing-hero-cta-v2-clean">
+                <button
+                  onClick={handleParentRegisterClick}
+                  className="w-full sm:w-64 h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <span>Register your child</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleVolunteerRegisterClick}
+                  className="w-full sm:w-64 h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
+                >
+                  <span>Volunteer sign in</span>
+                </button>
+              </div>
+            )}
 
             {/* Trust note */}
             <div className="pt-4">
@@ -998,8 +1135,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* Curved Orbital Photo Gallery Section */}
       <CurvedPhotoGallery />
 
-      {/* 4. For Parents & Guardians (Editorial Two-Column with Process) */}
-      <ParentProcessSection onNavigate={onNavigate} parentCtaRoute={parentCtaRoute} />
+      {/* 5. Parent Process Section (Editorial Steps) */}
+      <ParentProcessSection
+        onNavigate={onNavigate}
+        parentCtaRoute={parentCtaRoute}
+        onRegisterClick={handleParentRegisterClick}
+      />
 
       {/* 5. For Volunteers (Editorial Connected Layout) */}
       <section id="volunteers" className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full border-t border-[#EAE8E1]">
@@ -1058,6 +1199,60 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </footer>
+
+      {/* Registration Closed / Not Open Info Modal */}
+      {infoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-[#EAE8E1] space-y-5 text-left relative">
+            <button
+              onClick={() => setInfoModal(null)}
+              className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer"
+              aria-label="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Notice</span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
+                {infoModal.title}
+              </h3>
+              <p className="text-sm text-[#6B7280] leading-relaxed">
+                {infoModal.message}
+              </p>
+            </div>
+
+            {infoModal.note && (
+              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 text-xs space-y-1">
+                <p className="font-semibold text-zinc-900">Already registered?</p>
+                <p className="text-zinc-600 leading-relaxed">You can still sign in to access your account.</p>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-3 pt-2">
+              <button
+                onClick={() => {
+                  const dest = infoModal.signInRoute;
+                  setInfoModal(null);
+                  onNavigate(dest);
+                }}
+                className="flex-1 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-colors text-center shadow-xs cursor-pointer"
+              >
+                {infoModal.signInLabel}
+              </button>
+              <button
+                onClick={() => setInfoModal(null)}
+                className="flex-1 bg-white hover:bg-zinc-50 text-zinc-700 border border-[#D9D6CE] font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-colors text-center cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

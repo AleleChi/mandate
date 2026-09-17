@@ -20,6 +20,17 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
   const { showSuccess, showError, showWarning } = useNotification();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [regStatus, setRegStatus] = useState<any>(null);
+
+  useEffect(() => {
+    api.auth.getRegistrationStatus().then((res) => {
+      if (res && res.success) {
+        setRegStatus(res);
+      }
+    }).catch((err) => {
+      console.error('Failed to load volunteer registration status', err);
+    });
+  }, []);
 
   // Form Fields prefilled from parentProfile
   const [fullName, setFullName] = useState(parentProfile?.fullName || '');
@@ -93,6 +104,67 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
       setLoading(false);
     }
   };
+
+  if (regStatus && !regStatus.volunteer?.isOpen) {
+    const isNotOpen = regStatus.volunteer?.state === 'not_open_yet';
+    const eventName = regStatus.eventName || 'The General Assembly';
+
+    return (
+      <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col justify-between pb-12">
+        <div className="h-16 px-4 flex items-center justify-between border-b border-[#EAE8E1] bg-white sticky top-0 z-30">
+          <button
+            onClick={() => onNavigate('/parent/home')}
+            className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-50 flex items-center justify-center cursor-pointer focus:outline-none"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="text-sm font-bold font-serif-koinonia text-[#18181B] tracking-wide uppercase">Volunteer Request</span>
+          <div className="w-8" />
+        </div>
+
+        <div className="flex-1 max-w-md w-full mx-auto p-4 space-y-6 pt-8">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE8E1] shadow-sm space-y-5 text-center">
+            <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider mx-auto">
+              <span>{isNotOpen ? 'Registration Not Open' : 'Registration Closed'}</span>
+            </div>
+            <h1 className="text-2xl font-bold font-serif-koinonia text-[#18181B]">
+              {isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+              {isNotOpen
+                ? `Volunteer registration for ${eventName} has not started yet.${regStatus.volunteer?.opensAtFormatted ? ` Registration opens ${regStatus.volunteer.opensAtFormatted}.` : ''}`
+                : `Volunteer registration for ${eventName} is now closed.`}
+            </p>
+
+            <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 text-xs text-zinc-600 leading-relaxed text-left space-y-1 mt-4">
+              <p className="font-semibold text-zinc-900">Already a volunteer?</p>
+              <p>
+                If you already have an approved volunteer profile, you can sign in directly to access your volunteer duties.
+              </p>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <Button
+                type="button"
+                onClick={() => onNavigate('/volunteer/sign-in')}
+                className="w-full py-3.5 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-xs"
+              >
+                Volunteer Sign In
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onNavigate('/parent/home')}
+                className="w-full py-3.5 text-zinc-700 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+              >
+                Back to Parent Dashboard
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col justify-between pb-12">

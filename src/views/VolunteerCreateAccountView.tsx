@@ -59,6 +59,17 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
+  const [regStatus, setRegStatus] = useState<any>(null);
+
+  useEffect(() => {
+    api.auth.getRegistrationStatus().then((res) => {
+      if (res && res.success) {
+        setRegStatus(res);
+      }
+    }).catch((err) => {
+      console.error('Failed to load volunteer registration status', err);
+    });
+  }, []);
 
   // Form Fields
   const [fullName, setFullName] = useState('');
@@ -327,6 +338,61 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
       setLoading(false);
     }
   };
+
+  if (regStatus && !regStatus.volunteer?.isOpen) {
+    const isNotOpen = regStatus.volunteer?.state === 'not_open_yet';
+    const eventName = regStatus.eventName || 'The General Assembly';
+
+    return (
+      <AuthScreenShell
+        dataViewVersion="volunteer-create-account-closed-v1"
+        showBack
+        onBack={() => onNavigate('/volunteer/sign-in')}
+        maxWidth="md"
+      >
+        <div className="text-center space-y-3 mb-6">
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
+            <span>{isNotOpen ? 'Registration Not Open' : 'Registration Closed'}</span>
+          </div>
+          <h1 className="font-serif-koinonia font-bold text-2xl sm:text-3xl text-[#18181B] leading-tight">
+            {isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}
+          </h1>
+          <p className="text-sm text-[#52525B] max-w-sm mx-auto leading-relaxed">
+            {isNotOpen
+              ? `Volunteer registration for ${eventName} has not started yet.${regStatus.volunteer?.opensAtFormatted ? ` Registration opens ${regStatus.volunteer.opensAtFormatted}.` : ''}`
+              : `Volunteer registration for ${eventName} is now closed.`}
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4.5 text-xs text-zinc-600 leading-relaxed space-y-1.5 text-left">
+            <p className="font-semibold text-zinc-900">Already registered?</p>
+            <p>
+              If you already have an approved volunteer account, you can sign in to access your dashboard and event duties.
+            </p>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <Button
+              type="button"
+              onClick={() => onNavigate('/volunteer/sign-in')}
+              className="w-full py-3.5 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-xs"
+            >
+              Volunteer Sign In
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onNavigate('/')}
+              className="w-full py-3.5 text-zinc-700 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+            >
+              Back to Home
+            </Button>
+          </div>
+        </div>
+      </AuthScreenShell>
+    );
+  }
 
   return (
     <AuthScreenShell

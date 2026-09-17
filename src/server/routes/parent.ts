@@ -649,19 +649,6 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
           throw err;
         }
       }
-      if (currentEvent.capacity !== null && currentEvent.capacity !== undefined && Number(currentEvent.capacity) > 0) {
-        const appsRes = await queryOne(
-          'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)',
-          [currentEventId]
-        );
-        const registeredCount = Number(appsRes?.count || 0);
-        if (registeredCount >= Number(currentEvent.capacity)) {
-          const err: any = new Error('Registration is full for this event.');
-          err.statusCode = 403;
-          err.code = 'REGISTRATION_FULL';
-          throw err;
-        }
-      }
     }
     const actualEntryId = existingEntry ? existingEntry.id : entryId;
 
@@ -991,21 +978,6 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
         message: 'Registration for this event has closed.',
         error: 'Registration for this event has closed.'
       });
-    }
-    if (currentEvent.capacity !== null && currentEvent.capacity !== undefined && Number(currentEvent.capacity) > 0) {
-      const appsRes = await queryOne(
-        'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)',
-        [currentEventId]
-      );
-      const registeredCount = Number(appsRes?.count || 0);
-      if (registeredCount >= Number(currentEvent.capacity)) {
-        return res.status(403).json({
-          success: false,
-          code: 'REGISTRATION_FULL',
-          message: 'Registration is full for this event.',
-          error: 'Registration is full for this event.'
-        });
-      }
     }
   }
 

@@ -71,21 +71,6 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
         });
       }
 
-      if (targetEvent.capacity !== null && targetEvent.capacity !== undefined && Number(targetEvent.capacity) > 0) {
-        const appsRes = await queryOne(
-          'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)',
-          [targetEvent.id]
-        );
-        const registeredCount = Number(appsRes?.count || 0);
-        if (registeredCount >= Number(targetEvent.capacity)) {
-          return res.status(403).json({
-            success: false,
-            code: 'REGISTRATION_FULL',
-            message: 'Registration is full for this event.',
-            error: 'Registration is full for this event.'
-          });
-        }
-      }
     }
 
     // Validate Full Name
@@ -1110,6 +1095,113 @@ router.post('/passkeys/verify-action', authMiddleware, async (req: Authenticated
 });
 
 
+
+// Helper to format friendly date time string
+function formatFriendlyDateTime(isoStr: string | null | undefined): string | null {
+  if (!isoStr) return null;
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return null;
+    const day = d.getDate();
+    const month = d.toLocaleString('en-US', { month: 'long', timeZone: 'Africa/Lagos' });
+    let hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const minuteStr = minutes === 0 ? '' : `:${minutes < 10 ? '0' + minutes : minutes}`;
+    return `${day} ${month} at ${hours}${minuteStr} ${ampm}`;
+  } catch (_) {
+    return null;
+  }
+}
+
+// GET /api/auth/registration-status - Public registration window and status info for current event
+router.get('/registration-status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rawEventId = (req.query?.eventId as string) || undefined;
+    let targetEvent: any = null;
+    if (rawEventId && rawEventId.trim().length > 0) {
+      targetEvent = await getEventById(rawEventId.trim());
+    } else {
+      const currentEventId = await getCurrentEventId();
+      if (currentEventId) {
+        targetEvent = await getEventById(currentEventId);
+      }
+    }
+
+    if (!targetEvent) {
+      return res.json({
+        success: true,
+        hasEvent: false,
+        eventName: 'The General Assembly',
+        eventId: null,
+        parent: {
+          isOpen: false,
+          state: 'closed',
+          opensAt: null,
+          closesAt: null,
+          opensAtFormatted: null,
+          closesAtFormatted: null
+        },
+        volunteer: {
+          isOpen: false,
+          state: 'closed',
+          opensAt: null,
+          closesAt: null,
+          opensAtFormatted: null,
+          closesAtFormatted: null
+        }
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // Parent status
+    let parentState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
+    if (targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
+      parentState = 'disabled';
+    } else if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
+      parentState = 'not_open_yet';
+    } else if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
+      parentState = 'closed';
+    }
+
+    // Volunteer status
+    let volunteerState: 'open' | 'not_open_yet' | 'closed' = 'open';
+    if (targetEvent.volunteer_registration_opens_at && nowIso < targetEvent.volunteer_registration_opens_at) {
+      volunteerState = 'not_open_yet';
+    } else if (targetEvent.volunteer_registration_closes_at && nowIso > targetEvent.volunteer_registration_closes_at) {
+      volunteerState = 'closed';
+    }
+
+    return res.json({
+      success: true,
+      hasEvent: true,
+      eventName: targetEvent.title || 'The General Assembly',
+      eventId: targetEvent.id,
+      parent: {
+        isOpen: parentState === 'open',
+        state: parentState,
+        opensAt: targetEvent.parent_access_opens_at || null,
+        closesAt: targetEvent.parent_access_closes_at || null,
+        opensAtFormatted: formatFriendlyDateTime(targetEvent.parent_access_opens_at),
+        closesAtFormatted: formatFriendlyDateTime(targetEvent.parent_access_closes_at)
+      },
+      volunteer: {
+        isOpen: volunteerState === 'open',
+        state: volunteerState,
+        opensAt: targetEvent.volunteer_registration_opens_at || null,
+        closesAt: targetEvent.volunteer_registration_closes_at || null,
+        opensAtFormatted: formatFriendlyDateTime(targetEvent.volunteer_registration_opens_at),
+        closesAtFormatted: formatFriendlyDateTime(targetEvent.volunteer_registration_closes_at)
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching registration status:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve registration status' });
+  }
+});
 
 // POST /api/auth/passkeys/revoke-pass-auth - explicitly revokes pass authorization
 router.post('/passkeys/revoke-pass-auth', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

@@ -61,6 +61,17 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   const { showSuccess, showError } = useNotification();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [regStatus, setRegStatus] = useState<any>(null);
+
+  React.useEffect(() => {
+    api.auth.getRegistrationStatus().then((res) => {
+      if (res && res.success) {
+        setRegStatus(res);
+      }
+    }).catch((err) => {
+      console.error('Failed to load registration status', err);
+    });
+  }, []);
 
   const [formData, setFormData] = useState(() => {
     const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -216,6 +227,61 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
       }
     }
   };
+
+  if (regStatus && !regStatus.parent?.isOpen) {
+    const isNotOpen = regStatus.parent?.state === 'not_open_yet';
+    const eventName = regStatus.eventName || 'The General Assembly';
+
+    return (
+      <AuthScreenShell
+        dataViewVersion="parent-create-account-closed-v1"
+        showBack
+        onBack={() => onNavigate('/')}
+        maxWidth="md"
+      >
+        <div className="text-center space-y-3 mb-6">
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
+            <span>{isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}</span>
+          </div>
+          <h1 className="font-serif-koinonia font-bold text-2xl sm:text-3xl text-[#18181B] leading-tight">
+            {isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}
+          </h1>
+          <p className="text-sm text-[#52525B] max-w-sm mx-auto leading-relaxed">
+            {isNotOpen
+              ? `Registration for ${eventName} has not started yet.${regStatus.parent?.opensAtFormatted ? ` Registration opens ${regStatus.parent.opensAtFormatted}.` : ''}`
+              : `Registration for ${eventName} is now closed.`}
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4.5 text-xs text-zinc-600 leading-relaxed space-y-1.5 text-left">
+            <p className="font-semibold text-zinc-900">Already registered?</p>
+            <p>
+              If you already have an account, you can still sign in to view your child’s information and event updates.
+            </p>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <Button
+              type="button"
+              onClick={() => onNavigate('/parent/sign-in')}
+              className="w-full py-3.5 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-xs"
+            >
+              Sign in to your account
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onNavigate('/')}
+              className="w-full py-3.5 text-zinc-700 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+            >
+              Back to Home
+            </Button>
+          </div>
+        </div>
+      </AuthScreenShell>
+    );
+  }
 
   return (
     <AuthScreenShell
