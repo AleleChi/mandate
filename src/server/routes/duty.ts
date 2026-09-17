@@ -121,14 +121,13 @@ const handleVerifyLocationToken = async (rawToken: string, userId: string | unde
       });
     }
 
-    // Authenticated state (A, B, C, D)
-    const userAssignment = await queryOne(`
+    // Authenticated state
+    const userAssignments = await query(`
       SELECT a.*, el.name as assigned_location_name, el.id as assigned_location_id
       FROM event_duty_assignments a
-      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
-      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled'
+      JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
       ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
-      LIMIT 1
     `, [userId, currentEventId]);
 
     const activePresence = await queryOne(`
@@ -138,22 +137,23 @@ const handleVerifyLocationToken = async (rawToken: string, userId: string | unde
       LIMIT 1
     `, [userId, loc.id, currentEventId]);
 
-    let state = 'unassigned_can_join';
+    let state = 'no_assignment';
     let assignedLocationName: string | null = null;
     let assignedLocationId: string | null = null;
 
-    if (userAssignment && userAssignment.assigned_location_id) {
-      if (userAssignment.assigned_location_id === loc.id) {
+    if (!userAssignments || userAssignments.length === 0) {
+      state = 'no_assignment';
+    } else {
+      const isAssignedHere = userAssignments.some((a: any) => a.assigned_location_id === loc.id);
+      if (isAssignedHere) {
         state = activePresence ? 'assigned_here_present' : 'assigned_here_not_present';
+        assignedLocationName = loc.name;
+        assignedLocationId = loc.id;
       } else {
         state = 'assigned_elsewhere';
-        assignedLocationName = userAssignment.assigned_location_name || 'Another location';
-        assignedLocationId = userAssignment.assigned_location_id;
+        assignedLocationName = userAssignments[0].assigned_location_name || 'Another location';
+        assignedLocationId = userAssignments[0].assigned_location_id;
       }
-    } else {
-      // Unassigned volunteer - self-selection allowed
-      const allowSelfSelect = true;
-      state = allowSelfSelect ? 'unassigned_can_join' : 'unassigned_cannot_join';
     }
 
     // Audit log scan event
@@ -2698,7 +2698,7 @@ adminDutyRouter.get('/events/:eventId/response-coverage', async (req: Authentica
 // PHASE 6: VOLUNTEER & DUTY LOCATIONS ENDPOINTS
 // ==============================================
 
-// Helper to resolve duty location for a user (Admin assignment priority, then presence session)
+// Helper to resolve duty location for a user (Duty assignment for current event)
 export async function resolveUserDutyLocation(userId: string, eventId?: string | null) {
   try {
     const resolvedEventId = eventId || (await getCurrentEventId());
@@ -2706,17 +2706,22 @@ export async function resolveUserDutyLocation(userId: string, eventId?: string |
       return null;
     }
 
-    // 1. Check Admin assignment first: Admin assignment containing a location takes precedence
+    // Check user's duty assignment for the current event
     const assignment = await queryOne(`
       SELECT a.id as assignment_id, a.responsibility_key, a.team_key as assignment_team, a.assigned_location_id, a.status as assignment_status,
+             a.starts_at, a.ends_at,
              el.id as location_id, el.name, el.location_type, el.instructions, el.age_group_key, el.team_key as location_team,
              el.short_name, el.description
       FROM event_duty_assignments a
       JOIN event_locations el ON a.assigned_location_id = el.id
-      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled' AND el.is_active = 1 AND el.archived_at IS NULL
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND el.is_active = 1 AND el.archived_at IS NULL
       ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
       LIMIT 1
     `, [userId, resolvedEventId]);
+
+    if (!assignment) {
+      return null;
+    }
 
     const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [resolvedEventId]);
     const locMap = new Map<string, any>();
@@ -2741,62 +2746,74 @@ export async function resolveUserDutyLocation(userId: string, eventId?: string |
       return pathParts.join(' › ');
     };
 
-    if (assignment) {
-      const activePres = await queryOne(
-        'SELECT started_at FROM event_duty_location_presence WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ? LIMIT 1',
-        [userId, assignment.location_id, resolvedEventId]
-      );
-      return {
-        id: assignment.assignment_id,
-        locationId: assignment.location_id,
-        name: assignment.name,
-        type: assignment.location_type,
-        ageGroup: assignment.age_group_key,
-        ageGroupKey: assignment.age_group_key,
-        team: assignment.location_team || assignment.assignment_team,
-        teamKey: assignment.location_team || assignment.assignment_team,
-        instructions: assignment.instructions,
-        description: assignment.description,
-        source: 'admin',
-        isAssignedByAdmin: true,
-        isPresent: !!activePres,
-        presentSince: activePres ? activePres.started_at : null,
-        pathLabel: getFullPath(assignment.location_id)
-      };
+    const activePres = await queryOne(
+      'SELECT started_at FROM event_duty_location_presence WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ? LIMIT 1',
+      [userId, assignment.location_id, resolvedEventId]
+    );
+
+    // Format responsibility: e.g. "room_support" -> "Room support"
+    const rawResp = (assignment.responsibility_key || 'Room support').trim();
+    const formattedResp = rawResp
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .split(' ')
+      .map((w: string, i: number) => i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())
+      .join(' ');
+
+    // Format scheduled window: e.g. "6:00 PM – 8:00 PM"
+    let scheduled = '';
+    if (assignment.starts_at && assignment.ends_at) {
+      try {
+        const sDate = new Date(assignment.starts_at);
+        const eDate = new Date(assignment.ends_at);
+        const sTime = sDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const eTime = eDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        scheduled = `${sTime} – ${eTime}`;
+      } catch {
+        scheduled = `${assignment.starts_at} – ${assignment.ends_at}`;
+      }
+    } else if (assignment.starts_at) {
+      try {
+        scheduled = new Date(assignment.starts_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      } catch {
+        scheduled = assignment.starts_at;
+      }
     }
 
-    // 2. If no Admin assignment with a location, check active volunteer presence (self-selection or QR scan)
-    const presence = await queryOne(`
-      SELECT p.*, el.id as loc_id, el.name, el.location_type, el.sort_order, el.instructions, el.age_group_key, el.team_key as location_team, el.description
-      FROM event_duty_location_presence p
-      JOIN event_locations el ON p.event_location_id = el.id
-      WHERE p.user_id = ? AND p.ended_at IS NULL AND p.event_id = ? AND el.is_active = 1 AND el.archived_at IS NULL
-      ORDER BY p.started_at DESC
-      LIMIT 1
-    `, [userId, resolvedEventId]);
-
-    if (presence) {
-      return {
-        id: presence.id,
-        locationId: presence.event_location_id,
-        name: presence.name,
-        type: presence.location_type,
-        ageGroup: presence.age_group_key,
-        ageGroupKey: presence.age_group_key,
-        team: presence.location_team,
-        teamKey: presence.location_team,
-        instructions: presence.instructions,
-        description: presence.description,
-        source: presence.source || 'selected',
-        isAssignedByAdmin: false,
-        isPresent: true,
-        presentSince: presence.started_at,
-        startedAt: presence.started_at,
-        pathLabel: getFullPath(presence.event_location_id)
-      };
+    // Determine status: "Scheduled" | "On duty" | "Completed"
+    let displayStatus: 'Scheduled' | 'On duty' | 'Completed' = 'Scheduled';
+    if (activePres || assignment.assignment_status === 'on_duty') {
+      displayStatus = 'On duty';
+    } else if (assignment.assignment_status === 'completed' || assignment.assignment_status === 'ended') {
+      displayStatus = 'Completed';
+    } else {
+      displayStatus = 'Scheduled';
     }
 
-    return null;
+    return {
+      id: assignment.assignment_id,
+      locationId: assignment.location_id,
+      name: assignment.name,
+      type: assignment.location_type,
+      ageGroup: assignment.age_group_key,
+      ageGroupKey: assignment.age_group_key,
+      team: assignment.location_team || assignment.assignment_team,
+      teamKey: assignment.location_team || assignment.assignment_team,
+      responsibility: formattedResp,
+      responsibilityKey: assignment.responsibility_key,
+      scheduled: scheduled || 'Scheduled',
+      startsAt: assignment.starts_at,
+      endsAt: assignment.ends_at,
+      status: displayStatus,
+      assignmentStatus: displayStatus,
+      instructions: assignment.instructions,
+      description: assignment.description,
+      source: 'admin',
+      isAssignedByAdmin: true,
+      isPresent: !!activePres,
+      presentSince: activePres ? activePres.started_at : null,
+      pathLabel: getFullPath(assignment.location_id)
+    };
   } catch (err) {
     console.error('Error resolving user duty location:', err);
     return null;
@@ -2828,6 +2845,31 @@ dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) =>
     if (type) {
       queryStr += ' AND location_type = ?';
       params.push(type);
+    }
+
+    // Volunteers should only see locations actually assigned to them for this event
+    if (req.user && req.user.role !== 'admin') {
+      const userAssignments = await query(
+        `SELECT DISTINCT assigned_location_id FROM event_duty_assignments WHERE user_id = ? AND event_id = ? AND status NOT IN ('cancelled', 'ended') AND assigned_location_id IS NOT NULL AND assigned_location_id != ''`,
+        [req.user.id, eventId]
+      );
+      const assignedIds = userAssignments.map((a: any) => a.assigned_location_id).filter(Boolean);
+      if (assignedIds.length === 0) {
+        return res.json({
+          success: true,
+          items: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false
+          }
+        });
+      }
+      queryStr += ` AND id IN (${assignedIds.map(() => '?').join(',')})`;
+      params.push(...assignedIds);
     }
 
     const allLocations = await query(queryStr, params);
@@ -2982,20 +3024,31 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       return res.status(400).json({ success: false, error: 'The selected location is invalid or no longer active.' });
     }
 
-    // Check if user has an Admin assignment to a DIFFERENT location (cannot be overridden)
-    const adminAssignment = await queryOne(`
+    // Backend verification: User MUST have an active or scheduled duty assignment for the current event
+    const userAssignments = await query(`
       SELECT a.*, el.name as assigned_location_name
       FROM event_duty_assignments a
       JOIN event_locations el ON a.assigned_location_id = el.id
-      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled' AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
-      LIMIT 1
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
     `, [userId, currentEventId]);
 
-    if (adminAssignment && adminAssignment.assigned_location_id !== resolvedLocationId) {
+    if (!userAssignments || userAssignments.length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'no_assignment',
+        message: "You don't have a duty location assigned yet."
+      });
+    }
+
+    // Check if any assignment matches the resolved location
+    const matchingAssignment = userAssignments.find((a: any) => a.assigned_location_id === resolvedLocationId);
+    if (!matchingAssignment) {
+      const assignedName = userAssignments[0]?.assigned_location_name || 'your assigned location';
       return res.status(403).json({
         success: false,
         error: 'assigned_elsewhere',
-        message: `You are assigned to ${adminAssignment.assigned_location_name}. Admin assignments cannot be overridden.`
+        assignedLocationName: assignedName,
+        message: `You're assigned to ${assignedName}. You can only report for duty at your assigned location.`
       });
     }
 
@@ -3025,7 +3078,7 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
           startedAt: existingPresence.started_at,
           isPresent: true,
           presentSince: existingPresence.started_at,
-          isAssignedByAdmin: !!adminAssignment
+          isAssignedByAdmin: true
         }
       });
     }
@@ -3050,13 +3103,6 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status != 'cancelled'
     `, [now, userId, currentEventId, resolvedLocationId]);
 
-    // Update assignment assigned_location_id if active assignment exists without location
-    await execute(`
-      UPDATE event_duty_assignments
-      SET assigned_location_id = ?, status = 'on_duty', updated_at = ?
-      WHERE user_id = ? AND event_id = ? AND status != 'cancelled' AND (assigned_location_id IS NULL OR assigned_location_id = '')
-    `, [resolvedLocationId, now, userId, currentEventId]);
-
     // Broadcast SSE change for admin/team view sync
     broadcastSSEEvent('duty_presence_changed', { eventId: currentEventId, userId, locationId: resolvedLocationId });
 
@@ -3077,7 +3123,7 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
         startedAt: now,
         isPresent: true,
         presentSince: now,
-        isAssignedByAdmin: !!adminAssignment
+        isAssignedByAdmin: true
       }
     });
   } catch (err: any) {
