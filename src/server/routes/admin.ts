@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import path from 'path';
 import multer from 'multer';
-import { query, queryOne, execute, transaction, REAL_EVENT_ID } from '../db';
+import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
@@ -1188,6 +1188,8 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const nowStr = new Date().toISOString();
 
+    const targetEventId = await resolveAdminEventId(req.body.eventId);
+
     if (!overrideDuplicate) {
       const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
       if (existingUser) {
@@ -1230,12 +1232,12 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
       ]);
 
       // 3. Optional duty assignment
-      if (assignedDutyRole) {
+      if (assignedDutyRole && targetEventId) {
         try {
           await execute(`
             INSERT INTO volunteer_event_duties (id, user_id, event_id, role_title, created_at)
             VALUES (?, ?, ?, ?, ?)
-          `, [crypto.randomUUID(), volUserId, REAL_EVENT_ID, assignedDutyRole, nowStr]);
+          `, [crypto.randomUUID(), volUserId, targetEventId, assignedDutyRole, nowStr]);
         } catch (e) {}
       }
 
@@ -1284,13 +1286,13 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
       success: true,
       message: sendInvitation
         ? `Volunteer record created and invitation sent to ${cleanEmail}.`
-        : `Volunteer record created successfully.`,
+        : `Volunteer record created successfully without active login account.`,
       volunteerId: volProfileId,
       userId: volUserId
     });
   } catch (err: any) {
     console.error('Admin Add Volunteer Error:', err);
-    return res.status(500).json({ success: false, error: 'Failed to create volunteer record.' });
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create volunteer record.' });
   }
 });
 
@@ -10965,10 +10967,12 @@ router.post('/alert-delivery/test-device', authMiddleware, async (req: Authentic
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
+    const targetEventId = (await resolveAdminEventId(req.body?.eventId)) || (await getCurrentEventId()) || 'test-device-event';
+
     const testAlert = {
       id: 'test_device_alert_id_' + Date.now(),
       isTest: true,
-      event_id: REAL_EVENT_ID,
+      event_id: targetEventId,
       severity: 'urgent',
       status: 'open',
       category: 'TEST_ALERT',
@@ -11020,9 +11024,9 @@ router.post('/alert-delivery/test-device', authMiddleware, async (req: Authentic
       pushSent,
       alert: testAlert
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Test device alert error:', err);
-    res.status(500).json({ error: 'Failed to dispatch device test alert' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to dispatch device test alert' });
   }
 });
 
