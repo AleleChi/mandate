@@ -1,4 +1,14 @@
-import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js';
+import parsePhoneNumber, { CountryCode } from 'libphonenumber-js/core';
+import meta from 'libphonenumber-js/metadata.min';
+
+const phoneMetadata = (meta as any)?.default || meta;
+const parsePhoneNumberFromString = (text: string, country?: any) => {
+  try {
+    return parsePhoneNumber(text, country, phoneMetadata);
+  } catch {
+    return undefined;
+  }
+};
 
 /**
  * Normalizes phone numbers to E.164 format with special handling for Nigerian numbers.
