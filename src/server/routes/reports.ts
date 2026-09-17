@@ -81,35 +81,41 @@ async function formatReportJob(job: any) {
   const template = REPORT_TEMPLATES.find(t => t.key === job.template_key);
   const templateName = template ? template.name : 'Leadership Report';
   
-  let eventTitle = 'The General Assembly';
-  if (job.event_id) {
-    const ev = await queryOne('SELECT title FROM events WHERE id = ?', [job.event_id]);
-    if (ev?.title) eventTitle = ev.title;
-  } else if (job.training_session_id) {
-    eventTitle = 'Training Drill Session';
+  let eventTitle = job.event_title || 'The General Assembly';
+  if (!job.event_title) {
+    if (job.event_id) {
+      try {
+        const ev = await queryOne('SELECT title FROM events WHERE id = ?', [job.event_id]);
+        if (ev?.title) eventTitle = ev.title;
+      } catch (_) {}
+    } else if (job.training_session_id) {
+      eventTitle = 'Training Drill Session';
+    }
   }
 
-  let requestedByName = 'Administrator';
-  let requestedByEmail = '';
-  if (job.requested_by) {
-    const user = await queryOne(`
-      SELECT u.id, u.email, u.role,
-             vp.full_name as volunteer_name,
-             pp.full_name as parent_name
-      FROM users u
-      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
-      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
-      WHERE u.id = ?
-    `, [job.requested_by]);
-    if (user) {
-      requestedByEmail = user.email || '';
-      if (['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead', 'team'].includes(user.role)) {
-        requestedByName = user.volunteer_name || user.parent_name || (user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Event Admin' : user.email) || 'Administrator';
-      } else {
-        // Prevent parent profile identity from leaking into admin reports module
-        requestedByName = user.volunteer_name || 'Administrator';
+  let requestedByName = job.requested_by_name || 'Administrator';
+  let requestedByEmail = job.requested_by_email || '';
+  if (!job.requested_by_name && job.requested_by) {
+    try {
+      const user = await queryOne(`
+        SELECT u.id, u.email, u.role,
+               vp.full_name as volunteer_name,
+               pp.full_name as parent_name
+        FROM users u
+        LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+        LEFT JOIN parent_profiles pp ON u.id = pp.user_id
+        WHERE u.id = ?
+      `, [job.requested_by]);
+      if (user) {
+        requestedByEmail = user.email || '';
+        if (['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead', 'team'].includes(user.role)) {
+          requestedByName = user.volunteer_name || user.parent_name || (user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Event Admin' : user.email) || 'Administrator';
+        } else {
+          // Prevent parent profile identity from leaking into admin reports module
+          requestedByName = user.volunteer_name || 'Administrator';
+        }
       }
-    }
+    } catch (_) {}
   }
 
   const reportTitle = `${templateName} — ${eventTitle}`;
@@ -117,6 +123,10 @@ async function formatReportJob(job: any) {
   const storagePath = resolveReportFilePath(job.storage_key, job.id);
   const hasRegenerableData = !!(job.document_model_json || job.snapshot_id);
   const storageAvailable = fs.existsSync(storagePath) || hasRegenerableData;
+
+  // Check download expiry according to retention timestamp
+  const expiresTimestamp = job.gr_expires_at || job.expires_at;
+  const downloadExpired = Boolean(expiresTimestamp && new Date(expiresTimestamp).getTime() < Date.now());
 
   let status = job.status || 'queued';
   if (status === 'completed') status = 'ready';
@@ -147,6 +157,32 @@ async function formatReportJob(job: any) {
     errorMessage = "We couldn't prepare this report. Please create the report again.";
   }
 
+  let filterConfig = {};
+  if (job.filter_configuration) {
+    if (typeof job.filter_configuration === 'object') {
+      filterConfig = job.filter_configuration;
+    } else {
+      try {
+        filterConfig = JSON.parse(job.filter_configuration);
+      } catch (_) {
+        filterConfig = {};
+      }
+    }
+  }
+
+  let sectionConfig: any[] = [];
+  if (job.section_configuration) {
+    if (Array.isArray(job.section_configuration)) {
+      sectionConfig = job.section_configuration;
+    } else {
+      try {
+        sectionConfig = JSON.parse(job.section_configuration);
+      } catch (_) {
+        sectionConfig = [];
+      }
+    }
+  }
+
   return {
     id: job.id,
     templateKey: job.template_key,
@@ -160,8 +196,10 @@ async function formatReportJob(job: any) {
     requestedByEmail,
     privacyClassification: job.privacy_classification,
     status,
-    filterConfiguration: job.filter_configuration ? JSON.parse(job.filter_configuration) : {},
-    sectionConfiguration: job.section_configuration ? JSON.parse(job.section_configuration) : [],
+    downloadExpired,
+    expiresAt: expiresTimestamp || null,
+    filterConfiguration: filterConfig,
+    sectionConfiguration: sectionConfig,
     fileSize: job.file_size || 0,
     pageCount: job.page_count || 0,
     storageAvailable,
@@ -423,8 +461,6 @@ router.post('/preview/download', async (req: AuthenticatedRequest, res: Response
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
     return res.send(Buffer.from(pdfBytes));
-
-    return res.send(Buffer.from(pdfBytes));
   } catch (err: any) {
     console.error('Failed to generate template preview download PDF:', err);
     return res.status(500).json({ error: 'Failed to generate preview download PDF.' });
@@ -442,12 +478,29 @@ router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunct
       return res.status(403).json({ error: 'Unauthorized role access.' });
     }
 
+    const { eventId } = req.query;
+
     let jobsQuery = `
-      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash, gr.document_model_json 
+      SELECT rj.*,
+             gr.file_size, gr.page_count, gr.storage_key, gr.file_hash, gr.document_model_json,
+             gr.expires_at as gr_expires_at,
+             e.title as event_title,
+             u.email as requested_by_email,
+             CASE
+               WHEN u.role = 'super_admin' THEN 'Super Admin'
+               WHEN u.role = 'admin' THEN 'Event Admin'
+               ELSE COALESCE(vp.full_name, pp.full_name, u.email, 'Administrator')
+             END as requested_by_name
       FROM report_jobs rj
       LEFT JOIN generated_reports gr ON rj.id = gr.report_job_id
+      LEFT JOIN events e ON rj.event_id = e.id
+      LEFT JOIN users u ON rj.requested_by = u.id
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
     `;
     const params: any[] = [];
+    const whereConditions: string[] = [];
+
     if (role !== 'super_admin' && role !== 'admin') {
       const assignedEvents = await query('SELECT DISTINCT event_id FROM event_duty_assignments WHERE user_id = ? AND status != \'cancelled\'', [req.user?.id]);
       const eventIds = assignedEvents.map((e: any) => e.event_id).filter(Boolean);
@@ -455,13 +508,57 @@ router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunct
         return res.json({ success: true, reports: [] });
       }
       const placeholders = eventIds.map(() => '?').join(',');
-      jobsQuery += ` WHERE rj.event_id IN (${placeholders})`;
+      whereConditions.push(`rj.event_id IN (${placeholders})`);
       params.push(...eventIds);
     }
+
+    if (eventId && typeof eventId === 'string' && eventId.trim() !== '') {
+      whereConditions.push('rj.event_id = ?');
+      params.push(eventId.trim());
+    }
+
+    if (whereConditions.length > 0) {
+      jobsQuery += ' WHERE ' + whereConditions.join(' AND ');
+    }
+
     jobsQuery += ' ORDER BY rj.created_at DESC';
     const rawJobs = await query(jobsQuery, params);
 
-    const reports = await Promise.all(rawJobs.map((j: any) => formatReportJob(j)));
+    const reports: any[] = [];
+    for (const j of rawJobs) {
+      try {
+        const formatted = await formatReportJob(j);
+        reports.push(formatted);
+      } catch (jobErr) {
+        console.error(`[GET /api/admin/reports] Failed to format job ${j?.id}:`, jobErr);
+        // Resilient: One bad report must not poison the entire collection
+        reports.push({
+          id: j?.id || 'unknown',
+          templateKey: j?.template_key || 'unknown',
+          templateName: 'Report',
+          reportTitle: 'Report',
+          eventId: j?.event_id,
+          eventTitle: j?.event_title || 'Event',
+          requestedBy: j?.requested_by,
+          requestedByName: j?.requested_by_name || 'Administrator',
+          requestedByEmail: j?.requested_by_email || '',
+          privacyClassification: j?.privacy_classification || 'Internal operational',
+          status: 'failed',
+          downloadExpired: true,
+          expiresAt: null,
+          filterConfiguration: {},
+          sectionConfiguration: [],
+          fileSize: 0,
+          pageCount: 0,
+          storageAvailable: false,
+          errorMessage: "We couldn't prepare this report. Please create the report again.",
+          createdAt: j?.created_at,
+          updatedAt: j?.updated_at,
+          completedAt: j?.completed_at,
+          archivedAt: j?.archived_at
+        });
+      }
+    }
 
     return res.json({ success: true, reports });
   } catch (err: any) {
@@ -631,9 +728,21 @@ router.get('/:reportId', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const rawJob = await queryOne(`
-      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash
+      SELECT rj.*, gr.file_size, gr.page_count, gr.storage_key, gr.file_hash, gr.document_model_json,
+             gr.expires_at as gr_expires_at,
+             e.title as event_title,
+             u.email as requested_by_email,
+             CASE
+               WHEN u.role = 'super_admin' THEN 'Super Admin'
+               WHEN u.role = 'admin' THEN 'Event Admin'
+               ELSE COALESCE(vp.full_name, pp.full_name, u.email, 'Administrator')
+             END as requested_by_name
       FROM report_jobs rj
       LEFT JOIN generated_reports gr ON rj.id = gr.report_job_id
+      LEFT JOIN events e ON rj.event_id = e.id
+      LEFT JOIN users u ON rj.requested_by = u.id
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON u.id = pp.user_id
       WHERE rj.id = ?
     `, [req.params.reportId]);
 
@@ -677,7 +786,7 @@ router.post('/:reportId/cancel', async (req: AuthenticatedRequest, res: Response
   }
 });
 
-// 6. Regenerate from exactly the same snapshot
+// 6. Regenerate report querying current live DB data
 router.post('/:reportId/regenerate', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const role = req.user?.role || 'parent';
@@ -691,29 +800,24 @@ router.post('/:reportId/regenerate', async (req: AuthenticatedRequest, res: Resp
     }
 
     const now = new Date().toISOString();
-    const shouldClearSnapshot = existingJob.status === 'failed';
-    if (shouldClearSnapshot) {
-      await execute(`
-        UPDATE report_jobs 
-        SET status = 'queued', snapshot_id = NULL, started_at = NULL, completed_at = NULL, attempt_count = 0, error_code = NULL, updated_at = ?
-        WHERE id = ?
-      `, [now, req.params.reportId]);
-    } else {
-      await execute(`
-        UPDATE report_jobs 
-        SET status = 'queued', started_at = NULL, completed_at = NULL, attempt_count = 0, error_code = NULL, updated_at = ?
-        WHERE id = ?
-      `, [now, req.params.reportId]);
-    }
+    // Fresh 24h retention window for newly generated report
+    const newExpiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+    // Critical: Clear snapshot_id so worker queries current LIVE DB data rather than reusing stale snapshot
+    await execute(`
+      UPDATE report_jobs
+      SET status = 'queued', snapshot_id = NULL, started_at = NULL, completed_at = NULL, attempt_count = 0, error_code = NULL, expires_at = ?, updated_at = ?
+      WHERE id = ?
+    `, [newExpiresAt, now, req.params.reportId]);
 
     await execute(`
       INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
-      VALUES (?, ?, ?, 'regenerated', 'Report regeneration from snapshot initiated by user.', ?)
+      VALUES (?, ?, ?, 'regenerated', 'Report regeneration with live DB data initiated by user.', ?)
     `, ['hist-' + crypto.randomUUID(), req.params.reportId, req.user?.id, now]);
 
     processQueuedReportJobs().catch(e => console.error(e));
 
-    return res.status(202).json({ success: true, jobId: req.params.reportId, status: 'queued', message: 'Regeneration from snapshot has been queued.' });
+    return res.status(202).json({ success: true, jobId: req.params.reportId, status: 'queued', message: 'Report regeneration with live DB data has been queued.' });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to regenerate report.' });
   }
@@ -1028,7 +1132,11 @@ router.get('/:reportId/download', async (req: AuthenticatedRequest, res: Respons
     const genReport = await queryOne('SELECT * FROM generated_reports WHERE report_job_id = ?', [reportId]);
     if (genReport?.expires_at && new Date(genReport.expires_at) < new Date()) {
       console.warn(`[Reports Download] failed - report expired: ${genReport.expires_at}`);
-      return res.status(410).json({ error: 'This report download has expired according to retention policy.' });
+      return res.status(410).json({
+        error: 'That download has expired.',
+        code: 'DOWNLOAD_EXPIRED',
+        message: 'Regenerate the report to create a fresh copy.'
+      });
     }
 
     // Resilient artifact retrieval: disk cache first, or regenerate from persisted immutable model/snapshot

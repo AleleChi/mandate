@@ -1160,6 +1160,12 @@ export async function processQueuedReportJobs() {
         }
 
         await transaction(async () => {
+          // Guarantee that newly generated or regenerated reports have a fresh, non-expired retention window
+          let freshExpiresAt = pendingJob.expires_at;
+          if (!freshExpiresAt || new Date(freshExpiresAt).getTime() <= Date.now()) {
+            freshExpiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+          }
+
           const existingGen = await queryOne('SELECT id, report_version FROM generated_reports WHERE report_job_id = ?', [pendingJob.id]);
           if (existingGen) {
             const nextVersion = (existingGen.report_version || 1) + 1;
@@ -1176,7 +1182,7 @@ export async function processQueuedReportJobs() {
               docModelJson,
               docHash,
               now,
-              pendingJob.expires_at,
+              freshExpiresAt,
               pendingJob.id
             ]);
           } else {
@@ -1194,17 +1200,17 @@ export async function processQueuedReportJobs() {
               docModelJson,
               docHash,
               now,
-              pendingJob.expires_at,
+              freshExpiresAt,
               now
             ]);
           }
 
           // Truthful Ready status: Only mark report ready after complete artifact persistence succeeds
           const updateRes = await execute(`
-            UPDATE report_jobs 
-            SET status = 'ready', completed_at = ?, updated_at = ? 
+            UPDATE report_jobs
+            SET status = 'ready', expires_at = ?, completed_at = ?, updated_at = ?
             WHERE id = ? AND status = 'generating'
-          `, [now, now, pendingJob.id]);
+          `, [freshExpiresAt, now, now, pendingJob.id]);
 
           if (updateRes.changes === 0) {
             console.log(`[Reports] Job ${pendingJob.id} status was not generating. Preserving status.`);

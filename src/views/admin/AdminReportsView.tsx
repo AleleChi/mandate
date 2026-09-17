@@ -232,6 +232,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
   // Loading States
   const [loadingReportsList, setLoadingReportsList] = useState(false);
+  const [reportsListError, setReportsListError] = useState(false);
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -241,10 +242,11 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   const [templates, setTemplates] = useState<ReportTemplate[]>(CANONICAL_TEMPLATES);
   const [generatedReports, setGeneratedReports] = useState<any[]>([]);
 
-  // Preview Modal State
+  // Preview & Expired Modal State
   const [previewingReportId, setPreviewingReportId] = useState<string | null>(null);
   const [previewReportTitle, setPreviewReportTitle] = useState<string>('');
   const [previewEventTitle, setPreviewEventTitle] = useState<string>('');
+  const [expiredModalReportId, setExpiredModalReportId] = useState<string | null>(null);
   
   // Create Report Editorial Workflow State (Prompt Sections 10-14 & 48)
   const [createStep, setCreateStep] = useState<number>(1);
@@ -306,30 +308,39 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     }
   };
 
-  // 2. Fetch Reports List & Server Templates
-  const fetchReportsListAndTemplates = async () => {
+  // 2. Fetch Reports List & Server Templates (Resilient & Event-Isolated)
+  const fetchReportsListAndTemplates = async (eventId?: string) => {
     setLoadingReportsList(true);
+    setReportsListError(false);
     try {
-      // Templates from API
-      const tempRes = await api.request('/api/admin/reports/templates');
-      if (tempRes && tempRes.success && tempRes.templates && tempRes.templates.length > 0) {
-        // Ensure 6 canonical templates are at the front
+      const targetEventId = eventId !== undefined ? eventId : selectedEventId;
+      const reportsUrl = targetEventId ? `/api/admin/reports?eventId=${encodeURIComponent(targetEventId)}` : '/api/admin/reports';
+
+      const [tempRes, jobsRes] = await Promise.allSettled([
+        api.request('/api/admin/reports/templates'),
+        api.request(reportsUrl)
+      ]);
+
+      if (tempRes.status === 'fulfilled' && tempRes.value?.success && Array.isArray(tempRes.value.templates)) {
+        // Ensure canonical templates are at the front
         const merged = [...CANONICAL_TEMPLATES];
-        tempRes.templates.forEach((t: any) => {
+        tempRes.value.templates.forEach((t: any) => {
           if (!merged.some(m => m.key === t.key)) {
             merged.push(t);
           }
         });
         setTemplates(merged);
       }
-      
-      // Generated Reports
-      const jobsRes = await api.request('/api/admin/reports');
-      if (jobsRes && jobsRes.success) {
-        setGeneratedReports(jobsRes.reports || []);
+
+      if (jobsRes.status === 'fulfilled' && jobsRes.value?.success) {
+        setGeneratedReports(jobsRes.value.reports || []);
+      } else if (jobsRes.status === 'rejected') {
+        console.error('Failed to load reports list:', jobsRes.reason);
+        setReportsListError(true);
       }
     } catch (err) {
       console.error('Failed to load reports list or templates:', err);
+      setReportsListError(true);
     } finally {
       setLoadingReportsList(false);
     }
@@ -369,8 +380,13 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
   useEffect(() => {
     fetchEvents();
-    fetchReportsListAndTemplates();
   }, []);
+
+  useEffect(() => {
+    if (selectedEventId) {
+      fetchReportsListAndTemplates(selectedEventId);
+    }
+  }, [selectedEventId]);
 
   useEffect(() => {
     if (activeMainTab === 'live_metrics') {
@@ -498,6 +514,13 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       return;
     }
 
+    // If report is known to have an expired artifact, open recovery modal directly
+    const existing = generatedReports.find(r => r.id === reportId);
+    if (existing?.downloadExpired) {
+      setExpiredModalReportId(reportId);
+      return;
+    }
+
     showSuccess('Preparing file', 'Preparing report download…');
     
     const downloadUrl = buildApiUrl(`/api/admin/reports/${reportId}/download`);
@@ -512,12 +535,23 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       
       if (!res.ok || contentType.includes('application/json')) {
         let errorMsg = 'We could not download this report.';
+        let isExpired = res.status === 410;
         try {
           const errData = await res.json();
           if (errData && errData.error) {
             errorMsg = errData.error;
           }
+          if (errData?.code === 'DOWNLOAD_EXPIRED' || (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('expired'))) {
+            isExpired = true;
+          }
         } catch (_) {}
+
+        if (isExpired) {
+          // Open friendly recovery modal without tech jargon / HTTP codes
+          setExpiredModalReportId(reportId);
+          return;
+        }
+
         throw new Error(errorMsg);
       }
 
@@ -578,8 +612,9 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       const res = await api.request(`/api/admin/reports/${reportId}/regenerate`, { method: 'POST' });
       if (res && res.success) {
         showSuccess('Queued', 'Report regeneration has been queued.');
+        setActiveProgressJobId(reportId);
         pollJobStatus(reportId);
-        fetchReportsListAndTemplates();
+        fetchReportsListAndTemplates(selectedEventId);
       }
     } catch (err: any) {
       showError('Failed', extractApiError(err).message);
@@ -849,243 +884,297 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       </AnimatePresence>
 
       {/* ----------------- TAB 1: REPORTS ARCHIVE (Prompt Section 6, 7, 8) ----------------- */}
-      {activeMainTab === 'reports_centre' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-stone-200/80 p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="space-y-0.5">
-              <h2 className="text-base font-semibold text-stone-900">Reports</h2>
-              <p className="text-stone-500 text-xs leading-relaxed">
-                Reports created for this event will appear here.
-              </p>
-            </div>
-            <Button
-              onClick={() => {
-                setCreateStep(1);
-                setActiveMainTab('custom_builder');
-              }}
-              className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs transition-all self-start sm:self-auto"
-              id="btn-nav-custom-builder"
-            >
-              <Plus className="w-4 h-4" />
-              Create report
-            </Button>
-          </div>
+      {activeMainTab === 'reports_centre' && (() => {
+        const displayedReports = selectedEventId
+          ? generatedReports.filter(r => !r.eventId || r.eventId === selectedEventId)
+          : generatedReports;
 
-          {loadingReportsList ? (
-            <div className="flex items-center justify-center p-12 min-h-[30vh]">
-              <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports…" />
-            </div>
-          ) : generatedReports.length === 0 ? (
-            /* Quiet Empty State (Prompt Section 7) */
-            <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-center space-y-4">
-              <div className="space-y-1.5 max-w-sm">
-                <p className="text-base font-medium text-stone-800">No reports yet</p>
-                <p className="text-xs text-stone-500 leading-relaxed">
-                  Create a report to summarise registrations, attendance, participation and event operations.
+        return (
+          <div className="space-y-6">
+            <div className="bg-white border border-stone-200/80 p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="space-y-0.5">
+                <h2 className="text-base font-semibold text-stone-900">Reports</h2>
+                <p className="text-stone-500 text-xs leading-relaxed">
+                  Reports created for this event will appear here.
                 </p>
               </div>
-              <Button
-                onClick={() => {
-                  setCreateStep(1);
-                  setActiveMainTab('custom_builder');
-                }}
-                className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
-              >
-                Create report
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Contextual Bulk Action Bar (Priority 14, 15, 17) */}
-              {selectedReportIds.length > 0 && (
-                <div className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-xl px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-150">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-stone-800">
-                      {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'} selected
-                    </span>
-                    <button
-                      onClick={() => setSelectedReportIds([])}
-                      className="text-xs text-stone-500 hover:text-stone-800 underline ml-2 cursor-pointer"
-                    >
-                      Clear selection
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={handleBulkDownload}
-                      disabled={bulkDownloading}
-                      variant="outline"
-                      className="bg-white border-stone-200 text-stone-700 hover:bg-stone-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
-                      id="btn-bulk-download"
-                    >
-                      {bulkDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : <Download className="w-3.5 h-3.5 text-stone-500" />}
-                      Download selected
-                    </Button>
-                    <Button
-                      onClick={() => setBulkDeleteConfirmOpen(true)}
-                      disabled={deleting}
-                      variant="outline"
-                      className="bg-white border-red-200 text-red-700 hover:bg-red-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
-                      id="btn-bulk-delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                      Delete selected
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Generated Report List Table (Prompt Section 8) */}
-              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse" aria-label="Reports Archive">
-                    <thead>
-                      <tr className="bg-stone-50 border-b border-stone-200">
-                        <th className="py-3 px-4 w-10 text-center">
-                          <input
-                            type="checkbox"
-                            checked={generatedReports.length > 0 && selectedReportIds.length === generatedReports.length}
-                            ref={el => {
-                              if (el) {
-                                el.indeterminate = selectedReportIds.length > 0 && selectedReportIds.length < generatedReports.length;
-                              }
-                            }}
-                            onChange={handleToggleSelectAll}
-                            className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
-                            aria-label="Select all reports"
-                          />
-                        </th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Event</th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Type</th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created</th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created by</th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
-                        <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-stone-100">
-                      {generatedReports.map((report) => {
-                        const isComplete = report.status === 'completed' || report.status === 'ready';
-                        const isPending = ['queued', 'generating'].includes(report.status);
-                        const isFailed = report.status === 'failed';
-
-                        const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Management Report';
-                        const eventTitle = report.eventTitle || report.eventName || 'The General Assembly 2026';
-                        const typeName = report.templateName || 'Management summary';
-                        const preparedBy = report.requestedByName || report.requestedByEmail || 'Super Admin';
-                        const statusLabel = getReportStatusLabel(report.status);
-                        const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
-                        const isSelected = selectedReportIds.includes(report.id);
-
-                        return (
-                          <tr 
-                            key={report.id} 
-                            className={`hover:bg-stone-50/60 transition-colors ${isSelected ? 'bg-[#FAF9F6]' : ''}`}
-                          >
-                            <td className="py-4 px-4 w-10 text-center" onClick={e => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => handleToggleSelectRow(report.id)}
-                                className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
-                                aria-label={`Select report ${reportTitle}`}
-                              />
-                            </td>
-                            <td className="py-4 px-6">
-                              <div className="space-y-0.5">
-                                <span className="text-sm font-semibold text-stone-900 block line-clamp-1">
-                                  {reportTitle}
-                                </span>
-                                <span className="text-xs text-stone-400 block">
-                                  {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="py-4 px-6 text-xs text-stone-700 font-medium">
-                              {eventTitle}
-                            </td>
-                            <td className="py-4 px-6 text-xs text-stone-600">
-                              {typeName}
-                            </td>
-                            <td className="py-4 px-6 text-xs text-stone-500 tabular-nums">
-                              {formattedDate}
-                            </td>
-                            <td className="py-4 px-6 text-xs text-stone-700 font-medium">
-                              {preparedBy}
-                            </td>
-                            <td className="py-4 px-6">
-                              <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
-                                isComplete ? 'bg-stone-100 text-stone-700 border border-stone-200/80' :
-                                isPending ? 'bg-amber-50 text-amber-800 border border-amber-200/60' :
-                                isFailed ? 'bg-red-50 text-red-800 border border-red-200/60' :
-                                'bg-stone-100 text-stone-600'
-                              }`}>
-                                {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
-                                {statusLabel}
-                              </span>
-                            </td>
-                            <td className="py-4 px-6 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                {isComplete && (
-                                  <>
-                                    <button
-                                      onClick={() => {
-                                        setPreviewingReportId(report.id);
-                                        setPreviewReportTitle(reportTitle);
-                                        setPreviewEventTitle(eventTitle);
-                                      }}
-                                      className="h-8 px-3 bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1 shadow-2xs"
-                                      id={`btn-view-${report.id}`}
-                                    >
-                                      <Eye className="w-3.5 h-3.5 text-stone-500" />
-                                      View
-                                    </button>
-
-                                    <button
-                                      onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
-                                      className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
-                                      id={`btn-download-${report.id}`}
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                      Download
-                                    </button>
-                                  </>
-                                )}
-
-                                {isFailed && (
-                                  <button
-                                    onClick={() => handleRegenerateReport(report.id)}
-                                    className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
-                                    id={`btn-retry-${report.id}`}
-                                  >
-                                    <RefreshCw className="w-3 h-3" />
-                                    Try again
-                                  </button>
-                                )}
-
-                                <ReportActionsMenu
-                                  reportId={report.id}
-                                  status={report.status}
-                                  onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
-                                  onViewHistory={() => viewAuditLogs(report.id)}
-                                  onRegenerate={() => handleRegenerateReport(report.id)}
-                                  onArchive={() => handleArchiveReport(report.id)}
-                                  onDelete={() => handleDeleteReport(report.id, reportTitle)}
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="flex items-center gap-3 self-start sm:self-auto">
+                {availableEvents.length > 1 && (
+                  <select
+                    value={selectedEventId}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedEventId(newId);
+                      fetchReportsListAndTemplates(newId);
+                    }}
+                    className="text-xs py-2 px-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                    id="select-reports-event"
+                    aria-label="Filter reports by event"
+                  >
+                    {availableEvents.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.title} {ev.is_current || ev.status === 'current' ? '· Current' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <Button
+                  onClick={() => {
+                    setCreateStep(1);
+                    setActiveMainTab('custom_builder');
+                  }}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs transition-all"
+                  id="btn-nav-custom-builder"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create report
+                </Button>
               </div>
             </div>
-          )}
-        </div>
-      )}
+
+            {loadingReportsList ? (
+              <div className="flex items-center justify-center p-12 min-h-[30vh]">
+                <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports..." />
+              </div>
+            ) : reportsListError ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-center space-y-4">
+                <div className="space-y-1.5 max-w-sm">
+                  <AlertCircle className="w-8 h-8 text-amber-600 mx-auto mb-2" />
+                  <p className="text-base font-medium text-stone-800">We couldn't load reports. Try again.</p>
+                </div>
+                <Button
+                  onClick={() => fetchReportsListAndTemplates(selectedEventId)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  id="btn-retry-reports-list"
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : displayedReports.length === 0 ? (
+              /* Quiet Empty State (Prompt Section 7) */
+              <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-center space-y-4">
+                <div className="space-y-1.5 max-w-sm">
+                  <p className="text-base font-medium text-stone-800">No reports have been created for this event yet.</p>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Create a report to summarise registrations, attendance, participation and event operations.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    setCreateStep(1);
+                    setActiveMainTab('custom_builder');
+                  }}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Create report
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Contextual Bulk Action Bar (Priority 14, 15, 17) */}
+                {selectedReportIds.length > 0 && (
+                  <div className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-xl px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-stone-800">
+                        {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'} selected
+                      </span>
+                      <button
+                        onClick={() => setSelectedReportIds([])}
+                        className="text-xs text-stone-500 hover:text-stone-800 underline ml-2 cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleBulkDownload}
+                        disabled={bulkDownloading}
+                        variant="outline"
+                        className="bg-white border-stone-200 text-stone-700 hover:bg-stone-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                        id="btn-bulk-download"
+                      >
+                        {bulkDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : <Download className="w-3.5 h-3.5 text-stone-500" />}
+                        Download selected
+                      </Button>
+                      <Button
+                        onClick={() => setBulkDeleteConfirmOpen(true)}
+                        disabled={deleting}
+                        variant="outline"
+                        className="bg-white border-red-200 text-red-700 hover:bg-red-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                        id="btn-bulk-delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        Delete selected
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Generated Report List Table (Prompt Section 8) */}
+                <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse" aria-label="Reports Archive">
+                      <thead>
+                        <tr className="bg-stone-50 border-b border-stone-200">
+                          <th className="py-3 px-4 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              checked={displayedReports.length > 0 && selectedReportIds.length === displayedReports.length}
+                              ref={el => {
+                                if (el) {
+                                  el.indeterminate = selectedReportIds.length > 0 && selectedReportIds.length < displayedReports.length;
+                                }
+                              }}
+                              onChange={handleToggleSelectAll}
+                              className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                              aria-label="Select all reports"
+                            />
+                          </th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Event</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Type</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created by</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {displayedReports.map((report) => {
+                          const isComplete = report.status === 'completed' || report.status === 'ready';
+                          const isPending = ['queued', 'generating'].includes(report.status);
+                          const isFailed = report.status === 'failed';
+                          const isExpired = Boolean(report.downloadExpired);
+
+                          const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Management Report';
+                          const eventTitle = report.eventTitle || report.eventName || 'The General Assembly 2026';
+                          const typeName = report.templateName || 'Management summary';
+                          const preparedBy = report.requestedByName || report.requestedByEmail || 'Super Admin';
+                          const statusLabel = isExpired ? 'Download expired' : getReportStatusLabel(report.status);
+                          const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
+                          const isSelected = selectedReportIds.includes(report.id);
+
+                          return (
+                            <tr
+                              key={report.id}
+                              className={`hover:bg-stone-50/60 transition-colors ${isSelected ? 'bg-[#FAF9F6]' : ''}`}
+                            >
+                              <td className="py-4 px-4 w-10 text-center" onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleSelectRow(report.id)}
+                                  className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                  aria-label={`Select report ${reportTitle}`}
+                                />
+                              </td>
+                              <td className="py-4 px-6">
+                                <div className="space-y-0.5">
+                                  <span className="text-sm font-semibold text-stone-900 block line-clamp-1">
+                                    {reportTitle}
+                                  </span>
+                                  <span className="text-xs text-stone-400 block">
+                                    {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                                {eventTitle}
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-600">
+                                {typeName}
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-500 tabular-nums">
+                                {formattedDate}
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                                {preparedBy}
+                              </td>
+                              <td className="py-4 px-6">
+                                <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
+                                  isExpired ? 'bg-amber-50 text-amber-800 border border-amber-200/70' :
+                                  isComplete ? 'bg-stone-100 text-stone-700 border border-stone-200/80' :
+                                  isPending ? 'bg-amber-50 text-amber-800 border border-amber-200/60' :
+                                  isFailed ? 'bg-red-50 text-red-800 border border-red-200/60' :
+                                  'bg-stone-100 text-stone-600'
+                                }`}>
+                                  {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {isComplete && (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          setPreviewingReportId(report.id);
+                                          setPreviewReportTitle(reportTitle);
+                                          setPreviewEventTitle(eventTitle);
+                                        }}
+                                        className="h-8 px-3 bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                        id={`btn-view-${report.id}`}
+                                      >
+                                        <Eye className="w-3.5 h-3.5 text-stone-500" />
+                                        View
+                                      </button>
+
+                                      {isExpired ? (
+                                        <button
+                                          onClick={() => handleRegenerateReport(report.id)}
+                                          className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                          id={`btn-regenerate-${report.id}`}
+                                        >
+                                          <RefreshCw className="w-3.5 h-3.5" />
+                                          Regenerate report
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
+                                          className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                          id={`btn-download-${report.id}`}
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                          Download
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {isFailed && (
+                                    <button
+                                      onClick={() => handleRegenerateReport(report.id)}
+                                      className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                                      id={`btn-retry-${report.id}`}
+                                    >
+                                      <RefreshCw className="w-3 h-3" />
+                                      Try again
+                                    </button>
+                                  )}
+
+                                  <ReportActionsMenu
+                                    reportId={report.id}
+                                    status={report.status}
+                                    onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
+                                    onViewHistory={() => viewAuditLogs(report.id)}
+                                    onRegenerate={() => handleRegenerateReport(report.id)}
+                                    onArchive={() => handleArchiveReport(report.id)}
+                                    onDelete={() => handleDeleteReport(report.id, reportTitle)}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ----------------- TAB 2: TEMPLATES (Prompt Section 9 & 47) ----------------- */}
       {activeMainTab === 'template_library' && (
@@ -1917,6 +2006,62 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 >
                   {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Delete {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- EXPIRED DOWNLOAD RECOVERY MODAL (Prompt Section 5) ----------------- */}
+      <AnimatePresence>
+        {expiredModalReportId && (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="expired-download-title"
+            aria-modal="true"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-amber-50 text-amber-600 rounded-full shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="expired-download-title" className="text-base font-semibold text-stone-900">
+                    That download has expired.
+                  </h3>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Regenerate the report to create a fresh copy.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setExpiredModalReportId(null)}
+                  className="border-stone-200 text-stone-700 text-xs py-2 px-3.5 rounded-lg"
+                  id="btn-close-expired-modal"
+                >
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    const id = expiredModalReportId;
+                    setExpiredModalReportId(null);
+                    handleRegenerateReport(id);
+                  }}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs"
+                  id="btn-confirm-regenerate-modal"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Regenerate report
                 </Button>
               </div>
             </motion.div>
