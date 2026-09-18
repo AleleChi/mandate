@@ -1,10 +1,9 @@
-import React, { useEffect, useRef } from 'react';
-import { X, RefreshCw, AlertCircle, Send, CheckCircle2, ArrowRight, ChevronRight } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, RefreshCw, AlertCircle, Send, ArrowRight, ChevronRight } from 'lucide-react';
 import {
   GroundedQueryResult,
   ActionExecutionResult,
-  DeepLinkItem,
-  ActionRecipient
+  DeepLinkItem
 } from './OperationsAssistantPanel';
 
 export interface OperationsAssistantModalProps {
@@ -13,13 +12,33 @@ export interface OperationsAssistantModalProps {
   question: string | null;
   queryResult: GroundedQueryResult | null;
   queryLoading?: boolean;
+  queryError?: string | null;
   actionLoading?: boolean;
   actionResult?: ActionExecutionResult | null;
   actionError?: string | null;
+  onAskQuestion: (question: string) => void;
   onConfirmAction?: (token: string) => void;
   onCancelAction?: () => void;
   onDeepLinkClick?: (link: DeepLinkItem) => void;
   onSelectRelatedQuestion?: (question: string) => void;
+}
+
+/**
+ * Humanizes raw answer text if it contains database-style parenthetical summaries.
+ */
+function humanizeAnswerText(text: string): string[] {
+  if (!text) return [];
+  // Match pattern: N children are checked in right now (M total arrivals, K picked up).
+  const match = text.match(/^(\d[\d,]*) children are checked in right now \((\d[\d,]*) total arrivals, (\d[\d,]*) picked up\)\.?$/i);
+  if (match) {
+    const [, inside, arrivals, picked] = match;
+    const pickedPart = picked === '1' ? '1 has been picked up' : `${picked} have been picked up`;
+    return [
+      `${inside} children are currently checked in.`,
+      `${arrivals} children have arrived during the event, and ${pickedPart}.`
+    ];
+  }
+  return [text];
 }
 
 export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> = ({
@@ -28,17 +47,21 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
   question,
   queryResult,
   queryLoading = false,
+  queryError = null,
   actionLoading = false,
   actionResult,
   actionError,
+  onAskQuestion,
   onConfirmAction,
   onCancelAction,
   onDeepLinkClick,
   onSelectRelatedQuestion
 }) => {
+  const [modalInput, setModalInput] = useState('');
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Body scroll lock
   useEffect(() => {
@@ -55,7 +78,7 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !actionLoading) {
+      if (e.key === 'Escape' && !actionLoading && !queryLoading) {
         if (queryResult?.actionPreview && onCancelAction) {
           onCancelAction();
         } else {
@@ -66,29 +89,36 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
 
     window.addEventListener('keydown', handleKeyDown);
 
-    // Auto focus confirm button if action exists, otherwise close button
+    // Auto focus confirm button if action exists, otherwise composer input
     if (queryResult?.actionPreview && confirmBtnRef.current) {
       confirmBtnRef.current.focus();
-    } else if (closeBtnRef.current) {
-      closeBtnRef.current.focus();
+    } else if (inputRef.current) {
+      inputRef.current.focus();
     }
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, actionLoading, queryResult?.actionPreview, onCancelAction, onClose]);
+  }, [isOpen, actionLoading, queryLoading, queryResult?.actionPreview, onCancelAction, onClose]);
 
-  if (!isOpen || (!queryResult && !queryLoading)) return null;
+  if (!isOpen || (!queryResult && !queryLoading && !queryError)) return null;
 
   // Backdrop click handler
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget && !actionLoading) {
+    if (e.target === e.currentTarget && !actionLoading && !queryLoading) {
       if (queryResult?.actionPreview && onCancelAction) {
         onCancelAction();
       } else {
         onClose();
       }
     }
+  };
+
+  const handleModalSubmit = () => {
+    const q = modalInput.trim();
+    if (!q || queryLoading) return;
+    setModalInput('');
+    onAskQuestion(q);
   };
 
   const preview = queryResult?.actionPreview;
@@ -126,16 +156,11 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
         ref={modalContainerRef}
         className="bg-white w-full max-w-2xl sm:max-w-3xl rounded-2xl sm:rounded-3xl border border-[#EAE8E1] shadow-xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh] my-auto text-left"
       >
-        {/* Header */}
+        {/* Header (Minimal, No Technical Subtitle) */}
         <div className="p-4 sm:p-5 border-b border-[#EAE8E1] bg-[#FAF8F4] flex items-center justify-between shrink-0">
-          <div className="space-y-0.5 pr-4">
-            <h3 id="assistant-modal-title" className="font-serif text-base sm:text-lg font-semibold text-[#18181B]">
-              Operations Assistant
-            </h3>
-            <p className="text-[11px] text-zinc-500">
-              Live operational inquiry
-            </p>
-          </div>
+          <h3 id="assistant-modal-title" className="font-serif text-base sm:text-lg font-semibold text-[#18181B]">
+            Operations Assistant
+          </h3>
 
           <button
             ref={closeBtnRef}
@@ -157,21 +182,29 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
 
         {/* Scrollable Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 min-h-0">
-          {/* In-Modal Loading State (e.g. When asking related questions) */}
+          {/* In-Modal Loading State */}
           {queryLoading && (
             <div className="py-12 flex flex-col items-center justify-center gap-2.5 text-xs text-zinc-500">
               <RefreshCw className="w-5 h-5 animate-spin text-[#C59B27]" />
-              <span className="font-medium">Analyzing current operational data...</span>
+              <span className="font-medium text-zinc-700">Getting the latest information…</span>
+            </div>
+          )}
+
+          {/* In-Modal Friendly Error State */}
+          {!queryLoading && queryError && (
+            <div className="p-4 bg-red-50/90 border border-red-200 rounded-xl text-xs text-red-800 space-y-1">
+              <p className="font-semibold">We couldn't get that information right now.</p>
+              <p className="text-red-700">Please try again.</p>
             </div>
           )}
 
           {!queryLoading && queryResult && (
             <>
-              {/* 1. YOUR QUESTION */}
+              {/* 1. QUESTION */}
               {question && (
                 <div className="space-y-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                    YOUR QUESTION
+                  <span className="text-xs font-medium text-zinc-500 block">
+                    Question
                   </span>
                   <p className="text-xs sm:text-sm font-medium text-zinc-900 leading-snug">
                     {question}
@@ -181,16 +214,18 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
 
               {/* 2. ANSWER */}
               <div className="space-y-1.5 pt-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9A7326] block">
-                  ANSWER
+                <span className="text-xs font-semibold text-[#9A7326] block">
+                  Answer
                 </span>
                 <div
                   id="assistant-modal-description"
-                  className="bg-[#FAF9F6] rounded-xl p-3.5 sm:p-4 border-l-2 border-[#C59B27] space-y-3"
+                  className="bg-[#FAF9F6] rounded-xl p-3.5 sm:p-4 border-l-2 border-[#C59B27] space-y-2.5"
                 >
-                  <p className="text-xs sm:text-[13px] font-medium text-zinc-900 leading-relaxed">
-                    {queryResult.answer}
-                  </p>
+                  {humanizeAnswerText(queryResult.answer).map((paragraph, pIdx) => (
+                    <p key={pIdx} className="text-xs sm:text-[13px] font-medium text-zinc-900 leading-relaxed">
+                      {paragraph}
+                    </p>
+                  ))}
 
                   {/* Desktop & Mobile Table Display */}
                   {queryResult.table && queryResult.table.rows && queryResult.table.rows.length > 0 && (
@@ -264,7 +299,7 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
                   {queryResult.breakdown && queryResult.breakdown.items && queryResult.breakdown.items.length > 0 && (
                     <div className="space-y-2 pt-1">
                       {queryResult.breakdown.title && (
-                        <span className="text-[10px] font-semibold text-zinc-500 block uppercase tracking-wider">
+                        <span className="text-xs font-semibold text-zinc-600 block">
                           {queryResult.breakdown.title}
                         </span>
                       )}
@@ -300,8 +335,8 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
               {preview && !actionResult && (
                 <div className="space-y-3 pt-2 border-t border-[#EAE8E1]">
                   <div className="space-y-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                      PROPOSED ACTION
+                    <span className="text-xs font-medium text-zinc-500 block">
+                      Proposed action
                     </span>
                     <h4 className="font-serif text-sm sm:text-base font-semibold text-zinc-900">
                       {preview.title}
@@ -353,10 +388,10 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
                   {isDutyReminders && preview.recipients && preview.recipients.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between pb-1 border-b border-[#EAE8E1]">
-                        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider font-mono">
+                        <span className="text-xs font-semibold text-zinc-600">
                           Recipients ({preview.recipients.length})
                         </span>
-                        <span className="text-[10px] text-zinc-400">
+                        <span className="text-xs text-zinc-400">
                           {availableCount} eligible
                         </span>
                       </div>
@@ -448,10 +483,10 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
               {(queryResult.provenance || (queryResult.deepLinks && queryResult.deepLinks.length > 0)) && (
                 <div className="pt-3 border-t border-[#EAE8E1]/80 space-y-2">
                   {queryResult.provenance && (
-                    <div className="text-[11px] text-zinc-400 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span>Source: <span className="text-zinc-600 font-normal">{queryResult.provenance.source}</span></span>
+                    <div className="text-[11px] text-zinc-500 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <span className="font-medium text-zinc-700">{queryResult.provenance.source}</span>
                       <span>·</span>
-                      <span>Updated {queryResult.provenance.updatedAt}</span>
+                      <span className="text-zinc-400">Updated {queryResult.provenance.updatedAt}</span>
                     </div>
                   )}
 
@@ -479,7 +514,7 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
               {/* 6. RELATED QUESTIONS (In-Modal Query Trigger) */}
               {queryResult.suggestedQuestions && queryResult.suggestedQuestions.length > 0 && (
                 <div className="pt-3 border-t border-[#EAE8E1]/80 space-y-2">
-                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <h4 className="text-xs font-semibold text-zinc-600">
                     You may also want to ask
                   </h4>
                   <div className="flex flex-col gap-1">
@@ -503,10 +538,10 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
           )}
         </div>
 
-        {/* Footer Actions (Sticky bottom on mobile, right-aligned on desktop) */}
-        <div className="p-3.5 sm:p-4 border-t border-[#EAE8E1] bg-[#FAF8F4]/80 backdrop-blur-xs flex items-center justify-end gap-2.5 shrink-0">
+        {/* Sticky Footer: Action confirmation controls OR persistent question composer */}
+        <div className="p-3.5 sm:p-4 border-t border-[#EAE8E1] bg-[#FAF8F4]/95 backdrop-blur-xs shrink-0">
           {preview && !actionResult ? (
-            <>
+            <div className="flex items-center justify-end gap-2.5 w-full">
               <button
                 type="button"
                 disabled={actionLoading}
@@ -539,15 +574,42 @@ export const OperationsAssistantModal: React.FC<OperationsAssistantModalProps> =
                   </>
                 )}
               </button>
-            </>
+            </div>
           ) : (
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 text-xs font-medium text-zinc-700 hover:text-zinc-900 border border-[#EAE8E1] bg-white hover:bg-zinc-50 rounded-xl transition-colors cursor-pointer min-h-[40px] sm:min-h-[36px]"
-            >
-              Close
-            </button>
+            <div className="space-y-2 w-full">
+              <span className="text-[11px] font-medium text-zinc-500 block">
+                Ask another question
+              </span>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleModalSubmit();
+                }}
+                className="relative flex items-center w-full"
+              >
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={modalInput}
+                  onChange={(e) => setModalInput(e.target.value)}
+                  disabled={queryLoading}
+                  placeholder="Ask about this event…"
+                  className="w-full pl-3.5 pr-20 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all text-zinc-900 placeholder:text-zinc-400 disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  disabled={queryLoading || !modalInput.trim()}
+                  className="absolute right-1.5 px-3 py-1 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-40 text-white rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {queryLoading ? (
+                    <RefreshCw className="w-3 h-3 animate-spin text-[#C59B27]" />
+                  ) : (
+                    <Send className="w-3 h-3 text-[#C59B27]" />
+                  )}
+                  <span>Ask</span>
+                </button>
+              </form>
+            </div>
           )}
         </div>
       </div>

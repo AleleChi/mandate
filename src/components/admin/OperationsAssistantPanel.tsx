@@ -212,8 +212,12 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
     setQueryError(null);
     setActionResult(null);
     setActionError(null);
+    // Discard any pending action preview/token client-side before sending new question
+    setQueryResult(prev => prev ? { ...prev, actionPreview: undefined } : null);
     if (!keepModalOpen) {
       setIsModalOpen(false);
+    } else {
+      setIsModalOpen(true);
     }
 
     try {
@@ -224,13 +228,11 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
       } else {
         setQueryResult(null);
         setQueryError(res.error || "We couldn't get that information right now. Please try again.");
-        setIsModalOpen(false);
       }
     } catch (err: any) {
       console.error('Operational query error:', err);
       setQueryResult(null);
       setQueryError("We couldn't get that information right now. Please try again.");
-      setIsModalOpen(false);
     } finally {
       setQueryLoading(false);
     }
@@ -261,8 +263,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
   };
 
   const handleCancelAction = () => {
-    // Immediately close modal, clear pending action UI and confirmation token without mutation, leaving previous answer visible
-    setIsModalOpen(false);
+    // Return to current answer without write, clear pending action preview and token client-side, restore question composer
     setQueryResult(prev => prev ? { ...prev, actionPreview: undefined } : null);
     setActionError(null);
   };
@@ -365,12 +366,12 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
       {queryLoading && !isModalOpen && (
         <div className="py-3 flex items-center gap-2 text-xs text-zinc-500 border-t border-[#EAE8E1]/80 pt-3">
           <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#C59B27]" />
-          <span>Analyzing current operational data...</span>
+          <span>Getting the latest information…</span>
         </div>
       )}
 
       {/* Query Error State (Compact Inline) */}
-      {queryError && (
+      {queryError && !isModalOpen && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
           {queryError}
         </div>
@@ -378,10 +379,10 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
 
       {/* Compact Last Answer Summary (Inside Panel) */}
       {submittedQuestion && !queryLoading && (queryResult || actionResult) && (
-        <div className="pt-3 border-t border-[#EAE8E1]/80 space-y-2.5 text-left">
+        <div className="pt-3 border-t border-[#EAE8E1]/80 space-y-2 text-left">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
-              YOUR QUESTION
+            <span className="text-xs font-medium text-zinc-500 block">
+              Question
             </span>
             <p className="text-xs font-medium text-zinc-800 leading-snug">
               {submittedQuestion}
@@ -389,8 +390,8 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           </div>
 
           <div className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9A7326] block">
-              LAST ANSWER
+            <span className="text-xs font-semibold text-[#9A7326] block">
+              Last answer
             </span>
             <p className="text-xs text-zinc-700 leading-relaxed line-clamp-2">
               {actionResult ? `${actionResult.title} — ${actionResult.message}` : queryResult?.answer}
@@ -421,9 +422,14 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         question={submittedQuestion}
         queryResult={queryResult}
         queryLoading={queryLoading}
+        queryError={queryError}
         actionLoading={actionLoading}
         actionResult={actionResult}
         actionError={actionError}
+        onAskQuestion={(q) => {
+          setQueryInput(q);
+          handleRunQuery(q, true);
+        }}
         onConfirmAction={handleConfirmAction}
         onCancelAction={handleCancelAction}
         onDeepLinkClick={handleDeepLinkClick}
