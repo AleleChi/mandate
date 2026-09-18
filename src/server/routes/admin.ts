@@ -13045,7 +13045,7 @@ router.post('/operations-assistant/query', authMiddleware, async (req: Authentic
       return res.status(400).json({ success: false, error: 'A question is required.' });
     }
 
-    const result = await operationsAssistantService.processOperationalQuery(question.trim(), eventId);
+    const result = await operationsAssistantService.processOperationalQuery(question.trim(), eventId, req.user);
     res.json({ success: true, result });
   } catch (err: any) {
     console.error('Error processing operational query:', err);

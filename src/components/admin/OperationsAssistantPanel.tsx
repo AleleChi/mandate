@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import {
   Send,
-  RefreshCw
+  RefreshCw,
+  ArrowRight,
+  ExternalLink,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -52,12 +55,44 @@ export interface EventReadinessReport {
   lastUpdated: string;
 }
 
-interface GroundedQueryResult {
+export interface TableData {
+  columns: string[];
+  rows: (string | number)[][];
+  totalCount?: number;
+  displayedCount?: number;
+}
+
+export interface BreakdownItem {
+  label: string;
+  primary: string | number;
+  secondary?: string | number;
+  meta?: string;
+}
+
+export interface DeepLinkItem {
+  label: string;
+  route?: string;
+  tab?: string;
+}
+
+export interface GroundedQueryResult {
   answer: string;
   grounded: boolean;
   intent: string;
+  provenance?: {
+    source: string;
+    updatedAt: string;
+  };
+  table?: TableData;
+  breakdown?: {
+    title?: string;
+    items: BreakdownItem[];
+  };
+  deepLinks?: DeepLinkItem[];
   data?: any;
   suggestedQuestions?: string[];
+  clarification?: boolean;
+  actionAttempt?: boolean;
 }
 
 export interface OperationsAssistantPanelProps {
@@ -65,6 +100,39 @@ export interface OperationsAssistantPanelProps {
   onNavigateRoute?: (route: string) => void;
   className?: string;
 }
+
+const CATEGORIZED_SUGGESTIONS: Record<string, string[]> = {
+  Children: [
+    'How many children are checked in right now?',
+    'List selected children without passes.',
+    'Which age group has the highest registration?'
+  ],
+  Volunteers: [
+    'List the volunteers currently on duty.',
+    'Who is assigned to Grace Hall?',
+    'How many approved volunteers are not assigned?'
+  ],
+  Duty: [
+    'Which duty locations need more people?',
+    'Which volunteers haven\'t reported for duty?',
+    'Who is assigned to Grace Hall?'
+  ],
+  Applications: [
+    'How many applications are under review?',
+    'How many children are selected?',
+    'Is registration still open?'
+  ],
+  Safety: [
+    'Show unresolved escalations.',
+    'Are there any open safety notices?',
+    'What changed in the last hour?'
+  ],
+  Reports: [
+    'What reports were generated today?',
+    'Give me an event summary.',
+    'What changed today?'
+  ]
+};
 
 export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> = ({
   onNavigateTab,
@@ -74,12 +142,10 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
   const [queryInput, setQueryInput] = useState('');
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryResult, setQueryResult] = useState<GroundedQueryResult | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('Duty');
 
-  const SUGGESTED_QUERIES = [
-    'Which locations need volunteers?',
-    'How many children are selected?',
-    'Is registration still open?'
-  ];
+  const categories = Object.keys(CATEGORIZED_SUGGESTIONS);
+  const currentSuggestions = CATEGORIZED_SUGGESTIONS[selectedCategory] || CATEGORIZED_SUGGESTIONS['Duty'];
 
   const handleRunQuery = async (questionText: string) => {
     const q = questionText.trim();
@@ -111,10 +177,18 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
     }
   };
 
+  const handleDeepLinkClick = (link: DeepLinkItem) => {
+    if (link.tab && onNavigateTab) {
+      onNavigateTab(link.tab);
+    } else if (link.route && onNavigateRoute) {
+      onNavigateRoute(link.route);
+    }
+  };
+
   return (
     <div
       className={`bg-white border border-[#EAE8E1]/80 rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left ${className}`}
-      data-component-version="admin-operations-assistant-human-refined-v3"
+      data-component-version="admin-operations-assistant-human-refined-v4"
     >
       {/* Editorial Header */}
       <div className="space-y-0.5 pb-1">
@@ -122,7 +196,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           Operations Assistant
         </h3>
         <p className="text-xs text-zinc-500">
-          Ask about the current event
+          Ask natural-language questions grounded in live system data
         </p>
       </div>
 
@@ -138,7 +212,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           type="text"
           value={queryInput}
           onChange={(e) => setQueryInput(e.target.value)}
-          placeholder="Ask about the current event..."
+          placeholder="Ask about volunteers, duty, children, safety..."
           className="w-full pl-3.5 pr-18 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6]/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all font-sans text-zinc-900 placeholder:text-zinc-400"
         />
         <button
@@ -155,32 +229,145 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         </button>
       </form>
 
-      {/* Suggested Questions */}
-      <div className="space-y-1.5 pt-0.5">
-        <span className="text-xs font-medium text-zinc-400 block">
-          Suggested
-        </span>
-        <div className="flex flex-col gap-1.5">
-          {SUGGESTED_QUERIES.map((q, idx) => (
+      {/* Organized Category Suggestion Discovery */}
+      <div className="space-y-2 pt-0.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setSelectedCategory(cat)}
+              className={`text-[11px] px-2.5 py-0.5 rounded-md transition-colors cursor-pointer shrink-0 font-medium ${
+                selectedCategory === cat
+                  ? 'bg-[#FAF9F6] text-[#9A7326] border border-[#C59B27]/30'
+                  : 'text-zinc-500 hover:text-zinc-800'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-1">
+          {currentSuggestions.map((q, idx) => (
             <button
               key={idx}
               type="button"
               onClick={() => handleRunQuery(q)}
-              className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-0.5"
+              className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-0.5 flex items-center justify-between group"
             >
-              {q}
+              <span>{q}</span>
+              <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-[#C59B27] transition-opacity shrink-0" />
             </button>
           ))}
         </div>
       </div>
 
-      {/* Answer Area in plain clean typography */}
+      {/* Answer Area with Rich Output Support */}
       {queryResult && (
-        <div className="pt-3 border-t border-[#EAE8E1]/70 space-y-2 text-left">
+        <div className="pt-3 border-t border-[#EAE8E1]/70 space-y-3 text-left">
+          {/* Main Typography Answer */}
           <p className="text-xs text-zinc-800 leading-relaxed font-normal">
             {queryResult.answer}
           </p>
 
+          {/* Structured Table Display */}
+          {queryResult.table && queryResult.table.rows && queryResult.table.rows.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <div className="overflow-x-auto rounded-lg border border-[#EAE8E1]/80 max-h-56 overflow-y-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1]/80 text-[11px] text-zinc-500 font-medium">
+                      {queryResult.table.columns.map((col, cIdx) => (
+                        <th key={cIdx} className="py-2 px-3 whitespace-nowrap">
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EAE8E1]/60">
+                    {queryResult.table.rows.map((row, rIdx) => (
+                      <tr key={rIdx} className="hover:bg-[#FAF9F6]/50 transition-colors">
+                        {row.map((val, cellIdx) => (
+                          <td key={cellIdx} className="py-1.5 px-3 text-zinc-800 whitespace-nowrap text-xs">
+                            {val !== null && val !== undefined ? String(val) : '—'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {queryResult.table.totalCount !== undefined &&
+                queryResult.table.displayedCount !== undefined &&
+                queryResult.table.totalCount > queryResult.table.displayedCount && (
+                  <p className="text-[11px] text-zinc-400 text-right">
+                    Showing {queryResult.table.displayedCount} of {queryResult.table.totalCount} records
+                  </p>
+                )}
+            </div>
+          )}
+
+          {/* Structured Breakdown Display */}
+          {queryResult.breakdown && queryResult.breakdown.items && queryResult.breakdown.items.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              {queryResult.breakdown.title && (
+                <span className="text-[11px] font-medium text-zinc-500 block uppercase tracking-wider">
+                  {queryResult.breakdown.title}
+                </span>
+              )}
+              <div className="grid grid-cols-1 gap-1.5">
+                {queryResult.breakdown.items.map((item, bIdx) => (
+                  <div
+                    key={bIdx}
+                    className="flex items-center justify-between p-2 rounded-lg bg-[#FAF9F6]/70 border border-[#EAE8E1]/60 text-xs"
+                  >
+                    <span className="font-medium text-zinc-800">{item.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-900 font-semibold">{item.primary}</span>
+                      {item.secondary && (
+                        <span className="text-[11px] text-[#9A7326] font-medium">
+                          ({item.secondary})
+                        </span>
+                      )}
+                      {item.meta && (
+                        <span className="text-[11px] text-zinc-400">
+                          · {item.meta}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Deep Link Action Shortcuts */}
+          {queryResult.deepLinks && queryResult.deepLinks.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {queryResult.deepLinks.map((link, lIdx) => (
+                <button
+                  key={lIdx}
+                  type="button"
+                  onClick={() => handleDeepLinkClick(link)}
+                  className="text-xs inline-flex items-center gap-1 font-medium text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer py-0.5"
+                >
+                  <span>{link.label}</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Provenance Footer */}
+          {queryResult.provenance && (
+            <div className="text-[11px] text-zinc-400 flex items-center justify-between pt-2 border-t border-[#EAE8E1]/60">
+              <span className="truncate pr-2">Source: {queryResult.provenance.source}</span>
+              <span className="shrink-0">{queryResult.provenance.updatedAt}</span>
+            </div>
+          )}
+
+          {/* Contextual Follow-up Questions */}
           {queryResult.suggestedQuestions && queryResult.suggestedQuestions.length > 0 && (
             <div className="pt-2 space-y-1">
               <span className="text-[11px] text-zinc-400 block">Related:</span>
