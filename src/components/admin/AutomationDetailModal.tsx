@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, ExternalLink, CheckCircle2, AlertCircle, Info, Clock, Check } from 'lucide-react';
 import { Button } from '../common/Button';
+import { formatHumanDate, formatHumanExpectedTime } from './eventWatchModel';
 
 export interface AutomationRecordItem {
   id: string;
@@ -51,15 +52,6 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
     payload = JSON.parse(automation.payload_json || '{}');
   } catch {}
 
-  const formatTimeOnly = (iso: string | null | undefined) => {
-    if (!iso) return '—';
-    try {
-      const d = new Date(iso);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return iso;
-    }
-  };
 
   const handleAcknowledge = async () => {
     if (!onAcknowledge || acknowledging) return;
@@ -157,7 +149,7 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
                 {payload.hasReliableReportingTime && payload.scheduledStart && (
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Scheduled time:</span>
-                    <span className="font-medium text-zinc-900">{formatTimeOnly(payload.scheduledStart)}</span>
+                    <span className="font-medium text-zinc-900">{formatHumanExpectedTime(payload.scheduledStart)}</span>
                   </div>
                 )}
                 {payload.minutesLate > 0 && (
@@ -194,7 +186,7 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Closing deadline:</span>
-                  <span className="font-medium text-zinc-900">{formatTimeOnly(payload.closesAt)}</span>
+                  <span className="font-medium text-zinc-900">{formatHumanDate(payload.closesAt, true)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Hours remaining:</span>
@@ -215,7 +207,7 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Expired at:</span>
-                  <span className="font-medium text-zinc-900">{formatTimeOnly(payload.expiredAt)}</span>
+                  <span className="font-medium text-zinc-900">{formatHumanDate(payload.expiredAt, true)}</span>
                 </div>
               </div>
             )}
@@ -224,18 +216,18 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
             <div className="pt-3 border-t border-zinc-200/60 grid grid-cols-2 gap-4 text-xs text-zinc-500">
               <div>
                 <span className="text-zinc-400 block text-[10px] uppercase font-medium">First detected</span>
-                <span className="text-zinc-700 mt-0.5 block">{formatTimeOnly(automation.first_detected_at)}</span>
+                <span className="text-zinc-700 mt-0.5 block">{formatHumanDate(automation.first_detected_at, true)}</span>
               </div>
               <div>
                 <span className="text-zinc-400 block text-[10px] uppercase font-medium">Updated</span>
-                <span className="text-zinc-700 mt-0.5 block">{formatTimeOnly(automation.last_detected_at)}</span>
+                <span className="text-zinc-700 mt-0.5 block">{formatHumanDate(automation.last_detected_at, true)}</span>
               </div>
             </div>
 
             {automation.resolved_at && (
               <div className="pt-2 border-t border-zinc-200/60 text-xs text-emerald-700 flex items-center gap-1.5">
                 <Check className="w-3.5 h-3.5" />
-                <span>Resolved at {formatTimeOnly(automation.resolved_at)}</span>
+                <span>Cleared at {formatHumanDate(automation.resolved_at, true)}</span>
               </div>
             )}
           </div>

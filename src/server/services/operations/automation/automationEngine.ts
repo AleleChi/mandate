@@ -299,10 +299,10 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
     queryOne("SELECT COUNT(*) as count FROM incident_records WHERE event_id = ? AND status != 'closed'", [eventId]),
     queryOne("SELECT COUNT(*) as count FROM escalation_cycles WHERE event_id = ? AND status IN ('scheduled', 'processing', 'open')", [eventId])
   ]);
-  const openAlerts = openAlertsRes?.count || 0;
-  const urgentAlerts = urgentAlertsRes?.count || 0;
-  const openIncidents = openIncidentsRes?.count || 0;
-  const activeEscalations = activeCyclesRes?.count || 0;
+  const openAlerts = parseInt(String(openAlertsRes?.count || '0'), 10) || 0;
+  const urgentAlerts = parseInt(String(urgentAlertsRes?.count || '0'), 10) || 0;
+  const openIncidents = parseInt(String(openIncidentsRes?.count || '0'), 10) || 0;
+  const activeEscalations = parseInt(String(activeCyclesRes?.count || '0'), 10) || 0;
   const totalOpenNotices = openAlerts + openIncidents + activeEscalations;
 
   if (totalOpenNotices > 0) {
@@ -324,8 +324,8 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
     queryOne('SELECT COUNT(*) as count FROM event_age_groups WHERE event_id = ?', [eventId]),
     queryOne('SELECT COUNT(*) as count FROM event_locations WHERE event_id = ? AND is_active = 1', [eventId])
   ]);
-  const ageGroupsCount = ageGroupsCountRes?.count || 0;
-  const activeLocationsCount = activeLocationsCountRes?.count || 0;
+  const ageGroupsCount = parseInt(String(ageGroupsCountRes?.count || '0'), 10) || 0;
+  const activeLocationsCount = parseInt(String(activeLocationsCountRes?.count || '0'), 10) || 0;
 
   if (activeLocationsCount === 0) {
     detectedSignals.push({
@@ -365,8 +365,8 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
       signal: 'CONFIGURATION_GAP',
       eventId,
       gapType: 'missing_volunteer_registration_deadline',
-      title: 'No volunteer registration deadline configured',
-      details: 'Set the closing deadline for volunteer registration in event settings.',
+      title: 'Volunteer registration needs a closing date',
+      details: 'Set when volunteer registration should close.',
       detectedAt: nowIso
     });
   }
@@ -386,6 +386,35 @@ function formatRestrainedDate(isoString: string): string {
       hour: '2-digit',
       minute: '2-digit'
     });
+  } catch {
+    return isoString;
+  }
+}
+
+function formatHumanExpectedTime(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const now = new Date();
+    const isSameDay = d.getFullYear() === now.getFullYear() &&
+                      d.getMonth() === now.getMonth() &&
+                      d.getDate() === now.getDate();
+
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    if (isSameDay) {
+      return `Expected at ${timeStr}`;
+    }
+
+    const dateStr = d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short'
+    });
+    return `Expected ${dateStr} at ${timeStr}`;
   } catch {
     return isoString;
   }
@@ -427,7 +456,7 @@ export function buildAutomationItemFromSignal(
       let title = `${signal.volunteerName} has not reported for duty`;
       let summary = `${signal.locationName} · Scheduled reporting time passed`;
       if (signal.hasReliableReportingTime && signal.scheduledStart) {
-        summary = `Scheduled at ${formatRestrainedDate(signal.scheduledStart)} · ${signal.locationName}`;
+        summary = `${signal.locationName} · ${formatHumanExpectedTime(signal.scheduledStart)}`;
       } else {
         title = `${signal.volunteerName} assigned but not currently on duty`;
         summary = `${signal.locationName} · Not checked in on site`;
@@ -447,7 +476,7 @@ export function buildAutomationItemFromSignal(
         payload: signal,
         proposedActionKey: rule.proposedAction?.actionKey,
         actionTargetRoute: rule.actionTargetRoute,
-        actionTargetLabel: rule.actionTargetLabel,
+        actionTargetLabel: 'Review reminder →',
         cooldownMinutes: rule.defaultCooldownMinutes
       };
     }
@@ -517,7 +546,7 @@ export function buildAutomationItemFromSignal(
         ruleId: rule.id,
         signalType: 'REPORT_EXPIRED',
         fingerprint: `${eventId}:REPORT_EXPIRED:${signal.reportId}`,
-        title: 'An event report download has expired',
+        title: 'A report download is no longer available',
         summary: `Expired ${formatRestrainedDate(signal.expiredAt)}`,
         description: `Download token expired for ${signal.reportType} report.`,
         severity: 'information',
@@ -526,7 +555,7 @@ export function buildAutomationItemFromSignal(
         payload: signal,
         proposedActionKey: rule.proposedAction?.actionKey,
         actionTargetRoute: rule.actionTargetRoute,
-        actionTargetLabel: rule.actionTargetLabel,
+        actionTargetLabel: 'Open Reports →',
         cooldownMinutes: rule.defaultCooldownMinutes
       };
     }
@@ -551,20 +580,31 @@ export function buildAutomationItemFromSignal(
     }
 
     case 'SAFETY_ITEM_OPEN': {
+      const count = parseInt(String(signal.totalOpenNotices || '0'), 10) || 0;
+      const title = count === 1 ? '1 safety item needs attention' : `${count} safety items need attention`;
+      const alerts = parseInt(String(signal.openAlertsCount || '0'), 10) || 0;
+      const incidents = parseInt(String(signal.openIncidentsCount || '0'), 10) || 0;
+      const escalations = parseInt(String(signal.activeEscalationsCount || '0'), 10) || 0;
+      const parts: string[] = [];
+      if (alerts > 0) parts.push(`${alerts} ${alerts === 1 ? 'alert' : 'alerts'}`);
+      if (incidents > 0) parts.push(`${incidents} ${incidents === 1 ? 'incident' : 'incidents'}`);
+      if (escalations > 0) parts.push(`${escalations} ${escalations === 1 ? 'escalation' : 'escalations'}`);
+      const summary = parts.length > 0 ? parts.join(' · ') : 'Unresolved safety notices';
+
       return {
         eventId,
         ruleId: rule.id,
         signalType: 'SAFETY_ITEM_OPEN',
         fingerprint: `${eventId}:SAFETY_ITEM_OPEN:summary`,
-        title: `${signal.totalOpenNotices} safety ${signal.totalOpenNotices === 1 ? 'item remains open' : 'items remain open'}`,
-        summary: `${signal.openAlertsCount} alerts · ${signal.openIncidentsCount} incidents · ${signal.activeEscalationsCount} escalations`,
+        title,
+        summary,
         description: 'Unresolved safeguarding items require human review and escalation response.',
         severity: signal.severity,
         entityType: 'safety',
         entityId: 'summary',
         payload: signal,
         actionTargetRoute: rule.actionTargetRoute,
-        actionTargetLabel: rule.actionTargetLabel,
+        actionTargetLabel: 'Review safety →',
         cooldownMinutes: rule.defaultCooldownMinutes
       };
     }
