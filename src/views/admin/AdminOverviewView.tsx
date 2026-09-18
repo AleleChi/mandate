@@ -62,7 +62,7 @@ import { AdminEscalationsView } from './AdminEscalationsView';
 import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
 import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
 import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
-import { OperationsAssistantPanel } from '../../components/admin/OperationsAssistantPanel';
+import { OperationsAssistantPanel, EventReadinessReport, AttentionItem } from '../../components/admin/OperationsAssistantPanel';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
 
@@ -94,6 +94,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   // Rich dashboard dynamic dataset
   const [overviewData, setOverviewData] = useState<any>(null);
+  const [readinessReport, setReadinessReport] = useState<EventReadinessReport | null>(null);
+  const [showAllAttentionIssues, setShowAllAttentionIssues] = useState<boolean>(false);
+  const [showDemographicsTable, setShowDemographicsTable] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [errorUpdatingDemographics, setErrorUpdatingDemographics] = useState<string>('');
   const [dashboardError, setDashboardError] = useState<{ message: string; description: string } | null>(null);
@@ -926,13 +929,20 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     }
 
     try {
-      const res = await api.admin.getOverview({ signal: controller.signal });
+      const [res, readinessRes] = await Promise.all([
+        api.admin.getOverview({ signal: controller.signal }),
+        api.admin.getOperationsAssistantReadiness().catch((err) => {
+          console.error('[AdminOverviewView - getOperationsAssistantReadiness Error]:', err);
+          return null;
+        })
+      ]);
+
       if (res.success) {
         setOverviewData(res);
         setDashboardError(null);
         lastToastMessageRef.current = null; // reset error toast deduplicator on success
         setErrorUpdatingDemographics('');
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const timeStr = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         setLastUpdated(timeStr);
         setStats({
           totalChildren: res.metrics?.totalChildren ?? res.stats?.totalChildren ?? 0,
@@ -948,6 +958,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         if (isRefresh) {
           showSuccess('Refreshed', 'Dashboard analytics updated successfully.');
         }
+      }
+
+      if (readinessRes && readinessRes.success && readinessRes.report) {
+        setReadinessReport(readinessRes.report);
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -1133,6 +1147,50 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const reviewProgress = overviewData?.reviewProgress || { selected: 0, underReview: 0, notSelected: 0 };
   const attendanceData = overviewData?.attendance || { expected: 0, checkedIn: 0, stillInside: 0, pickedUp: 0, notArrived: 0 };
   const recentActivityList = overviewData?.recentActivity || [];
+
+  const readinessStatus = readinessReport?.readinessStatus || (stats.underReview > 0 || (needsAttentionList && needsAttentionList.length > 0) ? 'NEEDS ATTENTION' : 'READY');
+
+  const getRegistrationStatus = () => {
+    const closesAt = readinessReport?.event?.registrationClosesAt || readinessReport?.metrics?.registrationClosingDate;
+    if (closesAt) {
+      const closes = new Date(closesAt);
+      if (new Date() > closes) {
+        return { label: 'Registration: Closed', style: 'bg-zinc-100 text-zinc-600 border-zinc-200' };
+      }
+      const formattedDate = closes.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return { label: `Registration: Open (Closes ${formattedDate})`, style: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+    }
+    return { label: 'Registration: Open', style: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+  };
+
+  const effectiveAttentionItems: AttentionItem[] = (readinessReport?.needsAttention && readinessReport.needsAttention.length > 0)
+    ? readinessReport.needsAttention
+    : (needsAttentionList || []).map((item: any) => ({
+        id: item.id,
+        title: item.label,
+        explanation: `${item.count} item(s) require administrative review.`,
+        severity: (item.count > 5 ? 'urgent' : 'attention') as 'urgent' | 'attention',
+        count: item.count,
+        actionLabel: 'Review',
+        actionRoute: '/admin/review',
+        actionTab: 'review'
+      }));
+
+  const displayedAttentionItems = showAllAttentionIssues
+    ? effectiveAttentionItems
+    : effectiveAttentionItems.slice(0, 3);
+
+  const handleAttentionAction = (item: AttentionItem) => {
+    if (item.actionTab) {
+      handleTabChange(item.actionTab as AdminTab);
+    } else if (item.actionRoute) {
+      onNavigate(item.actionRoute as AppRoute);
+    } else if (item.id) {
+      setActiveAttentionModal({ id: item.id, label: item.title });
+    }
+  };
+
+  const canViewSafety = ['admin', 'super_admin'].includes(adminUser?.role || 'admin');
 
   const renderPlaceholderSection = (tabName: string) => (
     <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center max-w-2xl mx-auto space-y-4 shadow-xs">
@@ -2964,196 +3022,445 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       />
                     </div>
                   ) : (
-                    <div className="space-y-6 sm:space-y-8">
-                      {/* Event Hero Block */}
+                    <div className="space-y-6" data-component-version="admin-overview-redesign-v2">
+                      {/* 1. TOP EVENT PULSE */}
                       <div
-                        className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6 shadow-xs"
-                        data-component-version="admin-event-hero-approved-v1"
+                        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:px-6 sm:py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-2xs"
+                        data-component-version="admin-event-pulse-v1"
                       >
-                        <div className="space-y-3.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase">
-                              Active Event
-                            </span>
-                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase">
-                              Registration Open
-                            </span>
-                          </div>
-
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-left">
                           <div>
-                            <h2 className="font-serif text-2xl sm:text-3xl font-semibold text-zinc-800 tracking-tight">
-                              {overviewData?.event?.name || 'The General Assembly'}
-                            </h2>
-                            <p className="text-xs text-zinc-500 font-medium mt-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="font-serif text-lg sm:text-xl font-bold text-zinc-900 tracking-tight">
+                                {readinessReport?.event?.title || overviewData?.event?.name || 'The General Assembly'}
+                              </h2>
+                              <span className="text-xs text-zinc-400 font-sans hidden sm:inline">·</span>
+                              <span className="text-xs text-zinc-600 font-medium">
+                                {overviewData?.event?.dateLabel || '22 Nov 2025'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 font-medium mt-0.5">
                               {overviewData?.event?.section || 'Children and Teens'}
                             </p>
                           </div>
-
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-zinc-500">
-                            <span className="flex items-center">
-                              <Calendar className="w-3.5 h-3.5 mr-1.5 text-[#C59B27]" />
-                              {overviewData?.event?.dateLabel || '22 Nov 2025'}
-                            </span>
-                            <span className="flex items-center">
-                              <Clock className="w-3.5 h-3.5 mr-1.5 text-[#C59B27]" />
-                              {overviewData?.event?.timeLabel || '9:00 AM to 7:00 PM'}
-                            </span>
-                          </div>
                         </div>
 
-                        <div className="flex sm:items-center gap-3 self-start md:self-center shrink-0">
-                          <button
-                            onClick={() => setActiveTab('reports')}
-                            className="text-xs bg-white text-[#18181B] border border-[#EAE8E1] hover:bg-zinc-50 px-4 py-2.5 rounded-xl font-semibold transition-colors"
+                        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start md:self-center">
+                          {/* Readiness Badge */}
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border font-mono ${
+                              readinessStatus === 'READY'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : readinessStatus === 'NEEDS ATTENTION'
+                                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                : 'bg-rose-50 text-rose-800 border-rose-200'
+                            }`}
                           >
-                            View reports
-                          </button>
+                            {readinessStatus}
+                          </span>
+
+                          {/* Registration Status Badge */}
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border font-mono ${getRegistrationStatus().style}`}>
+                            {getRegistrationStatus().label}
+                          </span>
+
+                          {/* Last Updated */}
+                          {lastUpdated && (
+                            <span className="text-[11px] text-zinc-400 font-sans hidden xl:inline">
+                              Updated {lastUpdated}
+                            </span>
+                          )}
+
+                          {/* Refresh Button */}
                           <button
-                            onClick={() => setActiveTab('applications')}
-                            className="text-xs bg-[#C59B27] text-white hover:bg-[#b58c22] px-4 py-2.5 rounded-xl font-semibold transition-colors shadow-sm"
+                            type="button"
+                            onClick={() => fetchDashboardData(true)}
+                            disabled={loading || refreshing}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+                            title="Refresh overview metrics"
                           >
-                            Review applications
+                            <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin text-[#C59B27]' : 'text-zinc-500'}`} />
+                            <span>Refresh</span>
                           </button>
                         </div>
                       </div>
 
-                      {/* OPERATIONS ASSISTANT PANEL */}
-                      <OperationsAssistantPanel
-                        onNavigateTab={(tab) => handleTabChange(tab as AdminTab)}
-                        onNavigateRoute={(route) => onNavigate(route as AppRoute)}
-                      />
+                      {/* 2. PRIMARY METRICS ONLY (Exactly 4 metrics) */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" data-component-version="admin-primary-metrics-v1">
+                        {/* Registrations */}
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('children')}
+                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
+                        >
+                          <span className="text-2xl sm:text-3xl font-serif font-bold text-zinc-900 block group-hover:text-[#C59B27] transition-colors">
+                            {readinessReport?.metrics.registrations ?? stats.totalChildren ?? 0}
+                          </span>
+                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
+                            Registrations
+                          </span>
+                          <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            children recorded
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
 
-                      {/* Split Main Content Area */}
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 items-start">
+                        {/* Selected children */}
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('attendance')}
+                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
+                        >
+                          <span className="text-2xl sm:text-3xl font-serif font-bold text-[#C59B27] block">
+                            {readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0}
+                          </span>
+                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
+                            Selected
+                          </span>
+                          <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            approved passes
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
 
-                        {/* LEFT COLUMN: Overview Metrics & Demographics */}
-                        <div className="lg:col-span-2 space-y-6 sm:space-y-8">
+                        {/* Checked in */}
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('attendance')}
+                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
+                        >
+                          <span className="text-2xl sm:text-3xl font-serif font-bold text-zinc-900 block group-hover:text-[#C59B27] transition-colors">
+                            {readinessReport?.metrics.checkedIn ?? stats.checkedIn ?? 0}
+                          </span>
+                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
+                            Checked in
+                          </span>
+                          <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            {readinessReport?.metrics.pickedUp ?? stats.pickedUp ? `${readinessReport?.metrics.pickedUp ?? stats.pickedUp} released` : 'on-site today'}
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
 
-                          {/* Overview Metrics section */}
-                          <div className="space-y-4" data-component-version="admin-overview-metrics-approved-v1">
-                            <h3 className="font-serif text-lg font-medium text-zinc-800 tracking-normal">
-                              Overview
-                            </h3>
+                        {/* Volunteers on duty */}
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('operations')}
+                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
+                        >
+                          <span className="text-2xl sm:text-3xl font-serif font-bold text-zinc-900 block group-hover:text-[#C59B27] transition-colors">
+                            {readinessReport?.metrics.volunteersOnDuty ?? 0}
+                            <span className="text-sm font-sans font-normal text-zinc-400 ml-1.5">
+                              / {readinessReport?.metrics.volunteersAssigned ?? stats.totalVolunteers ?? 0}
+                            </span>
+                          </span>
+                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
+                            On duty
+                          </span>
+                          <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            active duty coverage
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                      </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                              {[
-                                { label: 'Total Children', val: stats.totalChildren, sub: 'registered', tab: 'children' },
-                                { label: 'Total Parents', val: stats.totalParents, sub: 'associated', tab: 'parents' },
-                                { label: 'Total Volunteers', val: stats.totalVolunteers, sub: 'assigned', tab: 'volunteers' },
-                                { label: 'Under Review', val: stats.underReview, sub: 'pending children', tab: 'applications' },
-                                { label: 'Selected', val: stats.approved, sub: 'approved passes', tab: 'attendance' },
-                                { label: 'Checked In', val: stats.checkedIn, sub: 'on-site today', tab: 'attendance' },
-                                { label: 'Picked Up', val: stats.pickedUp, sub: 'safely released', tab: 'attendance' }
-                              ].map((item, idx) => (
-                                <button
-                                  key={idx}
-                                  onClick={() => handleTabChange(item.tab as AdminTab)}
-                                  className="bg-white border border-[#EAE8E1] rounded-2xl p-5 hover:shadow-md transition-all text-left duration-300 relative group cursor-pointer focus:outline-none"
-                                >
-                                  <span className="text-[10px] font-bold text-zinc-400 group-hover:text-[#C59B27] uppercase tracking-wider block transition-colors">
-                                    {item.label}
-                                  </span>
-                                  <span className="text-2xl font-bold font-serif text-[#18181B] mt-2 block">
-                                    {item.val}
-                                  </span>
-                                  <span className="text-[9px] text-zinc-400 block mt-1 uppercase tracking-wider">
-                                    {item.sub}
-                                  </span>
-                                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 bottom-4 transition-all opacity-0 group-hover:opacity-100 transform group-hover:translate-x-1" />
-                                </button>
-                              ))}
+                      {/* 3. MID-TIER ROW: NEEDS ATTENTION (8 cols) & OPERATIONS ASSISTANT (4 cols) */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
+                        {/* LEFT ~65%: NEEDS ATTENTION & QUICK WORKFLOWS */}
+                        <div className="lg:col-span-8 space-y-6">
+                          {/* Needs Attention Panel */}
+                          <div
+                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 space-y-4 shadow-2xs text-left"
+                            data-component-version="admin-needs-attention-calm-v2"
+                          >
+                            <div className="flex items-center justify-between border-b border-[#EAE8E1]/80 pb-3">
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500 block">
+                                  NEEDS ATTENTION
+                                </span>
+                                <h3 className="text-sm font-serif font-semibold text-zinc-900">
+                                  {effectiveAttentionItems.length === 0
+                                    ? 'No issues require review'
+                                    : `${effectiveAttentionItems.length} issue${effectiveAttentionItems.length === 1 ? '' : 's'} require review`}
+                                </h3>
+                              </div>
+                              {effectiveAttentionItems.length > 0 && (
+                                <span className="text-[11px] font-mono text-zinc-400 font-medium">
+                                  Prioritized by operational impact
+                                </span>
+                              )}
+                            </div>
+
+                            {effectiveAttentionItems.length === 0 ? (
+                              <div className="py-4 text-xs text-zinc-500 flex items-center gap-2">
+                                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>All operational criteria meet readiness standards. No urgent blockers detected.</span>
+                              </div>
+                            ) : (
+                              <div className="space-y-2.5">
+                                {displayedAttentionItems.map((item, idx) => (
+                                  <div
+                                    key={item.id || idx}
+                                    className="p-3.5 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6]/40 hover:bg-white transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                                  >
+                                    <div className="flex items-start gap-2.5">
+                                      <span className="mt-1 shrink-0">
+                                        {item.severity === 'urgent' ? (
+                                          <span className="w-2 h-2 rounded-full bg-rose-500 block" />
+                                        ) : item.severity === 'attention' ? (
+                                          <span className="w-2 h-2 rounded-full bg-amber-500 block" />
+                                        ) : (
+                                          <span className="w-2 h-2 rounded-full bg-zinc-400 block" />
+                                        )}
+                                      </span>
+                                      <div className="space-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-semibold text-zinc-900">{item.title}</span>
+                                          <span
+                                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                                              item.severity === 'urgent'
+                                                ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
+                                                : item.severity === 'attention'
+                                                ? 'bg-amber-50 text-amber-800 border-amber-200 font-medium'
+                                                : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                                            }`}
+                                          >
+                                            {item.severity}
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] text-zinc-500 leading-relaxed">
+                                          {item.explanation}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAttentionAction(item)}
+                                      className="self-start sm:self-center shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] px-3 py-1.5 bg-[#FAF6EB] hover:bg-[#F5F0DC] rounded-lg transition-colors cursor-pointer border border-[#EAE8E1]/80"
+                                    >
+                                      <span>{item.actionLabel || 'View'}</span>
+                                      <ChevronRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+
+                                {effectiveAttentionItems.length > 3 && (
+                                  <div className="pt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAllAttentionIssues(!showAllAttentionIssues)}
+                                      className="text-xs font-semibold text-[#C59B27] hover:underline cursor-pointer"
+                                    >
+                                      {showAllAttentionIssues
+                                        ? 'Show fewer issues'
+                                        : `View all issues (${effectiveAttentionItems.length})`}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Quick Operational Shortcuts (Answers: "What should I do next?") */}
+                          <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs text-left space-y-3">
+                            <div className="flex items-center justify-between pb-1">
+                              <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500 block">
+                                OPERATIONAL WORKFLOWS
+                              </span>
+                              <span className="text-[11px] text-zinc-400">Direct shortcuts</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                              <button
+                                type="button"
+                                onClick={() => handleTabChange('applications')}
+                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
+                              >
+                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
+                                  Applications
+                                </span>
+                                <span className="text-[10px] text-zinc-500 block mt-0.5">
+                                  {stats.underReview} pending review
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleTabChange('attendance')}
+                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
+                              >
+                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
+                                  Attendance
+                                </span>
+                                <span className="text-[10px] text-zinc-500 block mt-0.5">
+                                  {attendanceData.checkedIn} on site
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleTabChange('operations')}
+                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
+                              >
+                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
+                                  Event Duty
+                                </span>
+                                <span className="text-[10px] text-zinc-500 block mt-0.5">
+                                  {readinessReport?.metrics.dutyLocations ?? 0} duty stations
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleTabChange('reports')}
+                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
+                              >
+                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
+                                  Reports
+                                </span>
+                                <span className="text-[10px] text-zinc-500 block mt-0.5">
+                                  Full event telemetry
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* RIGHT ~35%: OPERATIONS ASSISTANT COMPACT */}
+                        <div className="lg:col-span-4">
+                          <OperationsAssistantPanel
+                            onNavigateTab={(tab) => handleTabChange(tab as AdminTab)}
+                            onNavigateRoute={(route) => onNavigate(route as AppRoute)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* 4. GROUPED SECONDARY METRICS (DOMAINS) */}
+                      <div className="space-y-6" data-component-version="admin-grouped-secondary-metrics-v1">
+                        {/* SECTION A — CHILDREN & ATTENDANCE */}
+                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/80 pb-3">
+                            <div>
+                              <h3 className="font-serif text-base font-bold text-zinc-900">
+                                Children & Attendance
+                              </h3>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                Application volume, venue capacity limits, and check-in velocity
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setShowDemographicsTable(!showDemographicsTable)}
+                                className="text-xs font-medium text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer"
+                              >
+                                {showDemographicsTable ? 'Hide Demographics' : 'View Demographics'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleTabChange('attendance')}
+                                className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                              >
+                                Open Attendance →
+                              </button>
                             </div>
                           </div>
 
-                          {/* Demographics & Status Section */}
-                          <div className="space-y-4" data-view-version="admin-demographics-status-v2-live">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
-                              <div>
-                                <h3 className="font-serif text-lg font-medium text-zinc-800 tracking-normal">
-                                  Demographics & Status
-                                </h3>
-                                <p className="text-[11px] text-zinc-500 mt-0.5">
-                                  {overviewData?.event?.name ? (
-                                    <>
-                                      Active Event <span className="font-medium text-[#C59B27]">({overviewData.event.name})</span>
-                                      {lastUpdated && ` · Last updated ${lastUpdated}`}
-                                    </>
-                                  ) : (
-                                    'No current event selected'
-                                  )}
-                                </p>
-                              </div>
-                              <div className="flex items-center space-x-3">
-                                <button
-                                  type="button"
-                                  onClick={() => fetchDashboardData(true)}
-                                  disabled={loading || refreshing}
-                                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-600 rounded-xl text-xs font-medium transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-                                >
-                                  <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
-                                  <span>Refresh counts</span>
-                                </button>
-                                <button
-                                  onClick={() => setActiveTab('reports')}
-                                  className="text-xs text-[#C59B27] font-semibold hover:underline"
-                                >
-                                  View Full Demographics
-                                </button>
-                              </div>
+                          {/* Small stats row with subtle separators */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 divide-[#EAE8E1] sm:divide-x border border-[#EAE8E1] rounded-xl bg-[#FAF9F6]/40 p-1">
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Registrations</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.registrations ?? stats.totalChildren ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">recorded</span>
                             </div>
 
-                            {errorUpdatingDemographics && (
-                              <div className="p-3.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-medium">
-                                {errorUpdatingDemographics}
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Selected</span>
+                              <span className="text-lg font-serif font-bold text-[#C59B27] block mt-0.5">
+                                {readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">approved passes</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Event Capacity</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.eventChildCapacity ?? overviewData?.event?.capacity ?? '—'}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">venue limit</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Places Remaining</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.placesRemaining !== null && readinessReport?.metrics.placesRemaining !== undefined
+                                  ? readinessReport.metrics.placesRemaining
+                                  : (overviewData?.event?.placesRemaining ?? '—')}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">available slots</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Checked In</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.checkedIn ?? stats.checkedIn ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">
+                                {readinessReport?.metrics.pickedUp ?? stats.pickedUp ? `${readinessReport?.metrics.pickedUp ?? stats.pickedUp} released` : 'present on site'}
+                              </span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Passes Pending</span>
+                              <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.selectedChildrenWithoutPasses ?? 0) > 0 ? 'text-amber-700' : 'text-zinc-900'}`}>
+                                {readinessReport?.metrics.selectedChildrenWithoutPasses ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">needing issuance</span>
+                            </div>
+                          </div>
+
+                          {/* Collapsible Demographics Table */}
+                          {showDemographicsTable && (
+                            <div className="pt-2 space-y-2 animate-fade-in">
+                              <div className="flex items-center justify-between text-xs text-zinc-500 pb-1">
+                                <span className="font-semibold text-zinc-700">Demographic Breakdown by Age Group</span>
+                                <button onClick={() => setActiveTab('reports')} className="text-[#C59B27] font-medium hover:underline">
+                                  View full report
+                                </button>
                               </div>
-                            )}
-
-                            <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-xs relative">
-                              {loading && !refreshing && (
-                                <div className="absolute inset-0 bg-white/75 backdrop-blur-xs flex items-center justify-center z-10 transition-all">
-                                  <div className="flex flex-col items-center space-y-2">
-                                    <div className="w-6 h-6 border-2 border-[#C59B27] border-t-transparent rounded-full animate-spin" />
-                                    <span className="text-[10px] text-zinc-500 font-medium">Loading demographics...</span>
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs min-w-[500px]">
+                              <div className="border border-[#EAE8E1] rounded-xl overflow-hidden">
+                                <table className="w-full text-left text-xs">
                                   <thead>
                                     <tr className="border-b border-[#EAE8E1] bg-[#FAF9F6] text-zinc-500 font-bold uppercase tracking-wider text-[9px]">
-                                      <th className="py-3.5 px-4 font-semibold">Age Group</th>
-                                      <th className="py-3.5 px-4 font-semibold">Boys</th>
-                                      <th className="py-3.5 px-4 font-semibold">Girls</th>
-                                      <th className="py-3.5 px-4 font-semibold">Total</th>
-                                      <th className="py-3.5 px-4 font-semibold">Under Review</th>
-                                      <th className="py-3.5 px-4 font-semibold">Selected</th>
-                                      <th className="py-3.5 px-4 font-semibold">Checked In</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Age Group</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Boys</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Girls</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Total</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Under Review</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Selected</th>
+                                      <th className="py-2.5 px-3.5 font-semibold">Checked In</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-[#EAE8E1]">
-                                    {!overviewData?.event?.id ? (
+                                    {demographics.length === 0 ? (
                                       <tr>
-                                        <td colSpan={7} className="py-12 px-4 text-center text-zinc-400 font-medium">
-                                          No current event selected.
-                                        </td>
-                                      </tr>
-                                    ) : demographics.length === 0 ? (
-                                      <tr>
-                                        <td colSpan={7} className="py-12 px-4 text-center text-zinc-400 font-medium">
-                                          No demographic breakdown is available yet.
+                                        <td colSpan={7} className="py-6 px-4 text-center text-zinc-400 font-medium">
+                                          No demographic breakdown available.
                                         </td>
                                       </tr>
                                     ) : (
                                       demographics.map((row: any, i: number) => (
                                         <tr key={i} className="hover:bg-zinc-50/50 transition-colors">
-                                          <td className="py-3.5 px-4 font-semibold text-[#18181B]">{row.ageGroup}</td>
-                                          <td className="py-3.5 px-4 text-zinc-600">{row.boys}</td>
-                                          <td className="py-3.5 px-4 text-zinc-600">{row.girls}</td>
-                                          <td className="py-3.5 px-4 font-bold text-[#18181B]">{row.total}</td>
-                                          <td className="py-3.5 px-4 text-zinc-500">{row.underReview}</td>
-                                          <td className="py-3.5 px-4 text-zinc-500">{row.selected}</td>
-                                          <td className="py-3.5 px-4 text-emerald-600 font-semibold">{row.checkedIn}</td>
+                                          <td className="py-2.5 px-3.5 font-semibold text-[#18181B]">{row.ageGroup}</td>
+                                          <td className="py-2.5 px-3.5 text-zinc-600">{row.boys}</td>
+                                          <td className="py-2.5 px-3.5 text-zinc-600">{row.girls}</td>
+                                          <td className="py-2.5 px-3.5 font-bold text-[#18181B]">{row.total}</td>
+                                          <td className="py-2.5 px-3.5 text-zinc-500">{row.underReview}</td>
+                                          <td className="py-2.5 px-3.5 text-zinc-500">{row.selected}</td>
+                                          <td className="py-2.5 px-3.5 text-emerald-600 font-semibold">{row.checkedIn}</td>
                                         </tr>
                                       ))
                                     )}
@@ -3161,278 +3468,164 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 </table>
                               </div>
                             </div>
-                          </div>
-
+                          )}
                         </div>
 
-                        {/* RIGHT COLUMN: Insight Panels */}
-                        <div className="space-y-6 sm:space-y-8">
-
-                          {/* Needs attention Panel */}
-                          <div
-                            className="bg-[#FFF5F5] border border-[#FEE2E2] rounded-2xl p-5 space-y-4"
-                            data-component-version="admin-needs-attention-approved-v1"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-semibold text-red-700 uppercase tracking-widest block">
-                                Needs attention
-                              </span>
-                              {needsAttentionTotal > 0 && (
-                                <span className="bg-red-100 text-red-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                  {needsAttentionTotal}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="divide-y divide-red-100/50 text-xs">
-                              {needsAttentionList.length === 0 ? (
-                                <p className="text-zinc-500 py-2">No items require immediate attention.</p>
-                              ) : (
-                                needsAttentionList.map((item: any) => (
-                                  <div key={item.id} className="py-2.5 flex items-center justify-between">
-                                    <span className="text-zinc-700 font-medium">{item.label}</span>
-                                    <div className="flex items-center space-x-2">
-                                      <span className="font-bold text-red-700 mr-1.5">{item.count}</span>
-                                      <button
-                                        onClick={() => setActiveAttentionModal({ id: item.id, label: item.label })}
-                                        className="text-red-700 font-semibold hover:underline"
-                                      >
-                                        View
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Review Progress Panel */}
-                          <div
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4"
-                            data-component-version="admin-review-progress-approved-v1"
-                          >
-                            <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
-                              Review Progress
-                            </span>
-
-                            <div className="space-y-4">
-                              {[
-                                { label: 'Selected', val: reviewProgress.selected || stats.approved, color: 'bg-[#C59B27]' },
-                                { label: 'Under review', val: reviewProgress.underReview || stats.underReview, color: 'bg-amber-400' },
-                                { label: 'Not selected', val: reviewProgress.notSelected || 0, color: 'bg-zinc-300' }
-                              ].map((bar, idx) => {
-                                const total = stats.totalChildren || 1;
-                                const pct = Math.min(100, Math.round((bar.val / total) * 100));
-                                return (
-                                  <div key={idx} className="space-y-1">
-                                    <div className="flex items-center justify-between text-xs">
-                                      <span className="text-zinc-600 font-medium">{bar.label}</span>
-                                      <span className="text-[#18181B] font-semibold">{bar.val}</span>
-                                    </div>
-                                    <div className="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
-                                      <div className={`${bar.color} h-full rounded-full`} style={{ width: `${pct}%` }} />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Today's Attendance Panel */}
-                          <div
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4"
-                            data-component-version="admin-attendance-approved-v1"
-                          >
-                            <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest block">
-                              Today’s Attendance
-                            </span>
-
-                            <div className="space-y-4">
-                              <div className="flex items-baseline space-x-1">
-                                <span className="font-serif text-2xl font-bold text-[#C59B27]">
-                                  {attendanceData.checkedIn}
-                                </span>
-                                <span className="text-xs text-zinc-400 font-medium">
-                                  / {attendanceData.expected} Expected
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs border-t border-zinc-50 pt-3">
-                                {[
-                                  { label: 'Checked in', val: attendanceData.checkedIn },
-                                  { label: 'Still inside', val: attendanceData.stillInside },
-                                  { label: 'Picked up', val: attendanceData.pickedUp },
-                                  { label: 'Not arrived', val: attendanceData.notArrived }
-                                ].map((statItem, idx) => (
-                                  <div key={idx} className="space-y-0.5">
-                                    <span className="text-zinc-400 text-[10px] uppercase block">{statItem.label}</span>
-                                    <span className="text-sm font-semibold text-[#18181B] block">{statItem.val}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Recent Activity Panel */}
-                          <div
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
-                            data-component-version="admin-recent-activity-refined-v2"
-                          >
-                            <div className="flex items-center justify-between pb-1">
-                              <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
-                                Recent activity
+                        {/* SECTION B — VOLUNTEERS & DUTY */}
+                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/80 pb-3">
+                            <div>
+                              <h3 className="font-serif text-base font-bold text-zinc-900">
+                                Volunteers & Duty
                               </h3>
-                              <button
-                                onClick={() => setActiveTab('attendance')}
-                                className="text-xs font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
-                              >
-                                View all
-                              </button>
-                            </div>
-
-                            {recentActivityList.length === 0 ? (
-                              <p className="text-xs text-zinc-400 text-center py-4 font-normal">
-                                No recent activity yet.
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                Vetted personnel pool, station staffing coverage, and duty check-ins
                               </p>
-                            ) : (
-                              <div className="divide-y divide-[#EAE8E1]/60">
-                                {recentActivityList.slice(0, 5).map((act: any) => {
-                                  const item = formatRecentActivity(act);
-                                  return (
-                                    <div key={act.id} className="py-2.5 first:pt-0 last:pb-0 space-y-0.5">
-                                      <p className="text-xs font-semibold text-zinc-900 leading-snug">
-                                        {item.person}
-                                      </p>
-                                      <p className="text-[11px] text-zinc-500 font-normal">
-                                        {item.action ? `${item.action} · ${item.time}` : item.time}
-                                      </p>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleTabChange('operations')}
+                              className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                            >
+                              Open Event Duty →
+                            </button>
                           </div>
 
-                          {/* Care & Safety Panel */}
-                          <div
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
-                            data-component-version="admin-care-safety-refined-v2"
-                          >
-                            <div className="flex items-center justify-between pb-1">
-                              <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
-                                Care & safety
+                          {/* Small stats row with subtle separators */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 divide-[#EAE8E1] sm:divide-x border border-[#EAE8E1] rounded-xl bg-[#FAF9F6]/40 p-1">
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Approved Volunteers</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.approvedVolunteers ?? stats.totalVolunteers ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">vetted pool</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Assigned Volunteers</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.volunteersAssigned ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">rostered</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Currently On Duty</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.volunteersOnDuty ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">active presence</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Duty Locations</span>
+                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
+                                {readinessReport?.metrics.dutyLocations ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">designated stations</span>
+                            </div>
+
+                            <div className="p-3 text-left">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Locations Needing Staff</span>
+                              <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.locationsBelowTarget ?? 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                {readinessReport?.metrics.locationsBelowTarget ?? 0}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 block mt-0.5">
+                                {(readinessReport?.metrics.locationsBelowTarget ?? 0) > 0 ? 'under target' : 'fully covered'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SECTION C — SAFETY & CARE */}
+                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/80 pb-3">
+                            <div>
+                              <h3 className="font-serif text-base font-bold text-zinc-900">
+                                Safety & Escalations
                               </h3>
-                              <div className="flex items-center gap-2 text-xs text-zinc-400 font-normal">
-                                <span>{safetyAlerts.length}</span>
-                                <span className="text-zinc-300">·</span>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                Incident monitoring, guardian escalation cycles, and device safety readiness
+                              </p>
+                            </div>
+
+                            {canViewSafety && (
+                              <div className="flex items-center gap-3">
                                 <button
-                                  onClick={() => setActiveTab('review')}
-                                  className="font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
+                                  type="button"
+                                  onClick={() => handleTabChange('incidents')}
+                                  className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
                                 >
-                                  View all
+                                  Incident Desk →
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTabChange('escalations')}
+                                  className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                                >
+                                  Escalation Policies →
                                 </button>
                               </div>
-                            </div>
-
-                            {safetyAlerts.length === 0 ? (
-                              <p className="text-xs text-zinc-400 text-center py-4 font-normal">
-                                No care or safety updates.
-                              </p>
-                            ) : (
-                              <div className="divide-y divide-[#EAE8E1]/60">
-                                {safetyAlerts.slice(0, 4).map((log: any) => {
-                                  const categoryLabel = formatCareCategory(log.category);
-                                  const statusInfo = formatCareStatus(log.status);
-                                  const location = log.location || log.location_label || 'Foyer';
-                                  const timeAgo = formatTimeAgo(log.created_at);
-
-                                  return (
-                                    <div key={log.id} className="py-3 first:pt-0 last:pb-0 space-y-1">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="text-xs font-semibold text-zinc-900 leading-snug">
-                                          {categoryLabel}
-                                        </span>
-                                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusInfo.style}`}>
-                                          {statusInfo.label}
-                                        </span>
-                                      </div>
-
-                                      {log.message && (
-                                        <p className="text-xs text-zinc-600 leading-relaxed break-words font-normal">
-                                          {log.message}
-                                        </p>
-                                      )}
-
-                                      <p className="text-[11px] text-zinc-400 font-normal">
-                                        {location} · {timeAgo}
-                                      </p>
-
-                                      {log.status === 'resolved' && log.resolution_note && (
-                                        <div className="text-[11px] text-zinc-500 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-lg p-2 mt-1">
-                                          <span className="font-medium text-zinc-700">Resolution:</span> {log.resolution_note}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
                             )}
                           </div>
 
-                          {/* Alert Sound Readiness Panel */}
-                          <div
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-none"
-                            data-component-version="admin-alert-sound-readiness-v2"
-                          >
-                            <div className="flex items-center justify-between pb-1">
-                              <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">
-                                Alert sound
-                              </h3>
-                              {soundEnabled !== false ? (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                  Ready on this device
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-full">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                  Needs attention
-                                </span>
-                              )}
+                          {canViewSafety ? (
+                            <div className="space-y-4">
+                              {/* Safety stats row */}
+                              <div className="grid grid-cols-2 divide-x divide-[#EAE8E1] border border-[#EAE8E1] rounded-xl bg-[#FAF9F6]/40 p-1">
+                                <div className="p-3 text-left">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Open Safety Notices</span>
+                                  <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.openSafetyNotices ?? safetyAlerts.length ?? 0) > 0 ? 'text-rose-600' : 'text-zinc-900'}`}>
+                                    {readinessReport?.metrics.openSafetyNotices ?? safetyAlerts.length ?? 0}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-400 block mt-0.5">active alerts & incidents</span>
+                                </div>
+
+                                <div className="p-3 text-left">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Active Escalations</span>
+                                  <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 ? 'text-rose-600' : 'text-zinc-900'}`}>
+                                    {readinessReport?.metrics.unresolvedEscalations ?? 0}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-400 block mt-0.5">guardian notification cycles</span>
+                                </div>
+                              </div>
+
+                              {/* Safety updates snippet or device sound tester */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-zinc-600 border-t border-[#EAE8E1]/80">
+                                <div className="flex items-center gap-2">
+                                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                                  <span>
+                                    Device audio alerts {soundEnabled !== false ? 'active' : 'muted'}.
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={isPlayingSoundTest ? handleStopSoundTest : handleTriggerSoundTest}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
+                                  >
+                                    <Volume2 className={`w-3.5 h-3.5 ${isPlayingSoundTest ? 'text-[#C59B27] animate-pulse' : 'text-zinc-500'}`} />
+                                    <span>{isPlayingSoundTest ? 'Stop sound' : 'Test sound'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleOpenSoundSettings}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
+                                  >
+                                    <Settings className="w-3.5 h-3.5 text-zinc-500" />
+                                    <span>Sound settings</span>
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-
-                            <p className="text-xs text-zinc-600 leading-relaxed font-normal">
-                              {soundEnabled !== false
-                                ? 'Important alerts can be heard on this device.'
-                                : "Turn up this device's volume so important alerts can be heard."}
-                            </p>
-
-                            <div className="flex items-center gap-2 pt-0.5">
-                              <button
-                                type="button"
-                                onClick={isPlayingSoundTest ? handleStopSoundTest : handleTriggerSoundTest}
-                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
-                              >
-                                <Volume2 className={`w-3.5 h-3.5 ${isPlayingSoundTest ? 'text-[#C59B27] animate-pulse' : 'text-zinc-500'}`} />
-                                <span>{isPlayingSoundTest ? 'Stop sound' : 'Test sound'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleOpenSoundSettings}
-                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
-                              >
-                                <Settings className="w-3.5 h-3.5 text-zinc-500" />
-                                <span>Sound settings</span>
-                              </button>
+                          ) : (
+                            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-500">
+                              Restricted: Safety and escalation telemetry requires administrator permissions.
                             </div>
-
-                            <div className="text-[11px] leading-relaxed text-zinc-500 bg-[#FAF9F6] border border-[#EAE8E1]/80 p-3 rounded-xl font-normal">
-                              Make sure this device is not muted and the volume is high enough to hear important alerts during the event.
-                            </div>
-                          </div>
-
+                          )}
                         </div>
-
                       </div>
                     </div>
                   )}
