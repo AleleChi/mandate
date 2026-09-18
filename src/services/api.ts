@@ -688,7 +688,11 @@ export const api = {
 
   landing: {
     async getPublicPage() {
-      return api.request<{ success: boolean; settings: Record<string, string> }>('/api/admin/public-landing-page');
+      return api.request<{
+        success: boolean;
+        settings: Record<string, string>;
+        currentEvent?: any;
+      }>('/api/admin/public-landing-page');
     }
   },
 
