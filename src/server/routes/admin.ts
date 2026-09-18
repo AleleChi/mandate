@@ -8,7 +8,7 @@ import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../serv
 import { sendWebPush } from '../services/push';
 import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
-import { uploadMedia } from '../services/media/cloudinary';
+import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
 import { broadcastSSEEvent } from '../services/sse';
 import { getChildSummaryStats } from '../services/childSummaryService';
@@ -581,6 +581,42 @@ router.get('/public-landing-page', async (req, res) => {
     if (faviconSetting && faviconSetting.url) {
       settings.site_favicon = faviconSetting.url;
     }
+
+    // Resolve canonical landing video reference
+    let videoUrl = settings.heroVideo || '';
+    let posterUrl = settings.heroVideoPoster || '';
+
+    if (settings.heroVideoMediaId) {
+      const media = await queryOne('SELECT id, secure_url, optimized_url, poster_url, file_url FROM media_files WHERE id = ?', [settings.heroVideoMediaId]);
+      if (media) {
+        videoUrl = media.optimized_url || media.secure_url || media.file_url || videoUrl;
+        if (!posterUrl && (media.poster_url || media.secure_url)) {
+          posterUrl = media.poster_url || buildCloudinaryVideoPosterUrl(media.secure_url);
+        }
+      }
+    } else if (videoUrl) {
+      const media = await queryOne(`
+        SELECT id, secure_url, optimized_url, poster_url, file_url FROM media_files
+        WHERE (file_type = 'event_video' OR resource_type = 'video')
+          AND (secure_url = ? OR file_url = ? OR ? LIKE '%' || public_id || '%' OR ? LIKE '%' || id || '%')
+        ORDER BY created_at DESC LIMIT 1
+      `, [videoUrl, videoUrl, videoUrl, videoUrl]);
+      if (media) {
+        videoUrl = media.optimized_url || media.secure_url || media.file_url || videoUrl;
+        if (!posterUrl && (media.poster_url || media.secure_url)) {
+          posterUrl = media.poster_url || buildCloudinaryVideoPosterUrl(media.secure_url);
+        }
+      }
+    }
+
+    const landingVideo = videoUrl ? {
+      url: videoUrl,
+      posterUrl: posterUrl || null
+    } : null;
+
+    if (videoUrl) settings.heroVideo = videoUrl;
+    if (posterUrl) settings.heroVideoPoster = posterUrl;
+
     const rawEvent = await getCurrentEvent();
     const currentEvent = rawEvent ? {
       title: rawEvent.title,
@@ -597,7 +633,7 @@ router.get('/public-landing-page', async (req, res) => {
       parent_access_opens_at: rawEvent.parent_access_opens_at || null,
       parent_access_closes_at: rawEvent.parent_access_closes_at || null
     } : null;
-    return res.json({ success: true, settings, currentEvent });
+    return res.json({ success: true, settings, landingVideo, currentEvent });
   } catch (err: any) {
     console.error('Error fetching public landing settings:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve landing page settings' });
@@ -5867,6 +5903,45 @@ router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response)
     for (const row of rows) {
       settings[row.setting_key] = row.setting_value || '';
     }
+
+    // Resolve canonical media record for heroVideo if configured
+    if (settings.heroVideoMediaId) {
+      const media = await queryOne('SELECT id, original_filename, file_size, secure_url, optimized_url, poster_url, file_url, public_id FROM media_files WHERE id = ?', [settings.heroVideoMediaId]);
+      if (media) {
+        settings.heroVideoMediaId = media.id;
+        if (!settings.heroVideoOriginalName && media.original_filename) {
+          settings.heroVideoOriginalName = media.original_filename;
+        }
+        if (!settings.heroVideoFileSize && media.file_size) {
+          settings.heroVideoFileSize = String(media.file_size);
+        }
+        const playableUrl = media.optimized_url || media.secure_url || media.file_url || settings.heroVideo;
+        if (playableUrl) settings.heroVideo = playableUrl;
+        const posterUrl = media.poster_url || settings.heroVideoPoster || buildCloudinaryVideoPosterUrl(media.secure_url);
+        if (posterUrl) settings.heroVideoPoster = posterUrl;
+      }
+    } else if (settings.heroVideo) {
+      const media = await queryOne(`
+        SELECT id, original_filename, file_size, secure_url, optimized_url, poster_url, file_url, public_id FROM media_files
+        WHERE (file_type = 'event_video' OR resource_type = 'video')
+          AND (secure_url = ? OR file_url = ? OR ? LIKE '%' || public_id || '%' OR ? LIKE '%' || id || '%')
+        ORDER BY created_at DESC LIMIT 1
+      `, [settings.heroVideo, settings.heroVideo, settings.heroVideo, settings.heroVideo]);
+      if (media) {
+        settings.heroVideoMediaId = media.id;
+        if (!settings.heroVideoOriginalName && media.original_filename) {
+          settings.heroVideoOriginalName = media.original_filename;
+        }
+        if (!settings.heroVideoFileSize && media.file_size) {
+          settings.heroVideoFileSize = String(media.file_size);
+        }
+        const playableUrl = media.optimized_url || media.secure_url || media.file_url || settings.heroVideo;
+        if (playableUrl) settings.heroVideo = playableUrl;
+        const posterUrl = media.poster_url || settings.heroVideoPoster || buildCloudinaryVideoPosterUrl(media.secure_url);
+        if (posterUrl) settings.heroVideoPoster = posterUrl;
+      }
+    }
+
     return res.json({ success: true, settings });
   } catch (err: any) {
     console.error('Error fetching admin landing settings:', err);
@@ -5885,11 +5960,22 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
     const now = new Date().toISOString();
     const allowedKeys = [
       'site_logo', 'heroMain', 'heroUpper', 'heroRight', 'heroVideo', 'heroVideoPoster',
+      'heroVideoMediaId', 'heroVideoOriginalName', 'heroVideoFileSize',
       'passAvatar', 'workerAvatar', 'safetySection',
       'galleryArrival', 'galleryCheckIn', 'galleryActivities', 'galleryTeaching',
-      'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo'
+      'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo',
+      'galleryEventVideoMediaId', 'galleryEventVideoOriginalName', 'galleryEventVideoFileSize'
     ];
 
+    // If clearing heroVideo (e.g. Restore Default), clear all related heroVideo metadata keys
+    if (settings.heroVideo === '') {
+      settings.heroVideoPoster = '';
+      settings.heroVideoMediaId = '';
+      settings.heroVideoOriginalName = '';
+      settings.heroVideoFileSize = '';
+    }
+
+    // Validate keys and types before updating
     for (const [key, value] of Object.entries(settings)) {
       if (!allowedKeys.includes(key)) {
         return res.status(400).json({ success: false, error: `Invalid landing setting key: ${key}` });
@@ -5898,22 +5984,46 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
       if (value !== null && typeof value !== 'string') {
         return res.status(400).json({ success: false, error: `Setting value for ${key} must be a string.` });
       }
+    }
 
-      const valueType = (key === 'heroVideo' || key === 'galleryEventVideo') ? 'video' : 'image';
-
-      const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
-      if (existing) {
-        await execute(
-          'UPDATE admin_landing_settings SET setting_value = ?, value_type = ?, updated_at = ? WHERE setting_key = ?',
-          [value || '', valueType, now, key]
-        );
-      } else {
-        await execute(
-          'INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES (?, ?, ?, ?)',
-          [key, value || '', valueType, now]
-        );
+    // If heroVideoMediaId is provided and not empty, verify media record exists
+    if (settings.heroVideoMediaId && settings.heroVideoMediaId.trim()) {
+      const media = await queryOne('SELECT id, original_filename, file_size, secure_url, optimized_url, poster_url FROM media_files WHERE id = ?', [settings.heroVideoMediaId.trim()]);
+      if (media) {
+        if (!settings.heroVideoOriginalName && media.original_filename) {
+          settings.heroVideoOriginalName = media.original_filename;
+        }
+        if (!settings.heroVideoFileSize && media.file_size) {
+          settings.heroVideoFileSize = String(media.file_size);
+        }
+        if (!settings.heroVideo && (media.optimized_url || media.secure_url)) {
+          settings.heroVideo = media.optimized_url || media.secure_url;
+        }
+        if (!settings.heroVideoPoster && (media.poster_url || media.secure_url)) {
+          settings.heroVideoPoster = media.poster_url || buildCloudinaryVideoPosterUrl(media.secure_url);
+        }
       }
     }
+
+    // Execute atomic update
+    await transaction(async () => {
+      for (const [key, value] of Object.entries(settings)) {
+        const valueType = (key === 'heroVideo' || key === 'galleryEventVideo') ? 'video' : 'image';
+
+        const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
+        if (existing) {
+          await execute(
+            'UPDATE admin_landing_settings SET setting_value = ?, value_type = ?, updated_at = ? WHERE setting_key = ?',
+            [value || '', valueType, now, key]
+          );
+        } else {
+          await execute(
+            'INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES (?, ?, ?, ?)',
+            [key, value || '', valueType, now]
+          );
+        }
+      }
+    });
 
     return res.json({ success: true, message: 'Landing settings updated successfully.' });
   } catch (err: any) {

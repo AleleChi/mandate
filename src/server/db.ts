@@ -340,6 +340,9 @@ function initSqliteSchema(db: Database.Database) {
       height INTEGER,
       duration REAL,
       folder TEXT,
+      original_filename TEXT,
+      optimized_url TEXT,
+      poster_url TEXT,
       file_url TEXT NOT NULL,
       storage_key TEXT UNIQUE NOT NULL,
       created_at TEXT NOT NULL
@@ -974,7 +977,10 @@ function initSqliteSchema(db: Database.Database) {
     "width INTEGER",
     "height INTEGER",
     "duration REAL",
-    "folder TEXT"
+    "folder TEXT",
+    "original_filename TEXT",
+    "optimized_url TEXT",
+    "poster_url TEXT"
   ];
   for (const col of sqliteCols) {
     try {
@@ -2062,6 +2068,9 @@ async function initPostgresSchema(pool: any) {
         height INTEGER,
         duration DOUBLE PRECISION,
         folder VARCHAR(255),
+        original_filename VARCHAR(255),
+        optimized_url TEXT,
+        poster_url TEXT,
         file_url TEXT NOT NULL,
         storage_key VARCHAR(255) UNIQUE NOT NULL,
         created_at TIMESTAMP NOT NULL
@@ -2728,7 +2737,10 @@ async function initPostgresSchema(pool: any) {
       "width INTEGER",
       "height INTEGER",
       "duration DOUBLE PRECISION",
-      "folder VARCHAR(255)"
+      "folder VARCHAR(255)",
+      "original_filename VARCHAR(255)",
+      "optimized_url TEXT",
+      "poster_url TEXT"
     ];
     for (const col of pgCols) {
       try {

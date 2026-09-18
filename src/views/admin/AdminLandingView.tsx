@@ -44,6 +44,11 @@ const AdminVideoSlotPreview: React.FC<AdminVideoSlotPreviewProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activeSrc, setActiveSrc] = useState(src);
+
+  useEffect(() => {
+    setActiveSrc(src);
+  }, [src]);
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -56,6 +61,18 @@ const AdminVideoSlotPreview: React.FC<AdminVideoSlotPreviewProps> = ({
     }
   };
 
+  const handleVideoError = () => {
+    // If transformed Cloudinary video URL failed, try the clean untransformed canonical URL before falling back
+    if (activeSrc && activeSrc.includes('/video/upload/') && (activeSrc.includes('/c_') || activeSrc.includes('/vc_') || activeSrc.includes('fl_faststart'))) {
+      const rawUrl = activeSrc.replace(/\/video\/upload\/[^/]+\//, '/video/upload/');
+      if (rawUrl !== activeSrc) {
+        setActiveSrc(rawUrl);
+        return;
+      }
+    }
+    onError();
+  };
+
   return (
     <div
       className="relative w-full h-full cursor-pointer group"
@@ -64,8 +81,8 @@ const AdminVideoSlotPreview: React.FC<AdminVideoSlotPreviewProps> = ({
     >
       <video
         ref={videoRef}
-        key={src}
-        src={src}
+        key={activeSrc}
+        src={activeSrc}
         poster={poster}
         className="w-full h-full object-cover object-center"
         muted
@@ -74,7 +91,7 @@ const AdminVideoSlotPreview: React.FC<AdminVideoSlotPreviewProps> = ({
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
-        onError={onError}
+        onError={handleVideoError}
       />
       <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}>
         <div className="w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors shadow-sm">
@@ -394,9 +411,14 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       if ((uploadRes as any).posterUrl) {
         updatePayload[`${slotKey}Poster`] = (uploadRes as any).posterUrl;
       }
+      if ((uploadRes as any).id) {
+        updatePayload[`${slotKey}MediaId`] = (uploadRes as any).id;
+      }
+      updatePayload[`${slotKey}OriginalName`] = file.name;
+      updatePayload[`${slotKey}FileSize`] = String(file.size);
 
       await api.admin.updateLandingSettings(updatePayload);
-      setSettings(prev => ({ ...prev, [slotKey]: fileUrl, ...(updatePayload[`${slotKey}Poster`] ? { [`${slotKey}Poster`]: updatePayload[`${slotKey}Poster`] } : {}) }));
+      await fetchSettings();
       setVideoPreviewError(prev => ({ ...prev, [slotKey]: false }));
       setSlotFileState(prev => ({
         ...prev,
@@ -448,8 +470,20 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     try {
       setResettingSlot(slotKey);
       setErrorSlot(prev => ({ ...prev, [slotKey]: '' }));
-      await api.admin.updateLandingSettings({ [slotKey]: '' });
-      setSettings(prev => ({ ...prev, [slotKey]: '' }));
+      const updatePayload: Record<string, string> = { [slotKey]: '' };
+      if (slotKey === 'heroVideo') {
+        updatePayload['heroVideoPoster'] = '';
+        updatePayload['heroVideoMediaId'] = '';
+        updatePayload['heroVideoOriginalName'] = '';
+        updatePayload['heroVideoFileSize'] = '';
+      }
+      await api.admin.updateLandingSettings(updatePayload);
+      await fetchSettings();
+      setSlotFileState(prev => {
+        const next = { ...prev };
+        delete next[slotKey];
+        return next;
+      });
     } catch (err: any) {
       console.error('Reset failed for slot:', slotKey, err);
       setErrorSlot(prev => ({ ...prev, [slotKey]: err?.message || 'Restore failed. Please try again.' }));
@@ -1527,22 +1561,37 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       <p className="text-xs text-stone-400 font-sans pt-0.5">
                         Recommended: {slot.dimensions}
                       </p>
-                      {slotFileState[slot.key] && (
-                        <div className="pt-1.5 space-y-0.5">
-                          <p className="text-xs text-stone-700 font-medium">
-                            {slotFileState[slot.key].fileName}{' '}
-                            <span className="text-stone-400 font-normal">
-                              ({slotFileState[slot.key].fileSizeFormatted})
-                            </span>
-                          </p>
-                          {isUploading && slot.type === 'video' && (
-                            <p className="text-xs text-[#9A7326] font-medium animate-pulse flex items-center gap-1.5 pt-0.5">
-                              <Loader2 className="w-3 h-3 animate-spin text-[#C59B27]" />
-                              <span>Preparing video for the website…</span>
-                            </p>
-                          )}
-                        </div>
-                      )}
+                      {(() => {
+                        const fileState = slotFileState[slot.key];
+                        const persistedName = settings[`${slot.key}OriginalName`];
+                        const persistedSize = settings[`${slot.key}FileSize`];
+                        const fallbackName = currentVal ? (currentVal.split('/').pop()?.split('?')[0] || '') : '';
+                        const displayName = fileState?.fileName || persistedName || (slot.type === 'video' && currentVal ? fallbackName : null);
+                        const displaySize = fileState?.fileSizeFormatted || (persistedSize ? formatFileSize(Number(persistedSize)) : null);
+
+                        if (!displayName && !isUploading) return null;
+
+                        return (
+                          <div className="pt-1.5 space-y-0.5">
+                            {displayName && (
+                              <p className="text-xs text-stone-700 font-medium">
+                                {displayName}{' '}
+                                {displaySize && (
+                                  <span className="text-stone-400 font-normal">
+                                    ({displaySize})
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                            {isUploading && slot.type === 'video' && (
+                              <p className="text-xs text-[#9A7326] font-medium animate-pulse flex items-center gap-1.5 pt-0.5">
+                                <Loader2 className="w-3 h-3 animate-spin text-[#C59B27]" />
+                                <span>Preparing video for the website…</span>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Right Zone: Preview Thumbnail & Upload Control */}

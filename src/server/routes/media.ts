@@ -340,30 +340,37 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
       ? uploadResult.publicId.substring(0, uploadResult.publicId.lastIndexOf('/'))
       : 'koinonia-children-teens';
 
+    const canonicalSourceUrl = uploadResult.secureUrl;
     const deliveryUrl = uploadResult.optimizedUrl || uploadResult.secureUrl || `/api/media/files/${fileId}`;
+    const posterUrl = uploadResult.posterUrl || '';
+    const originalFilename = req.file?.originalname || '';
 
     try {
       await execute(`
         INSERT INTO media_files (
           id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
-          mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          mime_type, file_size, width, height, duration, folder, file_url, storage_key,
+          original_filename, optimized_url, poster_url, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         fileId,
         req.user!.id,
         uploadResult.provider,
         purpose,
         uploadResult.publicId,
-        deliveryUrl,
+        canonicalSourceUrl,
         uploadResult.resourceType || (isVideo ? 'video' : 'image'),
         mimeType,
-        buffer.length,
+        uploadResult.bytes || buffer.length,
         uploadResult.width || null,
         uploadResult.height || null,
         uploadResult.duration || null,
         folder,
         deliveryUrl,
         uploadResult.publicId,
+        originalFilename || null,
+        deliveryUrl,
+        posterUrl,
         now
       ]);
     } catch (persistErr: any) {
@@ -379,11 +386,13 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
       id: fileId,
       provider: uploadResult.provider || 'cloudinary',
       publicId: uploadResult.publicId,
-      secureUrl: deliveryUrl,
-      optimizedUrl: uploadResult.optimizedUrl || deliveryUrl,
-      posterUrl: uploadResult.posterUrl || '',
+      secureUrl: canonicalSourceUrl,
+      optimizedUrl: deliveryUrl,
+      posterUrl: posterUrl,
       resourceType: uploadResult.resourceType || (isVideo ? 'video' : 'image'),
       fileType: purpose,
+      originalFilename: originalFilename,
+      fileName: originalFilename,
       width: uploadResult.width || 1920,
       height: uploadResult.height || 1080,
       fileSize: uploadResult.bytes || buffer.length,

@@ -21,11 +21,33 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
+  const [activeVideoSrc, setActiveVideoSrc] = useState<string | null>(videoUrl?.trim() || null);
   const [isHovered, setIsHovered] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const cleanVideoUrl = (videoUrl && videoUrl.trim() !== '' && !hasVideoError) ? videoUrl.trim() : null;
+  useEffect(() => {
+    if (videoUrl && videoUrl.trim()) {
+      setActiveVideoSrc(videoUrl.trim());
+      setHasVideoError(false);
+    } else {
+      setActiveVideoSrc(null);
+    }
+  }, [videoUrl]);
+
+  const handleVideoError = () => {
+    // If transformed Cloudinary video URL failed, try the clean untransformed canonical URL before falling back
+    if (activeVideoSrc && activeVideoSrc.includes('/video/upload/') && (activeVideoSrc.includes('/c_') || activeVideoSrc.includes('/vc_') || activeVideoSrc.includes('fl_faststart'))) {
+      const rawUrl = activeVideoSrc.replace(/\/video\/upload\/[^/]+\//, '/video/upload/');
+      if (rawUrl !== activeVideoSrc) {
+        setActiveVideoSrc(rawUrl);
+        return;
+      }
+    }
+    setHasVideoError(true);
+  };
+
+  const cleanVideoUrl = (activeVideoSrc && !hasVideoError) ? activeVideoSrc : null;
   const cleanPosterUrl = posterUrl && posterUrl.trim() !== '' ? posterUrl.trim() : (REAL_ASSETS.heroMain || '/social_share.jpg');
   const showVideo = Boolean(cleanVideoUrl && !prefersReducedMotion);
 
@@ -93,7 +115,7 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
               autoPlay
               playsInline
               preload="metadata"
-              onError={() => setHasVideoError(true)}
+              onError={handleVideoError}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               className="absolute inset-0 w-full h-full object-cover object-center z-10"

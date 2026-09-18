@@ -35,6 +35,10 @@ export function buildCloudinaryOptimizedVideoUrl(secureUrl: string): string {
   if (!secureUrl || !secureUrl.includes('/video/upload/')) {
     return secureUrl;
   }
+  // Avoid duplicating transforms if already present
+  if (secureUrl.includes('/video/upload/c_') || secureUrl.includes('vc_h264') || secureUrl.includes('f_mp4')) {
+    return secureUrl;
+  }
   const transform = 'c_limit,w_1920,h_1080,vc_h264,q_auto,f_mp4,ac_none,fl_faststart';
   return secureUrl.replace('/video/upload/', `/video/upload/${transform}/`);
 }
@@ -43,8 +47,14 @@ export function buildCloudinaryVideoPosterUrl(secureUrl: string): string {
   if (!secureUrl || !secureUrl.includes('/video/upload/')) {
     return '';
   }
+  // Strip any existing transform from /video/upload/<transform>/ to clean /video/upload/
+  let cleanUrl = secureUrl;
+  const match = secureUrl.match(/\/video\/upload\/(?:[a-zA-Z0-9_,-]+\/)?(v[0-9]+\/.*)$/);
+  if (match && match[1]) {
+    cleanUrl = secureUrl.substring(0, secureUrl.indexOf('/video/upload/') + '/video/upload/'.length) + match[1];
+  }
   const transform = 'so_0,c_limit,w_1920,h_1080,q_auto,f_auto';
-  const urlWithTransform = secureUrl.replace('/video/upload/', `/video/upload/${transform}/`);
+  const urlWithTransform = cleanUrl.replace('/video/upload/', `/video/upload/${transform}/`);
   return urlWithTransform.replace(/\.[a-zA-Z0-9]+$/, '.jpg');
 }
 
