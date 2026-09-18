@@ -161,7 +161,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         setQueryResult(res.result);
       } else {
         setQueryResult({
-          answer: "I don't have enough event data to answer that yet.",
+          answer: res.error || "We couldn't get that information right now. Please try again.",
           grounded: false,
           intent: 'unsupported_query'
         });
@@ -169,9 +169,9 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
     } catch (err: any) {
       console.error('Operational query error:', err);
       setQueryResult({
-        answer: "I don't have enough event data to answer that yet.",
+        answer: "We couldn't get that information right now. Please try again.",
         grounded: false,
-        intent: 'unsupported_query'
+        intent: 'error'
       });
     } finally {
       setQueryLoading(false);

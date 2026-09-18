@@ -1534,7 +1534,7 @@ export const api = {
       return api.request<{ success: boolean; report: any }>(`/api/admin/operations-assistant/readiness${q}`);
     },
     async queryOperationsAssistant(question: string, eventId?: string) {
-      return api.request<{ success: boolean; result: any }>('/api/admin/operations-assistant/query', {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/operations-assistant/query', {
         method: 'POST',
         body: JSON.stringify({ question, eventId })
       });

@@ -1,5 +1,11 @@
 import { query } from '../../db';
 import { getEventById } from '../eventService';
+import {
+  buildHumanEventSummary,
+  formatHumanProvenance,
+  formatNumber,
+  formatPlural
+} from './presentation';
 import { operationsToolRegistry } from './registry';
 import { GroundedQueryResult, TableData, ToolActor, ToolContext, ToolFilter } from './types';
 
@@ -57,12 +63,9 @@ export class OperationsQueryPlanner {
           grounded: true,
           intent: 'action_attempt',
           actionAttempt: true,
-          provenance: {
-            source: 'Operational Policy · Read-Only Guardrail',
-            updatedAt: nowTimeStr
-          },
+          provenance: formatHumanProvenance(null, event.title, nowTimeStr),
           suggestedQuestions: [
-            `Who is assigned to Grace Hall?`,
+            'Who is assigned to Grace Hall?',
             'List the volunteers currently on duty.',
             'Which duty locations need more people?'
           ]
@@ -70,14 +73,11 @@ export class OperationsQueryPlanner {
       }
 
       return {
-        answer: 'Action requests are not enabled in Operations Assistant yet. All operations in Phase 2 are strictly read-only.',
+        answer: 'Action requests are not enabled in Operations Assistant yet. All operations are currently view-only.',
         grounded: true,
         intent: 'action_attempt',
         actionAttempt: true,
-        provenance: {
-          source: 'Operational Policy · Read-Only Guardrail',
-          updatedAt: nowTimeStr
-        }
+        provenance: formatHumanProvenance(null, event.title, nowTimeStr)
       };
     }
 
@@ -95,6 +95,7 @@ export class OperationsQueryPlanner {
         grounded: true,
         intent: 'clarification_needed',
         clarification: true,
+        provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr),
         suggestedQuestions: [
           'List the volunteers currently on duty.',
           'List assigned volunteers.',
@@ -203,20 +204,17 @@ export class OperationsQueryPlanner {
         displayedCount: volunteers.length
       };
 
-      const limitNote = total > volunteers.length ? ` (showing ${volunteers.length} of ${total})` : '';
+      const limitNote = total > volunteers.length ? ` (showing ${volunteers.length} of ${formatNumber(total)})` : '';
       const answer = total === 0
-        ? 'There are currently 0 volunteers on duty for this event.'
-        : `${total} volunteer${total === 1 ? ' is' : 's are'} currently active on duty${limitNote}.`;
+        ? 'No volunteers are currently on duty for this event.'
+        : `${formatNumber(total)} volunteer${total === 1 ? ' is' : 's are'} currently active on duty${limitNote}.`;
 
       return {
         answer,
         grounded: true,
         intent: 'volunteers_on_duty_list',
         table,
-        provenance: {
-          source: 'Event Duty · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr),
         deepLinks: [{ label: 'Open Event Duty', route: '/admin/operations', tab: 'operations' }],
         suggestedQuestions: [
           'Which volunteers haven\'t reported for duty?',
@@ -256,17 +254,14 @@ export class OperationsQueryPlanner {
       const names = volunteers.map((v: any) => v.name).join(', ');
       const answer = total === 0
         ? `No volunteers are currently assigned to ${matchedLocation.name}.`
-        : `${total} volunteer${total === 1 ? ' is' : 's are'} assigned to ${matchedLocation.name}: ${names}.`;
+        : `${formatNumber(total)} volunteer${total === 1 ? ' is' : 's are'} assigned to ${matchedLocation.name}: ${names}.`;
 
       return {
         answer,
         grounded: true,
         intent: 'volunteers_assigned_to_location',
         table,
-        provenance: {
-          source: `Event Duty · ${matchedLocation.name}`,
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Event Duty', matchedLocation.name, nowTimeStr),
         deepLinks: [{ label: 'View Event Duty', route: '/admin/operations', tab: 'operations' }],
         suggestedQuestions: [
           'Which volunteers haven\'t reported for duty?',
@@ -305,18 +300,15 @@ export class OperationsQueryPlanner {
       };
 
       const answer = total === 0
-        ? 'All scheduled volunteers have checked in and reported for duty.'
-        : `${total} assigned volunteer${total === 1 ? '' : 's'} have not reported for duty yet.`;
+        ? 'Everyone assigned for duty has reported.'
+        : `${formatNumber(total)} assigned volunteer${total === 1 ? '' : 's'} ${total === 1 ? 'has' : 'have'} not reported for duty yet.`;
 
       return {
         answer,
         grounded: true,
         intent: 'volunteers_no_show_list',
         table,
-        provenance: {
-          source: 'Event Duty · Presence Tracking',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr),
         deepLinks: [{ label: 'View Event Duty', route: '/admin/operations', tab: 'operations' }],
         suggestedQuestions: [
           'List the volunteers currently on duty.',
@@ -336,17 +328,16 @@ export class OperationsQueryPlanner {
       const res = await operationsToolRegistry.executeTool('getAttendanceSummary', context);
       const data = res.data;
 
-      const answer = `${data.currentlyInside} children are checked in right now (${data.checkedIn} total arrivals, ${data.pickedUp} picked up).`;
+      const answer = data.currentlyInside === 0
+        ? 'No children are checked in right now.'
+        : `${formatNumber(data.currentlyInside)} children are checked in right now (${formatNumber(data.checkedIn)} total arrivals, ${formatNumber(data.pickedUp)} picked up).`;
 
       return {
         answer,
         grounded: true,
         intent: 'attendance_checked_in_count',
         data,
-        provenance: {
-          source: 'Attendance Desk · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Attendance', event.title, nowTimeStr),
         deepLinks: [{ label: 'Open Attendance Desk', route: '/admin/attendance', tab: 'attendance' }],
         suggestedQuestions: [
           'How many children have been picked up?',
@@ -384,17 +375,14 @@ export class OperationsQueryPlanner {
 
       const answer = total === 0
         ? 'All selected children have active passes issued.'
-        : `${total} selected child${total === 1 ? ' does' : 'ren do'} not have passes yet.`;
+        : `${formatNumber(total)} selected child${total === 1 ? ' does' : 'ren do'} not have passes yet.`;
 
       return {
         answer,
         grounded: true,
         intent: 'selected_children_without_passes_list',
         table,
-        provenance: {
-          source: 'Pass Issuance · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Passes', event.title, nowTimeStr),
         deepLinks: [{ label: 'Open Children Registry', route: '/admin/children', tab: 'children' }],
         suggestedQuestions: [
           'How many children are selected?',
@@ -421,10 +409,7 @@ export class OperationsQueryPlanner {
           answer: 'No age groups are currently configured for this event.',
           grounded: true,
           intent: 'age_group_capacity',
-          provenance: {
-            source: 'Event Configuration · Age Groups',
-            updatedAt: nowTimeStr
-          }
+          provenance: formatHumanProvenance('Configuration', event.title, nowTimeStr)
         };
       }
 
@@ -432,28 +417,28 @@ export class OperationsQueryPlanner {
       const closest = sorted[0];
 
       const breakdown = {
-        title: 'Age Group Capacity Breakdown',
+        title: 'Age group capacity',
         items: sorted.map((g: any) => ({
           label: g.label,
-          primary: `${g.selectedCount} / ${g.capacity} spaces`,
+          primary: `${formatNumber(g.selectedCount)} / ${formatNumber(g.capacity)} spaces`,
           secondary: `${g.percentageFilled}%`,
-          meta: `${g.remaining} remaining`
+          meta: `${formatNumber(g.remaining)} remaining`
         }))
       };
 
       const table: TableData = {
-        columns: ['Age Group', 'Registered', 'Selected', 'Capacity', 'Remaining', 'Filled %'],
+        columns: ['Age Group', 'Registered', 'Selected', 'Capacity', 'Remaining', 'Filled'],
         rows: sorted.map((g: any) => [
           g.label,
-          g.registeredCount,
-          g.selectedCount,
-          g.capacity,
-          g.remaining,
+          formatNumber(g.registeredCount),
+          formatNumber(g.selectedCount),
+          formatNumber(g.capacity),
+          formatNumber(g.remaining),
           `${g.percentageFilled}%`
         ])
       };
 
-      const answer = `${closest.label} is closest to capacity at ${closest.percentageFilled}% (${closest.selectedCount} of ${closest.capacity} spaces selected).`;
+      const answer = `${closest.label} is closest to capacity at ${closest.percentageFilled}% (${formatNumber(closest.selectedCount)} of ${formatNumber(closest.capacity)} spaces selected).`;
 
       return {
         answer,
@@ -461,10 +446,7 @@ export class OperationsQueryPlanner {
         intent: 'age_group_capacity',
         breakdown,
         table,
-        provenance: {
-          source: 'Event Configuration · Age Groups',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Configuration', event.title, nowTimeStr),
         deepLinks: [{ label: 'Configure Age Groups', route: '/admin/events', tab: 'events' }],
         suggestedQuestions: [
           'How many children are selected?',
@@ -483,17 +465,16 @@ export class OperationsQueryPlanner {
       const res = await operationsToolRegistry.executeTool('getVolunteerSummary', context);
       const data = res.data;
 
-      const answer = `${data.unassignedApprovedVolunteers} approved volunteers are currently not assigned to any duty post for this event (${data.volunteersAssigned} assigned out of ${data.approvedVolunteers} total approved).`;
+      const answer = data.unassignedApprovedVolunteers === 0
+        ? 'All approved volunteers have been assigned to duty posts.'
+        : `${formatNumber(data.unassignedApprovedVolunteers)} approved volunteers are currently not assigned to any duty post for this event (${formatNumber(data.volunteersAssigned)} assigned out of ${formatNumber(data.approvedVolunteers)} total approved).`;
 
       return {
         answer,
         grounded: true,
         intent: 'volunteers_unassigned_count',
         data,
-        provenance: {
-          source: 'Volunteer Management · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Volunteer Management', event.title, nowTimeStr),
         deepLinks: [{ label: 'Assign Volunteers in Event Duty', route: '/admin/operations', tab: 'operations' }],
         suggestedQuestions: [
           'Which duty locations need more people?',
@@ -516,10 +497,7 @@ export class OperationsQueryPlanner {
           answer: "You don't have permission to view those details.",
           grounded: true,
           intent: 'escalations_unresolved_list',
-          provenance: {
-            source: 'Authorization Guard · Safety Desk',
-            updatedAt: nowTimeStr
-          }
+          provenance: formatHumanProvenance('Safety', event.title, nowTimeStr)
         };
       }
 
@@ -543,18 +521,17 @@ export class OperationsQueryPlanner {
       };
 
       const answer = total === 0
-        ? 'There are currently 0 active or unresolved escalation cycles.'
-        : `There ${total === 1 ? 'is' : 'are'} ${total} active escalation cycle${total === 1 ? '' : 's'} awaiting resolution.`;
+        ? 'No active escalations.'
+        : total === 1
+        ? 'There is 1 active escalation awaiting resolution.'
+        : `There are ${formatNumber(total)} active escalations awaiting resolution.`;
 
       return {
         answer,
         grounded: true,
         intent: 'escalations_unresolved_list',
         table,
-        provenance: {
-          source: 'Safety Escalation Desk · Live Feed',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Safety', event.title, nowTimeStr),
         deepLinks: [{ label: 'View Incident Desk', route: '/admin/escalations', tab: 'escalations' }],
         suggestedQuestions: [
           'Are there any open safety notices?',
@@ -603,17 +580,16 @@ export class OperationsQueryPlanner {
 
       const answer = activities.length === 0
         ? `No operational changes recorded in the ${timeframeLabel}.`
-        : `${activities.length} operational record${activities.length === 1 ? ' was' : 's were'} logged in the ${timeframeLabel}.`;
+        : activities.length === 1
+        ? `1 operational record was logged in the ${timeframeLabel}.`
+        : `${formatNumber(activities.length)} operational records were logged in the ${timeframeLabel}.`;
 
       return {
         answer,
         grounded: true,
         intent: 'recent_activity',
         table,
-        provenance: {
-          source: 'Operational Audit Log · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Activity', event.title, nowTimeStr),
         deepLinks: [{ label: 'View Admin Overview', route: '/admin', tab: 'overview' }],
         suggestedQuestions: [
           'How many children are checked in right now?',
@@ -638,10 +614,7 @@ export class OperationsQueryPlanner {
           answer: 'All active duty locations currently meet their volunteer staffing targets.',
           grounded: true,
           intent: 'understaffed_locations_list',
-          provenance: {
-            source: 'Event Duty · Staffing Plan',
-            updatedAt: nowTimeStr
-          },
+          provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr),
           suggestedQuestions: [
             'List the volunteers currently on duty.',
             'Which volunteers haven\'t reported for duty?'
@@ -665,17 +638,14 @@ export class OperationsQueryPlanner {
       };
 
       const names = locations.map((l: any) => `${l.location} (gap: ${l.gap})`).join(', ');
-      const answer = `${locations.length} duty location${locations.length === 1 ? ' needs' : 's need'} more volunteers: ${names}.`;
+      const answer = `${formatNumber(locations.length)} duty location${locations.length === 1 ? ' needs' : 's need'} more volunteers: ${names}.`;
 
       return {
         answer,
         grounded: true,
         intent: 'understaffed_locations_list',
         table,
-        provenance: {
-          source: 'Event Duty · Staffing Plan',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr),
         deepLinks: [{ label: 'Assign Duty Locations', route: '/admin/operations', tab: 'operations' }],
         suggestedQuestions: [
           'How many approved volunteers are not assigned?',
@@ -708,30 +678,28 @@ export class OperationsQueryPlanner {
       const duty = dutyRes.data || {};
       const safety = safetyRes.data || {};
 
-      const safetyClause = safetyRes.authorized
-        ? `${safety.totalSafetyNotices || 0} open safety notice(s) and ${safety.activeEscalationCycles || 0} active escalation cycle(s).`
-        : 'Safety details restricted.';
-
-      const answer = `Registration is open for "${ev.title || event.title}". ${reg.selected || 0} children are selected (${reg.total || 0} total registrations). ${att.currentlyInside || 0} children are checked in right now (${att.checkedIn || 0} total arrivals). ${pass.activePasses || 0} digital passes are ready. ${duty.totalAssigned || 0} volunteers are assigned (${duty.totalOnDuty || 0} currently on duty across ${duty.totalLocations || 0} locations). ${safetyClause}`;
+      const humanSummary = buildHumanEventSummary({
+        eventTitle: ev.title || event.title,
+        regTotal: reg.total || 0,
+        regSelected: reg.selected || 0,
+        checkedIn: att.currentlyInside || 0,
+        arrivals: att.checkedIn || 0,
+        passesReady: pass.activePasses || 0,
+        volunteersAssigned: duty.totalAssigned || 0,
+        volunteersOnDuty: duty.totalOnDuty || 0,
+        locationsCount: duty.totalLocations || 0,
+        openSafetyNotices: safety.totalSafetyNotices || 0,
+        activeEscalations: safety.activeEscalationCycles || 0,
+        safetyAuthorized: Boolean(safetyRes.authorized),
+        updatedAt: nowTimeStr
+      });
 
       return {
-        answer,
+        answer: humanSummary.answer,
         grounded: true,
         intent: 'event_summary',
-        provenance: {
-          source: 'Multi-Tool Operations Synthesis · Current Event',
-          updatedAt: nowTimeStr
-        },
-        breakdown: {
-          title: 'Core Operations Snapshot',
-          items: [
-            { label: 'Registrations', primary: reg.total || 0, secondary: `${reg.selected || 0} selected` },
-            { label: 'Attendance', primary: `${att.currentlyInside || 0} checked in`, secondary: `${att.checkedIn || 0} arrivals` },
-            { label: 'Passes Ready', primary: pass.activePasses || 0, secondary: `${pass.selectedWithoutPasses || 0} missing` },
-            { label: 'Duty Staffing', primary: `${duty.totalOnDuty || 0} on duty`, secondary: `${duty.totalAssigned || 0} assigned` },
-            { label: 'Safety Notices', primary: safety.totalSafetyNotices || 0, secondary: `${safety.activeEscalationCycles || 0} escalations` }
-          ]
-        },
+        provenance: humanSummary.provenance,
+        breakdown: humanSummary.breakdown,
         deepLinks: [
           { label: 'Event Duty', route: '/admin/operations', tab: 'operations' },
           { label: 'Attendance', route: '/admin/attendance', tab: 'attendance' }
@@ -748,15 +716,18 @@ export class OperationsQueryPlanner {
     if (raw.includes('picked up') && (raw.includes('how many') || raw.includes('count'))) {
       const res = await operationsToolRegistry.executeTool('getAttendanceSummary', context);
       const data = res.data;
+      const answer = data.pickedUp === 0
+        ? 'No children have been picked up from the event yet.'
+        : data.pickedUp === 1
+        ? '1 child has been picked up from the event so far.'
+        : `${formatNumber(data.pickedUp)} children have been picked up from the event so far.`;
+
       return {
-        answer: `${data.pickedUp} children have been picked up from the event so far.`,
+        answer,
         grounded: true,
         intent: 'attendance_picked_up_count',
         data,
-        provenance: {
-          source: 'Attendance Desk · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Attendance', event.title, nowTimeStr),
         deepLinks: [{ label: 'View Attendance Desk', route: '/admin/attendance', tab: 'attendance' }]
       };
     }
@@ -766,14 +737,11 @@ export class OperationsQueryPlanner {
       const res = await operationsToolRegistry.executeTool('getChildrenSummary', context);
       const data = res.data;
       return {
-        answer: `There are ${data.selected} children selected for admission to "${event.title}" (out of ${data.total} total registrations).`,
+        answer: `There are ${formatNumber(data.selected)} children selected for admission to "${event.title}" (out of ${formatNumber(data.total)} total registrations).`,
         grounded: true,
         intent: 'selected_children_count',
         data,
-        provenance: {
-          source: 'Child Admissions · Current Event',
-          updatedAt: nowTimeStr
-        },
+        provenance: formatHumanProvenance('Applications', event.title, nowTimeStr),
         deepLinks: [{ label: 'Open Applications', route: '/admin/applications', tab: 'applications' }]
       };
     }
@@ -788,7 +756,7 @@ export class OperationsQueryPlanner {
           grounded: true,
           intent: 'registration_window',
           data,
-          provenance: { source: 'Event Configuration', updatedAt: nowTimeStr }
+          provenance: formatHumanProvenance('Configuration', event.title, nowTimeStr)
         };
       }
       if (data.parentClosesAt) {
@@ -798,7 +766,7 @@ export class OperationsQueryPlanner {
           grounded: true,
           intent: 'registration_window',
           data,
-          provenance: { source: 'Event Configuration', updatedAt: nowTimeStr }
+          provenance: formatHumanProvenance('Configuration', event.title, nowTimeStr)
         };
       }
       return {
@@ -806,7 +774,7 @@ export class OperationsQueryPlanner {
         grounded: true,
         intent: 'registration_window',
         data,
-        provenance: { source: 'Event Configuration', updatedAt: nowTimeStr }
+        provenance: formatHumanProvenance('Configuration', event.title, nowTimeStr)
       };
     }
 
@@ -820,7 +788,7 @@ export class OperationsQueryPlanner {
           answer: 'No reports have been generated today for this event.',
           grounded: true,
           intent: 'reports_today',
-          provenance: { source: 'Reporting Engine', updatedAt: nowTimeStr }
+          provenance: formatHumanProvenance('Reports', event.title, nowTimeStr)
         };
       }
 
@@ -832,14 +800,14 @@ export class OperationsQueryPlanner {
       ]);
 
       return {
-        answer: `${reports.length} report${reports.length === 1 ? ' was' : 's were'} generated today.`,
+        answer: formatPlural(reports.length, 'report was generated today.', 'reports were generated today.'),
         grounded: true,
         intent: 'reports_today',
         table: {
           columns: ['Report Type', 'Format', 'Status', 'Generated At'],
           rows
         },
-        provenance: { source: 'Reporting Engine', updatedAt: nowTimeStr },
+        provenance: formatHumanProvenance('Reports', event.title, nowTimeStr),
         deepLinks: [{ label: 'View Reports Center', route: '/admin/reports', tab: 'reports' }]
       };
     }
@@ -849,11 +817,15 @@ export class OperationsQueryPlanner {
       const res = await operationsToolRegistry.executeTool('getRegistrationSummary', context);
       const data = res.data;
       return {
-        answer: `There are ${data.underReview} applications currently awaiting review.`,
+        answer: data.underReview === 0
+          ? 'No applications are currently awaiting review.'
+          : data.underReview === 1
+          ? '1 application is currently awaiting review.'
+          : `There are ${formatNumber(data.underReview)} applications currently awaiting review.`,
         grounded: true,
         intent: 'applications_under_review',
         data,
-        provenance: { source: 'Review Board · Current Event', updatedAt: nowTimeStr },
+        provenance: formatHumanProvenance('Applications', event.title, nowTimeStr),
         deepLinks: [{ label: 'Review Applications', route: '/admin/review', tab: 'review' }]
       };
     }

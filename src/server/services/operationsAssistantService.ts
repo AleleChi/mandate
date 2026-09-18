@@ -717,18 +717,27 @@ export class OperationsAssistantService {
     eventId?: string,
     actor?: any
   ): Promise<GroundedQueryResult> {
-    const event = await this.resolveTargetEvent(eventId);
+    try {
+      const event = await this.resolveTargetEvent(eventId);
 
-    if (!event) {
+      if (!event) {
+        return {
+          answer: "I don't have enough event data to answer that yet.",
+          grounded: false,
+          intent: 'no_active_event'
+        };
+      }
+
+      const defaultActor = actor || { id: 'admin-actor', role: 'admin' };
+      return await operationsQueryPlanner.planAndExecute(question, event.id, defaultActor);
+    } catch (err: any) {
+      console.error('Error in processOperationalQuery:', err);
       return {
-        answer: "I don't have enough event data to answer that yet.",
+        answer: "We couldn't get that information right now. Please try again.",
         grounded: false,
-        intent: 'no_active_event'
+        intent: 'error'
       };
     }
-
-    const defaultActor = actor || { id: 'admin-actor', role: 'admin' };
-    return await operationsQueryPlanner.planAndExecute(question, event.id, defaultActor);
   }
 }
 

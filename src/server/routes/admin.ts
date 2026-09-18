@@ -13049,7 +13049,7 @@ router.post('/operations-assistant/query', authMiddleware, async (req: Authentic
     res.json({ success: true, result });
   } catch (err: any) {
     console.error('Error processing operational query:', err);
-    res.status(500).json({ success: false, error: err.message || 'Failed to process operational query.' });
+    res.status(500).json({ success: false, error: "We couldn't get that information right now. Please try again." });
   }
 });
 
