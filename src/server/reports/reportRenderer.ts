@@ -133,19 +133,20 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   }
   doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
-  // Subtle editorial watermark / concentric circles at top-right (matches ReportCover.tsx)
-  const circleCenterX = marginX + contentWidth - 10;
-  const circleCenterY = 28;
-  doc.setDrawColor(isDarkCover ? 35 : 238, isDarkCover ? 35 : 238, isDarkCover ? 40 : 232);
+  // Subtle editorial watermark / concentric circles at top-right (matches ReportCover.tsx: top-0 right-0 w-96 h-96 opacity-5)
+  const circleCenterX = pageWidth - 38;
+  const circleCenterY = 38;
+  doc.setDrawColor(isDarkCover ? 36 : 238, isDarkCover ? 36 : 238, isDarkCover ? 40 : 232);
   doc.setLineWidth(0.2);
-  doc.circle(circleCenterX, circleCenterY, 32, 'S');
-  doc.circle(circleCenterX, circleCenterY, 21, 'S');
-  doc.circle(circleCenterX, circleCenterY, 11, 'S');
+  doc.circle(circleCenterX, circleCenterY, 44, 'S');
+  doc.circle(circleCenterX, circleCenterY, 29, 'S');
+  doc.circle(circleCenterX, circleCenterY, 15, 'S');
 
   // Top Bar: Ministry Brand & Classification
   const coverTextColor = isDarkCover ? [255, 255, 255] : colors.charcoal;
   const coverSubtextColor = isDarkCover ? [161, 161, 170] : colors.grey;
 
+  // Header Left: Small uppercase ministry name & secondary subtitle
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
@@ -156,135 +157,201 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
   doc.text('OFFICIAL MINISTRY PUBLICATION', marginX, 27);
 
-  // Logo / Insignia on Cover
-  let logoWidth = 32;
-  let logoHeight = 12;
+  // Header Right: Logo / Insignia with Aspect-Ratio Protection (object-contain semantics)
+  const maxLogoW = 28;
+  const maxLogoH = 10.5;
+
   if (model.branding?.logoBase64) {
     try {
-      doc.addImage(model.branding.logoBase64, 'PNG', marginX + contentWidth - logoWidth, 18, logoWidth, logoHeight);
+      const imgProps = doc.getImageProperties(model.branding.logoBase64);
+      const naturalW = imgProps.width || 1;
+      const naturalH = imgProps.height || 1;
+      const aspectRatio = naturalW / naturalH;
+
+      let logoW = maxLogoW;
+      let logoH = logoW / aspectRatio;
+      if (logoH > maxLogoH) {
+        logoH = maxLogoH;
+        logoW = logoH * aspectRatio;
+      }
+
+      const logoX = marginX + contentWidth - logoW;
+      const logoY = 17 + (maxLogoH - logoH) / 2;
+
+      doc.addImage(
+        model.branding.logoBase64,
+        imgProps.fileType || 'PNG',
+        logoX,
+        logoY,
+        logoW,
+        logoH
+      );
     } catch (_) {
-      doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-      doc.setFont('times', 'bold');
-      doc.setFontSize(13);
-      doc.text('KOINONIA', marginX + contentWidth, 24, { align: 'right' });
+      drawCoverFallbackBadge();
     }
   } else {
-    doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-    doc.setFont('times', 'bold');
-    doc.setFontSize(13);
-    doc.text('KOINONIA', marginX + contentWidth, 24, { align: 'right' });
+    drawCoverFallbackBadge();
   }
 
-  // Cover Thin Rule
-  doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.setLineWidth(0.3);
+  function drawCoverFallbackBadge() {
+    const badgeW = 24;
+    const badgeH = 7.5;
+    const badgeX = marginX + contentWidth - badgeW;
+    const badgeY = 19;
+    doc.setDrawColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1, 1, 'S');
+
+    doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('KOINONIA', badgeX + (badgeW / 2), badgeY + 5.2, { align: 'center' });
+  }
+
+  // Header Thin Rule (subtle muted border matching ReportCover.tsx: border-b pb-4 border-stone-200/20)
+  doc.setDrawColor(isDarkCover ? 50 : 220, isDarkCover ? 50 : 220, isDarkCover ? 55 : 225);
+  doc.setLineWidth(0.2);
   doc.line(marginX, 32, marginX + contentWidth, 32);
 
-  // Cover Center Title & Hierarchy
-  let coverCenterY = 100;
-
-  // Gold accent bar
-  doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.rect(marginX, coverCenterY, 18, 0.9, 'F');
-  coverCenterY += 8;
-
-  // Event title
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.text((event.eventTitle || 'THE GENERAL ASSEMBLY').toUpperCase(), marginX, coverCenterY);
-  coverCenterY += 10;
-
-  // Report title in large serif
-  doc.setFont('times', 'bold');
-  doc.setFontSize(26);
-  doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
+  // Dynamic Title Fitting & Measurement (preserves large editorial scale across all 6 report types)
   const displayTitle = model.reportTitle.includes('—') ? model.reportTitle.split('—')[1].trim() : model.reportTitle;
-  const splitTitle = doc.splitTextToSize(displayTitle, contentWidth);
-  doc.text(splitTitle, marginX, coverCenterY);
-  coverCenterY += splitTitle.length * 10 + 4;
+  let titleFontSize = 38;
+  let titleLines: string[] = [];
 
-  // Report description
-  if (model.reportDescription) {
+  for (let sz = 38; sz >= 26; sz -= 2) {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(sz);
+    const lines = doc.splitTextToSize(displayTitle, contentWidth);
+    if (lines.length <= 2 || sz === 26) {
+      titleFontSize = sz;
+      titleLines = lines;
+      break;
+    }
+  }
+
+  const titleLineH = titleFontSize * 0.38;
+
+  // Description text wrapping
+  const descMaxWidth = Math.min(contentWidth - 15, 145);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  const descLines = model.reportDescription ? doc.splitTextToSize(model.reportDescription, descMaxWidth) : [];
+
+  // Theme & Scripture height
+  let vignetteH = 0;
+  if (event.theme || event.scripture) {
+    vignetteH = 8 + (event.theme ? 6.5 : 0) + (event.scripture ? 6 : 0);
+  }
+
+  // Calculate total center block height to center vertically
+  const goldRuleH = 7;
+  const eventLabelH = 9;
+  const titleBlockH = titleLines.length * titleLineH + 6;
+  const descBlockH = descLines.length > 0 ? descLines.length * 4.6 + 8 : 0;
+  const totalCenterH = goldRuleH + eventLabelH + titleBlockH + descBlockH + vignetteH;
+
+  // Vertically center between header rule (Y=32) and bottom metadata rule (Y=252)
+  const headerBottomY = 32;
+  const bottomMetaY = 252;
+  const availableSpace = bottomMetaY - headerBottomY;
+  let cursorY = Math.max(headerBottomY + 12, headerBottomY + (availableSpace - totalCenterH) / 2 - 4);
+
+  // Short Gold Rule (w-16 h-0.5 bg-[#C59B27] mb-6)
+  doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+  doc.rect(marginX, cursorY, 16, 0.7, 'F');
+  cursorY += 7;
+
+  // Event title (gold uppercase tracking)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+  doc.text((event.eventTitle || 'THE GENERAL ASSEMBLY').toUpperCase(), marginX, cursorY);
+  cursorY += 9;
+
+  // Report Title (dominant editorial serif)
+  doc.setFont('times', 'bold');
+  doc.setFontSize(titleFontSize);
+  doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
+  doc.text(titleLines, marginX, cursorY);
+  cursorY += titleLines.length * titleLineH + 6;
+
+  // Report Description
+  if (descLines.length > 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-    const splitDesc = doc.splitTextToSize(model.reportDescription, contentWidth - 20);
-    doc.text(splitDesc, marginX, coverCenterY);
-    coverCenterY += splitDesc.length * 4.6 + 6;
+    doc.text(descLines, marginX, cursorY);
+    cursorY += descLines.length * 4.6 + 8;
   }
 
-  // Theme & Scripture
+  // Theme & Scripture Vignette
   if (event.theme || event.scripture) {
-    coverCenterY += 4;
     doc.setDrawColor(isDarkCover ? 50 : 220, isDarkCover ? 50 : 220, isDarkCover ? 55 : 225);
     doc.setLineWidth(0.2);
-    doc.line(marginX, coverCenterY, marginX + 80, coverCenterY);
-    coverCenterY += 6;
+    doc.line(marginX, cursorY, marginX + 85, cursorY);
+    cursorY += 6.5;
 
     if (event.theme) {
       doc.setFont('times', 'italic');
       doc.setFontSize(13);
       doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
-      doc.text(`"${event.theme}"`, marginX, coverCenterY);
-      coverCenterY += 6.5;
+      doc.text(`"${event.theme}"`, marginX, cursorY);
+      cursorY += 6.5;
     }
 
     if (event.scripture) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-      doc.text(event.scripture.toUpperCase(), marginX, coverCenterY);
-      coverCenterY += 6;
+      doc.text(event.scripture.toUpperCase(), marginX, cursorY);
     }
   }
 
-  // Bottom Metadata Band on Cover
-  const coverBottomY = 250;
+  // Bottom Metadata Band
   doc.setDrawColor(isDarkCover ? 50 : 220, isDarkCover ? 50 : 220, isDarkCover ? 55 : 225);
-  doc.setLineWidth(0.2);
-  doc.line(marginX, coverBottomY, marginX + contentWidth, coverBottomY);
+  doc.setLineWidth(0.25);
+  doc.line(marginX, bottomMetaY, marginX + contentWidth, bottomMetaY);
 
   const colWidth = contentWidth / 3;
 
   // Col 1: Dates
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
+  doc.setFontSize(7);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('EVENT DATES', marginX, coverBottomY + 5);
+  doc.text('EVENT DATES', marginX, bottomMetaY + 6);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
-  doc.text(dateRangeStr, marginX, coverBottomY + 9.5);
+  doc.text(dateRangeStr, marginX, bottomMetaY + 11);
 
   // Col 2: Venue
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
+  doc.setFontSize(7);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('VENUE', marginX + colWidth, coverBottomY + 5);
+  doc.text('VENUE', marginX + colWidth, bottomMetaY + 6);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
-  doc.text(event.venue || 'Event location', marginX + colWidth, coverBottomY + 9.5);
+  doc.text(event.venue || 'Event location', marginX + colWidth, bottomMetaY + 11);
 
   // Col 3: Prepared
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
+  doc.setFontSize(7);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('PREPARED', marginX + colWidth * 2, coverBottomY + 5);
+  doc.text('PREPARED', marginX + colWidth * 2, bottomMetaY + 6);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
   const compiledDateStr = formatEditorialDate(model.reportingPeriod?.end || model.informationConfirmedUpTo);
-  doc.text(compiledDateStr, marginX + colWidth * 2, coverBottomY + 9.5);
+  doc.text(compiledDateStr, marginX + colWidth * 2, bottomMetaY + 11);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('From event records', marginX + colWidth * 2, coverBottomY + 13.5);
+  doc.text('From event records', marginX + colWidth * 2, bottomMetaY + 15.5);
 
   // =========================================================================
   // PAGE 2: OPENING SPREAD (Profile, Narrative, Large Data Figures)

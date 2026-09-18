@@ -1,14 +1,12 @@
 import assert from 'assert';
-import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { compileReportDocument } from '../src/server/reports/reportTemplateRegistry';
 import { renderDocumentToPDF } from '../src/server/reports/reportRenderer';
 import { calculateAnalytics } from '../src/server/services/reportAnalyticsService';
-import { getOrRegenerateReportPDF } from '../src/server/services/reportService';
 
 console.log('================================================================');
-console.log('REPORT REVIEW / PDF — SINGLE ARTIFACT PARITY TEST SUITE');
+console.log('REPORT REVIEW / PDF — ARCHITECTURE PARITY TEST SUITE');
 console.log('================================================================\n');
 
 // Comprehensive event snapshot fixture
@@ -74,37 +72,113 @@ async function runParityTests() {
 
   const analytics = calculateAnalytics(mockSnapshot);
 
-  // 1. Test Single Artifact Identity
-  await test('Test 1: Canonical Report Artifact Identity — Review and Download reference identical artifact', async () => {
-    const reportJobId = 'job-parity-001';
-    const doc = compileReportDocument(
-      reportJobId,
+  // =========================================================================
+  // TEST 1: APPROVED ARCHITECTURE — Review = React Preview, Download = PDF
+  // The rejected architecture had Review rendering the generated PDF artifact.
+  // The approved architecture has:
+  //   - Review: premium React editorial preview driven by ReportDocumentModel
+  //   - Download: separately generated PDF from the same ReportDocumentModel
+  // =========================================================================
+  await test('Test 1: Approved Architecture — Review renders React preview, Download is a separate PDF', () => {
+    const modalPath = path.resolve(process.cwd(), 'src/components/admin/reports/GeneratedReportPreviewModal.tsx');
+    const modalSrc = fs.readFileSync(modalPath, 'utf8');
+
+    // Review modal must render the premium React editorial component
+    assert.ok(
+      modalSrc.includes('<ReportDocumentPreview'),
+      'Review modal must render <ReportDocumentPreview (premium React editorial preview)'
+    );
+
+    // Review modal must NOT use an iframe/embed/object to display the PDF artifact
+    assert.ok(
+      !modalSrc.includes('<iframe'),
+      'Review modal must NOT contain <iframe — preview is React, not a PDF viewer'
+    );
+    assert.ok(
+      !modalSrc.includes('<embed'),
+      'Review modal must NOT contain <embed'
+    );
+    assert.ok(
+      !modalSrc.includes('<object'),
+      'Review modal must NOT contain <object — preview is React, not a PDF viewer'
+    );
+    assert.ok(
+      !modalSrc.includes('pdfBlobUrl'),
+      'Review modal must NOT reference pdfBlobUrl — that is the rejected architecture'
+    );
+
+    // Download is a separate action (onDownloadPdf prop) — distinct from preview rendering
+    assert.ok(
+      modalSrc.includes('onDownloadPdf'),
+      'Modal must accept onDownloadPdf prop — download is a separate action from preview'
+    );
+    assert.ok(
+      modalSrc.includes('Download PDF'),
+      'Download PDF button must exist as a separate action from the preview'
+    );
+
+    // Contents sidebar must be driven by the React document model (not PDF page numbers)
+    assert.ok(
+      modalSrc.includes('Report contents'),
+      'Contents sidebar must exist and be driven by the React document model'
+    );
+    assert.ok(
+      modalSrc.includes('handleOutlineClick'),
+      'Outline navigation must use DOM scroll (handleOutlineClick), not PDF page jump'
+    );
+    assert.ok(
+      modalSrc.includes('scrollIntoView'),
+      'Outline navigation must use scrollIntoView (React DOM), not iframe URL parameter'
+    );
+
+    // ReportDocumentPreview must receive the model (not a blob URL)
+    assert.ok(
+      modalSrc.includes('model={model}'),
+      'ReportDocumentPreview must receive model prop (ReportDocumentModel), not a PDF URL'
+    );
+  });
+
+  // =========================================================================
+  // TEST 2: SHARED ReportDocumentModel — Preview and PDF use identical data
+  // =========================================================================
+  await test('Test 2: Shared ReportDocumentModel — Preview and PDF are generated from the same data object', async () => {
+    const model = compileReportDocument(
+      'job-parity-001',
       mockSnapshot,
       analytics,
       'attendance-movement',
-      'Internal operational',
+      'Official',
       []
     );
 
-    const rendered = await renderDocumentToPDF(doc);
-    const pdfBuffer = Buffer.from(rendered.pdfBytes);
-    const artifactHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+    // Snapshot the key data fields that both preview and PDF will use
+    const previewTitle = model.reportTitle;
+    const previewKpis = model.kpis.map(k => ({ label: k.label, value: k.value }));
+    const previewSectionCount = model.sections.length;
+    const previewSectionTitles = model.sections.map(s => s.title);
+    const previewEventTitle = model.eventContext.eventTitle;
 
-    // Simulate review artifact resolution vs download artifact resolution
-    const reviewArtifactKey = `${reportJobId}.pdf`;
-    const downloadArtifactKey = `${reportJobId}.pdf`;
+    // Generate PDF from the exact same model object
+    const pdf = await renderDocumentToPDF(model);
+    assert.ok(pdf.pdfBytes.byteLength > 10000, 'PDF must have substantial content');
 
-    assert.strictEqual(reviewArtifactKey, downloadArtifactKey, 'Review artifact key must match download artifact key');
-    assert.ok(pdfBuffer.toString('utf8', 0, 4) === '%PDF', 'Artifact must be valid binary PDF');
+    // Model fields must be unchanged after PDF generation (model is immutable through render)
+    assert.strictEqual(model.reportTitle, previewTitle, 'Report title must be unchanged after PDF generation');
+    assert.strictEqual(model.kpis.length, previewKpis.length, 'KPI count must be unchanged after PDF generation');
+    assert.strictEqual(model.sections.length, previewSectionCount, 'Section count must be unchanged after PDF generation');
+    assert.deepStrictEqual(model.sections.map(s => s.title), previewSectionTitles, 'Section titles must be unchanged');
+    assert.strictEqual(model.eventContext.eventTitle, previewEventTitle, 'Event title must be unchanged');
 
-    const reviewHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-    const downloadHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+    // PDF section page map must reference the same logical sections as the React preview
+    assert.ok(pdf.sectionPageMap['section-cover'] === 1, 'Cover section exists in both preview and PDF');
+    assert.ok(pdf.sectionPageMap['section-kpis'] === 2, 'KPIs section exists in both preview and PDF');
+    assert.ok(pdf.sectionPageMap['section-back-cover'] === pdf.pageCount, 'Back cover exists in both preview and PDF');
 
-    assert.strictEqual(reviewHash, downloadHash, 'Review artifact content hash must equal download artifact hash');
-    assert.strictEqual(reviewHash, artifactHash);
+    const pdfBuf = Buffer.from(pdf.pdfBytes);
+    assert.strictEqual(pdfBuf.toString('utf8', 0, 4), '%PDF', 'PDF artifact must be valid binary PDF');
   });
 
-  // 2. Test All Six Report Types Canonical PDF Generation & Section Mapping
+  // 3. Test All Six Report Types Canonical PDF Generation & Section Mapping
   const reportTypes = [
     { key: 'management-summary', name: 'Event Executive' },
     { key: 'registration-selection', name: 'Registration & Selection' },
@@ -115,13 +189,13 @@ async function runParityTests() {
   ];
 
   for (const rt of reportTypes) {
-    await test(`Test 2: Report Type [${rt.name}] (${rt.key}) — PDF artifact generation and page mapping`, async () => {
+    await test(`Test 3: Report Type [${rt.name}] (${rt.key}) — PDF artifact generation and page mapping`, async () => {
       const doc = compileReportDocument(
         `job-${rt.key}`,
         mockSnapshot,
         analytics,
         rt.key,
-        'Internal operational',
+        'Official',
         []
       );
 
@@ -145,14 +219,14 @@ async function runParityTests() {
     });
   }
 
-  // 3. Test Section Page Map Integrity on Attendance & Demographics
-  await test('Test 3: Attendance & Demographics Report — exact acceptance section mapping', async () => {
+  // 4. Test Section Page Map Integrity on Attendance & Demographics
+  await test('Test 4: Attendance & Demographics Report — exact acceptance section mapping', async () => {
     const doc = compileReportDocument(
       'job-attendance-demo',
       mockSnapshot,
       analytics,
       'attendance-movement',
-      'Internal operational',
+      'Official',
       []
     );
 
@@ -172,8 +246,8 @@ async function runParityTests() {
     assert.strictEqual(map['section-back-cover'], result.pageCount);
   });
 
-  // 4. Test Expired Artifact Status Logic
-  await test('Test 4: Expired Artifact — status returns 410 without reconstructing disconnected React layout', () => {
+  // 5. Test Expired Artifact Status Logic
+  await test('Test 5: Expired Artifact — status returns 410 without reconstructing disconnected React layout', () => {
     const pastDate = new Date(Date.now() - 3600000).toISOString();
     const isExpired = new Date(pastDate) < new Date();
     assert.strictEqual(isExpired, true, 'Artifact past expires_at must be detected as expired');
@@ -187,30 +261,48 @@ async function runParityTests() {
     assert.strictEqual(expiredPayload.code, 'DOWNLOAD_EXPIRED');
   });
 
-  // 5. Test Viewer Navigation Contract (section clicks map to real PDF page jumps)
-  await test('Test 5: Viewer Navigation Contract — Section click resolves to PDF page number for iframe URL parameter', () => {
-    const samplePageMap: Record<string, number> = {
-      'section-cover': 1,
-      'section-kpis': 2,
-      'section-demographics-table': 3,
-      'section-attendance-status-composition': 3,
-      'section-findings': 4,
-      'section-back-cover': 5
-    };
+  // =========================================================================
+  // TEST 6: REACT OUTLINE NAVIGATION — Section links scroll within React DOM
+  // The rejected architecture navigated the outline by updating an iframe URL
+  // with #page=N. The approved architecture scrolls to React DOM section IDs.
+  // =========================================================================
+  await test('Test 6: React Outline Navigation — section links scroll to DOM elements, not iframe URL parameters', () => {
+    const modalPath = path.resolve(process.cwd(), 'src/components/admin/reports/GeneratedReportPreviewModal.tsx');
+    const modalSrc = fs.readFileSync(modalPath, 'utf8');
 
-    function resolvePdfTarget(sectionId: string, zoom: number, blobUrl: string): string {
-      const page = samplePageMap[sectionId] || 1;
-      return `${blobUrl}#page=${page}&zoom=${zoom}&toolbar=0&navpanes=0`;
-    }
+    // The React preview scrolls to section DOM IDs (scrollIntoView)
+    assert.ok(
+      modalSrc.includes('scrollIntoView'),
+      'Outline nav must use scrollIntoView to jump to React DOM sections'
+    );
 
-    const testBlob = 'blob:http://localhost:5173/mock-uuid';
-    const coverUrl = resolvePdfTarget('section-cover', 100, testBlob);
-    const demographicsUrl = resolvePdfTarget('section-demographics-table', 100, testBlob);
-    const backCoverUrl = resolvePdfTarget('section-back-cover', 120, testBlob);
+    // Must NOT navigate by injecting page numbers into an iframe src URL
+    assert.ok(
+      !modalSrc.includes('#page='),
+      'Outline nav must NOT use #page= URL fragment (that is the rejected iframe architecture)'
+    );
+    assert.ok(
+      !modalSrc.includes('navpanes='),
+      'Must NOT reference navpanes PDF viewer URL parameter'
+    );
+    assert.ok(
+      !modalSrc.includes('toolbar=0'),
+      'Must NOT reference toolbar=0 PDF viewer URL parameter'
+    );
 
-    assert.strictEqual(coverUrl, 'blob:http://localhost:5173/mock-uuid#page=1&zoom=100&toolbar=0&navpanes=0');
-    assert.strictEqual(demographicsUrl, 'blob:http://localhost:5173/mock-uuid#page=3&zoom=100&toolbar=0&navpanes=0');
-    assert.strictEqual(backCoverUrl, 'blob:http://localhost:5173/mock-uuid#page=5&zoom=120&toolbar=0&navpanes=0');
+    // React preview must track active section via IntersectionObserver on DOM sections
+    assert.ok(
+      modalSrc.includes('IntersectionObserver'),
+      'Preview must use IntersectionObserver to track active section in React DOM'
+    );
+
+    // Sidebar section IDs must correspond to React component anchor IDs
+    const previewPath = path.resolve(process.cwd(), 'src/components/admin/reports/ReportDocumentPreview.tsx');
+    const previewSrc = fs.readFileSync(previewPath, 'utf8');
+
+    assert.ok(previewSrc.includes('id="section-cover"'), 'React preview must have section-cover anchor');
+    assert.ok(previewSrc.includes('id="section-kpis"'), 'React preview must have section-kpis anchor');
+    assert.ok(previewSrc.includes('id="section-back-cover"'), 'React preview must have section-back-cover anchor');
   });
 
   console.log('\n================================================================');
