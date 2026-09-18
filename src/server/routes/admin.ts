@@ -14,6 +14,7 @@ import { broadcastSSEEvent } from '../services/sse';
 import { getChildSummaryStats } from '../services/childSummaryService';
 import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
 import { eventOperationsService } from '../services/eventOperationsService';
+import { operationsAssistantService } from '../services/operationsAssistantService';
 import { setCurrentEvent, getCurrentEvent, getCurrentEventId, getEventById, EventRow } from '../services/eventService';
 import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { adminDutyRouter, resolveUserDutyLocation } from './duty';
@@ -12977,6 +12978,79 @@ router.get('/events/:eventId/operations/activity', authMiddleware, async (req: A
 router.use('/events/:eventId/response-coverage', (req, res, next) => {
   req.url = `/events/${req.params.eventId}/response-coverage`;
   adminDutyRouter(req, res, next);
+});
+
+// =========================================================================
+// OPERATIONS ASSISTANT ENDPOINTS (PHASE 1)
+// =========================================================================
+
+// GET /api/admin/operations-assistant/readiness
+router.get('/operations-assistant/readiness', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const eventIdParam = req.query.eventId as string | undefined;
+    const targetEvent = await operationsAssistantService.resolveTargetEvent(eventIdParam);
+
+    if (!targetEvent) {
+      return res.json({
+        success: true,
+        report: {
+          event: null,
+          readinessStatus: 'NOT READY',
+          readinessReasons: ['No active event selected.'],
+          metrics: {
+            registrations: 0,
+            selectedChildren: 0,
+            eventChildCapacity: null,
+            placesRemaining: null,
+            checkedIn: 0,
+            pickedUp: 0,
+            approvedVolunteers: 0,
+            volunteersAssigned: 0,
+            volunteersOnDuty: 0,
+            dutyLocations: 0,
+            locationsBelowTarget: 0,
+            selectedChildrenWithoutPasses: 0,
+            openSafetyNotices: 0,
+            unresolvedEscalations: 0,
+            registrationClosingDate: null
+          },
+          needsAttention: [],
+          automationTriggers: [],
+          lastUpdated: new Date().toISOString()
+        }
+      });
+    }
+
+    const report = await operationsAssistantService.getEventReadiness(targetEvent.id);
+    res.json({ success: true, report });
+  } catch (err: any) {
+    console.error('Error fetching operations assistant readiness:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event readiness.' });
+  }
+});
+
+// POST /api/admin/operations-assistant/query
+router.post('/operations-assistant/query', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const { question, eventId } = req.body;
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'A question is required.' });
+    }
+
+    const result = await operationsAssistantService.processOperationalQuery(question.trim(), eventId);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('Error processing operational query:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to process operational query.' });
+  }
 });
 
 export default router;

@@ -62,6 +62,7 @@ import { AdminEscalationsView } from './AdminEscalationsView';
 import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
 import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
 import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
+import { OperationsAssistantPanel } from '../../components/admin/OperationsAssistantPanel';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
 
@@ -3015,6 +3016,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </button>
                         </div>
                       </div>
+
+                      {/* OPERATIONS ASSISTANT PANEL */}
+                      <OperationsAssistantPanel
+                        onNavigateTab={(tab) => handleTabChange(tab as AdminTab)}
+                        onNavigateRoute={(route) => onNavigate(route as AppRoute)}
+                      />
 
                       {/* Split Main Content Area */}
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 items-start">

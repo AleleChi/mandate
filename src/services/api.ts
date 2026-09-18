@@ -1529,6 +1529,16 @@ export const api = {
         method: 'POST'
       });
     },
+    async getOperationsAssistantReadiness(eventId?: string) {
+      const q = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{ success: boolean; report: any }>(`/api/admin/operations-assistant/readiness${q}`);
+    },
+    async queryOperationsAssistant(question: string, eventId?: string) {
+      return api.request<{ success: boolean; result: any }>('/api/admin/operations-assistant/query', {
+        method: 'POST',
+        body: JSON.stringify({ question, eventId })
+      });
+    },
     async getSafetyAlerts() {
       const res = await api.request<any>('/api/admin/safety-alerts');
       if (Array.isArray(res)) return res;
