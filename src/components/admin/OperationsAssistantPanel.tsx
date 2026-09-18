@@ -78,8 +78,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
   const SUGGESTED_QUERIES = [
     'Which locations need volunteers?',
     'How many children are selected?',
-    'Is registration still open?',
-    'How many volunteers are on duty?'
+    'Is registration still open?'
   ];
 
   const handleRunQuery = async (questionText: string) => {
@@ -114,18 +113,15 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
 
   return (
     <div
-      className={`bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left ${className}`}
-      data-component-version="admin-operations-assistant-compact-v2"
+      className={`bg-white border border-[#EAE8E1]/80 rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left ${className}`}
+      data-component-version="admin-operations-assistant-human-refined-v3"
     >
-      {/* Header */}
-      <div className="border-b border-[#EAE8E1]/80 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
-          <h3 className="text-[11px] font-mono font-bold tracking-widest text-zinc-500 uppercase">
-            OPERATIONS ASSISTANT
-          </h3>
-        </div>
-        <p className="text-sm font-serif font-semibold text-zinc-900 mt-1">
+      {/* Editorial Header */}
+      <div className="space-y-0.5 pb-1">
+        <h3 className="font-serif text-base font-semibold text-zinc-900">
+          Operations Assistant
+        </h3>
+        <p className="text-xs text-zinc-500">
           Ask about the current event
         </p>
       </div>
@@ -143,12 +139,12 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           value={queryInput}
           onChange={(e) => setQueryInput(e.target.value)}
           placeholder="Ask about the current event..."
-          className="w-full pl-3.5 pr-20 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6]/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#C59B27]/20 focus:border-[#C59B27] transition-all font-sans text-zinc-900 placeholder:text-zinc-400"
+          className="w-full pl-3.5 pr-18 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6]/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all font-sans text-zinc-900 placeholder:text-zinc-400"
         />
         <button
           type="submit"
           disabled={queryLoading || !queryInput.trim()}
-          className="absolute right-1.5 px-3 py-1.5 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-40 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="absolute right-1.5 px-3 py-1 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-40 text-white rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           {queryLoading ? (
             <RefreshCw className="w-3 h-3 animate-spin text-[#C59B27]" />
@@ -160,17 +156,17 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
       </form>
 
       {/* Suggested Questions */}
-      <div className="space-y-1.5">
-        <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider block">
-          Suggested questions:
+      <div className="space-y-1.5 pt-0.5">
+        <span className="text-xs font-medium text-zinc-400 block">
+          Suggested
         </span>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-col gap-1.5">
           {SUGGESTED_QUERIES.map((q, idx) => (
             <button
               key={idx}
               type="button"
               onClick={() => handleRunQuery(q)}
-              className="text-[11px] px-2.5 py-1 bg-[#FAF9F6] hover:bg-zinc-100 text-zinc-700 border border-[#EAE8E1]/80 rounded-lg transition-colors cursor-pointer text-left"
+              className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-0.5"
             >
               {q}
             </button>
@@ -178,38 +174,23 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         </div>
       </div>
 
-      {/* Grounded Query Answer Box */}
+      {/* Answer Area in plain clean typography */}
       {queryResult && (
-        <div className="p-4 bg-[#FAF9F6] rounded-xl border border-[#EAE8E1] space-y-2.5 animate-fade-in text-left">
-          <div className="flex items-start justify-between gap-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#9A7326] font-bold block">
-              Operations Answer
-            </span>
-            <span
-              className={`text-[9px] font-mono px-2 py-0.5 rounded shrink-0 border ${
-                queryResult.grounded
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  : 'bg-zinc-100 text-zinc-600 border-zinc-200'
-              }`}
-            >
-              {queryResult.grounded ? 'Grounded in event data' : 'Notice'}
-            </span>
-          </div>
-
-          <p className="text-xs text-zinc-800 font-medium leading-relaxed">
+        <div className="pt-3 border-t border-[#EAE8E1]/70 space-y-2 text-left">
+          <p className="text-xs text-zinc-800 leading-relaxed font-normal">
             {queryResult.answer}
           </p>
 
           {queryResult.suggestedQuestions && queryResult.suggestedQuestions.length > 0 && (
-            <div className="pt-2 border-t border-[#EAE8E1] space-y-1">
-              <span className="text-[10px] text-zinc-400 block">Follow-up questions:</span>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="pt-2 space-y-1">
+              <span className="text-[11px] text-zinc-400 block">Related:</span>
+              <div className="flex flex-col gap-1">
                 {queryResult.suggestedQuestions.map((sq, i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => handleRunQuery(sq)}
-                    className="text-[11px] text-[#9A7326] hover:text-[#7A5B1C] hover:underline transition-colors cursor-pointer text-left"
+                    className="text-xs text-left text-[#9A7326] hover:text-[#7A5B1C] hover:underline transition-colors cursor-pointer"
                   >
                     {sq}
                   </button>

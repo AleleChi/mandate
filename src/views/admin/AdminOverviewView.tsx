@@ -63,6 +63,7 @@ import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
 import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
 import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
 import { OperationsAssistantPanel, EventReadinessReport, AttentionItem } from '../../components/admin/OperationsAssistantPanel';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
 
@@ -1150,18 +1151,45 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   const readinessStatus = readinessReport?.readinessStatus || (stats.underReview > 0 || (needsAttentionList && needsAttentionList.length > 0) ? 'NEEDS ATTENTION' : 'READY');
 
-  const getRegistrationStatus = () => {
+  const getRegistrationStatusText = () => {
     const closesAt = readinessReport?.event?.registrationClosesAt || readinessReport?.metrics?.registrationClosingDate;
     if (closesAt) {
       const closes = new Date(closesAt);
       if (new Date() > closes) {
-        return { label: 'Registration: Closed', style: 'bg-zinc-100 text-zinc-600 border-zinc-200' };
+        return 'Registration closed';
       }
-      const formattedDate = closes.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      return { label: `Registration: Open (Closes ${formattedDate})`, style: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+      const formattedDate = closes.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+      return `Registration open · closes ${formattedDate}`;
     }
-    return { label: 'Registration: Open', style: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+    return 'Registration open';
   };
+
+  // Real data for capacity donut
+  const eventCapacity = readinessReport?.metrics.eventChildCapacity ?? (overviewData?.event?.capacity ? Number(overviewData.event.capacity) : null);
+  const selectedChildrenCount = readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0;
+  const placesRemainingCount = eventCapacity !== null ? Math.max(0, eventCapacity - selectedChildrenCount) : null;
+  const capacityPct = eventCapacity && eventCapacity > 0 ? Math.min(100, Math.round((selectedChildrenCount / eventCapacity) * 100)) : null;
+
+  const capacityChartData = eventCapacity && eventCapacity > 0 ? [
+    { name: 'Selected', value: selectedChildrenCount, color: '#C59B27' },
+    { name: 'Remaining', value: placesRemainingCount || 0, color: '#E4E4E7' }
+  ] : [];
+
+  // Real data for application/selection distribution
+  const distributionChartData = [
+    { name: 'Selected', value: reviewProgress.selected || stats.approved || 0, color: '#C59B27' },
+    { name: 'Under review', value: reviewProgress.underReview || stats.underReview || 0, color: '#D97706' },
+    { name: 'Not selected', value: reviewProgress.notSelected || 0, color: '#A1A1AA' }
+  ].filter(d => d.value > 0);
+  const totalDistribution = distributionChartData.reduce((sum, d) => sum + d.value, 0);
+
+  // Real data for duty coverage
+  const volunteersAssigned = readinessReport?.metrics.volunteersAssigned ?? 0;
+  const volunteersOnDuty = readinessReport?.metrics.volunteersOnDuty ?? 0;
+  const dutyLocationsCount = readinessReport?.metrics.dutyLocations ?? 0;
+  const locationsBelowTarget = readinessReport?.metrics.locationsBelowTarget ?? 0;
+  const dutyAttendancePct = volunteersAssigned > 0 ? Math.min(100, Math.round((volunteersOnDuty / volunteersAssigned) * 100)) : (volunteersOnDuty > 0 ? 100 : 0);
+  const locationsCoveredPct = dutyLocationsCount > 0 ? Math.min(100, Math.round((Math.max(0, dutyLocationsCount - locationsBelowTarget) / dutyLocationsCount) * 100)) : 100;
 
   const effectiveAttentionItems: AttentionItem[] = (readinessReport?.needsAttention && readinessReport.needsAttention.length > 0)
     ? readinessReport.needsAttention
@@ -3022,311 +3050,188 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       />
                     </div>
                   ) : (
-                    <div className="space-y-6" data-component-version="admin-overview-redesign-v2">
-                      {/* 1. TOP EVENT PULSE */}
+                    <div className="space-y-8" data-component-version="admin-overview-premium-v3">
+                      {/* 1. TOP EVENT MASTHEAD */}
                       <div
-                        className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:px-6 sm:py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-2xs"
-                        data-component-version="admin-event-pulse-v1"
+                        className="border-b border-[#EAE8E1]/80 pb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4 text-left"
+                        data-component-version="admin-event-masthead-v2"
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-left">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h2 className="font-serif text-lg sm:text-xl font-bold text-zinc-900 tracking-tight">
-                                {readinessReport?.event?.title || overviewData?.event?.name || 'The General Assembly'}
-                              </h2>
-                              <span className="text-xs text-zinc-400 font-sans hidden sm:inline">·</span>
-                              <span className="text-xs text-zinc-600 font-medium">
-                                {overviewData?.event?.dateLabel || '22 Nov 2025'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-zinc-500 font-medium mt-0.5">
-                              {overviewData?.event?.section || 'Children and Teens'}
-                            </p>
+                        <div className="space-y-1">
+                          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-zinc-900 tracking-tight">
+                            {readinessReport?.event?.title || overviewData?.event?.name || 'The General Assembly'}
+                          </h1>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
+                            <span>{overviewData?.event?.dateLabel || '21–22 November 2026'}</span>
+                            <span className="text-zinc-300">·</span>
+                            <span>{getRegistrationStatusText()}</span>
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start md:self-center">
-                          {/* Readiness Badge */}
-                          <span
-                            className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border font-mono ${
+                        <div className="flex flex-wrap items-center gap-6 text-xs text-zinc-600 self-start md:self-end">
+                          <div>
+                            <span className="text-zinc-400 text-[11px] block">Event status</span>
+                            <span className={`text-sm font-semibold ${
                               readinessStatus === 'READY'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                ? 'text-emerald-800'
                                 : readinessStatus === 'NEEDS ATTENTION'
-                                ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                : 'bg-rose-50 text-rose-800 border-rose-200'
-                            }`}
-                          >
-                            {readinessStatus}
-                          </span>
-
-                          {/* Registration Status Badge */}
-                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border font-mono ${getRegistrationStatus().style}`}>
-                            {getRegistrationStatus().label}
-                          </span>
-
-                          {/* Last Updated */}
-                          {lastUpdated && (
-                            <span className="text-[11px] text-zinc-400 font-sans hidden xl:inline">
-                              Updated {lastUpdated}
+                                ? 'text-amber-900'
+                                : 'text-zinc-900'
+                            }`}>
+                              {readinessStatus === 'READY'
+                                ? 'Ready'
+                                : readinessStatus === 'NEEDS ATTENTION'
+                                ? 'Needs attention'
+                                : 'Not ready'}
                             </span>
+                          </div>
+
+                          {lastUpdated && (
+                            <div>
+                              <span className="text-zinc-400 text-[11px] block">Updated</span>
+                              <span className="text-xs text-zinc-700 font-medium">{lastUpdated}</span>
+                            </div>
                           )}
 
-                          {/* Refresh Button */}
                           <button
                             type="button"
                             onClick={() => fetchDashboardData(true)}
                             disabled={loading || refreshing}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
-                            title="Refresh overview metrics"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+                            title="Refresh dashboard metrics"
                           >
-                            <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin text-[#C59B27]' : 'text-zinc-500'}`} />
+                            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#C59B27]' : 'text-zinc-500'}`} />
                             <span>Refresh</span>
                           </button>
                         </div>
                       </div>
 
-                      {/* 2. PRIMARY METRICS ONLY (Exactly 4 metrics) */}
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" data-component-version="admin-primary-metrics-v1">
-                        {/* Registrations */}
-                        <button
-                          type="button"
-                          onClick={() => handleTabChange('children')}
-                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
-                        >
-                          <span className="text-2xl sm:text-3xl font-serif font-bold text-zinc-900 block group-hover:text-[#C59B27] transition-colors">
-                            {readinessReport?.metrics.registrations ?? stats.totalChildren ?? 0}
-                          </span>
-                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
-                            Registrations
-                          </span>
-                          <span className="text-[11px] text-zinc-400 block mt-0.5">
-                            children recorded
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-
-                        {/* Selected children */}
-                        <button
-                          type="button"
-                          onClick={() => handleTabChange('attendance')}
-                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
-                        >
-                          <span className="text-2xl sm:text-3xl font-serif font-bold text-[#C59B27] block">
-                            {readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0}
-                          </span>
-                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
-                            Selected
-                          </span>
-                          <span className="text-[11px] text-zinc-400 block mt-0.5">
-                            approved passes
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-
-                        {/* Checked in */}
-                        <button
-                          type="button"
-                          onClick={() => handleTabChange('attendance')}
-                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
-                        >
-                          <span className="text-2xl sm:text-3xl font-serif font-bold text-zinc-900 block group-hover:text-[#C59B27] transition-colors">
-                            {readinessReport?.metrics.checkedIn ?? stats.checkedIn ?? 0}
-                          </span>
-                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
-                            Checked in
-                          </span>
-                          <span className="text-[11px] text-zinc-400 block mt-0.5">
-                            {readinessReport?.metrics.pickedUp ?? stats.pickedUp ? `${readinessReport?.metrics.pickedUp ?? stats.pickedUp} released` : 'on-site today'}
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-
-                        {/* Volunteers on duty */}
-                        <button
-                          type="button"
-                          onClick={() => handleTabChange('operations')}
-                          className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 hover:border-stone-300 transition-all shadow-2xs text-left cursor-pointer group relative"
-                        >
-                          <span className="text-2xl sm:text-3xl font-serif font-bold text-zinc-900 block group-hover:text-[#C59B27] transition-colors">
-                            {readinessReport?.metrics.volunteersOnDuty ?? 0}
-                            <span className="text-sm font-sans font-normal text-zinc-400 ml-1.5">
-                              / {readinessReport?.metrics.volunteersAssigned ?? stats.totalVolunteers ?? 0}
+                      {/* 2. PRIMARY METRICS BAND */}
+                      <div className="bg-white rounded-2xl p-6 sm:p-7 border border-[#EAE8E1]/70 shadow-2xs" data-component-version="admin-primary-metrics-band-v2">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE8E1]/70 -my-2 sm:my-0">
+                          {/* Registrations */}
+                          <div className="py-3 sm:py-0 px-2 sm:px-6 first:pl-0 text-left">
+                            <span className="text-xs font-medium text-zinc-500 block">
+                              Registrations
                             </span>
-                          </span>
-                          <span className="text-xs font-semibold text-zinc-700 block mt-1">
-                            On duty
-                          </span>
-                          <span className="text-[11px] text-zinc-400 block mt-0.5">
-                            active duty coverage
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-[#C59B27] absolute right-4 top-5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
+                            <span className="text-3xl sm:text-4xl font-serif font-bold text-zinc-900 block mt-1 tabular-nums">
+                              {readinessReport?.metrics.registrations ?? stats.totalChildren ?? 0}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                              children registered
+                            </span>
+                          </div>
+
+                          {/* Selected */}
+                          <div className="py-3 sm:py-0 px-2 sm:px-6 text-left">
+                            <span className="text-xs font-medium text-zinc-500 block">
+                              Selected
+                            </span>
+                            <span className="text-3xl sm:text-4xl font-serif font-bold text-[#C59B27] block mt-1 tabular-nums">
+                              {readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                              approved passes
+                            </span>
+                          </div>
+
+                          {/* Checked in */}
+                          <div className="py-3 sm:py-0 px-2 sm:px-6 text-left">
+                            <span className="text-xs font-medium text-zinc-500 block">
+                              Checked in
+                            </span>
+                            <span className="text-3xl sm:text-4xl font-serif font-bold text-zinc-900 block mt-1 tabular-nums">
+                              {readinessReport?.metrics.checkedIn ?? stats.checkedIn ?? 0}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                              {readinessReport?.metrics.pickedUp ?? stats.pickedUp ? `${readinessReport?.metrics.pickedUp ?? stats.pickedUp} released` : 'on-site today'}
+                            </span>
+                          </div>
+
+                          {/* On duty */}
+                          <div className="py-3 sm:py-0 px-2 sm:px-6 last:pr-0 text-left">
+                            <span className="text-xs font-medium text-zinc-500 block">
+                              On duty
+                            </span>
+                            <span className="text-3xl sm:text-4xl font-serif font-bold text-zinc-900 block mt-1 tabular-nums">
+                              {volunteersOnDuty}
+                              <span className="text-sm font-sans font-normal text-zinc-400 ml-1.5">
+                                / {volunteersAssigned || stats.totalVolunteers || 0}
+                              </span>
+                            </span>
+                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                              active duty responders
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       {/* 3. MID-TIER ROW: NEEDS ATTENTION (8 cols) & OPERATIONS ASSISTANT (4 cols) */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
-                        {/* LEFT ~65%: NEEDS ATTENTION & QUICK WORKFLOWS */}
-                        <div className="lg:col-span-8 space-y-6">
-                          {/* Needs Attention Panel */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                        {/* LEFT ~65%: NEEDS ATTENTION */}
+                        <div className="lg:col-span-8 space-y-4">
                           <div
-                            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 space-y-4 shadow-2xs text-left"
-                            data-component-version="admin-needs-attention-calm-v2"
+                            className="bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left"
+                            data-component-version="admin-needs-attention-editorial-v3"
                           >
-                            <div className="flex items-center justify-between border-b border-[#EAE8E1]/80 pb-3">
-                              <div className="space-y-0.5">
-                                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500 block">
-                                  NEEDS ATTENTION
-                                </span>
-                                <h3 className="text-sm font-serif font-semibold text-zinc-900">
-                                  {effectiveAttentionItems.length === 0
-                                    ? 'No issues require review'
-                                    : `${effectiveAttentionItems.length} issue${effectiveAttentionItems.length === 1 ? '' : 's'} require review`}
-                                </h3>
-                              </div>
-                              {effectiveAttentionItems.length > 0 && (
-                                <span className="text-[11px] font-mono text-zinc-400 font-medium">
-                                  Prioritized by operational impact
-                                </span>
-                              )}
+                            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]/70">
+                              <h3 className="font-serif text-base font-semibold text-zinc-900">
+                                Needs attention
+                              </h3>
+                              <span className="text-xs font-medium text-zinc-400">
+                                {effectiveAttentionItems.length} {effectiveAttentionItems.length === 1 ? 'item' : 'items'}
+                              </span>
                             </div>
 
                             {effectiveAttentionItems.length === 0 ? (
-                              <div className="py-4 text-xs text-zinc-500 flex items-center gap-2">
-                                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <span>All operational criteria meet readiness standards. No urgent blockers detected.</span>
-                              </div>
+                              <p className="text-xs text-zinc-500 py-3">
+                                All operational criteria meet readiness standards. No items require attention.
+                              </p>
                             ) : (
-                              <div className="space-y-2.5">
+                              <div className="divide-y divide-[#EAE8E1]/60">
                                 {displayedAttentionItems.map((item, idx) => (
-                                  <div
-                                    key={item.id || idx}
-                                    className="p-3.5 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6]/40 hover:bg-white transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                                  >
-                                    <div className="flex items-start gap-2.5">
-                                      <span className="mt-1 shrink-0">
-                                        {item.severity === 'urgent' ? (
-                                          <span className="w-2 h-2 rounded-full bg-rose-500 block" />
-                                        ) : item.severity === 'attention' ? (
-                                          <span className="w-2 h-2 rounded-full bg-amber-500 block" />
-                                        ) : (
-                                          <span className="w-2 h-2 rounded-full bg-zinc-400 block" />
-                                        )}
+                                  <div key={item.id || idx} className="py-3.5 first:pt-0 last:pb-0 space-y-1">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-sm font-semibold text-zinc-900">
+                                        {item.title}
                                       </span>
-                                      <div className="space-y-0.5">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-semibold text-zinc-900">{item.title}</span>
-                                          <span
-                                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase tracking-wider ${
-                                              item.severity === 'urgent'
-                                                ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
-                                                : item.severity === 'attention'
-                                                ? 'bg-amber-50 text-amber-800 border-amber-200 font-medium'
-                                                : 'bg-zinc-100 text-zinc-600 border-zinc-200'
-                                            }`}
-                                          >
-                                            {item.severity}
-                                          </span>
-                                        </div>
-                                        <p className="text-[11px] text-zinc-500 leading-relaxed">
-                                          {item.explanation}
-                                        </p>
-                                      </div>
+                                      {item.severity === 'urgent' && (
+                                        <span className="text-xs font-semibold text-rose-700 shrink-0">
+                                          Critical
+                                        </span>
+                                      )}
                                     </div>
-
+                                    <p className="text-xs text-zinc-500 leading-relaxed">
+                                      {item.explanation}
+                                    </p>
                                     <button
                                       type="button"
                                       onClick={() => handleAttentionAction(item)}
-                                      className="self-start sm:self-center shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] px-3 py-1.5 bg-[#FAF6EB] hover:bg-[#F5F0DC] rounded-lg transition-colors cursor-pointer border border-[#EAE8E1]/80"
+                                      className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] hover:underline pt-0.5 inline-block cursor-pointer"
                                     >
-                                      <span>{item.actionLabel || 'View'}</span>
-                                      <ChevronRight className="w-3.5 h-3.5" />
+                                      {item.actionLabel ? `${item.actionLabel} →` : 'View details →'}
                                     </button>
                                   </div>
                                 ))}
+                              </div>
+                            )}
 
-                                {effectiveAttentionItems.length > 3 && (
-                                  <div className="pt-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowAllAttentionIssues(!showAllAttentionIssues)}
-                                      className="text-xs font-semibold text-[#C59B27] hover:underline cursor-pointer"
-                                    >
-                                      {showAllAttentionIssues
-                                        ? 'Show fewer issues'
-                                        : `View all issues (${effectiveAttentionItems.length})`}
-                                    </button>
-                                  </div>
-                                )}
+                            {effectiveAttentionItems.length > 3 && (
+                              <div className="pt-2 border-t border-[#EAE8E1]/60">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAllAttentionIssues(!showAllAttentionIssues)}
+                                  className="text-xs font-semibold text-[#9A7326] hover:underline cursor-pointer"
+                                >
+                                  {showAllAttentionIssues
+                                    ? 'Show fewer'
+                                    : `View all issues (${effectiveAttentionItems.length}) →`}
+                                </button>
                               </div>
                             )}
                           </div>
-
-                          {/* Quick Operational Shortcuts (Answers: "What should I do next?") */}
-                          <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs text-left space-y-3">
-                            <div className="flex items-center justify-between pb-1">
-                              <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500 block">
-                                OPERATIONAL WORKFLOWS
-                              </span>
-                              <span className="text-[11px] text-zinc-400">Direct shortcuts</span>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                              <button
-                                type="button"
-                                onClick={() => handleTabChange('applications')}
-                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
-                              >
-                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
-                                  Applications
-                                </span>
-                                <span className="text-[10px] text-zinc-500 block mt-0.5">
-                                  {stats.underReview} pending review
-                                </span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleTabChange('attendance')}
-                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
-                              >
-                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
-                                  Attendance
-                                </span>
-                                <span className="text-[10px] text-zinc-500 block mt-0.5">
-                                  {attendanceData.checkedIn} on site
-                                </span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleTabChange('operations')}
-                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
-                              >
-                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
-                                  Event Duty
-                                </span>
-                                <span className="text-[10px] text-zinc-500 block mt-0.5">
-                                  {readinessReport?.metrics.dutyLocations ?? 0} duty stations
-                                </span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleTabChange('reports')}
-                                className="p-3 bg-white border border-[#EAE8E1] hover:border-[#C59B27]/50 rounded-xl text-left transition-all group cursor-pointer shadow-2xs"
-                              >
-                                <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#C59B27] block transition-colors">
-                                  Reports
-                                </span>
-                                <span className="text-[10px] text-zinc-500 block mt-0.5">
-                                  Full event telemetry
-                                </span>
-                              </button>
-                            </div>
-                          </div>
                         </div>
 
-                        {/* RIGHT ~35%: OPERATIONS ASSISTANT COMPACT */}
+                        {/* RIGHT ~35%: OPERATIONS ASSISTANT */}
                         <div className="lg:col-span-4">
                           <OperationsAssistantPanel
                             onNavigateTab={(tab) => handleTabChange(tab as AdminTab)}
@@ -3335,17 +3240,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         </div>
                       </div>
 
-                      {/* 4. GROUPED SECONDARY METRICS (DOMAINS) */}
-                      <div className="space-y-6" data-component-version="admin-grouped-secondary-metrics-v1">
-                        {/* SECTION A — CHILDREN & ATTENDANCE */}
-                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/80 pb-3">
+                      {/* 4. EVENT PERFORMANCE / OPERATIONS */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                        {/* LEFT 8 COLS: Children & Registration */}
+                        <div className="lg:col-span-8 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-6 text-left">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/70 pb-3">
                             <div>
-                              <h3 className="font-serif text-base font-bold text-zinc-900">
-                                Children & Attendance
+                              <h3 className="font-serif text-base font-semibold text-zinc-900">
+                                Children & registration
                               </h3>
                               <p className="text-xs text-zinc-500 mt-0.5">
-                                Application volume, venue capacity limits, and check-in velocity
+                                Capacity utilization, admission distribution, and attendance flow
                               </p>
                             </div>
 
@@ -3355,7 +3260,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                 onClick={() => setShowDemographicsTable(!showDemographicsTable)}
                                 className="text-xs font-medium text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer"
                               >
-                                {showDemographicsTable ? 'Hide Demographics' : 'View Demographics'}
+                                {showDemographicsTable ? 'Hide breakdown' : 'Age breakdown'}
                               </button>
                               <button
                                 type="button"
@@ -3367,100 +3272,177 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </div>
                           </div>
 
-                          {/* Small stats row with subtle separators */}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 divide-[#EAE8E1] sm:divide-x border border-[#EAE8E1] rounded-xl bg-[#FAF9F6]/40 p-1">
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Registrations</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.registrations ?? stats.totalChildren ?? 0}
+                          {/* Visualizations Grid: Real Recharts capacity donut + distribution + attendance */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                            {/* Visual 1: Capacity Donut */}
+                            <div className="space-y-2">
+                              <span className="text-xs font-medium text-zinc-400 block">
+                                Venue capacity
                               </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">recorded</span>
+                              {capacityChartData.length > 0 ? (
+                                <div className="flex items-center gap-4">
+                                  <div className="w-24 h-24 shrink-0">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <PieChart>
+                                        <Pie
+                                          data={capacityChartData}
+                                          innerRadius={30}
+                                          outerRadius={44}
+                                          paddingAngle={3}
+                                          dataKey="value"
+                                        >
+                                          {capacityChartData.map((entry, index) => (
+                                            <Cell key={`cap-${index}`} fill={entry.color} />
+                                          ))}
+                                        </Pie>
+                                        <Tooltip
+                                          contentStyle={{
+                                            backgroundColor: '#18181B',
+                                            borderColor: '#3F3F46',
+                                            borderRadius: '8px',
+                                            color: '#FFFFFF',
+                                            fontSize: '11px',
+                                            padding: '4px 8px'
+                                          }}
+                                        />
+                                      </PieChart>
+                                    </ResponsiveContainer>
+                                  </div>
+                                  <div className="space-y-0.5 text-xs text-zinc-600">
+                                    <p className="font-semibold text-zinc-900">
+                                      {capacityPct}% filled
+                                    </p>
+                                    <p>{selectedChildrenCount} selected</p>
+                                    <p className="text-zinc-400">{eventCapacity} limit</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-3 bg-zinc-50 rounded-xl text-xs text-zinc-500">
+                                  <p className="font-medium text-zinc-700">{selectedChildrenCount} selected</p>
+                                  <p className="text-zinc-400 mt-0.5">Capacity unconfigured</p>
+                                </div>
+                              )}
                             </div>
 
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Selected</span>
-                              <span className="text-lg font-serif font-bold text-[#C59B27] block mt-0.5">
-                                {readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0}
+                            {/* Visual 2: Application Distribution Donut */}
+                            <div className="space-y-2">
+                              <span className="text-xs font-medium text-zinc-400 block">
+                                Review status
                               </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">approved passes</span>
+                              {distributionChartData.length > 0 ? (
+                                <div className="flex items-center gap-4">
+                                  <div className="w-24 h-24 shrink-0">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <PieChart>
+                                        <Pie
+                                          data={distributionChartData}
+                                          innerRadius={30}
+                                          outerRadius={44}
+                                          paddingAngle={3}
+                                          dataKey="value"
+                                        >
+                                          {distributionChartData.map((entry, index) => (
+                                            <Cell key={`dist-${index}`} fill={entry.color} />
+                                          ))}
+                                        </Pie>
+                                        <Tooltip
+                                          contentStyle={{
+                                            backgroundColor: '#18181B',
+                                            borderColor: '#3F3F46',
+                                            borderRadius: '8px',
+                                            color: '#FFFFFF',
+                                            fontSize: '11px',
+                                            padding: '4px 8px'
+                                          }}
+                                        />
+                                      </PieChart>
+                                    </ResponsiveContainer>
+                                  </div>
+                                  <div className="space-y-0.5 text-xs text-zinc-600">
+                                    <p className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
+                                      <span>Selected: {reviewProgress.selected || stats.approved}</span>
+                                    </p>
+                                    <p className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-[#D97706]" />
+                                      <span>Review: {reviewProgress.underReview || stats.underReview}</span>
+                                    </p>
+                                    <p className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-[#A1A1AA]" />
+                                      <span>Not selected: {reviewProgress.notSelected || 0}</span>
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-zinc-400">No applications recorded</p>
+                              )}
                             </div>
 
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Event Capacity</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.eventChildCapacity ?? overviewData?.event?.capacity ?? '—'}
+                            {/* Visual 3: Real Attendance Flow Block */}
+                            <div className="space-y-2 text-left">
+                              <span className="text-xs font-medium text-zinc-400 block">
+                                Attendance flow
                               </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">venue limit</span>
-                            </div>
-
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Places Remaining</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.placesRemaining !== null && readinessReport?.metrics.placesRemaining !== undefined
-                                  ? readinessReport.metrics.placesRemaining
-                                  : (overviewData?.event?.placesRemaining ?? '—')}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">available slots</span>
-                            </div>
-
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Checked In</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.checkedIn ?? stats.checkedIn ?? 0}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">
-                                {readinessReport?.metrics.pickedUp ?? stats.pickedUp ? `${readinessReport?.metrics.pickedUp ?? stats.pickedUp} released` : 'present on site'}
-                              </span>
-                            </div>
-
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Passes Pending</span>
-                              <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.selectedChildrenWithoutPasses ?? 0) > 0 ? 'text-amber-700' : 'text-zinc-900'}`}>
-                                {readinessReport?.metrics.selectedChildrenWithoutPasses ?? 0}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">needing issuance</span>
+                              <div className="space-y-1 text-xs text-zinc-600">
+                                <div className="flex justify-between">
+                                  <span>Checked in</span>
+                                  <span className="font-semibold text-zinc-900">{attendanceData.checkedIn}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Still inside</span>
+                                  <span className="font-medium text-zinc-700">{attendanceData.stillInside}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Safely released</span>
+                                  <span className="font-medium text-zinc-700">{attendanceData.pickedUp}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Expected</span>
+                                  <span className="text-zinc-500">{attendanceData.expected}</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
 
                           {/* Collapsible Demographics Table */}
                           {showDemographicsTable && (
-                            <div className="pt-2 space-y-2 animate-fade-in">
+                            <div className="pt-3 border-t border-[#EAE8E1]/70 space-y-2 animate-fade-in">
                               <div className="flex items-center justify-between text-xs text-zinc-500 pb-1">
-                                <span className="font-semibold text-zinc-700">Demographic Breakdown by Age Group</span>
+                                <span className="font-semibold text-zinc-700">Demographic breakdown by age & gender</span>
                                 <button onClick={() => setActiveTab('reports')} className="text-[#C59B27] font-medium hover:underline">
-                                  View full report
+                                  Full report
                                 </button>
                               </div>
-                              <div className="border border-[#EAE8E1] rounded-xl overflow-hidden">
+                              <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
                                   <thead>
-                                    <tr className="border-b border-[#EAE8E1] bg-[#FAF9F6] text-zinc-500 font-bold uppercase tracking-wider text-[9px]">
-                                      <th className="py-2.5 px-3.5 font-semibold">Age Group</th>
-                                      <th className="py-2.5 px-3.5 font-semibold">Boys</th>
-                                      <th className="py-2.5 px-3.5 font-semibold">Girls</th>
-                                      <th className="py-2.5 px-3.5 font-semibold">Total</th>
-                                      <th className="py-2.5 px-3.5 font-semibold">Under Review</th>
-                                      <th className="py-2.5 px-3.5 font-semibold">Selected</th>
-                                      <th className="py-2.5 px-3.5 font-semibold">Checked In</th>
+                                    <tr className="border-b border-[#EAE8E1] text-zinc-400 text-[11px]">
+                                      <th className="py-2 pr-4 font-medium">Age Group</th>
+                                      <th className="py-2 px-3 font-medium">Boys</th>
+                                      <th className="py-2 px-3 font-medium">Girls</th>
+                                      <th className="py-2 px-3 font-medium">Total</th>
+                                      <th className="py-2 px-3 font-medium">Under Review</th>
+                                      <th className="py-2 px-3 font-medium">Selected</th>
+                                      <th className="py-2 pl-3 font-medium">Checked In</th>
                                     </tr>
                                   </thead>
-                                  <tbody className="divide-y divide-[#EAE8E1]">
+                                  <tbody className="divide-y divide-[#EAE8E1]/50 text-zinc-700">
                                     {demographics.length === 0 ? (
                                       <tr>
-                                        <td colSpan={7} className="py-6 px-4 text-center text-zinc-400 font-medium">
+                                        <td colSpan={7} className="py-4 text-center text-zinc-400">
                                           No demographic breakdown available.
                                         </td>
                                       </tr>
                                     ) : (
                                       demographics.map((row: any, i: number) => (
-                                        <tr key={i} className="hover:bg-zinc-50/50 transition-colors">
-                                          <td className="py-2.5 px-3.5 font-semibold text-[#18181B]">{row.ageGroup}</td>
-                                          <td className="py-2.5 px-3.5 text-zinc-600">{row.boys}</td>
-                                          <td className="py-2.5 px-3.5 text-zinc-600">{row.girls}</td>
-                                          <td className="py-2.5 px-3.5 font-bold text-[#18181B]">{row.total}</td>
-                                          <td className="py-2.5 px-3.5 text-zinc-500">{row.underReview}</td>
-                                          <td className="py-2.5 px-3.5 text-zinc-500">{row.selected}</td>
-                                          <td className="py-2.5 px-3.5 text-emerald-600 font-semibold">{row.checkedIn}</td>
+                                        <tr key={i} className="hover:bg-zinc-50/50">
+                                          <td className="py-2 pr-4 font-medium text-zinc-900">{row.ageGroup}</td>
+                                          <td className="py-2 px-3 text-zinc-600">{row.boys}</td>
+                                          <td className="py-2 px-3 text-zinc-600">{row.girls}</td>
+                                          <td className="py-2 px-3 font-semibold text-zinc-900">{row.total}</td>
+                                          <td className="py-2 px-3 text-zinc-500">{row.underReview}</td>
+                                          <td className="py-2 px-3 text-zinc-500">{row.selected}</td>
+                                          <td className="py-2 pl-3 text-zinc-900 font-medium">{row.checkedIn}</td>
                                         </tr>
                                       ))
                                     )}
@@ -3471,18 +3453,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           )}
                         </div>
 
-                        {/* SECTION B — VOLUNTEERS & DUTY */}
-                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/80 pb-3">
-                            <div>
-                              <h3 className="font-serif text-base font-bold text-zinc-900">
-                                Volunteers & Duty
-                              </h3>
-                              <p className="text-xs text-zinc-500 mt-0.5">
-                                Vetted personnel pool, station staffing coverage, and duty check-ins
-                              </p>
-                            </div>
-
+                        {/* RIGHT 4 COLS: Duty Coverage */}
+                        <div className="lg:col-span-4 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-5 text-left">
+                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 pb-3">
+                            <h3 className="font-serif text-base font-semibold text-zinc-900">
+                              Duty coverage
+                            </h3>
                             <button
                               type="button"
                               onClick={() => handleTabChange('operations')}
@@ -3492,139 +3468,207 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </button>
                           </div>
 
-                          {/* Small stats row with subtle separators */}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 divide-[#EAE8E1] sm:divide-x border border-[#EAE8E1] rounded-xl bg-[#FAF9F6]/40 p-1">
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Approved Volunteers</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.approvedVolunteers ?? stats.totalVolunteers ?? 0}
+                          <div className="space-y-4">
+                            {/* Duty Responder Presence Bar */}
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-zinc-600 font-medium">Volunteers on duty</span>
+                                <span className="font-semibold text-zinc-900">{volunteersOnDuty} / {volunteersAssigned}</span>
+                              </div>
+                              <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-[#C59B27] h-full rounded-full transition-all"
+                                  style={{ width: `${dutyAttendancePct}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] text-zinc-400 block">
+                                {dutyAttendancePct}% duty roster active
                               </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">vetted pool</span>
                             </div>
 
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Assigned Volunteers</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.volunteersAssigned ?? 0}
+                            {/* Location Staffing Stations Bar */}
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-zinc-600 font-medium">Locations covered</span>
+                                <span className="font-semibold text-zinc-900">
+                                  {Math.max(0, dutyLocationsCount - locationsBelowTarget)} / {dutyLocationsCount}
+                                </span>
+                              </div>
+                              <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-zinc-800 h-full rounded-full transition-all"
+                                  style={{ width: `${locationsCoveredPct}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] text-zinc-400 block">
+                                {locationsBelowTarget > 0
+                                  ? `${locationsBelowTarget} location(s) below staffing target`
+                                  : 'All stations currently staffed'}
                               </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">rostered</span>
                             </div>
 
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Currently On Duty</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.volunteersOnDuty ?? 0}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">active presence</span>
-                            </div>
-
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Duty Locations</span>
-                              <span className="text-lg font-serif font-bold text-zinc-900 block mt-0.5">
-                                {readinessReport?.metrics.dutyLocations ?? 0}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">designated stations</span>
-                            </div>
-
-                            <div className="p-3 text-left">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Locations Needing Staff</span>
-                              <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.locationsBelowTarget ?? 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                {readinessReport?.metrics.locationsBelowTarget ?? 0}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 block mt-0.5">
-                                {(readinessReport?.metrics.locationsBelowTarget ?? 0) > 0 ? 'under target' : 'fully covered'}
-                              </span>
+                            {/* Summary stats */}
+                            <div className="pt-3 border-t border-[#EAE8E1]/60 flex justify-between text-xs text-zinc-500">
+                              <span>Approved pool: <strong className="text-zinc-800">{readinessReport?.metrics.approvedVolunteers ?? stats.totalVolunteers ?? 0}</strong></span>
+                              <span>Stations: <strong className="text-zinc-800">{dutyLocationsCount}</strong></span>
                             </div>
                           </div>
                         </div>
+                      </div>
 
-                        {/* SECTION C — SAFETY & CARE */}
-                        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/80 pb-3">
-                            <div>
-                              <h3 className="font-serif text-base font-bold text-zinc-900">
-                                Safety & Escalations
-                              </h3>
-                              <p className="text-xs text-zinc-500 mt-0.5">
-                                Incident monitoring, guardian escalation cycles, and device safety readiness
-                              </p>
-                            </div>
-
+                      {/* 5. SAFETY + RECENT ACTIVITY */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                        {/* LEFT 5 COLS: Safety Overview */}
+                        <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left">
+                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 pb-3">
+                            <h3 className="font-serif text-base font-semibold text-zinc-900">
+                              Safety
+                            </h3>
                             {canViewSafety && (
-                              <div className="flex items-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => handleTabChange('incidents')}
-                                  className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
-                                >
-                                  Incident Desk →
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleTabChange('escalations')}
-                                  className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
-                                >
-                                  Escalation Policies →
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleTabChange('incidents')}
+                                className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                              >
+                                View Incident Desk →
+                              </button>
                             )}
                           </div>
 
                           {canViewSafety ? (
                             <div className="space-y-4">
-                              {/* Safety stats row */}
-                              <div className="grid grid-cols-2 divide-x divide-[#EAE8E1] border border-[#EAE8E1] rounded-xl bg-[#FAF9F6]/40 p-1">
-                                <div className="p-3 text-left">
-                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Open Safety Notices</span>
-                                  <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.openSafetyNotices ?? safetyAlerts.length ?? 0) > 0 ? 'text-rose-600' : 'text-zinc-900'}`}>
+                              <div className="space-y-2 text-xs text-zinc-600">
+                                <div className="flex justify-between py-1 border-b border-zinc-100">
+                                  <span>Open notices</span>
+                                  <span className="font-semibold text-zinc-900">
                                     {readinessReport?.metrics.openSafetyNotices ?? safetyAlerts.length ?? 0}
                                   </span>
-                                  <span className="text-[10px] text-zinc-400 block mt-0.5">active alerts & incidents</span>
                                 </div>
-
-                                <div className="p-3 text-left">
-                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Active Escalations</span>
-                                  <span className={`text-lg font-serif font-bold block mt-0.5 ${(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 ? 'text-rose-600' : 'text-zinc-900'}`}>
+                                <div className="flex justify-between py-1 border-b border-zinc-100">
+                                  <span>Active escalations</span>
+                                  <span className={`font-semibold ${(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 ? 'text-rose-700' : 'text-zinc-900'}`}>
                                     {readinessReport?.metrics.unresolvedEscalations ?? 0}
                                   </span>
-                                  <span className="text-[10px] text-zinc-400 block mt-0.5">guardian notification cycles</span>
                                 </div>
                               </div>
 
-                              {/* Safety updates snippet or device sound tester */}
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-zinc-600 border-t border-[#EAE8E1]/80">
-                                <div className="flex items-center gap-2">
-                                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                                  <span>
-                                    Device audio alerts {soundEnabled !== false ? 'active' : 'muted'}.
-                                  </span>
-                                </div>
+                              {(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 && (
+                                <p className="text-xs font-semibold text-rose-700">
+                                  Critical: 1 or more automated guardian escalations require review.
+                                </p>
+                              )}
 
+                              {/* Alert sound test controls */}
+                              <div className="pt-2 border-t border-[#EAE8E1]/60 flex items-center justify-between text-xs">
+                                <span className="text-zinc-500">
+                                  Alert sound: {soundEnabled !== false ? 'ready' : 'muted'}
+                                </span>
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={isPlayingSoundTest ? handleStopSoundTest : handleTriggerSoundTest}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
+                                    className="text-xs font-medium text-zinc-700 hover:text-zinc-900 underline cursor-pointer"
                                   >
-                                    <Volume2 className={`w-3.5 h-3.5 ${isPlayingSoundTest ? 'text-[#C59B27] animate-pulse' : 'text-zinc-500'}`} />
-                                    <span>{isPlayingSoundTest ? 'Stop sound' : 'Test sound'}</span>
+                                    {isPlayingSoundTest ? 'Stop' : 'Test sound'}
                                   </button>
+                                  <span className="text-zinc-300">·</span>
                                   <button
                                     type="button"
                                     onClick={handleOpenSoundSettings}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-medium text-zinc-800 transition-all cursor-pointer"
+                                    className="text-xs font-medium text-zinc-700 hover:text-zinc-900 underline cursor-pointer"
                                   >
-                                    <Settings className="w-3.5 h-3.5 text-zinc-500" />
-                                    <span>Sound settings</span>
+                                    Settings
                                   </button>
                                 </div>
                               </div>
                             </div>
                           ) : (
-                            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-500">
-                              Restricted: Safety and escalation telemetry requires administrator permissions.
+                            <p className="text-xs text-zinc-400 py-2">
+                              Restricted: Requires safety administrator permissions.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* RIGHT 7 COLS: Recent Operational Activity */}
+                        <div className="lg:col-span-7 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left">
+                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 pb-3">
+                            <h3 className="font-serif text-base font-semibold text-zinc-900">
+                              Recent operational activity
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => handleTabChange('attendance')}
+                              className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                            >
+                              View attendance log →
+                            </button>
+                          </div>
+
+                          {recentActivityList.length === 0 ? (
+                            <p className="text-xs text-zinc-400 py-3">
+                              No recent operational activity recorded.
+                            </p>
+                          ) : (
+                            <div className="divide-y divide-[#EAE8E1]/60">
+                              {recentActivityList.slice(0, 4).map((act: any) => {
+                                const item = formatRecentActivity(act);
+                                return (
+                                  <div key={act.id} className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-4 text-xs">
+                                    <div className="space-y-0.5">
+                                      <p className="font-medium text-zinc-900">{item.person}</p>
+                                      {item.action && (
+                                        <p className="text-zinc-500">{item.action}</p>
+                                      )}
+                                    </div>
+                                    <span className="text-[11px] text-zinc-400 shrink-0 font-sans">
+                                      {item.time}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
+                        </div>
+                      </div>
+
+                      {/* 6. OPERATIONAL SHORTCUTS */}
+                      <div className="bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs text-left space-y-3" data-component-version="admin-operational-shortcuts-v2">
+                        <h4 className="font-serif text-sm font-semibold text-zinc-900">
+                          Operational shortcuts
+                        </h4>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange('applications')}
+                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-zinc-900 block">Applications</span>
+                            <span className="text-xs text-zinc-500 block mt-0.5">{stats.underReview} awaiting review</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange('attendance')}
+                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-zinc-900 block">Attendance</span>
+                            <span className="text-xs text-zinc-500 block mt-0.5">{attendanceData.checkedIn} checked in</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange('operations')}
+                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-zinc-900 block">Event Duty</span>
+                            <span className="text-xs text-zinc-500 block mt-0.5">{dutyLocationsCount} locations</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange('reports')}
+                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-zinc-900 block">Reports</span>
+                            <span className="text-xs text-zinc-500 block mt-0.5">View event reports</span>
+                          </button>
                         </div>
                       </div>
                     </div>
