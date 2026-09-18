@@ -214,8 +214,8 @@ const MEDIA_SLOTS: MediaSlot[] = [
 ];
 
 export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin }) => {
-  // Main view switcher: 'gallery' (primary photo gallery) vs 'slots' (fixed hero/brand images)
-  const [mainTab, setMainTab] = useState<'gallery' | 'slots'>('gallery');
+  // Main view switcher: 'gallery' (primary photo gallery) vs 'slots' (fixed hero/brand images) vs 'contact-footer' (contact & footer settings)
+  const [mainTab, setMainTab] = useState<'gallery' | 'slots' | 'contact-footer'>('gallery');
 
   // Core Slots state
   const [loading, setLoading] = useState(true);
@@ -225,6 +225,16 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   const [resettingSlot, setResettingSlot] = useState<string | null>(null);
   const [errorSlot, setErrorSlot] = useState<{ [key: string]: string }>({});
   const [successSlot, setSuccessSlot] = useState<{ [key: string]: string }>({});
+
+  // Contact & Footer state
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactWhatsApp, setContactWhatsApp] = useState('');
+  const [contactAddress, setContactAddress] = useState('');
+  const [footerYear, setFooterYear] = useState('');
+  const [footerCopyrightName, setFooterCopyrightName] = useState('');
+  const [isSavingContactFooter, setIsSavingContactFooter] = useState(false);
+  const [contactFooterFeedback, setContactFooterFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Photo Gallery state
   const [galleryItems, setGalleryItems] = useState<AdminGalleryItem[]>([]);
@@ -270,18 +280,53 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openMenuId]);
 
-  // 1. Fetch Landing Settings (Slots)
+  // 1. Fetch Landing Settings (Slots, Contact & Footer)
   const fetchSettings = async () => {
     try {
       setLoading(true);
       const res = await api.admin.getLandingSettings();
       if (res.success) {
-        setSettings(res.settings || {});
+        const s = res.settings || {};
+        setSettings(s);
+        setContactEmail(s.contactEmail || '');
+        setContactPhone(s.contactPhone || '');
+        setContactWhatsApp(s.contactWhatsApp || '');
+        setContactAddress(s.contactAddress || '');
+        setFooterYear(s.footerYear || String(new Date().getFullYear()));
+        setFooterCopyrightName(s.footerCopyrightName || 'The Koinonia General Assembly');
       }
     } catch (err: any) {
       console.error('Failed to load landing settings:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveContactFooter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingContactFooter(true);
+    setContactFooterFeedback(null);
+    try {
+      const payload: Record<string, string> = {
+        contactEmail: contactEmail.trim(),
+        contactPhone: contactPhone.trim(),
+        contactWhatsApp: contactWhatsApp.trim(),
+        contactAddress: contactAddress.trim(),
+        footerYear: footerYear.trim() || String(new Date().getFullYear()),
+        footerCopyrightName: footerCopyrightName.trim() || 'The Koinonia General Assembly'
+      };
+      const res = await api.admin.updateLandingSettings(payload);
+      if (res.success) {
+        setContactFooterFeedback({ type: 'success', message: 'Contact details and footer settings saved successfully.' });
+        await fetchSettings();
+      } else {
+        setContactFooterFeedback({ type: 'error', message: res.message || 'Failed to save settings.' });
+      }
+    } catch (err: any) {
+      console.error('Error saving contact/footer settings:', err);
+      setContactFooterFeedback({ type: 'error', message: err?.message || 'Failed to save settings.' });
+    } finally {
+      setIsSavingContactFooter(false);
     }
   };
 
@@ -737,6 +782,17 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           <span className="text-[11px] font-sans font-medium text-stone-400">
             {MEDIA_SLOTS.length}
           </span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('contact-footer')}
+          className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 font-sans ${
+            mainTab === 'contact-footer'
+              ? 'border-[#C59B27] text-stone-950 font-semibold'
+              : 'border-transparent text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          <span>Contact &amp; Footer</span>
         </button>
       </div>
 
@@ -1694,6 +1750,151 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 3. CONTACT & FOOTER SETTINGS VIEW */}
+      {/* ========================================================================= */}
+      {mainTab === 'contact-footer' && (
+        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 max-w-3xl">
+          <div className="border-b border-[#EAE8E1] pb-4">
+            <h3 className="text-base sm:text-lg font-serif-koinonia font-semibold text-stone-900">
+              Contact &amp; Footer Settings
+            </h3>
+            <p className="text-xs text-stone-500 mt-1">
+              Configure public contact channels, physical address, copyright year, and organization branding.
+            </p>
+          </div>
+
+          {contactFooterFeedback && (
+            <div className={`p-4 rounded-xl text-xs font-medium ${
+              contactFooterFeedback.type === 'success'
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border border-rose-200 text-rose-800'
+            }`}>
+              {contactFooterFeedback.message}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveContactFooter} className="space-y-6">
+            <div className="space-y-4">
+              <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+                Public Contact Information
+              </h4>
+              <p className="text-[11px] text-stone-400">
+                Configured values will appear on the landing page footer and Contact Us page. Empty fields are hidden cleanly.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-800 block">
+                    Email address
+                  </label>
+                  <input
+                    type="email"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    placeholder="e.g. care@koinoniachildren.org"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-800 block">
+                    Phone number
+                  </label>
+                  <input
+                    type="text"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                    placeholder="e.g. +234 (0) 900 123 4567"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-800 block">
+                    WhatsApp contact
+                  </label>
+                  <input
+                    type="text"
+                    value={contactWhatsApp}
+                    onChange={(e) => setContactWhatsApp(e.target.value)}
+                    placeholder="e.g. +234 800 000 0000"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-semibold text-stone-800 block">
+                    Auditorium / Ministry address
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={contactAddress}
+                    onChange={(e) => setContactAddress(e.target.value)}
+                    placeholder="e.g. Koinonia Global Auditorium & Children Pavilion, Abuja, Nigeria."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-[#EAE8E1] pt-6 space-y-4">
+              <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+                Footer &amp; Copyright Details
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5 sm:col-span-1">
+                  <label className="text-xs font-semibold text-stone-800 block">
+                    Footer year
+                  </label>
+                  <input
+                    type="number"
+                    value={footerYear}
+                    onChange={(e) => setFooterYear(e.target.value)}
+                    placeholder={String(new Date().getFullYear())}
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-semibold text-stone-800 block">
+                    Copyright / Organisation name
+                  </label>
+                  <input
+                    type="text"
+                    value={footerCopyrightName}
+                    onChange={(e) => setFooterCopyrightName(e.target.value)}
+                    placeholder="The Koinonia General Assembly"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="submit"
+                disabled={isSavingContactFooter}
+                className="inline-flex items-center gap-2 bg-[#18181B] text-white hover:bg-stone-800 px-5 py-2.5 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isSavingContactFooter ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-[#C59B27]" />
+                    <span>Save changes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

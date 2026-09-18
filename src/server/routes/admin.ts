@@ -577,6 +577,26 @@ router.get('/public-landing-page', async (req, res) => {
     for (const row of rows) {
       settings[row.setting_key] = row.setting_value || '';
     }
+
+    // Populate footerYear and footerCopyrightName with safe defaults/fallbacks
+    if (!settings.footerYear) {
+      try {
+        const footerRow = await queryOne("SELECT copyright_year as copyrightYear, copyright_text as copyrightText FROM admin_footer_settings WHERE id = 'primary_footer_settings'");
+        if (footerRow?.copyrightYear) {
+          settings.footerYear = String(footerRow.copyrightYear);
+        }
+        if (footerRow?.copyrightText && !settings.footerCopyrightName) {
+          settings.footerCopyrightName = footerRow.copyrightText;
+        }
+      } catch (e) {}
+    }
+    if (!settings.footerYear) {
+      settings.footerYear = String(new Date().getFullYear());
+    }
+    if (!settings.footerCopyrightName) {
+      settings.footerCopyrightName = 'The Koinonia General Assembly';
+    }
+
     const faviconSetting = await queryOne("SELECT url FROM app_media_settings WHERE slot = 'site_favicon'");
     if (faviconSetting && faviconSetting.url) {
       settings.site_favicon = faviconSetting.url;
@@ -5834,14 +5854,22 @@ router.get('/footer-settings', async (req, res) => {
       WHERE id = 'primary_footer_settings'
     `);
 
-    if (!settings) {
-      settings = {
-        copyrightYear: 2026,
-        copyrightText: 'Koinonia Children and Teens. All rights reserved.'
-      };
-    }
+    // Check admin_landing_settings as well
+    const landingYearRow = await queryOne("SELECT setting_value FROM admin_landing_settings WHERE setting_key = 'footerYear'");
+    const landingTextRow = await queryOne("SELECT setting_value FROM admin_landing_settings WHERE setting_key = 'footerCopyrightName'");
 
-    return res.json({ success: true, settings });
+    const yearVal = landingYearRow?.setting_value
+      ? parseInt(landingYearRow.setting_value, 10)
+      : (settings?.copyrightYear || new Date().getFullYear());
+    const textVal = landingTextRow?.setting_value || settings?.copyrightText || 'The Koinonia General Assembly';
+
+    return res.json({
+      success: true,
+      settings: {
+        copyrightYear: yearVal,
+        copyrightText: textVal
+      }
+    });
   } catch (err: any) {
     console.error('Error fetching admin footer settings:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve footer settings.' });
@@ -5859,6 +5887,8 @@ router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest
     const { copyrightYear, copyrightText } = req.body;
     const id = 'primary_footer_settings';
     const now = new Date().toISOString();
+    const parsedYear = copyrightYear ? parseInt(copyrightYear, 10) : new Date().getFullYear();
+    const parsedText = copyrightText || 'The Koinonia General Assembly';
 
     const existing = await queryOne('SELECT id FROM admin_footer_settings WHERE id = ?', [id]);
     if (existing) {
@@ -5869,8 +5899,8 @@ router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest
             updated_at = ?
         WHERE id = ?
       `, [
-        copyrightYear ? parseInt(copyrightYear, 10) : 2026,
-        copyrightText || '',
+        parsedYear,
+        parsedText,
         now,
         id
       ]);
@@ -5881,11 +5911,27 @@ router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest
         ) VALUES (?, ?, ?, ?, ?)
       `, [
         id,
-        copyrightYear ? parseInt(copyrightYear, 10) : 2026,
-        copyrightText || '',
+        parsedYear,
+        parsedText,
         now,
         now
       ]);
+    }
+
+    // Also sync to admin_landing_settings
+    try {
+      await execute(`
+        INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at)
+        VALUES ('footerYear', ?, 'string', ?)
+        ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at
+      `, [String(parsedYear), now]);
+      await execute(`
+        INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at)
+        VALUES ('footerCopyrightName', ?, 'string', ?)
+        ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at
+      `, [parsedText, now]);
+    } catch (syncErr) {
+      console.warn('Could not sync to admin_landing_settings:', syncErr);
     }
 
     return res.json({ success: true, message: 'Footer copyright settings updated successfully.' });
@@ -5942,6 +5988,25 @@ router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response)
       }
     }
 
+    // Populate footerYear and footerCopyrightName with safe defaults/fallbacks
+    if (!settings.footerYear) {
+      try {
+        const footerRow = await queryOne("SELECT copyright_year as copyrightYear, copyright_text as copyrightText FROM admin_footer_settings WHERE id = 'primary_footer_settings'");
+        if (footerRow?.copyrightYear) {
+          settings.footerYear = String(footerRow.copyrightYear);
+        }
+        if (footerRow?.copyrightText && !settings.footerCopyrightName) {
+          settings.footerCopyrightName = footerRow.copyrightText;
+        }
+      } catch (e) {}
+    }
+    if (!settings.footerYear) {
+      settings.footerYear = String(new Date().getFullYear());
+    }
+    if (!settings.footerCopyrightName) {
+      settings.footerCopyrightName = 'The Koinonia General Assembly';
+    }
+
     return res.json({ success: true, settings });
   } catch (err: any) {
     console.error('Error fetching admin landing settings:', err);
@@ -5964,7 +6029,9 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
       'passAvatar', 'workerAvatar', 'safetySection',
       'galleryArrival', 'galleryCheckIn', 'galleryActivities', 'galleryTeaching',
       'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo',
-      'galleryEventVideoMediaId', 'galleryEventVideoOriginalName', 'galleryEventVideoFileSize'
+      'galleryEventVideoMediaId', 'galleryEventVideoOriginalName', 'galleryEventVideoFileSize',
+      'contactEmail', 'contactPhone', 'contactWhatsApp', 'contactAddress',
+      'footerYear', 'footerCopyrightName'
     ];
 
     // If clearing heroVideo (e.g. Restore Default), clear all related heroVideo metadata keys
@@ -6008,7 +6075,12 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
     // Execute atomic update
     await transaction(async () => {
       for (const [key, value] of Object.entries(settings)) {
-        const valueType = (key === 'heroVideo' || key === 'galleryEventVideo') ? 'video' : 'image';
+        let valueType = 'image';
+        if (key === 'heroVideo' || key === 'galleryEventVideo') {
+          valueType = 'video';
+        } else if (key.startsWith('contact') || key.startsWith('footer')) {
+          valueType = 'string';
+        }
 
         const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
         if (existing) {
@@ -6021,6 +6093,20 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
             'INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES (?, ?, ?, ?)',
             [key, value || '', valueType, now]
           );
+        }
+
+        // Keep admin_footer_settings synchronized if footer keys are updated
+        if (key === 'footerYear' || key === 'footerCopyrightName') {
+          try {
+            const yr = parseInt(settings.footerYear || String(new Date().getFullYear()), 10);
+            const text = settings.footerCopyrightName || 'The Koinonia General Assembly';
+            const fExist = await queryOne("SELECT id FROM admin_footer_settings WHERE id = 'primary_footer_settings'");
+            if (fExist) {
+              await execute("UPDATE admin_footer_settings SET copyright_year = ?, copyright_text = ?, updated_at = ? WHERE id = 'primary_footer_settings'", [yr, text, now]);
+            } else {
+              await execute("INSERT INTO admin_footer_settings (id, copyright_year, copyright_text, created_at, updated_at) VALUES ('primary_footer_settings', ?, ?, ?, ?)", [yr, text, now, now]);
+            }
+          } catch (e) {}
         }
       }
     });

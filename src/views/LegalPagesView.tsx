@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, ArrowLeft, Mail, Phone, MapPin, Globe, Clock, ShieldAlert, FileText, CheckCircle } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, Mail, Phone, MapPin, Globe, Clock, ShieldAlert, FileText, CheckCircle, MessageSquare } from 'lucide-react';
 import { api } from '../services/api';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 
@@ -12,20 +12,36 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({ page, onNavigate
   if (page === 'privacy') {
     return <PrivacyPolicyView onNavigate={onNavigate} />;
   }
-  const [copyright, setCopyright] = useState<{ copyrightYear: number; copyrightText: string }>({
-    copyrightYear: 2026,
+  const [copyright, setCopyright] = useState<{ copyrightYear: number | string; copyrightText: string }>({
+    copyrightYear: new Date().getFullYear(),
     copyrightText: 'Koinonia Children and Teens. All rights reserved.'
   });
+  const [contactSettings, setContactSettings] = useState<{
+    contactEmail?: string;
+    contactPhone?: string;
+    contactWhatsApp?: string;
+    contactAddress?: string;
+  }>({});
 
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await api.admin.getFooterSettings();
+        const res = await api.landing.getPublicPage();
         if (res && res.success && res.settings) {
-          setCopyright(res.settings);
+          const s = res.settings;
+          setCopyright({
+            copyrightYear: s.footerYear || new Date().getFullYear(),
+            copyrightText: s.footerCopyrightName || 'Koinonia Children and Teens. All rights reserved.'
+          });
+          setContactSettings({
+            contactEmail: s.contactEmail || '',
+            contactPhone: s.contactPhone || '',
+            contactWhatsApp: s.contactWhatsApp || '',
+            contactAddress: s.contactAddress || ''
+          });
         }
       } catch (err) {
-        console.error('Failed to load footer settings for legal page:', err);
+        console.error('Failed to load footer/contact settings for legal page:', err);
       }
     };
     fetchSettings();
@@ -118,7 +134,13 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({ page, onNavigate
           </div>
         );
 
-      case 'contact':
+      case 'contact': {
+        const hasEmail = Boolean(contactSettings.contactEmail?.trim());
+        const hasPhone = Boolean(contactSettings.contactPhone?.trim());
+        const hasWhatsApp = Boolean(contactSettings.contactWhatsApp?.trim());
+        const hasAddress = Boolean(contactSettings.contactAddress?.trim());
+        const hasAnyContact = hasEmail || hasPhone || hasWhatsApp || hasAddress;
+
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-3 pb-4 border-b border-[#EAE8E1]">
@@ -126,45 +148,75 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({ page, onNavigate
               <h2 className="text-2xl font-semibold text-[#18181B] tracking-tight">Contact Us</h2>
             </div>
             <p className="text-sm text-stone-600 leading-relaxed">
-              Have questions regarding digital parent registrations, active volunteer applications, safety controls, or event operational check-in? Reach out directly to our dedicated Protocol & Care team.
+              Have questions regarding digital parent registrations, safety protocols, or event operations? Reach out directly through any of our configured contact channels below.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
-                <Phone className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-stone-700 block">Care & Support Desk</span>
-                  <p className="text-xs font-mono text-stone-500">+234 (0) 900 123 4567</p>
-                  <p className="text-[10px] text-stone-400">Available during major convocations</p>
-                </div>
-              </div>
+            {hasAnyContact ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                {hasEmail && (
+                  <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
+                    <Mail className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-xs font-semibold text-stone-700 block">Email</span>
+                      <a
+                        href={`mailto:${contactSettings.contactEmail}`}
+                        className="text-xs font-mono text-stone-700 hover:text-[#C59B27] transition-colors break-all block"
+                      >
+                        {contactSettings.contactEmail}
+                      </a>
+                    </div>
+                  </div>
+                )}
 
-              <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
-                <Mail className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-stone-700 block">General Inquiries</span>
-                  <p className="text-xs font-mono text-stone-500">care@koinoniachildren.org</p>
-                  <p className="text-[10px] text-stone-400">Response within 24 operational hours</p>
-                </div>
-              </div>
+                {hasPhone && (
+                  <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
+                    <Phone className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-xs font-semibold text-stone-700 block">Phone</span>
+                      <a
+                        href={`tel:${contactSettings.contactPhone?.replace(/\s+/g, '')}`}
+                        className="text-xs font-mono text-stone-700 hover:text-[#C59B27] transition-colors block"
+                      >
+                        {contactSettings.contactPhone}
+                      </a>
+                    </div>
+                  </div>
+                )}
 
-              <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
-                <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-stone-700 block">Auditorium Address</span>
-                  <p className="text-xs text-stone-500">Koinonia Global Auditorium & Children Pavilion, Abuja, Nigeria.</p>
-                </div>
-              </div>
+                {hasWhatsApp && (
+                  <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
+                    <MessageSquare className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-xs font-semibold text-stone-700 block">WhatsApp</span>
+                      <a
+                        href={`https://wa.me/${contactSettings.contactWhatsApp?.replace(/[^\d]/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-mono text-stone-700 hover:text-[#C59B27] transition-colors block"
+                      >
+                        {contactSettings.contactWhatsApp}
+                      </a>
+                    </div>
+                  </div>
+                )}
 
-              <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
-                <Clock className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-stone-700 block">Service Schedule</span>
-                  <p className="text-xs text-stone-500">Fridays: 4:00 PM - 9:00 PM</p>
-                  <p className="text-xs text-stone-500">Sunday Classes: 8:00 AM - 1:00 PM</p>
-                </div>
+                {hasAddress && (
+                  <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/50 flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 mt-1" />
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-xs font-semibold text-stone-700 block">Address</span>
+                      <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line">
+                        {contactSettings.contactAddress}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="p-6 bg-stone-50 rounded-xl border border-stone-200/50 text-center text-xs text-stone-500">
+                Contact information is currently being updated. Please visit our help desk at our physical gathering.
+              </div>
+            )}
 
             <div className="bg-stone-50 p-5 rounded-xl border border-stone-200/60 mt-4 space-y-3">
               <h3 className="text-xs font-semibold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -177,6 +229,7 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({ page, onNavigate
             </div>
           </div>
         );
+      }
     }
   };
 

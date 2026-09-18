@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUp } from 'lucide-react';
 import { BrandLogo } from '../components/common/BrandLogo';
 import { Seo } from '../components/common/Seo';
+import { api } from '../services/api';
 
 interface PrivacyPolicyViewProps {
   onNavigate: (route: string) => void;
@@ -29,76 +30,26 @@ const TOC_ITEMS: TocItem[] = [
   { id: 'toc-12', number: '12', title: 'How can you review, update, or delete the data we collect from you?', targetId: 'section-8' },
 ];
 
-interface KeyPoint {
-  number: string;
-  question: string;
-  answer: string;
-  sectionLinkText?: string;
-  sectionTargetId?: string;
-}
-
-const KEY_POINTS: KeyPoint[] = [
-  {
-    number: '01',
-    question: 'What personal information do we process?',
-    answer: "When a parent or guardian registers a child for Children's Session, or uses our web application, we may process the child's name, age, health/allergy information, and the parent/guardian's contact and address details.",
-    sectionLinkText: 'Learn more in Section 1.',
-    sectionTargetId: 'section-1'
-  },
-  {
-    number: '02',
-    question: 'Do we process sensitive personal information?',
-    answer: "Yes — with your explicit consent, we process your child's health information (e.g., allergies, medical conditions) where necessary to keep them safe during the programme.",
-    sectionLinkText: 'Learn more in Section 1.',
-    sectionTargetId: 'section-1'
-  },
-  {
-    number: '03',
-    question: 'Do we collect information from third parties?',
-    answer: 'No, we do not collect information about you or your child from third parties.'
-  },
-  {
-    number: '04',
-    question: 'How do we process your information?',
-    answer: "We process it to register and safely run Children's Session, to communicate with you, to respond to emergencies, and to comply with Nigerian law; principally the Nigeria Data Protection Act 2023 and the Child's Rights Act 2003.",
-    sectionLinkText: 'Learn more in Section 2.',
-    sectionTargetId: 'section-2'
-  },
-  {
-    number: '05',
-    question: 'In what situations do we share personal information, and with whom?',
-    answer: 'Only with our vetted volunteers on a need-to-know basis, emergency/medical services if needed, and government authorities where the law requires it. We do not sell your information or share it for third-party advertising.',
-    sectionLinkText: 'Learn more in Section 3.',
-    sectionTargetId: 'section-3'
-  },
-  {
-    number: '06',
-    question: 'How do we keep your information safe?',
-    answer: 'We use reasonable organisational and technical safeguards. No system is 100% secure, so we cannot guarantee against unauthorised access, but we take this seriously given the information concerns children.',
-    sectionLinkText: 'Learn more in Section 6.',
-    sectionTargetId: 'section-6'
-  },
-  {
-    number: '07',
-    question: "What is our approach to children's data?",
-    answer: "Unlike a typical app, collecting children's information,  always through and with a parent/guardian's consent,  is the core purpose of this Service.",
-    sectionLinkText: 'Learn more in Section 7.',
-    sectionTargetId: 'section-7'
-  },
-  {
-    number: '08',
-    question: 'What are your rights, and how do you exercise them?',
-    answer: "As a parent/guardian, you may access, correct, or ask us to delete your child's information, and withdraw consent at any time, by contacting us directly.",
-    sectionLinkText: 'Learn more in Sections 8 and 12.',
-    sectionTargetId: 'section-8'
-  }
-];
-
 export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate }) => {
   const [activeSection, setActiveSection] = useState<string>('section-1');
   const [readingProgress, setReadingProgress] = useState<number>(0);
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
   const [mobileTocOpen, setMobileTocOpen] = useState<boolean>(false);
+  const [contactEmail, setContactEmail] = useState<string>('koinoniaabuja@gmail.com');
+  const [contactAddress, setContactAddress] = useState<string>('Chidal Event Centre, Jabi.');
+  const [footerYear, setFooterYear] = useState<string>(String(new Date().getFullYear()));
+  const [footerCopyrightName, setFooterCopyrightName] = useState<string>('The Koinonia General Assembly');
+
+  useEffect(() => {
+    api.landing.getPublicPage().then((res) => {
+      if (res && res.success && res.settings) {
+        if (res.settings.contactEmail) setContactEmail(res.settings.contactEmail);
+        if (res.settings.contactAddress) setContactAddress(res.settings.contactAddress);
+        if (res.settings.footerYear) setFooterYear(res.settings.footerYear);
+        if (res.settings.footerCopyrightName) setFooterCopyrightName(res.settings.footerCopyrightName);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Scroll listener for reading progress bar and minimal back-to-top indicator
   useEffect(() => {
@@ -201,7 +152,10 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
       {/* Main Content Area */}
       <main className="max-w-6xl mx-auto w-full px-6 sm:px-8 lg:px-12 py-12 sm:py-16 lg:py-20 flex-grow">
         {/* Editorial Document Header */}
-        <div id="intro" className="max-w-[760px] mb-16 sm:mb-20">
+        <div id="intro" className="max-w-[760px] mb-12 sm:mb-16">
+          <p className="text-xs font-mono font-semibold tracking-widest text-[#9A7326] uppercase mb-2">
+            Koinonia Children &amp; Teens
+          </p>
           <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-serif-koinonia font-normal text-stone-900 tracking-tight leading-[1.15]">
             Privacy Notice
           </h1>
@@ -212,8 +166,8 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
             <span>The Koinonia General Assembly</span>
           </div>
 
-          {/* Lead Paragraph */}
-          <p className="text-base sm:text-[17px] text-stone-700 leading-[1.75] pt-8">
+          {/* Short Introductory Block */}
+          <p className="text-base sm:text-[17px] text-stone-700 leading-[1.75] pt-6">
             This Privacy Notice for <strong className="font-semibold text-stone-900">The Koinonia General Assembly</strong> (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) describes how and why we may access, collect, store, use, and/or share (&quot;process&quot;) your and your child&apos;s personal information when you use our services, including when you:
           </p>
 
@@ -234,7 +188,7 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
           {/* Questions or Concerns: Restrained Editorial Callout */}
           <div className="my-8 py-3 pl-5 border-l-2 border-[#D9D6CE]">
             <p className="text-sm sm:text-base text-stone-700 leading-[1.75]">
-              <strong className="font-semibold text-stone-900">Questions or concerns?</strong> Reading this Privacy Notice will help you understand your privacy rights and choices as a parent or guardian. If you do not agree with our policies and practices, please do not use our Services. If you still have questions, contact us at <a href="mailto:koinoniaabuja@gmail.com" className="text-stone-900 font-medium underline underline-offset-4 hover:text-[#9A7326] transition-colors">koinoniaabuja@gmail.com</a>.
+              <strong className="font-semibold text-stone-900">Questions or concerns?</strong> Reading this Privacy Notice will help you understand your privacy rights and choices as a parent or guardian. If you do not agree with our policies and practices, please do not use our Services. If you still have questions, contact us at <a href={`mailto:${contactEmail}`} className="text-stone-900 font-medium underline underline-offset-4 hover:text-[#9A7326] transition-colors">{contactEmail}</a>.
             </p>
           </div>
 
@@ -245,42 +199,6 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
             </blockquote>
           </div>
         </div>
-
-        {/* Summary of Key Points: Editorial Scannable List */}
-        <section id="summary" className="scroll-mt-24 mb-16 sm:mb-20 pt-8 border-t border-[#EAE8E1]/80">
-          <div className="pb-8">
-            <h2 className="text-xl sm:text-2xl font-serif-koinonia font-normal text-stone-900 tracking-tight">
-              SUMMARY OF KEY POINTS
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-            {KEY_POINTS.map((item) => (
-              <div key={item.number} className="space-y-2 border-t border-[#EAE8E1]/60 pt-4">
-                <span className="text-xs font-mono font-medium text-[#9A7326] tracking-wider block">
-                  {item.number}
-                </span>
-                <h3 className="text-sm sm:text-[15px] font-semibold text-stone-900 leading-snug">
-                  {item.question}
-                </h3>
-                <p className="text-sm sm:text-[15px] text-stone-600 leading-[1.7]">
-                  {item.answer}
-                </p>
-                {item.sectionLinkText && item.sectionTargetId && (
-                  <div className="pt-1">
-                    <button
-                      onClick={() => scrollToTarget(item.sectionTargetId!)}
-                      className="group inline-flex items-center gap-1 text-xs font-medium text-[#9A7326] hover:text-[#7A5B18] transition-colors cursor-pointer"
-                    >
-                      <span>{item.sectionLinkText}</span>
-                      <span className="transition-transform duration-150 group-hover:translate-x-0.5">→</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
 
         {/* Mobile & Tablet Compact TOC Disclosure */}
         <div className="lg:hidden my-10 border-y border-[#EAE8E1]">
@@ -803,12 +721,12 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
                   </p>
                   <p>
                     <span className="text-stone-500">Email:</span>{' '}
-                    <a href="mailto:koinoniaabuja@gmail.com" className="text-stone-900 font-medium underline underline-offset-4 hover:text-[#9A7326] transition-colors">
-                      koinoniaabuja@gmail.com
+                    <a href={`mailto:${contactEmail}`} className="text-stone-900 font-medium underline underline-offset-4 hover:text-[#9A7326] transition-colors">
+                      {contactEmail}
                     </a>
                   </p>
                   <p>
-                    <span className="text-stone-500">Address:</span> Chidal Event Centre, Jabi.
+                    <span className="text-stone-500">Address:</span> {contactAddress}
                   </p>
                 </div>
               </div>
@@ -854,7 +772,7 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
           </div>
 
           <div>
-            <p>&copy; 2026 The Koinonia General Assembly. All rights reserved.</p>
+            <p>&copy; {footerYear} {footerCopyrightName}. All rights reserved.</p>
           </div>
         </div>
       </footer>

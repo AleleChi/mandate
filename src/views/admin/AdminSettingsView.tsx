@@ -315,7 +315,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [passwordError, setPasswordError] = useState('');
 
   // Footer & Copyright Settings State
-  const [copyrightYear, setCopyrightYear] = useState(2026);
+  const [copyrightYear, setCopyrightYear] = useState(new Date().getFullYear());
   const [copyrightText, setCopyrightText] = useState('Koinonia Children and Teens. All rights reserved.');
   const [savingFooter, setSavingFooter] = useState(false);
 
@@ -2973,7 +2973,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         type="number"
                         required
                         value={copyrightYear}
-                        onChange={(e) => setCopyrightYear(parseInt(e.target.value, 10) || 2025)}
+                        onChange={(e) => setCopyrightYear(parseInt(e.target.value, 10) || new Date().getFullYear())}
                         className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                       />
                     </div>

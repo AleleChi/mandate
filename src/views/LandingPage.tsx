@@ -200,6 +200,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     ...REAL_ASSETS,
     site_logo: (window as any)._site_logo || ''
   });
+  const [landingSettings, setLandingSettings] = useState<Record<string, string>>({});
 
   const [currentEvent, setCurrentEvent] = useState<any>(null);
   const [regStatus, setRegStatus] = useState<any>(null);
@@ -284,6 +285,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             setCurrentEvent(res.currentEvent);
           }
           if (res.settings) {
+            setLandingSettings(res.settings);
             const s = res.settings;
           setAssets({
             site_logo: s.site_logo || (window as any)._site_logo || '',
@@ -1118,30 +1120,208 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* 7. Past Moments Section (3D Editorial Reel) */}
       <PastMomentsCarousel loaded={loaded} customAssets={assets.gallery} />
 
-      {/* 8. Footer (Stitch Footer) */}
-      <footer id="footer" className="bg-[#FAF9F6] border-t border-[#EAE8E1] py-14 px-4 sm:px-6 lg:px-8 mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-xs text-[#6B7280]">
-          {/* Brand */}
-          <BrandLogo
-            context="compact"
-            onClick={() => onNavigate('/')}
-            className="flex items-center space-x-3 cursor-pointer"
-          />
+      {/* 8. Footer (Institutional, Restrained & Intentional) */}
+      {(() => {
+        const footerYear = landingSettings.footerYear || String(new Date().getFullYear());
+        const footerCopyrightName = landingSettings.footerCopyrightName || 'The Koinonia General Assembly';
+        const contactEmail = landingSettings.contactEmail?.trim() || '';
+        const contactPhone = landingSettings.contactPhone?.trim() || '';
+        const contactWhatsApp = landingSettings.contactWhatsApp?.trim() || '';
+        const contactAddress = landingSettings.contactAddress?.trim() || '';
 
-          {/* Links */}
-          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8 font-medium">
-            <span onClick={() => onNavigate('/privacy')} className="hover:text-[#18181B] cursor-pointer">Privacy Policy</span>
-            <span onClick={() => onNavigate('/terms')} className="hover:text-[#18181B] cursor-pointer">Terms of Service</span>
-            <span onClick={() => onNavigate('/child-safety')} className="hover:text-[#18181B] cursor-pointer">Child Safety Policy</span>
-            <span onClick={() => onNavigate('/contact')} className="hover:text-[#18181B] cursor-pointer">Contact Us</span>
-          </div>
+        return (
+          <footer id="footer" className="bg-[#FAF9F6] border-t border-[#EAE8E1] pt-14 pb-10 px-4 sm:px-6 lg:px-8 mt-auto">
+            <div className="max-w-7xl mx-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8 pb-12 border-b border-[#EAE8E1]">
+                {/* Column 1: Ministry Identifier (spans 2 cols on lg) */}
+                <div className="lg:col-span-2 space-y-4">
+                  <BrandLogo
+                    context="compact"
+                    onClick={() => onNavigate('/')}
+                    className="flex items-center space-x-3 cursor-pointer"
+                  />
+                  <p className="text-xs sm:text-sm text-stone-600 leading-relaxed max-w-sm">
+                    A dedicated ministry of The Koinonia General Assembly committed to nurturing children and teens in faith, safety, and Christian fellowship.
+                  </p>
+                </div>
 
-          {/* Copyright */}
-          <div>
-            <p>&copy; 2025 Koinonia Children &amp; Teens. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
+                {/* Column 2: EXPLORE */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+                    Explore
+                  </h4>
+                  <ul className="space-y-2 text-xs text-stone-600">
+                    <li>
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById('gathering-video');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                          else window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        About
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById('volunteers');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        The Process
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onNavigate('/child-safety')}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        Safety
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById('footer');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        Past Moments
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Column 3: FOR PARENTS */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+                    For Parents
+                  </h4>
+                  <ul className="space-y-2 text-xs text-stone-600">
+                    <li>
+                      <button
+                        onClick={() => onNavigate('/parent/sign-in')}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        Parent Sign In
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={handleParentRegisterClick}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        Register Your Child
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onNavigate('/privacy')}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        Privacy Notice
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onNavigate('/child-safety')}
+                        className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                      >
+                        Child Safety
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Column 4: CONTACT (Displays only configured fields) */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+                    Contact
+                  </h4>
+                  <ul className="space-y-2 text-xs text-stone-600">
+                    {contactAddress && (
+                      <li className="leading-relaxed">
+                        <span className="text-stone-400 block text-[11px]">Address</span>
+                        <span className="text-stone-700">{contactAddress}</span>
+                      </li>
+                    )}
+                    {contactEmail && (
+                      <li>
+                        <span className="text-stone-400 block text-[11px]">Email</span>
+                        <a
+                          href={`mailto:${contactEmail}`}
+                          className="text-stone-700 hover:text-[#9A7326] underline underline-offset-2 transition-colors"
+                        >
+                          {contactEmail}
+                        </a>
+                      </li>
+                    )}
+                    {contactPhone && (
+                      <li>
+                        <span className="text-stone-400 block text-[11px]">Phone</span>
+                        <a
+                          href={`tel:${contactPhone}`}
+                          className="text-stone-700 hover:text-stone-950 transition-colors"
+                        >
+                          {contactPhone}
+                        </a>
+                      </li>
+                    )}
+                    {contactWhatsApp && (
+                      <li>
+                        <span className="text-stone-400 block text-[11px]">WhatsApp</span>
+                        <a
+                          href={`https://wa.me/${contactWhatsApp.replace(/[^0-9]/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-stone-700 hover:text-[#9A7326] transition-colors"
+                        >
+                          {contactWhatsApp}
+                        </a>
+                      </li>
+                    )}
+                    {!contactAddress && !contactEmail && !contactPhone && !contactWhatsApp && (
+                      <li>
+                        <button
+                          onClick={() => onNavigate('/contact')}
+                          className="hover:text-stone-950 transition-colors cursor-pointer text-left underline underline-offset-2"
+                        >
+                          Contact details
+                        </button>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Bottom line: © [YEAR] [canonical organisation name] · Privacy Notice · Child Safety */}
+              <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
+                <p>
+                  &copy; {footerYear} {footerCopyrightName}. All rights reserved.
+                </p>
+                <div className="flex flex-wrap items-center gap-6 font-medium">
+                  <span onClick={() => onNavigate('/privacy')} className="hover:text-stone-950 cursor-pointer transition-colors">
+                    Privacy Notice
+                  </span>
+                  <span onClick={() => onNavigate('/child-safety')} className="hover:text-stone-950 cursor-pointer transition-colors">
+                    Child Safety
+                  </span>
+                  <span onClick={() => onNavigate('/terms')} className="hover:text-stone-950 cursor-pointer transition-colors">
+                    Terms of Service
+                  </span>
+                  <span onClick={() => onNavigate('/contact')} className="hover:text-stone-950 cursor-pointer transition-colors">
+                    Contact Us
+                  </span>
+                </div>
+              </div>
+            </div>
+          </footer>
+        );
+      })()}
 
       {/* Registration Closed / Not Open Info Modal */}
       {infoModal && (
