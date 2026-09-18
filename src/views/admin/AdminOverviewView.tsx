@@ -63,6 +63,8 @@ import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
 import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
 import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
 import { OperationsAssistantPanel, EventReadinessReport, AttentionItem } from '../../components/admin/OperationsAssistantPanel';
+import { EventAutomationsInbox } from '../../components/admin/EventAutomationsInbox';
+import { OperationsAssistantModal } from '../../components/admin/OperationsAssistantModal';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
@@ -118,6 +120,95 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const [recentSubmissions, setRecentSubmissions] = useState<any[]>([]);
 
   // Password change states
+  const [automationActionModalState, setAutomationActionModalState] = useState<{
+    isOpen: boolean;
+    question: string | null;
+    queryResult: any | null;
+    loading: boolean;
+    error: string | null;
+    actionLoading: boolean;
+    actionResult: any | null;
+  }>({
+    isOpen: false,
+    question: null,
+    queryResult: null,
+    loading: false,
+    error: null,
+    actionLoading: false,
+    actionResult: null
+  });
+
+  const handlePrepareAutomationAction = async (actionKey: string, automation: any) => {
+    setAutomationActionModalState({
+      isOpen: true,
+      question: `Action review: ${automation.title}`,
+      queryResult: null,
+      loading: true,
+      error: null,
+      actionLoading: false,
+      actionResult: null
+    });
+
+    try {
+      const res = await api.admin.prepareAutomationConfirmedAction(actionKey, automation.id);
+      if (res.success && res.result) {
+        setAutomationActionModalState(prev => ({
+          ...prev,
+          loading: false,
+          queryResult: {
+            answer: res.result.answer,
+            grounded: true,
+            intent: 'confirmed_action',
+            actionPreview: res.result.preview
+          }
+        }));
+      } else {
+        setAutomationActionModalState(prev => ({
+          ...prev,
+          loading: false,
+          error: res.error || "We couldn't prepare that action right now."
+        }));
+      }
+    } catch (err: any) {
+      setAutomationActionModalState(prev => ({
+        ...prev,
+        loading: false,
+        error: "We couldn't prepare that action right now."
+      }));
+    }
+  };
+
+  const handleConfirmAutomationAction = async (token: string) => {
+    setAutomationActionModalState(prev => ({ ...prev, actionLoading: true }));
+    try {
+      const res = await api.admin.confirmOperationsAssistantAction(token);
+      if (res.success && res.result) {
+        setAutomationActionModalState(prev => ({
+          ...prev,
+          actionLoading: false,
+          actionResult: res.result,
+          queryResult: prev.queryResult ? { ...prev.queryResult, actionPreview: undefined } : null
+        }));
+        showSuccess('Action Complete', res.result.title || 'Action confirmed.');
+      } else {
+        showError('Action Failed', res.error || "We couldn't complete that action. Please try again.");
+        setAutomationActionModalState(prev => ({ ...prev, actionLoading: false }));
+      }
+    } catch (err: any) {
+      showError('Action Failed', err?.message || "We couldn't complete that action.");
+      setAutomationActionModalState(prev => ({ ...prev, actionLoading: false }));
+    }
+  };
+
+  const handleCancelAutomationAction = async () => {
+    const token = automationActionModalState.queryResult?.actionPreview?.confirmationToken;
+    if (token) {
+      try {
+        await api.admin.cancelOperationsAssistantAction(token);
+      } catch (_) {}
+    }
+    setAutomationActionModalState(prev => ({ ...prev, isOpen: false }));
+  };
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -1188,8 +1279,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const volunteersOnDuty = readinessReport?.metrics.volunteersOnDuty ?? 0;
   const dutyLocationsCount = readinessReport?.metrics.dutyLocations ?? 0;
   const locationsBelowTarget = readinessReport?.metrics.locationsBelowTarget ?? 0;
+  const locationsAssigned = readinessReport?.metrics.locationsAssigned ?? Math.max(0, dutyLocationsCount - locationsBelowTarget);
+  const locationsActive = readinessReport?.metrics.locationsActive ?? (volunteersOnDuty > 0 ? Math.min(dutyLocationsCount, volunteersOnDuty) : 0);
   const dutyAttendancePct = volunteersAssigned > 0 ? Math.min(100, Math.round((volunteersOnDuty / volunteersAssigned) * 100)) : (volunteersOnDuty > 0 ? 100 : 0);
-  const locationsCoveredPct = dutyLocationsCount > 0 ? Math.min(100, Math.round((Math.max(0, dutyLocationsCount - locationsBelowTarget) / dutyLocationsCount) * 100)) : 100;
+  const locationsAssignedPct = dutyLocationsCount > 0 ? Math.min(100, Math.round((locationsAssigned / dutyLocationsCount) * 100)) : 0;
+  const locationsActivePct = dutyLocationsCount > 0 ? Math.min(100, Math.round((locationsActive / dutyLocationsCount) * 100)) : 0;
 
   const effectiveAttentionItems: AttentionItem[] = (readinessReport?.needsAttention && readinessReport.needsAttention.length > 0)
     ? readinessReport.needsAttention
@@ -3165,7 +3259,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         </div>
                       </div>
 
-                      {/* 3. MID-TIER ROW: NEEDS ATTENTION (8 cols) & OPERATIONS ASSISTANT (4 cols) */}
+                      {/* 3. MID-TIER ROW: NEEDS ATTENTION & OPERATIONS ASSISTANT */}
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                         {/* LEFT ~65%: NEEDS ATTENTION */}
                         <div className="lg:col-span-8 space-y-4">
@@ -3239,6 +3333,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           />
                         </div>
                       </div>
+
+                      {/* 4. EVENT AUTOMATIONS SECTION */}
+                      <EventAutomationsInbox
+                        onNavigateTab={(tab) => handleTabChange(tab as AdminTab)}
+                        onNavigateRoute={(route) => onNavigate(route as AppRoute)}
+                        onPrepareConfirmedAction={handlePrepareAutomationAction}
+                      />
 
                       {/* 4. EVENT PERFORMANCE / OPERATIONS */}
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -3469,47 +3570,51 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           </div>
 
                           <div className="space-y-4">
-                            {/* Duty Responder Presence Bar */}
+                            {/* 1. Assigned Coverage */}
                             <div className="space-y-1.5">
                               <div className="flex justify-between text-xs">
-                                <span className="text-zinc-600 font-medium">Volunteers on duty</span>
-                                <span className="font-semibold text-zinc-900">{volunteersOnDuty} / {volunteersAssigned}</span>
-                              </div>
-                              <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
-                                <div
-                                  className="bg-[#C59B27] h-full rounded-full transition-all"
-                                  style={{ width: `${dutyAttendancePct}%` }}
-                                />
-                              </div>
-                              <span className="text-[11px] text-zinc-400 block">
-                                {dutyAttendancePct}% duty roster active
-                              </span>
-                            </div>
-
-                            {/* Location Staffing Stations Bar */}
-                            <div className="space-y-1.5">
-                              <div className="flex justify-between text-xs">
-                                <span className="text-zinc-600 font-medium">Locations covered</span>
-                                <span className="font-semibold text-zinc-900">
-                                  {Math.max(0, dutyLocationsCount - locationsBelowTarget)} / {dutyLocationsCount}
-                                </span>
+                                <span className="text-zinc-600 font-medium">Assigned coverage</span>
+                                <span className="font-semibold text-zinc-900">{locationsAssigned} / {dutyLocationsCount}</span>
                               </div>
                               <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
                                 <div
                                   className="bg-zinc-800 h-full rounded-full transition-all"
-                                  style={{ width: `${locationsCoveredPct}%` }}
+                                  style={{ width: `${locationsAssignedPct}%` }}
                                 />
                               </div>
                               <span className="text-[11px] text-zinc-400 block">
-                                {locationsBelowTarget > 0
-                                  ? `${locationsBelowTarget} location(s) below staffing target`
-                                  : 'All stations currently staffed'}
+                                {dutyLocationsCount > 0
+                                  ? `${locationsAssigned} of ${dutyLocationsCount} locations assigned`
+                                  : 'No duty stations configured'}
+                              </span>
+                            </div>
+
+                            {/* 2. Active Duty Coverage */}
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-zinc-600 font-medium">Active duty coverage</span>
+                                <span className="font-semibold text-zinc-900">{locationsActive} / {dutyLocationsCount}</span>
+                              </div>
+                              <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-[#C59B27] h-full rounded-full transition-all"
+                                  style={{ width: `${locationsActivePct}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] text-zinc-400 block">
+                                {locationsActive === 0
+                                  ? `0 of ${dutyLocationsCount} locations currently staffed`
+                                  : locationsActive === dutyLocationsCount && dutyLocationsCount > 0
+                                  ? locationsBelowTarget > 0
+                                    ? `${locationsBelowTarget} location(s) below staffing target`
+                                    : 'All stations currently staffed'
+                                  : `${locationsActive} of ${dutyLocationsCount} locations currently staffed`}
                               </span>
                             </div>
 
                             {/* Summary stats */}
                             <div className="pt-3 border-t border-[#EAE8E1]/60 flex justify-between text-xs text-zinc-500">
-                              <span>Approved pool: <strong className="text-zinc-800">{readinessReport?.metrics.approvedVolunteers ?? stats.totalVolunteers ?? 0}</strong></span>
+                              <span>On duty: <strong className="text-zinc-800">{volunteersOnDuty} / {volunteersAssigned}</strong></span>
                               <span>Stations: <strong className="text-zinc-800">{dutyLocationsCount}</strong></span>
                             </div>
                           </div>
@@ -4306,6 +4411,25 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Automation Confirmed Action Review Modal */}
+      <OperationsAssistantModal
+        isOpen={automationActionModalState.isOpen}
+        onClose={() => setAutomationActionModalState(prev => ({ ...prev, isOpen: false }))}
+        question={automationActionModalState.question}
+        queryResult={automationActionModalState.queryResult}
+        queryLoading={automationActionModalState.loading}
+        queryError={automationActionModalState.error}
+        actionLoading={automationActionModalState.actionLoading}
+        actionResult={automationActionModalState.actionResult}
+        onAskQuestion={() => {}}
+        onConfirmAction={handleConfirmAutomationAction}
+        onCancelAction={handleCancelAutomationAction}
+        onDeepLinkClick={(link) => {
+          if (link.tab) handleTabChange(link.tab as AdminTab);
+          else if (link.route) onNavigate(link.route as AppRoute);
+        }}
+      />
 
     </div>
   );

@@ -46,6 +46,8 @@ export interface EventReadinessReport {
     volunteersOnDuty: number;
     dutyLocations: number;
     locationsBelowTarget: number;
+    locationsAssigned?: number;
+    locationsActive?: number;
     selectedChildrenWithoutPasses: number;
     openSafetyNotices: number;
     unresolvedEscalations: number;

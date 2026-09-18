@@ -360,6 +360,17 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
     });
   }
 
+  if (!event.volunteer_registration_closes_at) {
+    detectedSignals.push({
+      signal: 'CONFIGURATION_GAP',
+      eventId,
+      gapType: 'missing_volunteer_registration_deadline',
+      title: 'No volunteer registration deadline configured',
+      details: 'Set the closing deadline for volunteer registration in event settings.',
+      detectedAt: nowIso
+    });
+  }
+
   return detectedSignals;
 }
 

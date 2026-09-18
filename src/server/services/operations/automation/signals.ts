@@ -13,7 +13,8 @@ export type EventSignalType =
   | 'PASS_NOT_READY'
   | 'SAFETY_ITEM_OPEN'
   | 'REPORT_EXPIRED'
-  | 'EVENT_STARTING_SOON';
+  | 'EVENT_STARTING_SOON'
+  | 'CONFIGURATION_GAP';
 
 export interface BaseEventSignal {
   signal: EventSignalType;
@@ -26,7 +27,9 @@ export interface LocationUnderstaffedSignal extends BaseEventSignal {
   locationId: string;
   locationName: string;
   assigned: number;
+  assignedCount: number;
   required: number;
+  requiredCount: number;
   gap: number;
 }
 
@@ -35,7 +38,9 @@ export interface VolunteerNoShowSignal extends BaseEventSignal {
   userId: string;
   volunteerName: string;
   assignedLocationId: string;
-  scheduledStart: string;
+  locationName: string;
+  scheduledStart: string | null;
+  hasReliableReportingTime: boolean;
   minutesLate: number;
 }
 
@@ -57,19 +62,26 @@ export interface PassNotReadySignal extends BaseEventSignal {
   signal: 'PASS_NOT_READY';
   selectedCount: number;
   missingPassCount: number;
+  withoutPassCount: number;
 }
 
 export interface SafetyItemOpenSignal extends BaseEventSignal {
   signal: 'SAFETY_ITEM_OPEN';
-  alertId: string;
-  severity: string;
-  unresolvedMinutes: number;
+  alertId?: string;
+  openAlertsCount: number;
+  openIncidentsCount: number;
+  activeEscalationsCount: number;
+  totalOpenNotices: number;
+  severity: 'urgent' | 'attention';
+  unresolvedMinutes?: number;
 }
 
 export interface ReportExpiredSignal extends BaseEventSignal {
   signal: 'REPORT_EXPIRED';
-  reportJobId: string;
-  templateKey: string;
+  reportJobId?: string;
+  reportId: string;
+  reportType: string;
+  templateKey?: string;
   expiredAt: string;
 }
 
@@ -77,6 +89,13 @@ export interface EventStartingSoonSignal extends BaseEventSignal {
   signal: 'EVENT_STARTING_SOON';
   startsAt: string;
   hoursRemaining: number;
+}
+
+export interface ConfigurationGapSignal extends BaseEventSignal {
+  signal: 'CONFIGURATION_GAP';
+  gapType: 'no_locations' | 'no_age_groups' | 'missing_capacity' | 'location_missing_capacity' | 'missing_volunteer_registration_deadline';
+  title: string;
+  details: string;
 }
 
 export type EventSignal =
@@ -87,4 +106,5 @@ export type EventSignal =
   | PassNotReadySignal
   | SafetyItemOpenSignal
   | ReportExpiredSignal
-  | EventStartingSoonSignal;
+  | EventStartingSoonSignal
+  | ConfigurationGapSignal;

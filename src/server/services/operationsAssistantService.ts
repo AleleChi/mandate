@@ -64,6 +64,8 @@ export interface EventReadinessReport {
     volunteersOnDuty: number;
     dutyLocations: number;
     locationsBelowTarget: number;
+    locationsAssigned?: number;
+    locationsActive?: number;
     selectedChildrenWithoutPasses: number;
     openSafetyNotices: number;
     unresolvedEscalations: number;
@@ -269,6 +271,8 @@ export class OperationsAssistantService {
     totalLocations: number;
     understaffedCount: number;
     unassignedCount: number;
+    locationsWithAssignmentsCount: number;
+    locationsWithActivePresenceCount: number;
     volunteersWithoutPresenceCount: number;
   }> {
     const locations = await query(
@@ -291,6 +295,8 @@ export class OperationsAssistantService {
 
     let understaffedCount = 0;
     let unassignedCount = 0;
+    let locationsWithAssignmentsCount = 0;
+    let locationsWithActivePresenceCount = 0;
 
     const locationItems: DutyLocationCoverageItem[] = locations.map((loc: any) => {
       const targetVolunteerCapacity = loc.volunteer_capacity || 0;
@@ -312,6 +318,8 @@ export class OperationsAssistantService {
 
       if (isUnderstaffed) understaffedCount++;
       if (hasNoVolunteers) unassignedCount++;
+      if (assignedVolunteersCount > 0) locationsWithAssignmentsCount++;
+      if (activePresenceCount > 0) locationsWithActivePresenceCount++;
 
       return {
         id: loc.id,
@@ -338,6 +346,8 @@ export class OperationsAssistantService {
       totalLocations: locations.length,
       understaffedCount,
       unassignedCount,
+      locationsWithAssignmentsCount,
+      locationsWithActivePresenceCount,
       volunteersWithoutPresenceCount
     };
   }
@@ -698,6 +708,8 @@ export class OperationsAssistantService {
         volunteersOnDuty: volunteerSummary.volunteersOnDuty,
         dutyLocations: dutyCoverage.totalLocations,
         locationsBelowTarget: dutyCoverage.understaffedCount,
+        locationsAssigned: dutyCoverage.locationsWithAssignmentsCount,
+        locationsActive: dutyCoverage.locationsWithActivePresenceCount,
         selectedChildrenWithoutPasses: passReadiness.selectedWithoutPasses,
         openSafetyNotices: safetySummary.totalSafetyNotices,
         unresolvedEscalations: escalationsSummary.activeCycles,

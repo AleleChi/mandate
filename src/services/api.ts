@@ -1551,6 +1551,51 @@ export const api = {
         body: JSON.stringify({ confirmationToken })
       });
     },
+    async getEventAutomations(evaluate?: boolean) {
+      const q = evaluate ? '?evaluate=true' : '';
+      return api.request<{
+        success: boolean;
+        eventId: string | null;
+        eventTitle?: string;
+        active: any[];
+        resolved: any[];
+        health: any;
+      }>(`/api/admin/automations${q}`);
+    },
+    async evaluateEventAutomations(eventId?: string) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/automations/evaluate', {
+        method: 'POST',
+        body: JSON.stringify({ eventId })
+      });
+    },
+    async acknowledgeEventAutomation(id: string, cooldownMinutes: number = 60) {
+      return api.request<{ success: boolean; message?: string; error?: string }>(`/api/admin/automations/${encodeURIComponent(id)}/acknowledge`, {
+        method: 'POST',
+        body: JSON.stringify({ cooldownMinutes })
+      });
+    },
+    async dismissEventAutomation(id: string, cooldownMinutes: number = 120) {
+      return api.request<{ success: boolean; message?: string; error?: string }>(`/api/admin/automations/${encodeURIComponent(id)}/dismiss`, {
+        method: 'POST',
+        body: JSON.stringify({ cooldownMinutes })
+      });
+    },
+    async getEventAutomationSettings() {
+      return api.request<{ success: boolean; rules: any[] }>('/api/admin/automations/settings');
+    },
+    async updateEventAutomationSetting(ruleId: string, isEnabled: boolean) {
+      return api.request<{ success: boolean; message?: string; error?: string }>('/api/admin/automations/settings', {
+        method: 'POST',
+        body: JSON.stringify({ ruleId, isEnabled })
+      });
+    },
+    async prepareAutomationConfirmedAction(actionKey: string, automationId?: string, params?: any) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/automations/prepare-action', {
+        method: 'POST',
+        body: JSON.stringify({ actionKey, automationId, params })
+      });
+    },
+
     async getSafetyAlerts() {
       const res = await api.request<any>('/api/admin/safety-alerts');
       if (Array.isArray(res)) return res;
