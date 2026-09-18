@@ -10,10 +10,12 @@ export interface ActionRecipient {
   name: string;
   locationName?: string;
   responsibility?: string;
-  channel: 'whatsapp' | 'none';
+  channel: 'whatsapp' | 'sms' | 'email' | 'push' | 'none';
   eligible: boolean;
   ineligibilityReason?: string;
   phone?: string;
+  email?: string;
+  preferredChannel?: string;
 }
 
 export interface ActionPreviewItem {
@@ -28,6 +30,8 @@ export interface ActionPreview {
   title: string;
   description: string;
   affectedCount: number;
+  totalTargetsCount?: number;
+  unavailableCount?: number;
   recipients?: ActionRecipient[];
   items?: ActionPreviewItem[];
   warnings?: string[];
@@ -57,6 +61,7 @@ export interface ActionExecutionResult {
   title: string;
   message: string;
   affectedCount: number;
+  channelBreakdown?: Record<string, number>;
   deepLink?: { label: string; route?: string; tab?: string };
   updatedAt: string;
   error?: string;
