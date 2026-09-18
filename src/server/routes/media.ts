@@ -9,7 +9,26 @@ import { uploadMedia, MediaPurpose } from '../services/media/cloudinary';
 import { processImage, resizeFaviconBuffer } from '../services/media/imageProcessor';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB max video limit
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_VIDEO_BYTES
+  }
+});
+
+function handleMulterUpload(req: Request, res: Response, next: any) {
+  upload.single('file')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Video must be 100 MB or smaller.' });
+      }
+      return res.status(400).json({ error: 'We couldn\'t prepare this video. Try another file.' });
+    }
+    next();
+  });
+}
 
 const MEDIA_DIR = path.join(process.cwd(), 'data', 'media');
 if (!fs.existsSync(MEDIA_DIR)) {
@@ -22,7 +41,7 @@ const FALLBACK_AVATAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="200"
   <path d="M40 165C40 135 65 120 100 120C135 120 160 135 160 165" stroke="#A1A1AA" stroke-width="20" stroke-linecap="round"/>
 </svg>`;
 
-// Public endpoint for UI <img> tags to load media without custom auth headers
+// Public endpoint for UI <img> and <video> tags to load media without custom auth headers
 router.get('/files/:fileId', async (req: Request, res: Response) => {
   try {
     const { fileId } = req.params;
@@ -46,7 +65,33 @@ router.get('/files/:fileId', async (req: Request, res: Response) => {
           const matchedFile = files.find(f => f === fileId || f.startsWith(`${fileId}.`));
           if (matchedFile) {
             const filePath = path.join(searchDir, matchedFile);
-            res.setHeader('Content-Type', (media && media.mime_type) || 'image/jpeg');
+            let contentType = (media && media.mime_type) || 'image/jpeg';
+            if (matchedFile.endsWith('.mp4')) contentType = 'video/mp4';
+            else if (matchedFile.endsWith('.webm')) contentType = 'video/webm';
+            else if (matchedFile.endsWith('.mov')) contentType = 'video/quicktime';
+
+            const stat = fs.statSync(filePath);
+            const fileSize = stat.size;
+            const range = req.headers.range;
+
+            if (range && contentType.startsWith('video/')) {
+              const parts = range.replace(/bytes=/, '').split('-');
+              const start = parseInt(parts[0], 10);
+              const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+              const chunksize = end - start + 1;
+              const fileStream = fs.createReadStream(filePath, { start, end });
+              res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': contentType,
+              });
+              return fileStream.pipe(res);
+            }
+
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', fileSize);
+            res.setHeader('Accept-Ranges', 'bytes');
             return fs.createReadStream(filePath).pipe(res);
           }
         } catch (e) {
@@ -174,7 +219,7 @@ router.post('/public-upload', upload.single('file'), async (req: Request, res: R
 // Protect upload endpoints with auth middleware
 router.use(authMiddleware);
 
-router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res: Response) => {
   const logPath = path.join(process.cwd(), 'data', 'upload_debug.log');
   try {
     const startLog = `[${new Date().toISOString()}] Upload starting. File: ${req.file ? req.file.originalname : 'none'}, purpose: ${req.body?.purpose || req.body?.fileType || 'none'}, slotKey: ${req.body?.slotKey || 'none'}\n`;
@@ -217,11 +262,14 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
 
     if (isVideo) {
       const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
-      if (!allowedVideoTypes.includes(mimeType)) {
-        return res.status(400).json({ error: 'Please upload an MP4 or WebM video.' });
+      const ext = path.extname(req.file?.originalname || '').toLowerCase();
+      const allowedExts = ['.mp4', '.webm', '.mov'];
+
+      if (!allowedVideoTypes.includes(mimeType) && !allowedExts.includes(ext)) {
+        return res.status(400).json({ error: 'Choose an MP4, WebM or supported video file.' });
       }
-      if (buffer.length > 50 * 1024 * 1024) {
-        return res.status(400).json({ error: 'This file is too large. Please choose a smaller file.' });
+      if (buffer.length > MAX_VIDEO_BYTES) {
+        return res.status(400).json({ error: 'Video must be 100 MB or smaller.' });
       }
     } else {
       const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -265,7 +313,8 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     const uploadResult = await uploadMedia(buffer, {
       purpose,
       ownerUserId: req.user!.id,
-      mimeType
+      mimeType,
+      resourceType: isVideo ? 'video' : 'image'
     });
 
     const fileId = crypto.randomUUID();
@@ -273,6 +322,8 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     const folder = uploadResult.publicId.includes('/')
       ? uploadResult.publicId.substring(0, uploadResult.publicId.lastIndexOf('/'))
       : 'koinonia-children-teens';
+
+    const deliveryUrl = uploadResult.optimizedUrl || uploadResult.secureUrl || `/api/media/files/${fileId}`;
 
     await execute(`
       INSERT INTO media_files (
@@ -285,15 +336,15 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       uploadResult.provider,
       purpose,
       uploadResult.publicId,
-      uploadResult.secureUrl,
-      uploadResult.resourceType || 'image',
+      deliveryUrl,
+      uploadResult.resourceType || (isVideo ? 'video' : 'image'),
       mimeType,
       buffer.length,
       uploadResult.width || null,
       uploadResult.height || null,
       uploadResult.duration || null,
       folder,
-      uploadResult.secureUrl,
+      deliveryUrl,
       uploadResult.publicId,
       now
     ]);
@@ -306,21 +357,28 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       id: fileId,
       provider: uploadResult.provider || 'cloudinary',
       publicId: uploadResult.publicId,
-      secureUrl: uploadResult.secureUrl,
-      resourceType: uploadResult.resourceType || 'image',
+      secureUrl: deliveryUrl,
+      optimizedUrl: uploadResult.optimizedUrl || deliveryUrl,
+      posterUrl: uploadResult.posterUrl || '',
+      resourceType: uploadResult.resourceType || (isVideo ? 'video' : 'image'),
       fileType: purpose,
-      width: uploadResult.width || 800,
-      height: uploadResult.height || 800,
+      width: uploadResult.width || 1920,
+      height: uploadResult.height || 1080,
       fileSize: uploadResult.bytes || buffer.length,
       mimeType: mimeType,
-      url: `/api/media/files/${fileId}`
+      url: deliveryUrl
     });
   } catch (err: any) {
     console.error('Media upload error:', err);
     try {
       fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload FAILED: ${err.message}\nStack: ${err.stack}\n`);
     } catch (le) {}
-    res.status(500).json({ error: err.message || 'Failed to process media upload' });
+    const friendlyError = (err?.message && err.message.includes('100 MB'))
+      ? 'Video must be 100 MB or smaller.'
+      : (err?.message && err.message.includes('supported video file'))
+      ? 'Choose an MP4, WebM or supported video file.'
+      : "We couldn't prepare this video. Try another file.";
+    res.status(400).json({ error: friendlyError });
   }
 });
 

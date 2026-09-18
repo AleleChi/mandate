@@ -581,7 +581,23 @@ router.get('/public-landing-page', async (req, res) => {
     if (faviconSetting && faviconSetting.url) {
       settings.site_favicon = faviconSetting.url;
     }
-    return res.json({ success: true, settings });
+    const rawEvent = await getCurrentEvent();
+    const currentEvent = rawEvent ? {
+      title: rawEvent.title,
+      section_name: rawEvent.section_name || null,
+      starts_at: rawEvent.starts_at || null,
+      ends_at: rawEvent.ends_at || null,
+      daily_start_time: rawEvent.daily_start_time || null,
+      daily_end_time: rawEvent.daily_end_time || null,
+      theme: rawEvent.theme || null,
+      scripture: rawEvent.scripture || null,
+      location: rawEvent.location || null,
+      timezone: rawEvent.timezone || null,
+      parents_can_create_account: rawEvent.parents_can_create_account ?? 1,
+      parent_access_opens_at: rawEvent.parent_access_opens_at || null,
+      parent_access_closes_at: rawEvent.parent_access_closes_at || null
+    } : null;
+    return res.json({ success: true, settings, currentEvent });
   } catch (err: any) {
     console.error('Error fetching public landing settings:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve landing page settings' });
@@ -5868,7 +5884,7 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
 
     const now = new Date().toISOString();
     const allowedKeys = [
-      'site_logo', 'heroMain', 'heroUpper', 'heroRight', 'heroVideo',
+      'site_logo', 'heroMain', 'heroUpper', 'heroRight', 'heroVideo', 'heroVideoPoster',
       'passAvatar', 'workerAvatar', 'safetySection',
       'galleryArrival', 'galleryCheckIn', 'galleryActivities', 'galleryTeaching',
       'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo'

@@ -11,6 +11,8 @@ import { REAL_ASSETS } from '../config/assets';
 import { AssetImage } from '../components/common/AssetImage';
 import { api } from '../services/api';
 import { Seo } from '../components/common/Seo';
+import { LandingEventDetailsSection } from '../components/common/LandingEventDetailsSection';
+import { LandingVideoSection } from '../components/common/LandingVideoSection';
 
 interface LandingPageProps {
   onNavigate: (route: AppRoute) => void;
@@ -199,6 +201,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     site_logo: (window as any)._site_logo || ''
   });
 
+  const [currentEvent, setCurrentEvent] = useState<any>(null);
   const [regStatus, setRegStatus] = useState<any>(null);
   const [infoModal, setInfoModal] = useState<{
     isOpen: boolean;
@@ -276,14 +279,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     const fetchLandingData = async () => {
       try {
         const res = await api.landing.getPublicPage();
-        if (res.success && res.settings) {
-          const s = res.settings;
+        if (res.success) {
+          if (res.currentEvent) {
+            setCurrentEvent(res.currentEvent);
+          }
+          if (res.settings) {
+            const s = res.settings;
           setAssets({
             site_logo: s.site_logo || (window as any)._site_logo || '',
             heroMain: s.heroMain || REAL_ASSETS.heroMain,
             heroUpper: s.heroUpper || REAL_ASSETS.heroUpper,
             heroRight: s.heroRight || REAL_ASSETS.heroRight,
             heroVideo: s.heroVideo || REAL_ASSETS.heroVideo,
+            heroVideoPoster: s.heroVideoPoster || '',
             passAvatar: s.passAvatar || REAL_ASSETS.passAvatar,
             workerAvatar: s.workerAvatar || REAL_ASSETS.workerAvatar,
             safetySection: s.safetySection || REAL_ASSETS.safetySection,
@@ -303,6 +311,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             (window as any)._site_logo = s.site_logo;
           }
         }
+      }
       } catch (err) {
         console.error('Error fetching landing page assets:', err);
       }
@@ -590,44 +599,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
           </section>
 
-          {/* Refined Event Details Band */}
-          <section className="bg-[#FAF8F3] rounded-3xl border border-[#E5D5AE]/80 p-5 shadow-2xs space-y-4">
-            <h2 className="text-xs font-serif-koinonia font-bold text-[#18181B] pb-2 border-b border-[#EAE8E1]/80 uppercase tracking-widest text-[#9A7326]">
-              Event Details
-            </h2>
-            <div className="grid grid-cols-2 gap-3.5 text-xs">
-              <div className="bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-                <span className="text-[10px] font-bold tracking-wider text-[#6B7280] uppercase block">Event</span>
-                <span className="font-bold text-[#18181B] text-xs sm:text-sm mt-0.5 block font-serif-koinonia">The General Assembly</span>
-              </div>
+          {/* Live Event Details Section */}
+          <LandingEventDetailsSection event={currentEvent} regStatus={regStatus} className="!py-4 !px-0" />
 
-              <div className="bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-                <span className="text-[10px] font-bold tracking-wider text-[#6B7280] uppercase block">Date</span>
-                <span className="font-bold text-[#18181B] text-xs sm:text-sm mt-0.5 block">18th to 22nd November 2026</span>
-              </div>
-
-              <div className="bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-                <span className="text-[10px] font-bold tracking-wider text-[#6B7280] uppercase block">Theme</span>
-                <span className="font-bold text-[#18181B] text-xs sm:text-sm mt-0.5 block font-serif-koinonia">More Than Conquerors</span>
-                <span className="text-[10px] text-[#9A7326] font-medium block mt-0.5">Romans 8:37</span>
-              </div>
-
-              <div className="bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-                <span className="text-[10px] font-bold tracking-wider text-[#6B7280] uppercase block">Time</span>
-                <span className="font-bold text-[#18181B] text-xs sm:text-sm mt-0.5 block">9:00 AM to 7:00 PM</span>
-              </div>
-
-              <div className="bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-                <span className="text-[10px] font-bold tracking-wider text-[#6B7280] uppercase block">Access</span>
-                <span className="font-bold text-[#18181B] text-xs sm:text-sm mt-0.5 block">Parent account required</span>
-              </div>
-
-              <div className="bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-                <span className="text-[10px] font-bold tracking-wider text-[#6B7280] uppercase block">Pass</span>
-                <span className="font-bold text-[#18181B] text-xs sm:text-sm mt-0.5 block text-[#9A7326]">QR pass on selection</span>
-              </div>
-            </div>
-          </section>
+          {/* Premium Curved Video Section */}
+          <LandingVideoSection
+            videoUrl={assets.heroVideo || assets.gallery?.eventVideo}
+            posterUrl={assets.heroVideoPoster || assets.heroMain || assets.heroUpper}
+            className="!py-4 !px-0"
+          />
 
           {/* Pass Preview Card Block - Subtle Scan-to-Details Animation */}
           <HeroPassPreview className="!rounded-3xl !p-5 shadow-xl" isMobile={true} avatarUrl={assets.passAvatar} />
@@ -1086,49 +1066,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* 3. Event Detail Strip */}
-      <section className="py-14 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
-        <div className="bg-[#FAF8F3] border border-[#E5D5AE]/80 rounded-3xl p-6 sm:p-8 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
-          {/* Card 1: Event */}
-          <div className="bg-white p-5 rounded-2xl border border-[#EAE8E1] shadow-2xs flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">EVENT</span>
-            <span className="text-sm font-bold text-[#18181B] font-serif-koinonia mt-2 block">The General Assembly</span>
-          </div>
+      {/* 3. Live Event Details Section */}
+      <LandingEventDetailsSection event={currentEvent} regStatus={regStatus} />
 
-          {/* Card 2: Date */}
-          <div className="bg-white p-5 rounded-2xl border border-[#EAE8E1] shadow-2xs flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">DATE</span>
-            <span className="text-sm font-bold text-[#18181B] mt-2 block">18th to 22nd November 2026</span>
-          </div>
-
-          {/* Card 3: Theme */}
-          <div className="bg-white p-5 rounded-2xl border border-[#EAE8E1] shadow-2xs flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">THEME</span>
-            <div>
-              <span className="text-sm font-bold text-[#18181B] font-serif-koinonia block">More Than Conquerors</span>
-              <span className="text-xs text-[#9A7326] font-medium block mt-0.5">Romans 8:37</span>
-            </div>
-          </div>
-
-          {/* Card 4: Time */}
-          <div className="bg-white p-5 rounded-2xl border border-[#EAE8E1] shadow-2xs flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">TIME</span>
-            <span className="text-sm font-bold text-[#18181B] mt-2 block">9:00 AM to 7:00 PM</span>
-          </div>
-
-          {/* Card 5: Access */}
-          <div className="bg-white p-5 rounded-2xl border border-[#EAE8E1] shadow-2xs flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">ACCESS</span>
-            <span className="text-sm font-bold text-[#18181B] mt-2 block">Parent account required</span>
-          </div>
-
-          {/* Card 6: Pass */}
-          <div className="bg-white p-5 rounded-2xl border border-[#EAE8E1] shadow-2xs flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-widest text-[#9A7326] uppercase block">PASS</span>
-            <span className="text-sm font-bold text-[#9A7326] mt-2 block">QR pass on selection</span>
-          </div>
-        </div>
-      </section>
+      {/* 4. Premium Curved Video Section */}
+      <LandingVideoSection
+        videoUrl={assets.heroVideo || assets.gallery?.eventVideo}
+        posterUrl={assets.heroVideoPoster || assets.heroMain || assets.heroUpper}
+      />
 
       {/* Curved Orbital Photo Gallery Section */}
       <CurvedPhotoGallery />

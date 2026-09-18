@@ -21,12 +21,31 @@ export interface UploadMediaResult {
   provider: 'cloudinary' | 'local';
   publicId: string;
   secureUrl: string;
+  optimizedUrl?: string;
+  posterUrl?: string;
   resourceType: string;
   width?: number;
   height?: number;
   duration?: number;
   format?: string;
   bytes?: number;
+}
+
+export function buildCloudinaryOptimizedVideoUrl(secureUrl: string): string {
+  if (!secureUrl || !secureUrl.includes('/video/upload/')) {
+    return secureUrl;
+  }
+  const transform = 'c_limit,w_1920,h_1080,vc_h264,q_auto,f_mp4,ac_none,fl_faststart';
+  return secureUrl.replace('/video/upload/', `/video/upload/${transform}/`);
+}
+
+export function buildCloudinaryVideoPosterUrl(secureUrl: string): string {
+  if (!secureUrl || !secureUrl.includes('/video/upload/')) {
+    return '';
+  }
+  const transform = 'so_0,c_limit,w_1920,h_1080,q_auto,f_auto';
+  const urlWithTransform = secureUrl.replace('/video/upload/', `/video/upload/${transform}/`);
+  return urlWithTransform.replace(/\.[a-zA-Z0-9]+$/, '.jpg');
 }
 
 let cloudinaryConfigured = false;
@@ -93,24 +112,53 @@ export async function uploadMedia(
   if (isConfigured) {
     try {
       const result = await new Promise<UploadMediaResult>((resolve, reject) => {
+        const uploadParams: any = {
+          folder: fullFolder,
+          resource_type: resourceType,
+          overwrite: false,
+          use_filename: false,
+          unique_filename: true,
+          context: options.ownerUserId ? { owner_user_id: options.ownerUserId, purpose: options.purpose } : { purpose: options.purpose }
+        };
+
+        if (resourceType === 'video') {
+          uploadParams.eager = [
+            {
+              format: 'mp4',
+              video_codec: 'h264',
+              width: 1920,
+              height: 1080,
+              crop: 'limit',
+              quality: 'auto',
+              audio_codec: 'none',
+              flags: 'fast_forward'
+            }
+          ];
+          uploadParams.eager_async = false;
+        }
+
         const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: fullFolder,
-            resource_type: resourceType,
-            overwrite: false,
-            use_filename: false,
-            unique_filename: true,
-            context: options.ownerUserId ? { owner_user_id: options.ownerUserId, purpose: options.purpose } : { purpose: options.purpose }
-          },
+          uploadParams,
           (error, result: UploadApiResponse | undefined) => {
             if (error || !result) {
               reject(error || new Error('Cloudinary upload failed'));
               return;
             }
+
+            const optimizedUrl = resourceType === 'video'
+              ? (result.eager?.[0]?.secure_url || buildCloudinaryOptimizedVideoUrl(result.secure_url))
+              : result.secure_url;
+
+            const posterUrl = resourceType === 'video'
+              ? buildCloudinaryVideoPosterUrl(result.secure_url)
+              : undefined;
+
             resolve({
               provider: 'cloudinary',
               publicId: result.public_id,
               secureUrl: result.secure_url,
+              optimizedUrl,
+              posterUrl,
               resourceType: result.resource_type,
               width: result.width,
               height: result.height,
@@ -126,13 +174,22 @@ export async function uploadMedia(
       return result;
     } catch (err) {
       console.error('Cloudinary upload failed (possibly connection problem):', err);
+      if (resourceType === 'video') {
+        throw new Error("We couldn't prepare this video for the website. Please try again.");
+      }
       if (isProd && !allowLocalFallback && !isLocalPersistent) {
         throw new Error('Image upload could not be completed. Please check media storage settings and try again.');
       }
     }
   }
 
-  // If Cloudinary is not configured and we are in production, refuse ephemeral fallback
+  // Safe fallback behavior:
+  // If video upload and Cloudinary is not configured or unavailable, fail gracefully rather than silently publishing raw 100MB video without optimization
+  if (resourceType === 'video') {
+    throw new Error("We couldn't prepare this video for the website. Please try again.");
+  }
+
+  // If Cloudinary is not configured and we are in production, refuse ephemeral fallback for images
   if (isProd && !isConfigured && !allowLocalFallback && !isLocalPersistent) {
     throw new Error('Media storage is not fully configured. Please connect Cloudinary or persistent storage before uploading images.');
   }
@@ -160,6 +217,7 @@ export async function uploadMedia(
     provider: 'local',
     publicId,
     secureUrl,
+    optimizedUrl: secureUrl,
     resourceType,
     format: ext,
     bytes: fileBuffer.length

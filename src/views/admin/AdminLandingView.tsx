@@ -92,9 +92,9 @@ const MEDIA_SLOTS: MediaSlot[] = [
   },
   {
     key: 'heroVideo',
-    label: 'Hero Ambient Background Video',
-    description: 'Muted atmospheric video looping softly behind the hero text content.',
-    dimensions: '1080p MP4 or WebM · 16:9 widescreen (<20 MB)',
+    label: 'Landing video',
+    description: 'Atmospheric video displayed in the dedicated landing page section.',
+    dimensions: 'MP4 or WebM · Up to 100 MB',
     previewClass: 'w-28 aspect-video',
     type: 'video',
     purpose: 'event_video',
@@ -250,6 +250,20 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     return filteredGalleryItems.slice(start, start + galleryPageSize);
   }, [filteredGalleryItems, galleryPage, galleryPageSize]);
 
+  const [slotFileState, setSlotFileState] = useState<{
+    [key: string]: {
+      fileName: string;
+      fileSizeFormatted: string;
+      status: 'uploading' | 'ready' | 'error';
+    };
+  }>({});
+
+  const formatFileSize = (bytes: number): string => {
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1) return `${mb.toFixed(1)} MB`;
+    return `${(bytes / 1024).toFixed(0)} KB`;
+  };
+
   // Handler for Core Slots Upload
   const handleFileUpload = async (slotKey: string, file: File, purpose: 'landing_image' | 'event_video') => {
     setErrorSlot(prev => ({ ...prev, [slotKey]: '' }));
@@ -262,7 +276,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     const isVideoFile = file.type.startsWith('video/') || ['mp4', 'webm', 'mov'].includes(fileExt);
 
     if (slotSpec.type === 'video' && !isVideoFile) {
-      setErrorSlot(prev => ({ ...prev, [slotKey]: 'Please upload a video file (MP4, WebM, or MOV) for this video-only slot.' }));
+      setErrorSlot(prev => ({ ...prev, [slotKey]: 'Choose an MP4, WebM or supported video file.' }));
       return;
     }
     if (slotSpec.type === 'image' && isVideoFile) {
@@ -274,11 +288,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
       const allowedVideoExts = ['mp4', 'webm', 'mov'];
       if (!allowedVideoTypes.includes(file.type) && !allowedVideoExts.includes(fileExt)) {
-        setErrorSlot(prev => ({ ...prev, [slotKey]: 'Please choose an MP4, WebM, or MOV video format.' }));
+        setErrorSlot(prev => ({ ...prev, [slotKey]: 'Choose an MP4, WebM or supported video file.' }));
         return;
       }
-      if (file.size > 50 * 1024 * 1024) {
-        setErrorSlot(prev => ({ ...prev, [slotKey]: 'File size is too large. Maximum video size is 50MB.' }));
+      const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+      if (file.size > MAX_VIDEO_BYTES) {
+        setErrorSlot(prev => ({ ...prev, [slotKey]: 'Video must be 100 MB or smaller.' }));
         return;
       }
     } else {
@@ -296,20 +311,60 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
     try {
       setUploadingSlot(slotKey);
+      setSlotFileState(prev => ({
+        ...prev,
+        [slotKey]: {
+          fileName: file.name,
+          fileSizeFormatted: formatFileSize(file.size),
+          status: 'uploading'
+        }
+      }));
+
       const uploadRes = await api.media.uploadFile(file, purpose, slotKey);
-      const fileUrl = uploadRes.url || uploadRes.secureUrl;
+      const fileUrl = (uploadRes as any).optimizedUrl || uploadRes.secureUrl || uploadRes.url;
       
       if (!fileUrl) {
         throw new Error('Upload succeeded but server returned empty file address.');
       }
 
-      await api.admin.updateLandingSettings({ [slotKey]: fileUrl });
+      // Preserve existing video until processing succeeds, then switch to new optimised video
+      const updatePayload: Record<string, string> = { [slotKey]: fileUrl };
+      if ((uploadRes as any).posterUrl) {
+        updatePayload[`${slotKey}Poster`] = (uploadRes as any).posterUrl;
+      }
+
+      await api.admin.updateLandingSettings(updatePayload);
       setSettings(prev => ({ ...prev, [slotKey]: fileUrl }));
-      setSuccessSlot(prev => ({ ...prev, [slotKey]: 'Media uploaded & live!' }));
-      setTimeout(() => setSuccessSlot(prev => ({ ...prev, [slotKey]: '' })), 4000);
+      setSlotFileState(prev => ({
+        ...prev,
+        [slotKey]: {
+          fileName: file.name,
+          fileSizeFormatted: formatFileSize(file.size),
+          status: 'ready'
+        }
+      }));
+      setSuccessSlot(prev => ({
+        ...prev,
+        [slotKey]: slotSpec.type === 'video' ? 'Video ready' : 'Media uploaded & live!'
+      }));
+      setTimeout(() => setSuccessSlot(prev => ({ ...prev, [slotKey]: '' })), 5000);
     } catch (err: any) {
       console.error('Upload failed for slot:', slotKey, err);
-      setErrorSlot(prev => ({ ...prev, [slotKey]: err?.message || 'Upload failed. Please try again.' }));
+      const friendlyMsg = (err?.message && err.message.includes('100 MB'))
+        ? 'Video must be 100 MB or smaller.'
+        : (err?.message && err.message.includes('supported video file'))
+        ? 'Choose an MP4, WebM or supported video file.'
+        : "We couldn't prepare this video for the website. Please try again.";
+
+      setErrorSlot(prev => ({ ...prev, [slotKey]: friendlyMsg }));
+      setSlotFileState(prev => ({
+        ...prev,
+        [slotKey]: {
+          fileName: file.name,
+          fileSizeFormatted: formatFileSize(file.size),
+          status: 'error'
+        }
+      }));
     } finally {
       setUploadingSlot(null);
     }
@@ -1399,6 +1454,22 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       <p className="text-xs text-stone-400 font-sans pt-0.5">
                         Recommended: {slot.dimensions}
                       </p>
+                      {slotFileState[slot.key] && (
+                        <div className="pt-1.5 space-y-0.5">
+                          <p className="text-xs text-stone-700 font-medium">
+                            {slotFileState[slot.key].fileName}{' '}
+                            <span className="text-stone-400 font-normal">
+                              ({slotFileState[slot.key].fileSizeFormatted})
+                            </span>
+                          </p>
+                          {isUploading && slot.type === 'video' && (
+                            <p className="text-xs text-[#9A7326] font-medium animate-pulse flex items-center gap-1.5 pt-0.5">
+                              <Loader2 className="w-3 h-3 animate-spin text-[#C59B27]" />
+                              <span>Preparing video for the website…</span>
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Right Zone: Preview Thumbnail & Upload Control */}
@@ -1445,7 +1516,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           {isUploading ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
-                              <span>Uploading...</span>
+                              <span>{slot.type === 'video' ? 'Preparing video…' : 'Uploading…'}</span>
                             </>
                           ) : (
                             <>
