@@ -36,12 +36,17 @@ function formatEditorialDate(dateVal: any, includeTime: boolean = false): string
   return `${dateStr} at ${timeStr}`;
 }
 
-export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{ pdfBytes: ArrayBuffer; pageCount: number }> {
+export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{ pdfBytes: ArrayBuffer; pageCount: number; sectionPageMap: Record<string, number> }> {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4'
   });
+
+  const sectionPageMap: Record<string, number> = {
+    'section-cover': 1,
+    'cover': 1
+  };
 
   const pageHeight = 297;
   const pageWidth = 210;
@@ -52,6 +57,13 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
   const event = model.eventContext;
   const isDarkCover = model.coverStyle === 'charcoal' || !model.coverStyle;
+
+  // Format date range cleanly
+  const startDateStr = formatEditorialDate(event.startsAt);
+  const endDateStr = event.endsAt ? formatEditorialDate(event.endsAt) : null;
+  const dateRangeStr = endDateStr && endDateStr !== startDateStr
+    ? `${startDateStr} – ${endDateStr}`
+    : startDateStr;
 
   // Page break helper
   function addNewPage() {
@@ -207,8 +219,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
-  const dateStr = formatEditorialDate(event.startsAt);
-  doc.text(dateStr, marginX, coverBottomY + 9.5);
+  doc.text(dateRangeStr, marginX, coverBottomY + 9.5);
 
   // Col 2: Venue
   doc.setFont('helvetica', 'normal');
@@ -244,6 +255,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.addPage();
   drawPageHeader();
   currentY = 28;
+
+  sectionPageMap['section-kpis'] = 2;
+  sectionPageMap['kpis'] = 2;
+  sectionPageMap['section-overview'] = 2;
+  sectionPageMap['event-overview'] = 2;
 
   // Title: Operational Overview & Executive Summary
   doc.setFont('times', 'bold');
@@ -282,7 +298,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-  doc.text(dateStr, profileBoxX + 4, profY + 3.8);
+  doc.text(dateRangeStr, profileBoxX + 4, profY + 3.8);
 
   profY += 9;
   if (event.venue) {
@@ -381,6 +397,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   const operationalSections = model.sections.filter(s => s !== narrativeSec);
 
   for (const sec of operationalSections) {
+    const secId = sec.id || `sec-${operationalSections.indexOf(sec)}`;
+    const secPage = doc.getNumberOfPages();
+    sectionPageMap[`section-${secId}`] = secPage;
+    sectionPageMap[secId] = secPage;
+
     if (sec.type === 'narrative') {
       ensureHeight(25);
       currentY = drawEditorialSectionHeading(doc, sec.title, sec.description, marginX, currentY, contentWidth);
@@ -490,6 +511,8 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   // =========================================================================
   if (model.findings && model.findings.length > 0) {
     ensureHeight(35);
+    sectionPageMap['section-findings'] = doc.getNumberOfPages();
+    sectionPageMap['findings'] = doc.getNumberOfPages();
     currentY = drawEditorialSectionHeading(doc, 'Key Operational Observations', undefined, marginX, currentY, contentWidth);
 
     model.findings.forEach((finding) => {
@@ -508,10 +531,112 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     currentY += 6;
   }
 
+  // Administrative Attention Items
+  if (model.managementAttention && model.managementAttention.length > 0) {
+    ensureHeight(30);
+    sectionPageMap['section-attention'] = doc.getNumberOfPages();
+    sectionPageMap['attention'] = doc.getNumberOfPages();
+    currentY = drawEditorialSectionHeading(doc, 'Administrative Attention Items', undefined, marginX, currentY, contentWidth);
+
+    model.managementAttention.forEach((item) => {
+      ensureHeight(12);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(colors.amber[0], colors.amber[1], colors.amber[2]);
+      doc.text('→', marginX + 2, currentY + 2.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.2);
+      doc.setTextColor(39, 39, 42);
+      const attLines = doc.splitTextToSize(item, contentWidth - 8);
+      doc.text(attLines, marginX + 6, currentY + 2.5);
+      currentY += attLines.length * 4 + 2.5;
+    });
+    currentY += 4;
+  }
+
+  // Recommended Action Points
+  if (model.recommendations && model.recommendations.length > 0) {
+    ensureHeight(35);
+    sectionPageMap['section-recommendations'] = doc.getNumberOfPages();
+    sectionPageMap['recommendations'] = doc.getNumberOfPages();
+    currentY = drawEditorialSectionHeading(doc, 'Recommended Action Points', undefined, marginX, currentY, contentWidth);
+
+    model.recommendations.forEach((rec) => {
+      ensureHeight(18);
+      doc.setDrawColor(212, 212, 216);
+      doc.setLineWidth(0.6);
+      doc.line(marginX + 2, currentY, marginX + 2, currentY + 12);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(24, 24, 27);
+      doc.text(rec.action, marginX + 6, currentY + 3.5);
+
+      let recY = currentY + 7;
+      if (rec.rationale) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.2);
+        doc.setTextColor(82, 82, 91);
+        const ratLines = doc.splitTextToSize(rec.rationale, contentWidth - 10);
+        doc.text(ratLines, marginX + 6, recY);
+        recY += ratLines.length * 3.5;
+      }
+      if (rec.responsibility) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(6.8);
+        doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
+        doc.text(`Assigned to: ${rec.responsibility}`, marginX + 6, recY + 1);
+        recY += 4;
+      }
+      currentY = recY + 3;
+    });
+    currentY += 4;
+  }
+
+  // Data Quality & Notes
+  if (model.dataQuality || (model.methodology && model.methodology.length > 0) || (model.limitations && model.limitations.length > 0)) {
+    ensureHeight(25);
+    sectionPageMap['section-quality-methodology'] = doc.getNumberOfPages();
+    sectionPageMap['quality'] = doc.getNumberOfPages();
+    currentY = drawEditorialSectionHeading(doc, 'Data Notes and Limitations', undefined, marginX, currentY, contentWidth);
+
+    if (model.dataQuality) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
+      doc.text(`Confidence: ${model.dataQuality.status || 'High confidence'}`, marginX, currentY + 2);
+      currentY += 5;
+
+      if (model.dataQuality.notes) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
+        const noteLines = doc.splitTextToSize(model.dataQuality.notes, contentWidth);
+        doc.text(noteLines, marginX, currentY);
+        currentY += noteLines.length * 3.4 + 2;
+      }
+    }
+
+    if (model.limitations && model.limitations.length > 0) {
+      model.limitations.forEach(lim => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
+        doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
+        doc.text(`• ${lim}`, marginX, currentY);
+        currentY += 3.5;
+      });
+    }
+  }
+
   // =========================================================================
   // SECTION F: INSTITUTIONAL BACK COVER
   // =========================================================================
   doc.addPage();
+  const totalPages = doc.getNumberOfPages();
+  sectionPageMap['section-back-cover'] = totalPages;
+  sectionPageMap['back-cover'] = totalPages;
+
   doc.setFillColor(colors.lightIvory[0], colors.lightIvory[1], colors.lightIvory[2]);
   doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
@@ -557,7 +682,6 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.text('This publication constitutes the official event record for administrative and pastoral review.', pageWidth / 2, backY, { align: 'center' });
 
   // Draw running footers on all interior pages (Pages 2 through pageCount - 1)
-  const totalPages = doc.getNumberOfPages();
   for (let p = 2; p < totalPages; p++) {
     doc.setPage(p);
     doc.setDrawColor(228, 228, 231);
@@ -571,8 +695,9 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.text(`Page ${p} of ${totalPages}`, marginX + contentWidth, 290, { align: 'right' });
   }
 
+  model.sectionPageMap = sectionPageMap;
   const pdfBytes = doc.output('arraybuffer');
-  return { pdfBytes, pageCount: totalPages };
+  return { pdfBytes, pageCount: totalPages, sectionPageMap };
 }
 
 // Draw Section Heading with large numeral support (e.g. "01 Registration & Selection")

@@ -1116,7 +1116,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                         id={`btn-view-${report.id}`}
                                       >
                                         <Eye className="w-3.5 h-3.5 text-stone-500" />
-                                        View
+                                        Review report
                                       </button>
 
                                       {isExpired ? (
@@ -1839,6 +1839,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           eventTitle={previewEventTitle}
           onClose={() => setPreviewingReportId(null)}
           onDownloadPdf={(id) => handleDownloadReportPDF(id)}
+          onRegenerate={(id) => handleRegenerateReport(id)}
         />
       )}
 

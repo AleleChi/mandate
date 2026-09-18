@@ -698,6 +698,24 @@ router.get('/:reportId/preview', async (req: AuthenticatedRequest, res: Response
       }
     }
 
+    // Ensure sectionPageMap exists on document model
+    if (!docModel.sectionPageMap) {
+      try {
+        const rendered = await renderDocumentToPDF(docModel);
+        docModel.sectionPageMap = rendered.sectionPageMap;
+        if (genReport) {
+          const jsonStr = JSON.stringify(docModel);
+          const docHash = crypto.createHash('sha256').update(jsonStr).digest('hex');
+          await execute(
+            'UPDATE generated_reports SET document_model_json = ?, document_hash = ? WHERE report_job_id = ?',
+            [jsonStr, docHash, job.id]
+          );
+        }
+      } catch (mapErr) {
+        console.warn(`[Report Preview] Could not calculate sectionPageMap for ${job.id}:`, mapErr);
+      }
+    }
+
     // Record safe audit log
     await execute(`
       INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
@@ -710,7 +728,8 @@ router.get('/:reportId/preview', async (req: AuthenticatedRequest, res: Response
     return res.json({
       success: true,
       report: formattedReport,
-      documentModel: docModel
+      documentModel: docModel,
+      sectionPageMap: docModel.sectionPageMap
     });
 
   } catch (err: any) {
@@ -1160,8 +1179,9 @@ router.get('/:reportId/download', async (req: AuthenticatedRequest, res: Respons
       VALUES (?, ?, ?, 'downloaded', 'Report PDF downloaded successfully by user.', ?)
     `, ['hist-' + crypto.randomUUID(), reportId, userId, new Date().toISOString()]);
 
+    const isInline = req.query.inline === 'true' || req.query.preview === 'true';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${artifact.filename}"`);
+    res.setHeader('Content-Disposition', `${isInline ? 'inline' : 'attachment'}; filename="${artifact.filename}"`);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');

@@ -1137,10 +1137,10 @@ export async function processQueuedReportJobs() {
           };
         }
 
+        const { pdfBytes, pageCount, sectionPageMap } = await renderDocumentToPDF(docModel);
+        docModel.sectionPageMap = sectionPageMap;
         const docModelJson = JSON.stringify(docModel);
         const docHash = crypto.createHash('sha256').update(docModelJson).digest('hex');
-
-        const { pdfBytes, pageCount } = await renderDocumentToPDF(docModel);
 
         console.log(`[Reports] PDF rendering complete - Job ID: ${pendingJob.id}`);
 
@@ -1348,11 +1348,13 @@ export async function upgradeReportRecord(reportJobId: string): Promise<any | nu
     };
   }
 
+  // 3. Render replacement PDF from same model
+  const { pdfBytes, pageCount, sectionPageMap } = await renderDocumentToPDF(newModel);
+  newModel.sectionPageMap = sectionPageMap;
+
   const docModelJson = JSON.stringify(newModel);
   const docHash = crypto.createHash('sha256').update(docModelJson).digest('hex');
 
-  // 3. Render replacement PDF from same model
-  const { pdfBytes, pageCount } = await renderDocumentToPDF(newModel);
   const fileHash = crypto.createHash('sha256').update(Buffer.from(pdfBytes)).digest('hex');
   const fileSize = pdfBytes.byteLength;
 
@@ -1576,6 +1578,7 @@ export async function getOrRegenerateReportPDF(reportId: string): Promise<Report
 
     // Render PDF on the fly from the immutable document model
     const rendered = await renderDocumentToPDF(docModel);
+    docModel.sectionPageMap = rendered.sectionPageMap;
     fileBytes = Buffer.from(rendered.pdfBytes);
 
     // Update generated_reports metadata

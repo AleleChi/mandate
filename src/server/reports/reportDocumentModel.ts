@@ -229,6 +229,7 @@ export interface ReportDocumentModel {
     headers: string[];
     rows: string[][];
   }[];
+  sectionPageMap?: Record<string, number>;
 }
 
 export function validateReportDocumentModel(model: ReportDocumentModel): { valid: boolean; errors: string[] } {
