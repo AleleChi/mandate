@@ -140,18 +140,19 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
   className = ''
 }) => {
   const [queryInput, setQueryInput] = useState('');
+  const [submittedQuestion, setSubmittedQuestion] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryResult, setQueryResult] = useState<GroundedQueryResult | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Duty');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Children');
 
   const categories = Object.keys(CATEGORIZED_SUGGESTIONS);
-  const currentSuggestions = CATEGORIZED_SUGGESTIONS[selectedCategory] || CATEGORIZED_SUGGESTIONS['Duty'];
+  const currentSuggestions = CATEGORIZED_SUGGESTIONS[selectedCategory] || CATEGORIZED_SUGGESTIONS['Children'];
 
   const handleRunQuery = async (questionText: string) => {
     const q = questionText.trim();
     if (!q) return;
 
-    setQueryInput(q);
+    setSubmittedQuestion(q);
     setQueryLoading(true);
 
     try {
@@ -188,7 +189,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
   return (
     <div
       className={`bg-white border border-[#EAE8E1]/80 rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left ${className}`}
-      data-component-version="admin-operations-assistant-human-refined-v4"
+      data-component-version="admin-operations-assistant-hierarchy-v1"
     >
       {/* Editorial Header */}
       <div className="space-y-0.5 pb-1">
@@ -196,7 +197,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           Operations Assistant
         </h3>
         <p className="text-xs text-zinc-500">
-          Ask natural-language questions grounded in live system data
+          Ask about the current event
         </p>
       </div>
 
@@ -229,7 +230,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         </button>
       </form>
 
-      {/* Organized Category Suggestion Discovery */}
+      {/* Suggested Questions: Prompts, not answers */}
       <div className="space-y-2 pt-0.5">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {categories.map((cat) => (
@@ -248,141 +249,186 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           ))}
         </div>
 
-        <div className="flex flex-col gap-1">
-          {currentSuggestions.map((q, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleRunQuery(q)}
-              className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-0.5 flex items-center justify-between group"
-            >
-              <span>{q}</span>
-              <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-[#C59B27] transition-opacity shrink-0" />
-            </button>
-          ))}
+        <div className="space-y-1">
+          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+            {selectedCategory}
+          </span>
+          <div className="flex flex-col gap-1">
+            {currentSuggestions.map((q, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  setQueryInput(q);
+                  handleRunQuery(q);
+                }}
+                className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-1 flex items-center justify-between group"
+              >
+                <span className="group-hover:underline underline-offset-2">{q}</span>
+                <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-[#C59B27] transition-opacity shrink-0" />
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Answer Area with Rich Output Support */}
-      {queryResult && (
-        <div className="pt-3 border-t border-[#EAE8E1]/70 space-y-3 text-left">
-          {/* Main Typography Answer */}
-          <p className="text-xs text-zinc-800 leading-relaxed font-normal">
-            {queryResult.answer}
-          </p>
+      {/* Dedicated Q&A Area: Distinct Question and Answer Hierarchy */}
+      {submittedQuestion && (
+        <div className="pt-4 border-t border-[#EAE8E1]/80 space-y-4 text-left">
+          {/* 1. SUBMITTED QUESTION */}
+          <div className="space-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
+              YOUR QUESTION
+            </span>
+            <p className="text-xs sm:text-sm font-medium text-zinc-800 leading-snug">
+              {submittedQuestion}
+            </p>
+          </div>
 
-          {/* Structured Table Display */}
-          {queryResult.table && queryResult.table.rows && queryResult.table.rows.length > 0 && (
-            <div className="space-y-1.5 pt-1">
-              <div className="overflow-x-auto rounded-lg border border-[#EAE8E1]/80 max-h-56 overflow-y-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1]/80 text-[11px] text-zinc-500 font-medium">
-                      {queryResult.table.columns.map((col, cIdx) => (
-                        <th key={cIdx} className="py-2 px-3 whitespace-nowrap">
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#EAE8E1]/60">
-                    {queryResult.table.rows.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-[#FAF9F6]/50 transition-colors">
-                        {row.map((val, cellIdx) => (
-                          <td key={cellIdx} className="py-1.5 px-3 text-zinc-800 whitespace-nowrap text-xs">
-                            {val !== null && val !== undefined ? String(val) : '—'}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {queryResult.table.totalCount !== undefined &&
-                queryResult.table.displayedCount !== undefined &&
-                queryResult.table.totalCount > queryResult.table.displayedCount && (
-                  <p className="text-[11px] text-zinc-400 text-right">
-                    Showing {queryResult.table.displayedCount} of {queryResult.table.totalCount} records
-                  </p>
-                )}
+          {/* Loading Indicator */}
+          {queryLoading && (
+            <div className="py-4 flex items-center gap-2 text-xs text-zinc-500">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#C59B27]" />
+              <span>Analyzing current operational data...</span>
             </div>
           )}
 
-          {/* Structured Breakdown Display */}
-          {queryResult.breakdown && queryResult.breakdown.items && queryResult.breakdown.items.length > 0 && (
-            <div className="space-y-1.5 pt-1">
-              {queryResult.breakdown.title && (
-                <span className="text-[11px] font-medium text-zinc-500 block uppercase tracking-wider">
-                  {queryResult.breakdown.title}
+          {/* 2. ANSWER */}
+          {!queryLoading && queryResult && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9A7326] block">
+                  ANSWER
                 </span>
-              )}
-              <div className="grid grid-cols-1 gap-1.5">
-                {queryResult.breakdown.items.map((item, bIdx) => (
-                  <div
-                    key={bIdx}
-                    className="flex items-center justify-between p-2 rounded-lg bg-[#FAF9F6]/70 border border-[#EAE8E1]/60 text-xs"
-                  >
-                    <span className="font-medium text-zinc-800">{item.label}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-zinc-900 font-semibold">{item.primary}</span>
-                      {item.secondary && (
-                        <span className="text-[11px] text-[#9A7326] font-medium">
-                          ({item.secondary})
-                        </span>
-                      )}
-                      {item.meta && (
-                        <span className="text-[11px] text-zinc-400">
-                          · {item.meta}
-                        </span>
-                      )}
+                <div className="bg-[#FAF9F6]/80 rounded-xl p-3.5 sm:p-4 border-l-2 border-[#C59B27] space-y-3">
+                  {/* Main Answer Typography */}
+                  <p className="text-xs sm:text-[13px] font-medium text-zinc-900 leading-relaxed">
+                    {queryResult.answer}
+                  </p>
+
+                  {/* Structured Table Display */}
+                  {queryResult.table && queryResult.table.rows && queryResult.table.rows.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="overflow-x-auto rounded-lg border border-[#EAE8E1]/80 max-h-56 overflow-y-auto bg-white">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1]/80 text-[11px] text-zinc-500 font-medium">
+                              {queryResult.table.columns.map((col, cIdx) => (
+                                <th key={cIdx} className="py-2 px-3 whitespace-nowrap">
+                                  {col}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#EAE8E1]/60">
+                            {queryResult.table.rows.map((row, rIdx) => (
+                              <tr key={rIdx} className="hover:bg-[#FAF9F6]/50 transition-colors">
+                                {row.map((val, cellIdx) => (
+                                  <td key={cellIdx} className="py-1.5 px-3 text-zinc-800 whitespace-nowrap text-xs">
+                                    {val !== null && val !== undefined ? String(val) : '—'}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {queryResult.table.totalCount !== undefined &&
+                        queryResult.table.displayedCount !== undefined &&
+                        queryResult.table.totalCount > queryResult.table.displayedCount && (
+                          <p className="text-[11px] text-zinc-400 text-right">
+                            Showing {queryResult.table.displayedCount} of {queryResult.table.totalCount} records
+                          </p>
+                        )}
                     </div>
+                  )}
+
+                  {/* Structured Breakdown Display */}
+                  {queryResult.breakdown && queryResult.breakdown.items && queryResult.breakdown.items.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {queryResult.breakdown.title && (
+                        <span className="text-[10px] font-semibold text-zinc-500 block uppercase tracking-wider">
+                          {queryResult.breakdown.title}
+                        </span>
+                      )}
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {queryResult.breakdown.items.map((item, bIdx) => (
+                          <div
+                            key={bIdx}
+                            className="flex items-center justify-between p-2 rounded-lg bg-white border border-[#EAE8E1]/60 text-xs"
+                          >
+                            <span className="font-medium text-zinc-800">{item.label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-zinc-900 font-semibold">{item.primary}</span>
+                              {item.secondary && (
+                                <span className="text-[11px] text-[#9A7326] font-medium">
+                                  ({item.secondary})
+                                </span>
+                              )}
+                              {item.meta && (
+                                <span className="text-[11px] text-zinc-400">
+                                  · {item.meta}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. ANSWER META (Visibly Secondary) */}
+                  {queryResult.provenance && (
+                    <div className="pt-2 border-t border-[#EAE8E1]/60 text-[11px] text-zinc-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>Source: <span className="text-zinc-600 font-normal">{queryResult.provenance.source}</span></span>
+                      <span>·</span>
+                      <span>Updated {queryResult.provenance.updatedAt}</span>
+                    </div>
+                  )}
+
+                  {/* 4. ACTION (Restrained Text Action) */}
+                  {queryResult.deepLinks && queryResult.deepLinks.length > 0 && (
+                    <div className="pt-1 flex flex-wrap gap-3">
+                      {queryResult.deepLinks.map((link, lIdx) => (
+                        <button
+                          key={lIdx}
+                          type="button"
+                          onClick={() => handleDeepLinkClick(link)}
+                          className="text-xs inline-flex items-center gap-1 font-medium text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                        >
+                          <span>{link.label}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 5. RELATED QUESTIONS (Clearly Separate Area) */}
+              {queryResult.suggestedQuestions && queryResult.suggestedQuestions.length > 0 && (
+                <div className="pt-3 border-t border-[#EAE8E1]/80 space-y-2">
+                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                    You may also want to ask
+                  </h4>
+                  <div className="flex flex-col gap-1">
+                    {queryResult.suggestedQuestions.slice(0, 3).map((sq, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setQueryInput(sq);
+                          handleRunQuery(sq);
+                        }}
+                        className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-1 flex items-center justify-between group"
+                      >
+                        <span className="group-hover:underline underline-offset-2">{sq}</span>
+                        <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-[#C59B27] transition-opacity shrink-0" />
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Deep Link Action Shortcuts */}
-          {queryResult.deepLinks && queryResult.deepLinks.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {queryResult.deepLinks.map((link, lIdx) => (
-                <button
-                  key={lIdx}
-                  type="button"
-                  onClick={() => handleDeepLinkClick(link)}
-                  className="text-xs inline-flex items-center gap-1 font-medium text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer py-0.5"
-                >
-                  <span>{link.label}</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Provenance Footer */}
-          {queryResult.provenance && (
-            <div className="text-[11px] text-zinc-400 flex items-center justify-between pt-2 border-t border-[#EAE8E1]/60">
-              <span className="truncate pr-2">Source: {queryResult.provenance.source}</span>
-              <span className="shrink-0">{queryResult.provenance.updatedAt}</span>
-            </div>
-          )}
-
-          {/* Contextual Follow-up Questions */}
-          {queryResult.suggestedQuestions && queryResult.suggestedQuestions.length > 0 && (
-            <div className="pt-2 space-y-1">
-              <span className="text-[11px] text-zinc-400 block">Related:</span>
-              <div className="flex flex-col gap-1">
-                {queryResult.suggestedQuestions.map((sq, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleRunQuery(sq)}
-                    className="text-xs text-left text-[#9A7326] hover:text-[#7A5B1C] hover:underline transition-colors cursor-pointer"
-                  >
-                    {sq}
-                  </button>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
         </div>
