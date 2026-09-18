@@ -71,7 +71,7 @@ export interface OperationsActionDefinition {
     params?: any
   ) => Promise<{
     answer: string;
-    preview: ActionPreview;
+    preview?: ActionPreview;
   }>;
   revalidate: (
     token: StoredConfirmationToken,

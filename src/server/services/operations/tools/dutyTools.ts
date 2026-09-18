@@ -173,6 +173,86 @@ export const listAssignedVolunteersTool: OperationalTool = {
   }
 };
 
+export interface NotReportedVolunteer {
+  assignment_id: string;
+  user_id: string;
+  volunteer_id: string;
+  name: string;
+  full_name: string;
+  phone: string | null;
+  whatsapp: string | null;
+  whatsapp_consent_status: string | null;
+  assigned_location_id: string | null;
+  duty_location: string;
+  location_name: string;
+  responsibility: string;
+  responsibility_key: string;
+  assignment_status: string;
+  status: string;
+}
+
+export async function getVolunteersNotReportedForDuty(
+  eventId: string,
+  filters?: {
+    locationId?: string;
+    locationName?: string;
+    limit?: number;
+  }
+): Promise<{ totalCount: number; volunteers: NotReportedVolunteer[] }> {
+  let sql = `
+    SELECT DISTINCT
+      a.id as assignment_id,
+      a.user_id,
+      vp.id as volunteer_id,
+      vp.full_name as name,
+      vp.full_name,
+      vp.phone,
+      vp.whatsapp,
+      vp.whatsapp_consent_status,
+      a.assigned_location_id,
+      COALESCE(el.name, 'Unspecified Location') as duty_location,
+      COALESCE(el.name, 'Unspecified Location') as location_name,
+      COALESCE(a.responsibility_key, 'General Duty') as responsibility,
+      COALESCE(a.responsibility_key, 'General Duty') as responsibility_key,
+      a.status as assignment_status,
+      'Not checked in' as status
+    FROM event_duty_assignments a
+    JOIN volunteer_profiles vp ON vp.user_id = a.user_id
+    LEFT JOIN event_locations el ON el.id = a.assigned_location_id
+    WHERE a.event_id = ?
+      AND a.status NOT IN ('cancelled', 'ended')
+      AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+      AND NOT EXISTS (
+        SELECT 1 FROM event_duty_location_presence p
+        WHERE p.user_id = a.user_id
+          AND p.event_id = a.event_id
+          AND p.ended_at IS NULL
+      )
+  `;
+  const params: any[] = [eventId];
+
+  if (filters?.locationId) {
+    sql += ` AND a.assigned_location_id = ?`;
+    params.push(filters.locationId);
+  } else if (filters?.locationName) {
+    const locName = filters.locationName.trim();
+    sql += ` AND (LOWER(el.name) = LOWER(?) OR LOWER(COALESCE(el.short_name, '')) = LOWER(?) OR LOWER(el.name) LIKE ? OR LOWER(COALESCE(el.short_name, '')) LIKE ?)`;
+    params.push(locName, locName, `%${locName.toLowerCase()}%`, `%${locName.toLowerCase()}%`);
+  }
+
+  const countRes = await queryOne(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
+  const totalCount = countRes?.total || 0;
+
+  sql += ` ORDER BY vp.full_name ASC`;
+  if (filters?.limit) {
+    sql += ` LIMIT ?`;
+    params.push(filters.limit);
+  }
+
+  const rows = await query(sql, params);
+  return { totalCount, volunteers: rows };
+}
+
 export const listLateOrNoShowVolunteersTool: OperationalTool = {
   name: 'listLateOrNoShowVolunteers',
   description: 'Lists volunteers with scheduled duty assignments who have not checked in on-site',
@@ -180,46 +260,19 @@ export const listLateOrNoShowVolunteersTool: OperationalTool = {
   execute: async (context: ToolContext, filters?: ToolFilter): Promise<ToolResult> => {
     const limit = Math.min(filters?.limit || 20, 50);
 
-    let sql = `
-      SELECT DISTINCT
-        vp.id as volunteer_id,
-        vp.user_id,
-        vp.full_name as name,
-        vp.phone,
-        COALESCE(el.name, 'Unspecified Location') as duty_location,
-        COALESCE(a.responsibility_key, 'General Duty') as responsibility,
-        'Not checked in' as status
-      FROM event_duty_assignments a
-      JOIN volunteer_profiles vp ON vp.user_id = a.user_id
-      LEFT JOIN event_locations el ON el.id = a.assigned_location_id
-      WHERE a.event_id = ? AND a.status != 'cancelled'
-        AND NOT EXISTS (
-          SELECT 1 FROM event_duty_location_presence p 
-          WHERE p.user_id = a.user_id AND p.event_id = a.event_id AND p.ended_at IS NULL
-        )
-    `;
-    const params: any[] = [context.eventId];
-
-    if (filters?.locationName) {
-      sql += ` AND (el.name LIKE ? OR el.short_name LIKE ?)`;
-      params.push(`%${filters.locationName}%`, `%${filters.locationName}%`);
-    }
-
-    const countRes = await queryOne(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
-    const totalCount = countRes?.total || 0;
-
-    sql += ` ORDER BY vp.full_name ASC LIMIT ?`;
-    params.push(limit);
-
-    const rows = await query(sql, params);
+    const { totalCount, volunteers } = await getVolunteersNotReportedForDuty(context.eventId, {
+      locationId: filters?.locationId,
+      locationName: filters?.locationName,
+      limit
+    });
 
     return {
       success: true,
       authorized: true,
       toolName: 'listLateOrNoShowVolunteers',
       totalCount,
-      displayedCount: rows.length,
-      data: rows
+      displayedCount: volunteers.length,
+      data: volunteers
     };
   }
 };

@@ -4,6 +4,7 @@ import { normalizePhoneNumberToE164 } from '../../../utils/phone';
 import { getWhatsAppProvider } from '../../whatsapp';
 import { formatNumber, formatPlural } from '../presentation';
 import { ToolContext } from '../types';
+import { getVolunteersNotReportedForDuty } from '../tools/dutyTools';
 import { actionTokenManager } from './tokenManager';
 import {
   ActionExecutionResult,
@@ -24,60 +25,16 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
     const event = await queryOne('SELECT title FROM events WHERE id = ?', [eventId]);
     const eventTitle = event?.title || 'Current Event';
 
-    // 1. Fetch missing/no-show volunteers
-    let sql = `
-      SELECT 
-        eda.id as assignment_id,
-        eda.user_id,
-        eda.assigned_location_id,
-        el.name as location_name,
-        eda.responsibility_key,
-        vp.full_name,
-        vp.phone,
-        vp.whatsapp,
-        vp.whatsapp_consent_status
-      FROM event_duty_assignments eda
-      JOIN event_locations el ON eda.assigned_location_id = el.id
-      JOIN volunteer_profiles vp ON eda.user_id = vp.user_id
-      WHERE eda.event_id = ?
-        AND eda.status = 'assigned'
-        AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
-        AND eda.user_id NOT IN (
-          SELECT DISTINCT user_id 
-          FROM event_duty_location_presence 
-          WHERE event_id = ?
-        )
-    `;
-
-    const queryParams: any[] = [eventId, eventId];
-
-    if (params?.locationId) {
-      sql += ' AND eda.assigned_location_id = ?';
-      queryParams.push(params.locationId);
-    } else if (params?.locationName) {
-      sql += ' AND (LOWER(el.name) LIKE ? OR LOWER(el.short_name) LIKE ?)';
-      queryParams.push(`%${params.locationName.toLowerCase()}%`, `%${params.locationName.toLowerCase()}%`);
-    }
-
-    sql += ' ORDER BY el.name ASC, vp.full_name ASC';
-
-    const missingRows = await query(sql, queryParams);
+    // 1. Fetch missing/no-show volunteers via canonical resolver
+    const { totalCount, volunteers: missingRows } = await getVolunteersNotReportedForDuty(eventId, {
+      locationId: params?.locationId,
+      locationName: params?.locationName
+    });
 
     if (missingRows.length === 0) {
       return {
-        answer: params?.locationName
-          ? `Everyone assigned to ${params.locationName} has reported for duty.`
-          : 'Everyone assigned for duty has reported.',
-        preview: {
-          actionKey: 'SEND_DUTY_REMINDERS',
-          title: 'Send duty reminders',
-          description: 'No reminders needed. All assigned volunteers have reported.',
-          affectedCount: 0,
-          confirmLabel: 'Send reminders',
-          cancelLabel: 'Cancel',
-          confirmationToken: '',
-          expiresAt: new Date().toISOString()
-        }
+        answer: 'Everyone assigned to duty has reported for duty. No reminders are needed.',
+        preview: undefined
       };
     }
 
@@ -88,7 +45,7 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
     const locationCounts: Record<string, number> = {};
 
     for (const row of missingRows) {
-      const locName = row.location_name || 'Assigned Location';
+      const locName = row.location_name || row.duty_location || 'Assigned Location';
       locationCounts[locName] = (locationCounts[locName] || 0) + 1;
 
       const rawPhone = row.whatsapp || row.phone;
@@ -116,9 +73,9 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
 
       recipients.push({
         id: row.user_id,
-        name: row.full_name || 'Volunteer',
+        name: row.full_name || row.name || 'Volunteer',
         locationName: locName,
-        responsibility: row.responsibility_key,
+        responsibility: row.responsibility || row.responsibility_key,
         channel: eligible ? 'whatsapp' : 'none',
         eligible,
         ineligibilityReason,
@@ -163,7 +120,7 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
 
     const preview: ActionPreview = {
       actionKey: 'SEND_DUTY_REMINDERS',
-      title: 'Send duty reminders?',
+      title: 'Send duty reminders',
       description: `Send reminders to ${formatNumber(eligibleCount)} eligible volunteer${eligibleCount === 1 ? '' : 's'}.`,
       affectedCount: eligibleCount,
       recipients: recipients.slice(0, 15),
@@ -191,7 +148,7 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
     const reportedNow = await query(`
       SELECT DISTINCT user_id 
       FROM event_duty_location_presence 
-      WHERE event_id = ? AND user_id IN (${placeholders})
+      WHERE event_id = ? AND ended_at IS NULL AND user_id IN (${placeholders})
     `, [eventId, ...targets]);
 
     if (reportedNow.length > 0) {
@@ -223,11 +180,11 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
             vp.full_name,
             vp.phone,
             vp.whatsapp,
-            el.name as location_name
+            COALESCE(el.name, 'your assigned location') as location_name
           FROM event_duty_assignments eda
-          JOIN event_locations el ON eda.assigned_location_id = el.id
+          LEFT JOIN event_locations el ON eda.assigned_location_id = el.id
           JOIN volunteer_profiles vp ON eda.user_id = vp.user_id
-          WHERE eda.event_id = ? AND eda.user_id = ? AND eda.status = 'assigned'
+          WHERE eda.event_id = ? AND eda.user_id = ? AND eda.status NOT IN ('cancelled', 'ended')
           LIMIT 1
         `, [eventId, userId]);
 

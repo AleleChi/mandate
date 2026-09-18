@@ -38,7 +38,7 @@ export class OperationsActionRegistry {
     actionKey: ActionKey,
     context: ToolContext,
     params?: any
-  ): Promise<{ answer: string; preview: ActionPreview }> {
+  ): Promise<{ answer: string; preview?: ActionPreview }> {
     const action = this.actions.get(actionKey);
     if (!action) {
       throw new Error('Unsupported action key.');

@@ -238,6 +238,8 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         setActionResult(res.result);
         // Clear preview once successfully confirmed
         setQueryResult(prev => prev ? { ...prev, actionPreview: undefined } : null);
+        // Refresh relevant duty/readiness data
+        window.dispatchEvent(new CustomEvent('sse-ops-refresh', { detail: { type: 'duty.status_updated' } }));
       } else {
         setActionError(res.error || "We couldn't complete that action. Please try again.");
       }
@@ -249,11 +251,8 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
     }
   };
 
-  const handleCancelAction = async (token: string) => {
-    if (!token) return;
-    try {
-      await api.admin.cancelOperationsAssistantAction(token);
-    } catch (_) {}
+  const handleCancelAction = () => {
+    // Immediately clear pending action UI and confirmation token without mutation, leaving previous answer visible
     setQueryResult(prev => prev ? { ...prev, actionPreview: undefined } : null);
     setActionError(null);
   };
@@ -547,7 +546,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
                       <button
                         type="button"
                         disabled={actionLoading}
-                        onClick={() => handleCancelAction(queryResult.actionPreview!.confirmationToken)}
+                        onClick={handleCancelAction}
                         className="px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-900 border border-[#EAE8E1] hover:bg-zinc-50 rounded-lg transition-colors cursor-pointer font-medium"
                       >
                         {queryResult.actionPreview.cancelLabel || 'Cancel'}
