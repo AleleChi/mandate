@@ -18,7 +18,7 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
   className = ''
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -138,9 +138,9 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
         {/* Controls — bottom right, always subtly visible when video is active */}
         {showVideo && (
           <div
-            className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 lg:bottom-12 lg:right-12 z-40 flex items-center gap-1"
+            className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 lg:bottom-12 lg:right-12 z-40 flex items-center gap-1.5"
             style={{
-              opacity: isHovered ? 0.92 : 0.32,
+              opacity: isHovered ? 0.92 : (isPlaying ? 0.28 : 0.72),
               transition: 'opacity 0.4s ease'
             }}
           >
@@ -148,8 +148,9 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
               type="button"
               onClick={togglePlayPause}
               aria-label={isPlaying ? 'Pause video' : 'Play video'}
-              className="w-7 h-7 rounded-full bg-white/8 hover:bg-white/18 backdrop-blur-sm text-white flex items-center justify-center transition-colors cursor-pointer"
-              style={{ background: 'rgba(255,255,255,0.08)' }}
+              className={`w-7 h-7 rounded-full backdrop-blur-sm text-white flex items-center justify-center transition-colors cursor-pointer ${
+                isPlaying ? 'bg-white/10 hover:bg-white/20' : 'bg-white/25 hover:bg-white/35'
+              }`}
             >
               {isPlaying
                 ? <Pause className="w-3 h-3" />
@@ -159,8 +160,7 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
               type="button"
               onClick={toggleMute}
               aria-label={isMuted ? 'Unmute' : 'Mute'}
-              className="w-7 h-7 rounded-full hover:bg-white/18 backdrop-blur-sm text-white flex items-center justify-center transition-colors cursor-pointer"
-              style={{ background: 'rgba(255,255,255,0.08)' }}
+              className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white flex items-center justify-center transition-colors cursor-pointer"
             >
               {isMuted
                 ? <VolumeX className="w-3 h-3" />

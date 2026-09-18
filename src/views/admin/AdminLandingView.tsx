@@ -21,13 +21,73 @@ import {
   ChevronLeft, 
   ChevronRight,
   MoreHorizontal,
-  GripVertical
+  GripVertical,
+  Play,
+  Pause
 } from 'lucide-react';
 import { api, AdminGalleryItem } from '../../services/api';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AssetImage } from '../../components/common/AssetImage';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
 import { CurvedPhotoGallery } from '../../components/common/CurvedPhotoGallery';
+
+interface AdminVideoSlotPreviewProps {
+  src: string;
+  poster?: string;
+  onError: () => void;
+}
+
+const AdminVideoSlotPreview: React.FC<AdminVideoSlotPreviewProps> = ({
+  src,
+  poster,
+  onError,
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  return (
+    <div
+      className="relative w-full h-full cursor-pointer group"
+      onClick={togglePlay}
+      title={isPlaying ? 'Pause preview' : 'Play preview'}
+    >
+      <video
+        ref={videoRef}
+        key={src}
+        src={src}
+        poster={poster}
+        className="w-full h-full object-cover object-center"
+        muted
+        playsInline
+        preload="metadata"
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+        onError={onError}
+      />
+      <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}>
+        <div className="w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors shadow-sm">
+          {isPlaying ? (
+            <Pause className="w-3 h-3" />
+          ) : (
+            <Play className="w-3 h-3 ml-0.5" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface AdminLandingViewProps {
   isSuperAdmin: boolean;
@@ -258,6 +318,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
     };
   }>({});
 
+  const [videoPreviewError, setVideoPreviewError] = useState<{ [key: string]: boolean }>({});
+
   const formatFileSize = (bytes: number): string => {
     const mb = bytes / (1024 * 1024);
     if (mb >= 1) return `${mb.toFixed(1)} MB`;
@@ -334,7 +396,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       }
 
       await api.admin.updateLandingSettings(updatePayload);
-      setSettings(prev => ({ ...prev, [slotKey]: fileUrl }));
+      setSettings(prev => ({ ...prev, [slotKey]: fileUrl, ...(updatePayload[`${slotKey}Poster`] ? { [`${slotKey}Poster`]: updatePayload[`${slotKey}Poster`] } : {}) }));
+      setVideoPreviewError(prev => ({ ...prev, [slotKey]: false }));
       setSlotFileState(prev => ({
         ...prev,
         [slotKey]: {
@@ -1489,14 +1552,18 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         <div className={`${slot.previewClass} rounded-lg overflow-hidden border border-[#EAE8E1] bg-stone-50 relative shrink-0 flex items-center justify-center`}>
                           {slot.type === 'video' ? (
                             currentVal ? (
-                              <video 
-                                src={currentVal} 
-                                className="w-full h-full object-cover object-center" 
-                                muted 
-                                loop 
-                                autoPlay 
-                                playsInline 
-                              />
+                              videoPreviewError[slot.key] ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
+                                  <Video className="w-4 h-4 text-stone-400" />
+                                  <span className="text-[10px] font-sans text-stone-400 text-center leading-tight">Preview unavailable</span>
+                                </div>
+                              ) : (
+                                <AdminVideoSlotPreview
+                                  src={currentVal}
+                                  poster={settings[`${slot.key}Poster`] || (slot.key === 'heroVideo' ? settings.heroVideoPoster : undefined) || undefined}
+                                  onError={() => setVideoPreviewError(prev => ({ ...prev, [slot.key]: true }))}
+                                />
+                              )
                             ) : (
                               <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
                                 <Video className="w-4 h-4 text-stone-400" />
