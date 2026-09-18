@@ -75,9 +75,10 @@ export interface EventReadinessReport {
 }
 
 import { operationsQueryPlanner } from './operations/queryPlanner';
+import { operationsActionRegistry, ActionExecutionResult } from './operations/actions';
 import type { GroundedQueryResult } from './operations/types';
 
-export type { GroundedQueryResult };
+export type { GroundedQueryResult, ActionExecutionResult };
 
 export class OperationsAssistantService {
   /**
@@ -738,6 +739,39 @@ export class OperationsAssistantService {
         intent: 'error'
       };
     }
+  }
+
+  /**
+   * Confirms and executes an approved operation with revalidation, authorization, and audit logging (Phase 3A).
+   */
+  async confirmAction(
+    confirmationToken: string,
+    eventId?: string,
+    actor?: any
+  ): Promise<ActionExecutionResult> {
+    const event = await this.resolveTargetEvent(eventId);
+    if (!event) {
+      return {
+        success: false,
+        actionKey: 'SEND_DUTY_REMINDERS',
+        title: 'Action Failed',
+        message: "We couldn't resolve the active event for this action.",
+        affectedCount: 0,
+        updatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        error: 'No active event'
+      };
+    }
+
+    const defaultActor = actor || { id: 'admin-actor', role: 'admin' };
+    return await operationsActionRegistry.confirmAction(confirmationToken, defaultActor, event.id);
+  }
+
+  /**
+   * Cancels a pending proposed operation.
+   */
+  cancelAction(confirmationToken: string, actor?: any) {
+    const defaultActor = actor || { id: 'admin-actor', role: 'admin' };
+    return operationsActionRegistry.cancelAction(confirmationToken, defaultActor);
   }
 }
 

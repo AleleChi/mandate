@@ -93,6 +93,50 @@ export interface GroundedQueryResult {
   suggestedQuestions?: string[];
   clarification?: boolean;
   actionAttempt?: boolean;
+  actionPreview?: ActionPreview;
+}
+
+export interface ActionRecipient {
+  id: string;
+  name: string;
+  locationName?: string;
+  responsibility?: string;
+  channel: 'whatsapp' | 'none';
+  eligible: boolean;
+  ineligibilityReason?: string;
+  phone?: string;
+}
+
+export interface ActionPreviewItem {
+  label: string;
+  value: string | number;
+  secondary?: string;
+  meta?: string;
+}
+
+export interface ActionPreview {
+  actionKey: string;
+  title: string;
+  description: string;
+  affectedCount: number;
+  recipients?: ActionRecipient[];
+  items?: ActionPreviewItem[];
+  warnings?: string[];
+  confirmLabel: string;
+  cancelLabel: string;
+  confirmationToken: string;
+  expiresAt: string;
+}
+
+export interface ActionExecutionResult {
+  success: boolean;
+  actionKey: string;
+  title: string;
+  message: string;
+  affectedCount: number;
+  deepLink?: DeepLinkItem;
+  updatedAt: string;
+  error?: string;
 }
 
 export interface OperationsAssistantPanelProps {
@@ -113,9 +157,9 @@ const CATEGORIZED_SUGGESTIONS: Record<string, string[]> = {
     'How many approved volunteers are not assigned?'
   ],
   Duty: [
+    'Remind volunteers who haven\'t reported.',
     'Which duty locations need more people?',
-    'Which volunteers haven\'t reported for duty?',
-    'Who is assigned to Grace Hall?'
+    'Alert Admin about understaffed locations.'
   ],
   Applications: [
     'How many applications are under review?',
@@ -128,9 +172,9 @@ const CATEGORIZED_SUGGESTIONS: Record<string, string[]> = {
     'What changed in the last hour?'
   ],
   Reports: [
-    'What reports were generated today?',
+    'Regenerate the attendance report.',
     'Give me an event summary.',
-    'What changed today?'
+    'What reports were generated today?'
   ]
 };
 
@@ -144,6 +188,9 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryResult, setQueryResult] = useState<GroundedQueryResult | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('Children');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionResult, setActionResult] = useState<ActionExecutionResult | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const categories = Object.keys(CATEGORIZED_SUGGESTIONS);
   const currentSuggestions = CATEGORIZED_SUGGESTIONS[selectedCategory] || CATEGORIZED_SUGGESTIONS['Children'];
@@ -154,6 +201,8 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
 
     setSubmittedQuestion(q);
     setQueryLoading(true);
+    setActionResult(null);
+    setActionError(null);
 
     try {
       const res = await api.admin.queryOperationsAssistant(q);
@@ -176,6 +225,37 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
     } finally {
       setQueryLoading(false);
     }
+  };
+
+  const handleConfirmAction = async (token: string) => {
+    if (!token || actionLoading) return;
+    setActionLoading(true);
+    setActionError(null);
+
+    try {
+      const res = await api.admin.confirmOperationsAssistantAction(token);
+      if (res.success && res.result) {
+        setActionResult(res.result);
+        // Clear preview once successfully confirmed
+        setQueryResult(prev => prev ? { ...prev, actionPreview: undefined } : null);
+      } else {
+        setActionError(res.error || "We couldn't complete that action. Please try again.");
+      }
+    } catch (err: any) {
+      console.error('Action confirmation error:', err);
+      setActionError("We couldn't complete that action right now. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelAction = async (token: string) => {
+    if (!token) return;
+    try {
+      await api.admin.cancelOperationsAssistantAction(token);
+    } catch (_) {}
+    setQueryResult(prev => prev ? { ...prev, actionPreview: undefined } : null);
+    setActionError(null);
   };
 
   const handleDeepLinkClick = (link: DeepLinkItem) => {
@@ -404,6 +484,116 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
                   )}
                 </div>
               </div>
+
+              {/* 3. PROPOSED ACTION (Confirmed Action Card) */}
+              {queryResult.actionPreview && !actionResult && (
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9A7326] block">
+                    PROPOSED ACTION
+                  </span>
+                  <div className="bg-white rounded-xl p-4 border border-[#C59B27]/40 shadow-xs space-y-3">
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-semibold text-zinc-900">
+                        {queryResult.actionPreview.title}
+                      </h4>
+                      <p className="text-xs text-zinc-600 mt-0.5 leading-relaxed">
+                        {queryResult.actionPreview.description}
+                      </p>
+                    </div>
+
+                    {/* Breakdown items / Locations summary */}
+                    {queryResult.actionPreview.items && queryResult.actionPreview.items.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
+                        {queryResult.actionPreview.items.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2 rounded-lg bg-[#FAF9F6] border border-[#EAE8E1]/60 text-xs"
+                          >
+                            <span className="font-medium text-zinc-800">{item.label}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-zinc-900">{item.value}</span>
+                              {item.meta && (
+                                <span className="text-[11px] text-zinc-400">({item.meta})</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Eligibility / Pre-send Warnings */}
+                    {queryResult.actionPreview.warnings && queryResult.actionPreview.warnings.length > 0 && (
+                      <div className="space-y-1">
+                        {queryResult.actionPreview.warnings.map((w, idx) => (
+                          <p
+                            key={idx}
+                            className="text-xs text-amber-800 bg-amber-50/80 border border-amber-200/80 rounded-lg px-2.5 py-1.5 font-medium"
+                          >
+                            {w}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Action Error if any */}
+                    {actionError && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 font-medium">
+                        {actionError}
+                      </p>
+                    )}
+
+                    {/* Confirm and Cancel Buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#EAE8E1]/60">
+                      <button
+                        type="button"
+                        disabled={actionLoading}
+                        onClick={() => handleCancelAction(queryResult.actionPreview!.confirmationToken)}
+                        className="px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-900 border border-[#EAE8E1] hover:bg-zinc-50 rounded-lg transition-colors cursor-pointer font-medium"
+                      >
+                        {queryResult.actionPreview.cancelLabel || 'Cancel'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={actionLoading}
+                        onClick={() => handleConfirmAction(queryResult.actionPreview!.confirmationToken)}
+                        className="px-3.5 py-1.5 text-xs bg-[#18181B] hover:bg-zinc-800 text-white rounded-lg transition-colors cursor-pointer font-medium inline-flex items-center gap-1.5"
+                      >
+                        {actionLoading && <RefreshCw className="w-3 h-3 animate-spin text-[#C59B27]" />}
+                        <span>{queryResult.actionPreview.confirmLabel || 'Confirm'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. ACTION COMPLETED (Confirmed Execution Card) */}
+              {actionResult && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="bg-[#FAF9F6] rounded-xl p-4 border-l-2 border-emerald-600 space-y-2">
+                    <h4 className="text-xs sm:text-sm font-semibold text-zinc-900">
+                      {actionResult.title}
+                    </h4>
+                    <p className="text-xs text-zinc-700 font-medium">
+                      {actionResult.message}
+                    </p>
+                    <div className="pt-0.5 text-[11px] text-zinc-400">
+                      Updated {actionResult.updatedAt}
+                    </div>
+                    {actionResult.deepLink && (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleDeepLinkClick(actionResult.deepLink!)}
+                          className="text-xs inline-flex items-center gap-1 font-medium text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                        >
+                          <span>{actionResult.deepLink.label}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* 5. RELATED QUESTIONS (Clearly Separate Area) */}
               {queryResult.suggestedQuestions && queryResult.suggestedQuestions.length > 0 && (

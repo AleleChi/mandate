@@ -1539,6 +1539,18 @@ export const api = {
         body: JSON.stringify({ question, eventId })
       });
     },
+    async confirmOperationsAssistantAction(confirmationToken: string, eventId?: string) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/operations-assistant/confirm-action', {
+        method: 'POST',
+        body: JSON.stringify({ confirmationToken, eventId })
+      });
+    },
+    async cancelOperationsAssistantAction(confirmationToken: string) {
+      return api.request<{ success: boolean; message?: string; error?: string }>('/api/admin/operations-assistant/cancel-action', {
+        method: 'POST',
+        body: JSON.stringify({ confirmationToken })
+      });
+    },
     async getSafetyAlerts() {
       const res = await api.request<any>('/api/admin/safety-alerts');
       if (Array.isArray(res)) return res;

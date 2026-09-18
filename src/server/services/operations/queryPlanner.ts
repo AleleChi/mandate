@@ -7,6 +7,7 @@ import {
   formatPlural
 } from './presentation';
 import { operationsToolRegistry } from './registry';
+import { operationsActionRegistry } from './actions';
 import { GroundedQueryResult, TableData, ToolActor, ToolContext, ToolFilter } from './types';
 
 export class OperationsQueryPlanner {
@@ -40,8 +41,89 @@ export class OperationsQueryPlanner {
     });
 
     // -------------------------------------------------------------
-    // 1. Action Attempt Interception (Strict Read-Only Enforcement)
+    // 1. Phase 3A Confirmed Actions (Human Preview Generation)
     // -------------------------------------------------------------
+
+    // Action A: "Remind volunteers who haven't reported." / "Send a reminder to the volunteers missing from Grace Hall."
+    if (
+      raw.includes('remind') ||
+      raw.includes('send reminder') ||
+      raw.includes('send reminders') ||
+      raw.includes('send a reminder')
+    ) {
+      const locMatch = question.match(/(?:missing from|assigned to|volunteers at|volunteers in|working in|coverage for|for)\s+([A-Za-z0-9\s]+?)(?:\?|$|\.|\b(?:today|now|right now|currently)\b)/i);
+      const candidateLocName = locMatch ? locMatch[1].trim() : undefined;
+
+      const res = await operationsActionRegistry.prepareActionPreview('SEND_DUTY_REMINDERS', context, {
+        locationName: candidateLocName
+      });
+
+      return {
+        answer: res.answer,
+        grounded: true,
+        intent: 'action_preview_duty_reminders',
+        actionPreview: res.preview,
+        provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr)
+      };
+    }
+
+    // Action B: "Regenerate the attendance report." / "Create a fresh Event Executive report."
+    if (
+      (raw.includes('regenerate') || raw.includes('create a fresh') || raw.includes('re-generate') || raw.includes('generate fresh')) &&
+      (raw.includes('report') || raw.includes('executive') || raw.includes('attendance'))
+    ) {
+      const res = await operationsActionRegistry.prepareActionPreview('REGENERATE_REPORT', context, {
+        queryText: raw
+      });
+
+      return {
+        answer: res.answer,
+        grounded: true,
+        intent: 'action_preview_regenerate_report',
+        actionPreview: res.preview,
+        provenance: formatHumanProvenance('Reports', event.title, nowTimeStr)
+      };
+    }
+
+    // Action C: "Alert Admin about understaffed locations."
+    if (
+      (raw.includes('alert') || raw.includes('create alert') || raw.includes('send alert') || raw.includes('notify admin')) &&
+      (raw.includes('understaffed') || raw.includes('staffing') || raw.includes('need more people') || raw.includes('shortage'))
+    ) {
+      const res = await operationsActionRegistry.prepareActionPreview('CREATE_ADMIN_OPERATIONS_ALERT', context);
+
+      return {
+        answer: res.answer,
+        grounded: true,
+        intent: 'action_preview_operations_alert',
+        actionPreview: res.preview,
+        provenance: formatHumanProvenance('Event Duty', event.title, nowTimeStr)
+      };
+    }
+
+    // -------------------------------------------------------------
+    // 2. Action Attempt Interception & Explicit Guardrails (Section 3)
+    // -------------------------------------------------------------
+    if (raw.includes('delete') || raw.includes('remove parent') || raw.includes('remove child')) {
+      return {
+        answer: 'Deletion actions are not permitted through Operations Assistant.',
+        grounded: true,
+        intent: 'forbidden_action',
+        actionAttempt: true,
+        provenance: formatHumanProvenance(null, event.title, nowTimeStr)
+      };
+    }
+
+    if (raw.includes('resolve incident') || raw.includes('resolve this incident') || raw.includes('close incident') || raw.includes('resolve safety')) {
+      return {
+        answer: 'Incident resolution actions are not permitted through Operations Assistant.',
+        grounded: true,
+        intent: 'forbidden_action',
+        actionAttempt: true,
+        provenance: formatHumanProvenance('Safety', event.title, nowTimeStr)
+      };
+    }
+
     const isActionAttempt =
       /^(assign|delete|remove|update|create|add|modify|change|set|cancel|check\s*in|pick\s*up|mark|approve|reject)\b/i.test(
         raw

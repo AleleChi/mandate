@@ -13053,4 +13053,48 @@ router.post('/operations-assistant/query', authMiddleware, async (req: Authentic
   }
 });
 
+// POST /api/admin/operations-assistant/confirm-action (Phase 3A Confirmed Actions)
+router.post('/operations-assistant/confirm-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const { confirmationToken, eventId } = req.body;
+    if (!confirmationToken || typeof confirmationToken !== 'string') {
+      return res.status(400).json({ success: false, error: 'A valid confirmation token is required.' });
+    }
+
+    const result = await operationsAssistantService.confirmAction(confirmationToken, eventId, req.user);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.message || "We couldn't complete that action. Please try again." });
+    }
+
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('Error confirming operational action:', err);
+    res.status(500).json({ success: false, error: "We couldn't complete that action. Please try again." });
+  }
+});
+
+// POST /api/admin/operations-assistant/cancel-action (Phase 3A)
+router.post('/operations-assistant/cancel-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const { confirmationToken } = req.body;
+    if (!confirmationToken || typeof confirmationToken !== 'string') {
+      return res.status(400).json({ success: false, error: 'A valid confirmation token is required.' });
+    }
+
+    const result = operationsAssistantService.cancelAction(confirmationToken, req.user);
+    res.json({ success: true, message: result.message });
+  } catch (err: any) {
+    console.error('Error cancelling operational action:', err);
+    res.status(500).json({ success: false, error: "We couldn't cancel the action." });
+  }
+});
+
 export default router;

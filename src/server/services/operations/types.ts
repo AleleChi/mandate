@@ -77,6 +77,8 @@ export interface DeepLinkItem {
   tab?: string;
 }
 
+import type { ActionPreview } from './actions/types';
+
 export interface GroundedQueryResult {
   answer: string;
   grounded: boolean;
@@ -95,4 +97,5 @@ export interface GroundedQueryResult {
   suggestedQuestions?: string[];
   clarification?: boolean;
   actionAttempt?: boolean;
+  actionPreview?: ActionPreview;
 }
