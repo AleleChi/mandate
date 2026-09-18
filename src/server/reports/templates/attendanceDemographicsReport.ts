@@ -127,7 +127,7 @@ export function buildAttendanceDemographicsReport(
 
     sections.push({
       id: 'demographics-table',
-      title: 'Age groups and attendance',
+      title: '01 Age groups and attendance',
       description: 'Breakdown of registered, selected, and checked-in children across age groups.',
       type: 'table',
       content: {
@@ -140,7 +140,7 @@ export function buildAttendanceDemographicsReport(
     // Chart 1: Donut Chart - Attendance Status Composition (Immediate leadership understanding)
     sections.push({
       id: 'attendance-status-composition',
-      title: 'Attendance status of selected children',
+      title: '02 Attendance status composition',
       description: 'Current status of selected participants across care rooms, picked up, and not arrived.',
       type: 'chart',
       content: {
@@ -217,7 +217,7 @@ export function buildAttendanceDemographicsReport(
 
       sections.push({
         id: 'arrival-pickup-timeline',
-        title: 'Arrival and pickup activity',
+        title: '03 Arrival and pickup activity',
         description: 'Movement recorded at check-in stations and pickup areas over the event.',
         type: 'chart',
         content: {
@@ -432,12 +432,18 @@ export function buildAttendanceDemographicsReport(
     reportId,
     templateKey: 'attendance-demographics-report-v1',
     templateVersion: 2,
-    reportTitle: 'Attendance and Demographics Report',
+    reportTitle: `${analytics.eventTitle} — Attendance & Demographics Report`,
     reportDescription: 'Analysis of event registrations, participant selection, check-in yield, age cohort demographics, and movement flow.',
+    coverStyle: 'ivory',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
-      startsAt: analytics.startsAt
+      startsAt: analytics.startsAt,
+      endsAt: snapshot?.event?.ends_at,
+      venue: snapshot?.event?.venue,
+      theme: snapshot?.event?.theme,
+      scripture: snapshot?.event?.scripture,
+      registrationStatus: snapshot?.event?.registration_status
     },
     branding: {
       organizationName: 'Koinonia Global',

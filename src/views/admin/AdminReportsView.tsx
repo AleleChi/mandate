@@ -87,8 +87,8 @@ interface ReportTemplate {
 const CANONICAL_TEMPLATES: ReportTemplate[] = [
   {
     key: 'management-summary',
-    name: 'Management summary',
-    description: 'A concise leadership report covering participation, attendance, volunteer coverage and issues requiring attention.',
+    name: 'Event Executive',
+    description: 'A complete operational overview of the event.',
     privacyClassification: 'Internal operational',
     recommendedSections: [
       'Executive summary',
@@ -117,9 +117,73 @@ const CANONICAL_TEMPLATES: ReportTemplate[] = [
     ]
   },
   {
+    key: 'registration-selection',
+    name: 'Registration & Selection',
+    description: 'Registration, selection and capacity.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Registration & selection', 'Participation profile', 'Key observations'],
+    supportedSections: ['Executive summary', 'Registration & selection', 'Participation profile', 'Key observations'],
+    reportDomain: 'Registration',
+    audience: 'Registration Leads, Review Coordinators',
+    includes: [
+      'Registration demand & intake volumes',
+      'Application review outcome breakdown',
+      'Age-group cohort registration demand',
+      'Capacity pressure evaluation'
+    ]
+  },
+  {
+    key: 'attendance-movement',
+    name: 'Attendance & Demographics',
+    description: 'Attendance patterns and participant breakdown.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Attendance & movement', 'Participation profile', 'Key observations'],
+    supportedSections: ['Executive summary', 'Attendance & movement', 'Participation profile', 'Key observations'],
+    reportDomain: 'Attendance',
+    audience: 'Attendance Lead, Operations Supervisors',
+    includes: [
+      'Expected vs checked-in attendance rate',
+      'Active inside vs verified pickups',
+      'Attendance rate breakdown by age group',
+      'Chronological check-in activity flow'
+    ]
+  },
+  {
+    key: 'volunteer-coverage',
+    name: 'Volunteer Team',
+    description: 'Volunteer approvals, assignments and duty.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Volunteer coverage', 'Key observations'],
+    supportedSections: ['Executive summary', 'Volunteer coverage', 'Operational appendix', 'Key observations'],
+    reportDomain: 'People',
+    audience: 'Volunteer Coordinator, Team Leads',
+    includes: [
+      'Approved vs on-duty volunteer headcounts',
+      'Volunteer deployment by ministry team',
+      'Staff-to-child ratios per location',
+      'Coverage gaps and staffing observations'
+    ]
+  },
+  {
+    key: 'care-safety-summary',
+    name: 'Child Safety',
+    description: 'Safety notices, incidents and escalation records.',
+    privacyClassification: 'Safeguarding restricted',
+    recommendedSections: ['Care & safety', 'Key observations'],
+    supportedSections: ['Executive summary', 'Care & safety', 'Key observations'],
+    reportDomain: 'Safeguarding',
+    audience: 'Safeguarding Lead, Executive Leadership',
+    includes: [
+      'Aggregated medical and care awareness count',
+      'Safety concerns recorded by resolution status',
+      'Incident severity distribution (anonymised)',
+      'Safeguarding follow-up items'
+    ]
+  },
+  {
     key: 'full-event-report',
-    name: 'Full event report',
-    description: 'A detailed event report covering registration, attendance, demographics, volunteers, care, safety and operational outcomes.',
+    name: 'Custom Event Report',
+    description: 'Choose the sections you need.',
     privacyClassification: 'Internal operational',
     recommendedSections: [
       'Executive summary',
@@ -152,70 +216,6 @@ const CANONICAL_TEMPLATES: ReportTemplate[] = [
       'Volunteer deployment & location loads',
       'Aggregated safeguarding & care analysis',
       'Observations and operational appendix'
-    ]
-  },
-  {
-    key: 'registration-selection',
-    name: 'Registration & selection',
-    description: 'Registration demand, review outcomes, age-group distribution and selection.',
-    privacyClassification: 'Internal operational',
-    recommendedSections: ['Registration & selection', 'Participation profile', 'Key observations'],
-    supportedSections: ['Executive summary', 'Registration & selection', 'Participation profile', 'Key observations'],
-    reportDomain: 'Registration',
-    audience: 'Registration Leads, Review Coordinators',
-    includes: [
-      'Registration demand & intake volumes',
-      'Application review outcome breakdown',
-      'Age-group cohort registration demand',
-      'Capacity pressure evaluation'
-    ]
-  },
-  {
-    key: 'attendance-movement',
-    name: 'Attendance & movement',
-    description: 'Attendance, check-in, pickup and participation analysis.',
-    privacyClassification: 'Internal operational',
-    recommendedSections: ['Attendance & movement', 'Participation profile', 'Key observations'],
-    supportedSections: ['Executive summary', 'Attendance & movement', 'Participation profile', 'Key observations'],
-    reportDomain: 'Attendance',
-    audience: 'Attendance Lead, Operations Supervisors',
-    includes: [
-      'Expected vs checked-in attendance rate',
-      'Active inside vs verified pickups',
-      'Attendance rate breakdown by age group',
-      'Chronological check-in activity flow'
-    ]
-  },
-  {
-    key: 'volunteer-coverage',
-    name: 'Volunteer coverage',
-    description: 'Volunteer participation, team coverage and service distribution.',
-    privacyClassification: 'Internal operational',
-    recommendedSections: ['Volunteer coverage', 'Key observations'],
-    supportedSections: ['Executive summary', 'Volunteer coverage', 'Operational appendix', 'Key observations'],
-    reportDomain: 'People',
-    audience: 'Volunteer Coordinator, Team Leads',
-    includes: [
-      'Approved vs on-duty volunteer headcounts',
-      'Volunteer deployment by ministry team',
-      'Staff-to-child ratios per location',
-      'Coverage gaps and staffing observations'
-    ]
-  },
-  {
-    key: 'care-safety-summary',
-    name: 'Care & safety summary',
-    description: 'An aggregated overview of care needs, incidents and safety follow-up without exposing unnecessary personal information.',
-    privacyClassification: 'Safeguarding restricted',
-    recommendedSections: ['Care & safety', 'Key observations'],
-    supportedSections: ['Executive summary', 'Care & safety', 'Key observations'],
-    reportDomain: 'Safeguarding',
-    audience: 'Safeguarding Lead, Executive Leadership',
-    includes: [
-      'Aggregated medical and care awareness count',
-      'Safety concerns recorded by resolution status',
-      'Incident severity distribution (anonymised)',
-      'Safeguarding follow-up items'
     ]
   }
 ];

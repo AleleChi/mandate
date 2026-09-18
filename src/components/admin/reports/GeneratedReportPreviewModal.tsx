@@ -82,9 +82,8 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     if (!model) return [];
     const rawItems: OutlineItem[] = [];
 
-    if (model.kpis && model.kpis.length > 0) {
-      rawItems.push({ id: 'section-kpis', title: 'Key figures' });
-    }
+    rawItems.push({ id: 'section-cover', title: 'Publication cover' });
+    rawItems.push({ id: 'section-kpis', title: 'Executive overview' });
 
     if (model.sections && model.sections.length > 0) {
       model.sections.forEach((sec, idx) => {
@@ -114,6 +113,8 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     ) {
       rawItems.push({ id: 'section-quality-methodology', title: 'Data notes and limitations' });
     }
+
+    rawItems.push({ id: 'section-back-cover', title: 'Back cover' });
 
     // Deduplicate outline items by normalised title
     const seenTitles = new Set<string>();

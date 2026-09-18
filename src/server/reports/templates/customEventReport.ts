@@ -433,10 +433,16 @@ export function buildCustomEventReport(
     templateVersion: 2,
     reportTitle: `${analytics.eventTitle} — Full Event Report`,
     reportDescription: 'A comprehensive operational report covering registration intake, attendance turnout, volunteer staffing, room coverage, and child care.',
+    coverStyle: 'charcoal',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
-      startsAt: analytics.startsAt
+      startsAt: analytics.startsAt,
+      endsAt: snapshot?.event?.ends_at,
+      venue: snapshot?.event?.venue,
+      theme: snapshot?.event?.theme,
+      scripture: snapshot?.event?.scripture,
+      registrationStatus: snapshot?.event?.registration_status
     },
     branding: {
       organizationName: 'Koinonia Global',

@@ -1,239 +1,145 @@
 import React from 'react';
 import { ReportDocumentModel } from '../../../server/reports/reportDocumentModel';
+import { ReportCover } from './ReportCover';
+import { ReportOpeningSpread } from './ReportOpeningSpread';
 import { ReportSectionRenderer } from './ReportSectionRenderer';
+import { ReportBackCover } from './ReportBackCover';
 
 interface ReportDocumentPreviewProps {
   model: ReportDocumentModel;
 }
 
 export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ model }) => {
-  const getKpiColor = (color: string) => {
-    switch (color) {
-      case 'gold': return 'border-[#C59B27] bg-[#FAF9F6]';
-      case 'green': return 'border-emerald-600 bg-emerald-50/30';
-      case 'amber': return 'border-amber-500 bg-amber-50/30';
-      case 'red': return 'border-red-600 bg-red-50/30';
-      default: return 'border-stone-800 bg-stone-50';
-    }
-  };
+  const event = model.eventContext;
+
+  // Render a clean publication footer on content pages
+  const renderPublicationFooter = (pageLabel?: string) => (
+    <div className="pt-8 mt-12 border-t border-stone-200/80 flex items-center justify-between text-[11px] font-sans text-stone-400">
+      <span>KOINONIA CHILDREN &amp; TEENS · {event.eventTitle || 'The General Assembly'}</span>
+      <span>{pageLabel || 'Official Publication'}</span>
+    </div>
+  );
 
   return (
-    <div className="max-w-[840px] mx-auto bg-white text-stone-900 font-sans shadow-md border border-stone-200 rounded-xl p-8 sm:p-12 space-y-8 my-4 print:shadow-none print:border-none print:p-0">
-      {/* Cover/Document Header (Priority 5: Restrained clean hierarchy) */}
-      <div className="border-b border-[#C59B27]/40 pb-6 space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1 flex-1">
-            <div className="space-y-0.5">
-              <span className="text-xs font-serif font-bold tracking-wider uppercase text-stone-900 block">
-                KOINONIA CHILDREN &amp; TEENS
-              </span>
-              <span className="text-[11px] font-medium tracking-wide uppercase text-stone-500 block">
-                Official Event Report
-              </span>
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-serif font-medium text-stone-900 tracking-tight leading-tight pt-1">
-              {model.reportTitle}
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-y-1.5 gap-x-4 text-xs text-stone-600 font-normal pt-2">
-              <div>
-                <span className="font-semibold text-stone-700">Event: </span>
-                <span className="text-stone-900">{model.eventContext?.eventTitle || 'The General Assembly'}</span>
-              </div>
-              <span className="text-stone-300">•</span>
-              <div>
-                <span className="font-semibold text-stone-700">Event date: </span>
-                <span>{new Date(model.eventContext?.startsAt || model.reportingPeriod?.start || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              </div>
-              <span className="text-stone-300">•</span>
-              <div>
-                <span className="font-semibold text-stone-700">Generated: </span>
-                <span>{new Date(model.reportingPeriod?.end || model.informationConfirmedUpTo || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} {new Date(model.reportingPeriod?.end || model.informationConfirmedUpTo || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
-              <span className="text-stone-300">•</span>
-              <div>
-                <span className="font-semibold text-stone-700">Data cutoff: </span>
-                <span>{new Date(model.informationConfirmedUpTo || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} {new Date(model.informationConfirmedUpTo || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Logo */}
-          {(model.branding?.logoUrl || model.branding?.logoBase64) ? (
-            <div className="shrink-0 flex items-center justify-end pl-2">
-              <img 
-                src={model.branding.logoUrl || model.branding.logoBase64} 
-                alt="Official Koinonia Logo" 
-                className="h-12 w-auto max-w-[160px] sm:max-w-[200px] object-contain"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-          ) : (
-            <div className="shrink-0 flex items-center justify-end pl-2">
-              <div className="flex items-center gap-2 bg-[#FAF9F6] border border-[#C59B27]/30 px-3 py-1.5 rounded-lg">
-                <div className="w-6 h-6 rounded bg-[#C59B27] text-white font-serif font-bold text-xs flex items-center justify-center">K</div>
-                <span className="font-serif font-bold text-[#18181B] tracking-wider text-xs uppercase">KOINONIA</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {model.reportDescription && (
-          <p className="text-xs text-stone-600 leading-relaxed pt-1 italic border-t border-stone-100 mt-2">
-            {model.reportDescription}
-          </p>
-        )}
+    <div className="max-w-[880px] mx-auto space-y-12 my-6 font-sans text-stone-900 print:space-y-0 print:my-0">
+      {/* PAGE 1: PUBLICATION COVER */}
+      <div id="section-cover" data-report-section="cover" className="scroll-mt-6">
+        <ReportCover model={model} />
       </div>
 
-      {/* KPI Band (Executive Rounded Card Grid) */}
-      {model.kpis && model.kpis.length > 0 && (
-        <div id="section-kpis" data-report-section="kpis" className="scroll-mt-6">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {model.kpis.map((kpi, idx) => (
-              <div 
-                key={idx} 
-                className="bg-[#FAF9F6] border border-stone-200/90 rounded-xl p-3.5 space-y-1 relative overflow-hidden border-t-2 border-t-[#C59B27] shadow-2xs hover:shadow-xs transition-shadow"
-              >
-                <span className="text-[10px] font-semibold text-stone-600 block tracking-wider uppercase">
-                  {kpi.label}
-                </span>
-                <span className="text-xl sm:text-2xl font-bold text-stone-900 block tracking-tight tabular-nums">
-                  {kpi.value}
-                </span>
-                {kpi.sublabel && (
-                  <span className="text-[10px] text-stone-500 block leading-tight font-medium">
-                    {kpi.sublabel}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* PAGE 2: OPENING SPREAD (Profile, Narrative, Large Data Moments) */}
+      <div id="section-kpis" data-report-section="kpis" className="scroll-mt-6">
+        <ReportOpeningSpread model={model} />
+      </div>
 
-      {/* Main Sections */}
+      {/* INTERIOR SECTIONS (Grouped by operational meaning) */}
       {model.sections && model.sections.length > 0 && (
-        <div className="space-y-6">
-          {model.sections.map((section, idx) => (
-            <div
-              key={section.id || idx}
-              id={`section-${section.id || idx}`}
-              data-report-section={section.id || idx}
-              className="scroll-mt-6"
-            >
-              <ReportSectionRenderer section={section} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Key Observations */}
-      {model.findings && model.findings.length > 0 && (
-        <div id="section-findings" data-report-section="findings" className="bg-stone-50/70 border border-stone-200/80 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200/80 pb-2">
-            Key observations
-          </h2>
-          <div className="space-y-2">
-            {model.findings.map((f, idx) => (
-              <div key={f.id || idx} className="text-xs text-stone-700 flex items-start gap-2">
-                <span className="text-[#C59B27] mt-0.5 font-bold">•</span>
-                <span className="leading-relaxed">{f.observation}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Items Requiring Attention (Rendered only when items exist) */}
-      {model.managementAttention && model.managementAttention.length > 0 && (
-        <div id="section-attention" data-report-section="attention" className="bg-white border border-stone-200/80 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200/80 pb-2">
-            Items requiring attention
-          </h2>
-          <div className="space-y-2">
-            {model.managementAttention.map((item, idx) => (
-              <div key={idx} className="text-xs text-stone-800 flex items-start gap-2">
-                <span className="text-stone-400 mt-0.5">•</span>
-                <span className="leading-relaxed font-medium">{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Action Points */}
-      {model.recommendations && model.recommendations.length > 0 && (
-        <div id="section-recommendations" data-report-section="recommendations" className="bg-stone-50/80 border border-stone-200/80 rounded-xl p-5 space-y-3 scroll-mt-6">
-          <h2 className="text-xs font-serif font-semibold text-stone-900 uppercase tracking-wider border-b border-stone-200/80 pb-2">
-            Action points
-          </h2>
-          <div className="space-y-3">
-            {model.recommendations.map((r, idx) => (
-              <div key={r.id || idx} className="bg-white p-3.5 rounded-lg border border-stone-200 text-xs space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-stone-900">{r.action}</span>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase ${
-                    r.priority === 'high' ? 'bg-red-100 text-red-800' : 'bg-stone-100 text-stone-700'
-                  }`}>
-                    {r.priority} Priority
-                  </span>
-                </div>
-                {r.evidence && (
-                  <p className="text-stone-600 leading-relaxed"><strong className="text-stone-700">Evidence:</strong> {r.evidence}</p>
-                )}
-                <p className="text-stone-600 leading-relaxed"><strong className="text-stone-700">Rationale:</strong> {r.rationale}</p>
-                {r.responsibility && (
-                  <p className="text-[11px] text-stone-500 font-medium">Assigned to: {r.responsibility}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Operational Notes & Data Quality */}
-      <div id="section-quality-methodology" data-report-section="quality-methodology" className="border-t border-stone-200/80 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-[11px] text-stone-600 scroll-mt-6">
-        <div className="space-y-2">
-          <h3 className="font-serif font-semibold text-stone-900 uppercase text-[10px] tracking-wider">
-            Operational notes &amp; data confidence
-          </h3>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-stone-800">Quality Status:</span>
-            <span className="bg-stone-100 px-2 py-0.5 rounded text-stone-800 font-medium">
-              {model.dataQuality?.status || 'High confidence'} (Quality score: {model.dataQuality?.score || 100}%)
+        <div className="bg-[#FAF9F5] p-8 sm:p-14 rounded-xl border border-stone-200/90 shadow-xs space-y-8 print:shadow-none print:rounded-none">
+          <div className="border-b border-stone-200 pb-4 flex items-baseline justify-between">
+            <h2 className="text-xs font-sans font-semibold uppercase tracking-[0.2em] text-[#C59B27]">
+              Detailed Operational Analysis
+            </h2>
+            <span className="text-[11px] text-stone-400 font-sans">
+              Sections &amp; Records
             </span>
           </div>
-          {model.dataQuality?.notes && (
-            <p className="text-stone-500 italic leading-relaxed">{model.dataQuality.notes}</p>
-          )}
-        </div>
 
-        <div className="space-y-2">
-          <h3 className="font-serif font-semibold text-stone-900 uppercase text-[10px] tracking-wider">
-            Methodology and limitations
-          </h3>
-          {model.methodology && model.methodology.length > 0 && (
-            <ul className="list-disc list-inside space-y-0.5 text-stone-500">
-              {model.methodology.map((m, idx) => (
-                <li key={idx}>{m}</li>
-              ))}
-            </ul>
-          )}
-          {model.limitations && model.limitations.length > 0 && (
-            <p className="text-stone-500 italic mt-1 leading-relaxed">
-              Note: {model.limitations.join(' ')}
-            </p>
-          )}
-        </div>
-      </div>
+          <div className="divide-y divide-stone-200/80">
+            {model.sections.map((section, idx) => (
+              <div
+                key={section.id || idx}
+                id={`section-${section.id || idx}`}
+                data-report-section={section.id || idx}
+                className="scroll-mt-6"
+              >
+                <ReportSectionRenderer section={section} />
+              </div>
+            ))}
+          </div>
 
-      {/* Document Footer */}
-      <div className="border-t border-stone-100 pt-4 flex justify-between items-center text-[10px] text-stone-400 font-mono">
-        <span>Report ID: {model.reportId}</span>
-        <span>Koinonia Children & Teens Safeguarding System</span>
+          {/* Key Observations & Findings Callout (Section 18: Factual only) */}
+          {model.findings && model.findings.length > 0 && (
+            <div id="section-findings" data-report-section="findings" className="pt-8 border-t-2 border-stone-800 space-y-4 scroll-mt-6">
+              <span className="text-xs font-sans font-semibold uppercase tracking-[0.2em] text-[#C59B27] block">
+                Key Operational Observations
+              </span>
+              <div className="space-y-2">
+                {model.findings.map((f, idx) => (
+                  <div key={f.id || idx} className="text-sm sm:text-base text-stone-800 flex items-start gap-3">
+                    <span className="text-[#C59B27] font-bold mt-0.5">•</span>
+                    <span className="leading-relaxed">{f.observation}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Items Requiring Attention (Clean editorial list, no red badges everywhere) */}
+          {model.managementAttention && model.managementAttention.length > 0 && (
+            <div id="section-attention" data-report-section="attention" className="pt-8 border-t border-stone-200 space-y-4 scroll-mt-6">
+              <span className="text-xs font-sans font-semibold uppercase tracking-[0.2em] text-stone-600 block">
+                Administrative Attention Items
+              </span>
+              <div className="space-y-2">
+                {model.managementAttention.map((item, idx) => (
+                  <div key={idx} className="text-sm text-stone-700 flex items-start gap-3">
+                    <span className="text-stone-400 mt-0.5 font-bold">→</span>
+                    <span className="leading-relaxed">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action Points / Recommendations */}
+          {model.recommendations && model.recommendations.length > 0 && (
+            <div id="section-recommendations" data-report-section="recommendations" className="pt-8 border-t border-stone-200 space-y-4 scroll-mt-6">
+              <span className="text-xs font-sans font-semibold uppercase tracking-[0.2em] text-stone-600 block">
+                Recommended Action Points
+              </span>
+              <div className="space-y-3">
+                {model.recommendations.map((rec, idx) => (
+                  <div key={rec.id || idx} className="border-l-2 border-stone-300 pl-4 py-1 space-y-1">
+                    <p className="text-sm font-medium text-stone-900">{rec.action}</p>
+                    {rec.rationale && (
+                      <p className="text-xs text-stone-500 leading-relaxed">{rec.rationale}</p>
+                    )}
+                    {rec.responsibility && (
+                      <span className="text-[11px] text-stone-400 font-sans block">
+                        Assigned to: {rec.responsibility}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Data Quality & Methodology (Restrained, small footnotes) */}
+          {(model.dataQuality || (model.methodology && model.methodology.length > 0)) && (
+            <div id="section-quality-methodology" data-report-section="quality" className="pt-8 border-t border-stone-200/80 space-y-2 text-xs text-stone-500 scroll-mt-6">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 block">
+                Data Notes &amp; Methodology
+              </span>
+              {model.dataQuality?.notes && <p className="italic">{model.dataQuality.notes}</p>}
+              {model.methodology && model.methodology.length > 0 && (
+                <ul className="space-y-1 text-[11px] text-stone-400 pl-4 list-disc">
+                  {model.methodology.map((m, idx) => (
+                    <li key={idx}>{m}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {renderPublicationFooter('Operational Records')}
+        </div>
+      )}
+
+      {/* FINAL PAGE: BACK COVER */}
+      <div id="section-back-cover" data-report-section="back-cover" className="scroll-mt-6">
+        <ReportBackCover model={model} />
       </div>
     </div>
   );
 };
-

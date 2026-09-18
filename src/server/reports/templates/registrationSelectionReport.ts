@@ -68,7 +68,7 @@ export function buildRegistrationSelectionReport(
 
   sections.push({
     id: 'reg-table',
-    title: 'Application review summary',
+    title: '01 Application review & selection',
     type: 'table',
     content: {
       headers: ['Review decision', 'Applications', 'Share of demand'],
@@ -137,7 +137,7 @@ export function buildRegistrationSelectionReport(
   if (charts.length > 0) {
     sections.push({
       id: 'reg-visualizations',
-      title: 'Registration and cohort breakdown',
+      title: '02 Registration & cohort demand',
       type: 'chart',
       content: { charts }
     });
@@ -184,10 +184,16 @@ export function buildRegistrationSelectionReport(
     templateVersion: 2,
     reportTitle: `${analytics.eventTitle} — Registration & Selection Report`,
     reportDescription: 'Registration demand, review outcomes, age-group distribution and selection.',
+    coverStyle: 'ivory',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
-      startsAt: analytics.startsAt
+      startsAt: analytics.startsAt,
+      endsAt: snapshot?.event?.ends_at,
+      venue: snapshot?.event?.venue,
+      theme: snapshot?.event?.theme,
+      scripture: snapshot?.event?.scripture,
+      registrationStatus: snapshot?.event?.registration_status
     },
     branding: {
       organizationName: 'Koinonia Global',

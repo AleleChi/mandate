@@ -86,7 +86,7 @@ export function buildVolunteerTeamReport(
 
     sections.push({
       id: 'vol-team-deployment-chart',
-      title: 'Volunteer team deployment',
+      title: '01 Volunteer team deployment',
       description: 'Scheduled versus on-duty volunteers across ministry teams.',
       type: 'chart',
       content: {
@@ -141,7 +141,7 @@ export function buildVolunteerTeamReport(
 
     sections.push({
       id: 'vol-room-coverage-chart',
-      title: 'Room staffing and supervision',
+      title: '02 Room staffing and supervision',
       description: 'Volunteers on duty and children present across activity rooms.',
       type: 'chart',
       content: {
@@ -171,7 +171,7 @@ export function buildVolunteerTeamReport(
   const notOnDuty = Math.max(0, totalAssigned - activeOnDuty);
   sections.push({
     id: 'vol-status-composition-chart',
-    title: 'Volunteer duty status distribution',
+    title: '03 Volunteer duty status distribution',
     description: 'Breakdown of scheduled volunteers currently on duty versus not arrived.',
     type: 'chart',
     content: {
@@ -289,12 +289,18 @@ export function buildVolunteerTeamReport(
     reportId,
     templateKey: 'volunteer-team-performance-report-v1',
     templateVersion: 2,
-    reportTitle: 'Volunteer Coverage and Team Report',
+    reportTitle: `${analytics.eventTitle} — Volunteer Team Report`,
     reportDescription: 'Shows volunteer attendance, team assignments and coverage across event locations.',
+    coverStyle: 'ivory',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
-      startsAt: analytics.startsAt
+      startsAt: analytics.startsAt,
+      endsAt: snapshot?.event?.ends_at,
+      venue: snapshot?.event?.venue,
+      theme: snapshot?.event?.theme,
+      scripture: snapshot?.event?.scripture,
+      registrationStatus: snapshot?.event?.registration_status
     },
     branding: {
       organizationName: 'Koinonia Global',

@@ -82,12 +82,17 @@ export function buildChildSafetyIncidentReport(
   }
 
   // Incident log table (real records only)
-  const alertRecords = snapshot.alerts || [];
-  if (selectedSections.length === 0 || selectedSections.includes('Critical Incident Logs & Escalations') || selectedSections.includes('Incidents')) {
+  const alertRecords = snapshot.alerts || snapshot.safetyAlerts || [];
+  if (selectedSections.length === 0 ||
+      selectedSections.includes('Care & safety') ||
+      selectedSections.includes('Care & safety summary') ||
+      selectedSections.includes('Operational Metrics') ||
+      selectedSections.includes('Critical Incident Logs & Escalations') ||
+      selectedSections.includes('Incidents')) {
     if (alertRecords.length > 0) {
       sections.push({
         id: 'incident-timeline-table',
-        title: 'Safety and care response log',
+        title: '01 Safety and care response log',
         type: 'table',
         content: {
           headers: ['Category', 'Escalation tier', 'Status', 'Response status'],
@@ -165,7 +170,7 @@ export function buildChildSafetyIncidentReport(
   if (careCharts.length > 0) {
     sections.push({
       id: 'care-safety-charts',
-      title: 'Care and safety visual summary',
+      title: '02 Care and safety status distribution',
       type: 'chart',
       content: { charts: careCharts }
     });
@@ -240,12 +245,18 @@ export function buildChildSafetyIncidentReport(
     reportId,
     templateKey: 'child-safety-incident-report-v1',
     templateVersion: 2,
-    reportTitle: 'Child Care and Safety Report',
+    reportTitle: `${analytics.eventTitle} — Child Care & Safety Report`,
     reportDescription: 'Review of care notices, medical alerts, and safety follow-up for the event.',
+    coverStyle: 'ivory',
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
-      startsAt: analytics.startsAt
+      startsAt: analytics.startsAt,
+      endsAt: snapshot?.event?.ends_at,
+      venue: snapshot?.event?.venue,
+      theme: snapshot?.event?.theme,
+      scripture: snapshot?.event?.scripture,
+      registrationStatus: snapshot?.event?.registration_status
     },
     branding: {
       organizationName: 'Koinonia Global',

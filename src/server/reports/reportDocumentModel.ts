@@ -185,10 +185,17 @@ export interface ReportDocumentModel {
   templateVersion: number;
   reportTitle: string;
   reportDescription: string;
+  coverStyle?: 'charcoal' | 'ivory';
+  coverSubtitle?: string;
   eventContext: {
     eventId: string;
     eventTitle: string;
     startsAt: string;
+    endsAt?: string;
+    venue?: string;
+    theme?: string;
+    scripture?: string;
+    registrationStatus?: string;
   };
   branding: {
     organizationName: string;

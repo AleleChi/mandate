@@ -257,7 +257,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
 
   return (
     <div
-      className="bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-2xs my-4 space-y-3"
+      className="border-y border-stone-200/80 py-4 my-6 space-y-3 font-sans"
       role="region"
       aria-label={accessibleSummary || title}
     >

@@ -85,7 +85,7 @@ export function buildEventExecutiveReport(
     const reg = analytics.registrations;
     sections.push({
       id: 'reg-metrics-table',
-      title: 'Registration & participation',
+      title: '01 Registration & selection',
       description: 'Overview of programme demand, review decisions, and cohort distribution.',
       type: 'table',
       content: {
@@ -152,7 +152,7 @@ export function buildEventExecutiveReport(
     const att = analytics.attendance;
     sections.push({
       id: 'att-metrics-table',
-      title: 'Attendance & movement',
+      title: '02 Attendance & movement',
       description: 'Turnout rates, gate movement flow, and cohort participation.',
       type: 'table',
       content: {
@@ -228,7 +228,7 @@ export function buildEventExecutiveReport(
     const vol = analytics.volunteers;
     sections.push({
       id: 'vol-metrics-table',
-      title: 'Volunteer coverage',
+      title: '03 Volunteer team & duty',
       description: 'Supervisory deployment, team participation, and room coverage.',
       type: 'table',
       content: {
@@ -297,7 +297,7 @@ export function buildEventExecutiveReport(
 
     sections.push({
       id: 'care-safety-table',
-      title: 'Care & safety summary',
+      title: '04 Care & child safety',
       description: 'Aggregated safeguarding records and care awareness indicators without exposing personal child health records.',
       type: 'table',
       content: {
@@ -367,8 +367,14 @@ export function buildEventExecutiveReport(
     eventContext: {
       eventId: analytics.eventId,
       eventTitle: analytics.eventTitle,
-      startsAt: analytics.startsAt
+      startsAt: analytics.startsAt,
+      endsAt: snapshot?.event?.ends_at,
+      venue: snapshot?.event?.venue,
+      theme: snapshot?.event?.theme,
+      scripture: snapshot?.event?.scripture,
+      registrationStatus: snapshot?.event?.registration_status
     },
+    coverStyle: 'charcoal',
     branding: {
       organizationName: 'Koinonia Global',
       primaryColor: [197, 155, 39], // Antique Gold
