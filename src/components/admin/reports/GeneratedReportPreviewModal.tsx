@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { X, Download, FileText, ZoomIn, ZoomOut, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { X, Download, FileText, ZoomIn, ZoomOut, AlertCircle, ChevronDown } from 'lucide-react';
 import { ReportDocumentModel } from '../../../server/reports/reportDocumentModel';
+import { ReportDocumentPreview } from './ReportDocumentPreview';
 import { ReportPreviewSkeleton } from './ReportPreviewSkeleton';
 import { api } from '../../../services/api';
-import { buildApiUrl } from '../../../utils/urlHelper';
 
 interface GeneratedReportPreviewModalProps {
   reportId: string | null;
@@ -25,17 +25,11 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
   eventTitle,
   onClose,
   onDownloadPdf,
-  onRegenerate,
 }) => {
   const [model, setModel] = useState<ReportDocumentModel | null>(null);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [downloadFilename, setDownloadFilename] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [isExpired, setIsExpired] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(100);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(1);
   const [activeOutlineSection, setActiveOutlineSection] = useState<string>('section-cover');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -44,115 +38,43 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
   useEffect(() => {
     if (!reportId) return;
 
-    let activeBlobUrl: string | null = null;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    setIsExpired(false);
     setModel(null);
-    setPdfBlobUrl(null);
-    setCurrentPage(1);
 
-    const loadArtifactAndMetadata = async () => {
+    const fetchPreview = async () => {
       try {
-        const token = api.getToken();
-        if (!token) {
-          setError('You are currently logged out.');
-          setLoading(false);
-          return;
-        }
-
-        // 1. Fetch metadata & document model
-        const previewPromise = api.request<{
+        const response = await api.request<{
           success: boolean;
           report: any;
           documentModel: ReportDocumentModel;
-          sectionPageMap?: Record<string, number>;
         }>(`/api/admin/reports/${reportId}/preview`, { signal: controller.signal });
 
-        // 2. Fetch the exact canonical generated PDF artifact
-        const downloadEndpoint = buildApiUrl(`/api/admin/reports/${reportId}/download?inline=true`);
-        const downloadPromise = fetch(downloadEndpoint, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          signal: controller.signal
-        });
-
-        const [previewResponse, downloadResponse] = await Promise.all([previewPromise, downloadPromise]);
-
-        // Check if download has expired
-        if (downloadResponse.status === 410) {
-          setIsExpired(true);
-          setError('This report copy is no longer available.');
-          setLoading(false);
-          return;
-        }
-
-        if (!downloadResponse.ok) {
-          let isExp = false;
-          try {
-            const errData = await downloadResponse.json();
-            if (errData?.code === 'DOWNLOAD_EXPIRED' || errData?.error?.includes('expired')) {
-              isExp = true;
-            }
-          } catch (_) {}
-
-          if (isExp) {
-            setIsExpired(true);
-            setError('This report copy is no longer available.');
-          } else {
-            setError('We could not open this report document.');
-          }
-          setLoading(false);
-          return;
-        }
-
-        // Create memory Object URL for the exact PDF bytes
-        const blob = await downloadResponse.blob();
-        activeBlobUrl = URL.createObjectURL(blob);
-        setPdfBlobUrl(activeBlobUrl);
-
-        // Resolve filename from Content-Disposition header
-        const disp = downloadResponse.headers.get('content-disposition');
-        if (disp && disp.includes('filename=')) {
-          const match = disp.match(/filename="?([^";]+)"?/);
-          if (match && match[1]) {
-            setDownloadFilename(match[1]);
-          }
-        }
-
-        // Apply document model
-        if (previewResponse?.success && previewResponse?.documentModel) {
-          const docModel = previewResponse.documentModel;
-          if (previewResponse.sectionPageMap && !docModel.sectionPageMap) {
-            docModel.sectionPageMap = previewResponse.sectionPageMap;
-          }
-          setModel(docModel);
-
-          // Determine total pages from sectionPageMap or back-cover
-          const backPage = docModel.sectionPageMap?.['section-back-cover'] || docModel.sectionPageMap?.['back-cover'];
-          if (backPage && typeof backPage === 'number') {
-            setTotalPages(backPage);
-          }
+        if (
+          response &&
+          response.success === true &&
+          response.documentModel &&
+          (response.report?.status === 'ready' || response.report?.status === 'completed' || !response.report?.status)
+        ) {
+          setModel(response.documentModel);
+        } else {
+          setError('We could not open this report preview.');
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
-          console.error('Report artifact loading error:', err);
-          setError('We could not open this report document.');
+          console.error('Report preview fetch error:', err);
+          setError('We could not open this report preview.');
         }
       } finally {
         setLoading(false);
       }
     };
 
-    loadArtifactAndMetadata();
+    fetchPreview();
 
     return () => {
       controller.abort();
-      if (activeBlobUrl) {
-        URL.revokeObjectURL(activeBlobUrl);
-      }
     };
   }, [reportId]);
 
@@ -213,20 +135,41 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     return items;
   }, [model]);
 
-  // Sync active outline item with current page
+  // Set initial active outline item
   useEffect(() => {
-    if (!model?.sectionPageMap || outlineItems.length === 0) return;
-    const pageMap = model.sectionPageMap;
-
-    let matchedId = outlineItems[0]?.id || 'section-cover';
-    for (const item of outlineItems) {
-      const page = pageMap[item.id] || pageMap[item.id.replace('section-', '')];
-      if (page && page <= currentPage) {
-        matchedId = item.id;
-      }
+    if (outlineItems.length > 0 && !activeOutlineSection) {
+      setActiveOutlineSection(outlineItems[0].id);
     }
-    setActiveOutlineSection(matchedId);
-  }, [currentPage, model, outlineItems]);
+  }, [outlineItems, activeOutlineSection]);
+
+  // Observe active sections on scroll using IntersectionObserver
+  useEffect(() => {
+    if (!model || !scrollContainerRef.current || outlineItems.length === 0) return;
+
+    const container = scrollContainerRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveOutlineSection(entry.target.id);
+            break;
+          }
+        }
+      },
+      {
+        root: container,
+        rootMargin: '-10% 0px -65% 0px',
+        threshold: 0.1
+      }
+    );
+
+    outlineItems.forEach((item) => {
+      const el = document.getElementById(item.id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [model, outlineItems]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -241,29 +184,9 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
   const handleOutlineClick = (id: string) => {
     setActiveOutlineSection(id);
     setMobileMenuOpen(false);
-    const pageMap = model?.sectionPageMap || {};
-    const targetPage = pageMap[id] || pageMap[id.replace('section-', '')] || 1;
-    setCurrentPage(targetPage);
-  };
-
-  const handlePrevPage = () => {
-    setCurrentPage(p => Math.max(1, p - 1));
-  };
-
-  const handleNextPage = () => {
-    setCurrentPage(p => Math.min(totalPages, p + 1));
-  };
-
-  const handleDownloadExactArtifact = () => {
-    if (pdfBlobUrl) {
-      const a = document.createElement('a');
-      a.href = pdfBlobUrl;
-      a.download = downloadFilename || `${model?.reportTitle || reportTitle || 'Report'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else if (onDownloadPdf && reportId) {
-      onDownloadPdf(reportId);
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -278,8 +201,8 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     >
       <div
         ref={modalRef}
-        data-preview-build="report-preview-v4-canonical-artifact"
-        data-component-version="generated-report-pdf-viewer"
+        data-preview-build="report-preview-v5-premium-canonical"
+        data-component-version="generated-report-preview-v5-editorial"
         className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-[24px] shadow-2xl w-full max-w-[1240px] max-h-[92dvh] flex flex-col overflow-hidden text-stone-900"
       >
         {/* Header Bar */}
@@ -293,20 +216,22 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
                 {model?.reportTitle || reportTitle || 'Official Report'}
               </h2>
               <p className="text-xs text-stone-500 truncate">
-                {model?.eventContext?.eventTitle || eventTitle || 'Event Report'}
+                {model?.eventContext?.eventTitle || eventTitle || 'The General Assembly'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={handleDownloadExactArtifact}
-              className="bg-[#C59B27] hover:bg-[#b08920] text-white text-xs font-semibold py-2 px-4 rounded-xl flex items-center gap-2 transition-all shadow-xs cursor-pointer"
-              title="Download exact PDF document"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download PDF</span>
-            </button>
+            {onDownloadPdf && (
+              <button
+                onClick={() => onDownloadPdf(reportId)}
+                className="bg-[#C59B27] hover:bg-[#b08920] text-white text-xs font-semibold py-2 px-4 rounded-xl flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+                title="Download report PDF"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PDF</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}
@@ -318,40 +243,12 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
           </div>
         </div>
 
-        {/* Toolbar & Page Navigation */}
+        {/* Toolbar with Zoom Controls (Technical metadata removed) */}
         <div className="bg-stone-50 border-b border-stone-200 px-6 py-2 flex flex-wrap items-center justify-between text-xs text-stone-600 gap-2 shrink-0">
-          <div className="flex items-center gap-4">
-            <span className="font-medium text-stone-800">
-              {model?.privacyClassification || 'Internal operational'}
-            </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-stone-600">Document view</span>
           </div>
 
-          {/* Page Indicator & Next/Prev Controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrevPage}
-                disabled={currentPage <= 1}
-                className="p-1 text-stone-500 hover:text-stone-900 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
-                title="Previous page"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-xs font-medium text-stone-700 tabular-nums">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={handleNextPage}
-                disabled={currentPage >= totalPages}
-                className="p-1 text-stone-500 hover:text-stone-900 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
-                title="Next page"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {/* Zoom Controls */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5">
               <button
@@ -438,71 +335,33 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
             </div>
           )}
 
-          {/* Canonical Document Artifact Viewer Area */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[#E5E4E2]/50 p-4 sm:p-6 flex flex-col items-center justify-start min-h-0">
-            {loading && <ReportPreviewSkeleton />}
+          {/* Premium React Editorial Document Viewer Area */}
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-stone-100/70 p-4 sm:p-8 flex justify-center">
+            <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }} className="transition-transform duration-150 w-full">
+              {loading && <ReportPreviewSkeleton />}
 
-            {isExpired && (
-              <div className="max-w-md mx-auto my-16 bg-white border border-stone-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
-                <div className="w-12 h-12 rounded-full bg-amber-50 text-[#C59B27] flex items-center justify-center mx-auto">
-                  <AlertCircle className="w-6 h-6" />
+              {error && (
+                <div className="max-w-md mx-auto my-12 bg-white border border-stone-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
+                  <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-serif font-semibold text-stone-900">Preview Unavailable</h3>
+                    <p className="text-xs text-stone-500 mt-1 leading-relaxed">{error}</p>
+                  </div>
+                  <button
+                    onClick={onClose}
+                    className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-5 rounded-xl transition-all cursor-pointer"
+                  >
+                    Close Preview
+                  </button>
                 </div>
-                <div>
-                  <h3 className="text-base font-serif font-semibold text-stone-900">Report Unavailable</h3>
-                  <p className="text-xs text-stone-500 mt-1 leading-relaxed">
-                    This report copy is no longer available.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    onClose();
-                    if (onRegenerate && reportId) {
-                      onRegenerate(reportId);
-                    }
-                  }}
-                  className="bg-[#C59B27] hover:bg-[#b08920] text-white text-xs font-semibold py-2.5 px-5 rounded-xl transition-all inline-flex items-center gap-2 shadow-xs cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Regenerate report →</span>
-                </button>
-              </div>
-            )}
+              )}
 
-            {error && !isExpired && (
-              <div className="max-w-md mx-auto my-12 bg-white border border-stone-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
-                <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
-                  <AlertCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-serif font-semibold text-stone-900">Preview Unavailable</h3>
-                  <p className="text-xs text-stone-500 mt-1 leading-relaxed">{error}</p>
-                </div>
-                <button
-                  onClick={onClose}
-                  className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-5 rounded-xl transition-all cursor-pointer"
-                >
-                  Close Preview
-                </button>
-              </div>
-            )}
-
-            {pdfBlobUrl && !loading && !error && (
-              <div
-                style={{
-                  width: `${Math.min(zoom, 140)}%`,
-                  maxWidth: `${Math.round(960 * (zoom / 100))}px`,
-                  transition: 'width 0.15s ease-out, max-width 0.15s ease-out'
-                }}
-                className="w-full flex-1 flex flex-col items-center justify-center shadow-xl rounded-xl overflow-hidden border border-stone-300 bg-white"
-              >
-                <iframe
-                  key={`${pdfBlobUrl}#page=${currentPage}`}
-                  src={`${pdfBlobUrl}#page=${currentPage}&zoom=${zoom}&toolbar=0&navpanes=0`}
-                  className="w-full h-[820px] border-0 rounded-xl bg-white"
-                  title={model?.reportTitle || reportTitle || 'Official Report PDF'}
-                />
-              </div>
-            )}
+              {model && !loading && !error && (
+                <ReportDocumentPreview model={model} />
+              )}
+            </div>
           </div>
         </div>
       </div>

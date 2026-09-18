@@ -36,6 +36,34 @@ function formatEditorialDate(dateVal: any, includeTime: boolean = false): string
   return `${dateStr} at ${timeStr}`;
 }
 
+function getEditorialColor(label: string, index: number): [number, number, number] {
+  const l = (label || '').toLowerCase();
+  if (l.includes('attended') || l.includes('arrival') || l.includes('check-in') || l.includes('checked_in')) return [22, 131, 93]; // #16835D - Emerald
+  if (l.includes('picked') || l.includes('release') || l.includes('picked_up')) return [63, 63, 70]; // #3F3F46 - Charcoal
+  if (l.includes('selected') || l.includes('pass_ready') || l.includes('registered') || l.includes('expected')) return [197, 155, 39]; // #C59B27 - Gold
+  if (l.includes('review') || l.includes('pending') || l.includes('waiting')) return [217, 119, 6]; // #D97706 - Amber
+  if (l.includes('not selected') || l.includes('rejected') || l.includes('incident')) return [225, 29, 72]; // #E11D48 - Red
+  const palette: [number, number, number][] = [
+    [197, 155, 39], // Gold
+    [22, 131, 93],  // Emerald
+    [37, 99, 235],  // Sapphire
+    [63, 63, 70],   // Charcoal
+    [217, 119, 6]   // Amber
+  ];
+  return palette[index % palette.length];
+}
+
+function getCohortColor(cellText: string): [number, number, number] | null {
+  const l = (cellText || '').toLowerCase();
+  if (l.includes('under 4')) return [16, 185, 129];
+  if (l.includes('1 to 3') || l.includes('1-3')) return [132, 204, 22];
+  if (l.includes('4 to 6') || l.includes('4-6')) return [197, 155, 39];
+  if (l.includes('7 to 9') || l.includes('7-9')) return [166, 124, 46];
+  if (l.includes('10 to 12') || l.includes('10-12')) return [217, 119, 6];
+  if (l.includes('teen') || l.includes('13+')) return [75, 85, 99];
+  return null;
+}
+
 export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{ pdfBytes: ArrayBuffer; pageCount: number; sectionPageMap: Record<string, number> }> {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -104,6 +132,15 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.setFillColor(colors.lightIvory[0], colors.lightIvory[1], colors.lightIvory[2]);
   }
   doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+  // Subtle editorial watermark / concentric circles at top-right (matches ReportCover.tsx)
+  const circleCenterX = marginX + contentWidth - 10;
+  const circleCenterY = 28;
+  doc.setDrawColor(isDarkCover ? 35 : 238, isDarkCover ? 35 : 238, isDarkCover ? 40 : 232);
+  doc.setLineWidth(0.2);
+  doc.circle(circleCenterX, circleCenterY, 32, 'S');
+  doc.circle(circleCenterX, circleCenterY, 21, 'S');
+  doc.circle(circleCenterX, circleCenterY, 11, 'S');
 
   // Top Bar: Ministry Brand & Classification
   const coverTextColor = isDarkCover ? [255, 255, 255] : colors.charcoal;
@@ -802,22 +839,34 @@ function drawEditorialTable(
 
     row.forEach((cell, cellIdx) => {
       const isRight = cellIdx === row.length - 1;
+      const isFirst = cellIdx === 0;
       const wrapped = cellLines[cellIdx];
       const isRateCell = isRight && String(cell).includes('%');
+      const cohortDot = isFirst ? getCohortColor(String(cell || '')) : null;
 
       if (isRateCell) {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
+      } else if (isFirst) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(24, 24, 27);
       } else {
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(63, 63, 70);
       }
 
+      if (cohortDot) {
+        doc.setFillColor(cohortDot[0], cohortDot[1], cohortDot[2]);
+        doc.circle(x + 3.5, tableY + 3.5, 0.9, 'F');
+      }
+
+      const textOffsetX = (cohortDot && isFirst) ? 6.5 : 2;
+
       wrapped.forEach((lineText, lineIdx) => {
         if (isRight) {
           doc.text(lineText, x + (cellIdx + 1) * colW - 2, tableY + 4 + (lineIdx * 4), { align: 'right' });
         } else {
-          doc.text(lineText, x + cellIdx * colW + 2, tableY + 4 + (lineIdx * 4));
+          doc.text(lineText, x + cellIdx * colW + textOffsetX, tableY + 4 + (lineIdx * 4));
         }
       });
     });
@@ -1049,7 +1098,7 @@ function drawBarChartSpec(
       const barX = x + (index * (barW + barGap)) + (barGap / 2);
       const barY = chartTopY + chartAvailableH - barH;
 
-      const bColor = barColors[index % barColors.length];
+      const bColor = getEditorialColor(label, index);
       if (val > 0) {
         doc.setFillColor(bColor[0], bColor[1], bColor[2]);
         doc.rect(barX, barY, barW, barH, 'F');
@@ -1153,55 +1202,95 @@ function drawDonutChartSpec(
   }
 
   const total = primarySeries.reduce((a, b) => a + b, 0) || 1;
-  const donutColors = [
-    [colors.emerald[0], colors.emerald[1], colors.emerald[2]],
-    [colors.gold[0], colors.gold[1], colors.gold[2]],
-    [colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]],
-    [colors.amber[0], colors.amber[1], colors.amber[2]],
-    [colors.red[0], colors.red[1], colors.red[2]]
-  ];
 
-  // Proportion Bar
-  const barH = 4.5;
-  const barY = y;
-  doc.setFillColor(244, 244, 245);
-  doc.rect(x, barY, width, barH, 'F');
+  const cx = x + 30;
+  const cy = y + (height / 2);
+  const outerR = Math.min(height * 0.44, 20);
+  const innerR = outerR * 0.64;
 
-  let accumPct = 0;
-  labels.forEach((_, idx) => {
+  let currentAngle = -Math.PI / 2;
+
+  labels.forEach((lbl, idx) => {
     const val = primarySeries[idx] || 0;
     if (val <= 0) return;
-    const segW = (val / total) * width;
-    const segX = x + (accumPct / 100) * width;
-    const col = donutColors[idx % donutColors.length];
+    const sweep = (val / total) * 2 * Math.PI;
+    const startA = currentAngle;
+    currentAngle += sweep;
 
+    const points: [number, number][] = [];
+    const steps = Math.max(Math.ceil(sweep / (Math.PI / 16)), 4);
+    let lastX = cx;
+    let lastY = cy;
+
+    const startPtX = cx + outerR * Math.cos(startA);
+    const startPtY = cy + outerR * Math.sin(startA);
+    points.push([startPtX - lastX, startPtY - lastY]);
+    lastX = startPtX;
+    lastY = startPtY;
+
+    for (let s = 1; s <= steps; s++) {
+      const angle = startA + (s / steps) * sweep;
+      const ptX = cx + outerR * Math.cos(angle);
+      const ptY = cy + outerR * Math.sin(angle);
+      points.push([ptX - lastX, ptY - lastY]);
+      lastX = ptX;
+      lastY = ptY;
+    }
+    points.push([cx - lastX, cy - lastY]);
+
+    const col = getEditorialColor(lbl, idx);
     doc.setFillColor(col[0], col[1], col[2]);
-    doc.rect(segX, barY, Math.max(segW, 1), barH, 'F');
-    accumPct += (val / total) * 100;
+    doc.lines(points, cx, cy, [1, 1], 'F', true);
   });
 
-  // Legend rows
-  const rowsStartY = barY + barH + 4;
-  const availableH = height - (barH + 4);
-  const rowH = availableH / Math.max(labels.length, 1);
+  // Donut inner hole (clear center)
+  doc.setFillColor(255, 255, 255);
+  doc.circle(cx, cy, innerR, 'F');
+  doc.setDrawColor(240, 240, 242);
+  doc.setLineWidth(0.15);
+  doc.circle(cx, cy, innerR, 'S');
+
+  // Center text: total count and sublabel
+  doc.setFont('times', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(24, 24, 27);
+  doc.text(String(total), cx, cy + 1, { align: 'center' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.2);
+  doc.setTextColor(113, 113, 122);
+  doc.text('TOTAL COUNT', cx, cy + 4.8, { align: 'center' });
+
+  // Right-side legend card rows (matches ReportChartRenderer.tsx 2-column layout)
+  const legX = x + 66;
+  const legW = width - 66;
+  const rowCount = Math.max(labels.length, 1);
+  const rowH = Math.min((height - 2) / rowCount, 9.5);
 
   labels.forEach((label, idx) => {
     const val = primarySeries[idx] || 0;
     const pct = Math.round((val / total) * 100);
-    const rowY = rowsStartY + (idx * rowH);
-    const col = donutColors[idx % donutColors.length];
+    const rowY = y + (idx * (rowH + 1.8));
+    const col = getEditorialColor(label, idx);
 
+    // Card background
+    doc.setFillColor(250, 249, 246);
+    doc.roundedRect(legX, rowY, legW, rowH, 0.8, 0.8, 'F');
+
+    // Colored indicator dot
     doc.setFillColor(col[0], col[1], col[2]);
-    doc.rect(x + 1, rowY + 1, 2.5, 2.5, 'F');
+    doc.circle(legX + 3.5, rowY + (rowH / 2), 1.2, 'F');
 
+    // Category label
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.8);
-    doc.setTextColor(63, 63, 70);
-    doc.text(label, x + 6, rowY + 3.2);
-
-    doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
+    doc.setTextColor(63, 63, 70);
+    doc.text(label, legX + 7, rowY + (rowH / 2) + 0.8);
+
+    // Value and percentage
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
     doc.setTextColor(24, 24, 27);
-    doc.text(`${val}  (${pct}%)`, x + width - 4, rowY + 3.2, { align: 'right' });
+    doc.text(`${val}  (${pct}%)`, legX + legW - 3.5, rowY + (rowH / 2) + 0.8, { align: 'right' });
   });
 }

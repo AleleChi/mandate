@@ -116,16 +116,23 @@ export const ReportDocumentPreview: React.FC<ReportDocumentPreviewProps> = ({ mo
           )}
 
           {/* Data Quality & Methodology (Restrained, small footnotes) */}
-          {(model.dataQuality || (model.methodology && model.methodology.length > 0)) && (
+          {(model.dataQuality || (model.methodology && model.methodology.length > 0) || (model.limitations && model.limitations.length > 0)) && (
             <div id="section-quality-methodology" data-report-section="quality" className="pt-8 border-t border-stone-200/80 space-y-2 text-xs text-stone-500 scroll-mt-6">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 block">
-                Data Notes &amp; Methodology
+                Data Notes and Limitations
               </span>
               {model.dataQuality?.notes && <p className="italic">{model.dataQuality.notes}</p>}
               {model.methodology && model.methodology.length > 0 && (
                 <ul className="space-y-1 text-[11px] text-stone-400 pl-4 list-disc">
                   {model.methodology.map((m, idx) => (
                     <li key={idx}>{m}</li>
+                  ))}
+                </ul>
+              )}
+              {model.limitations && model.limitations.length > 0 && (
+                <ul className="space-y-1 text-[11px] text-stone-400 pl-4 list-disc">
+                  {model.limitations.map((lim, idx) => (
+                    <li key={idx}>{lim}</li>
                   ))}
                 </ul>
               )}
