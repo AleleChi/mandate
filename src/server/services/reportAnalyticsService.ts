@@ -133,6 +133,21 @@ export interface AttendanceAnalytics {
 }
 
 export interface VolunteerAnalytics {
+  /** Approved volunteers = approved volunteer profiles for current event/context */
+  approvedVolunteers: number;
+  /** Assigned volunteers = current-event duty assignments */
+  assignedVolunteers: number;
+  /** Currently on duty = valid current/open duty presence */
+  currentlyOnDuty: number;
+  /** Reported during event = volunteers who created a valid presence during this event, including those who later checked out */
+  reportedDuringEvent: number;
+  /** Checked out = valid duty sessions that ended */
+  checkedOut: number;
+  /** Locations with assignments = assignment coverage */
+  locationsWithAssignments: number;
+  /** Locations currently staffed = at least one valid active presence */
+  locationsCurrentlyStaffed: number;
+
   /** Currently-valid distinct volunteers assigned to the selected event */
   totalApproved: number;
   /** Currently-valid distinct volunteers on duty for the selected event */
@@ -517,15 +532,47 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
 
   // "Volunteers assigned" = distinct currently-valid volunteers assigned to the selected event
   const assignedUserIds = new Set<string>(validAssignments.map((a: any) => a.user_id));
-  const totalApproved = assignedUserIds.size;
+  const assignedVolunteers = assignedUserIds.size;
+  const approvedVolunteers = totalRosterVolunteers > 0 ? totalRosterVolunteers : assignedVolunteers;
 
-  // "Volunteers on duty" = distinct currently-valid volunteers with an active/on-duty assignment for the selected event
+  // Canonical duty presence aggregation
+  const rawPresence = snapshot.dutyPresence || snapshot.presenceRecords || [];
+  const validPresence = rawPresence.filter((p: any) => !p.event_id || p.event_id === eventId);
+
+  const activePresenceUserIds = new Set<string>();
+  const reportedUserIds = new Set<string>();
+  const endedPresenceUserIds = new Set<string>();
+
+  validPresence.forEach((p: any) => {
+    if (p.user_id) {
+      reportedUserIds.add(p.user_id);
+      if (p.ended_at === null || p.ended_at === undefined || p.ended_at === '') {
+        activePresenceUserIds.add(p.user_id);
+      } else {
+        endedPresenceUserIds.add(p.user_id);
+      }
+    }
+  });
+
+  const checkedOutUserIds = new Set<string>();
+  endedPresenceUserIds.forEach(uid => {
+    if (!activePresenceUserIds.has(uid)) {
+      checkedOutUserIds.add(uid);
+    }
+  });
+
+  // Fallback if presence records are not available in snapshot (e.g. legacy/mock data)
   const onDutyAssignments = validAssignments.filter((a: any) => {
     const s = (a.assignment_status || a.status || '').toLowerCase();
     return s === 'active' || s === 'on_duty' || s === 'checked_in';
   });
-  const onDutyUserIds = new Set<string>(onDutyAssignments.map((a: any) => a.user_id));
-  const activeOnDuty = onDutyUserIds.size;
+  const fallbackOnDutyUserIds = new Set<string>(onDutyAssignments.map((a: any) => a.user_id));
+
+  const currentlyOnDuty = rawPresence.length > 0 ? activePresenceUserIds.size : fallbackOnDutyUserIds.size;
+  const reportedDuringEvent = rawPresence.length > 0 ? reportedUserIds.size : fallbackOnDutyUserIds.size;
+  const checkedOut = rawPresence.length > 0 ? checkedOutUserIds.size : 0;
+  const activeOnDuty = currentlyOnDuty;
+  const totalApproved = assignedVolunteers;
 
   const participationRate = totalApproved > 0 ? (activeOnDuty / totalApproved) * 100 : 0;
 
@@ -619,26 +666,49 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   );
   const totalLocationsCount = locationsList.length;
 
+  const assignedLocIds = new Set<string>(validAssignments.map((a: any) => a.location_id || a.assigned_location_id).filter(Boolean));
+  const locationsWithAssignments = locationsList.filter((loc: any) => assignedLocIds.has(loc.id)).length;
+
   // Distinct valid on-duty volunteers per location
   const volunteersByLocation: { [locationId: string]: number } = {};
   const locUserSets: { [locationId: string]: Set<string> } = {};
-  onDutyAssignments.forEach((a: any) => {
-    const locId = a.location_id || a.assigned_location_id;
-    if (locId) {
-      if (!locUserSets[locId]) locUserSets[locId] = new Set();
-      locUserSets[locId].add(a.user_id);
-    }
-  });
+
+  if (rawPresence.length > 0) {
+    validPresence.forEach((p: any) => {
+      const locId = p.event_location_id || p.location_id;
+      const isActive = p.ended_at === null || p.ended_at === undefined || p.ended_at === '';
+      if (locId && isActive && p.user_id) {
+        if (!locUserSets[locId]) locUserSets[locId] = new Set();
+        locUserSets[locId].add(p.user_id);
+      }
+    });
+  } else {
+    onDutyAssignments.forEach((a: any) => {
+      const locId = a.location_id || a.assigned_location_id;
+      if (locId) {
+        if (!locUserSets[locId]) locUserSets[locId] = new Set();
+        locUserSets[locId].add(a.user_id);
+      }
+    });
+  }
 
   locationsList.forEach((loc: any) => {
     volunteersByLocation[loc.id] = locUserSets[loc.id]?.size || 0;
   });
 
   const staffedLocationsCount = locationsList.filter((loc: any) => (volunteersByLocation[loc.id] || 0) >= 1).length;
+  const locationsCurrentlyStaffed = staffedLocationsCount;
   const roomCoverageScore = totalLocationsCount > 0 ? Math.round((staffedLocationsCount / totalLocationsCount) * 100) : 0;
   const coverageGaps = Math.max(0, totalLocationsCount - staffedLocationsCount);
 
   const volunteers: VolunteerAnalytics = {
+    approvedVolunteers,
+    assignedVolunteers,
+    currentlyOnDuty,
+    reportedDuringEvent,
+    checkedOut,
+    locationsWithAssignments,
+    locationsCurrentlyStaffed,
     totalApproved,
     activeOnDuty,
     participationRate,
@@ -1241,6 +1311,13 @@ function calculateTrainingAnalyticsForSnapshot(snapshot: any, cutoffTime: string
   };
 
   const volunteers: VolunteerAnalytics = {
+    approvedVolunteers: participants.length,
+    assignedVolunteers: participants.length,
+    currentlyOnDuty: participants.length,
+    reportedDuringEvent: participants.length,
+    checkedOut: 0,
+    locationsWithAssignments: 0,
+    locationsCurrentlyStaffed: 0,
     totalApproved: participants.length,
     activeOnDuty: participants.length,
     participationRate: 100,

@@ -226,18 +226,23 @@ export function buildEventExecutiveReport(
 
   if (volIncluded) {
     const vol = analytics.volunteers;
+    const totalLocations = vol.totalLocationsCount || analytics.locations?.totalLocations || 0;
+    const staffedLocations = vol.staffedLocationsCount || 0;
     sections.push({
       id: 'vol-metrics-table',
       title: '03 Volunteer team & duty',
       description: 'Supervisory deployment, team participation, and room coverage.',
       type: 'table',
       content: {
-        headers: ['Staffing dimension', 'Count / ratio', 'Standard target'],
+        headers: ['Volunteer coverage', 'Current position'],
         rows: [
-          ['Approved volunteers', `${vol.totalApproved} supervisors`, 'Approved roster'],
-          ['Volunteers on duty', `${vol.activeOnDuty} active`, 'Minimum 1 per room'],
-          ['Teams represented', `${Object.keys(vol.volunteersByTeam || {}).length} ministry teams`, 'Full department coverage'],
-          ['Supervision ratio', `${vol.volunteersPer100Children.toFixed(1)} per 100 children`, 'Benchmark: 15:100']
+          ['Approved volunteers', `${vol.approvedVolunteers ?? vol.totalRosterVolunteers ?? vol.totalApproved} approved in roster`],
+          ['Assigned volunteers', `${vol.assignedVolunteers ?? vol.totalApproved} assigned to event`],
+          ['Currently on duty', vol.currentlyOnDuty > 0 ? `${vol.currentlyOnDuty} active on duty` : 'No volunteers currently on duty'],
+          ['Reported during event', `${vol.reportedDuringEvent ?? vol.activeOnDuty} reported for duty`],
+          ['Checked out', `${vol.checkedOut ?? 0} completed duty session`],
+          ['Duty locations staffed', `${staffedLocations} of ${totalLocations} designated rooms`],
+          ['Ministry teams', `${Object.keys(vol.volunteersByTeam || {}).length} ${Object.keys(vol.volunteersByTeam || {}).length === 1 ? 'ministry team' : 'ministry teams'}`]
         ]
       }
     });

@@ -221,18 +221,23 @@ export function buildCustomEventReport(
   // Section 4: Volunteer Staffing & Location Supervision
   if (isSectionSelected(['Volunteer coverage', 'Staffing & supervision', 'Volunteers', 'Operational Metrics'])) {
     const vol = analytics.volunteers;
+    const totalLocations = vol.totalLocationsCount || analytics.locations?.totalLocations || 0;
+    const staffedLocations = vol.staffedLocationsCount || 0;
     sections.push({
       id: 'vol-summary-table',
       title: 'Volunteer staffing & supervision',
       description: 'Supervisory deployment, team coverage, and volunteer-to-child ratios.',
       type: 'table',
       content: {
-        headers: ['Supervision metric', 'Recorded count', 'Context'],
+        headers: ['Volunteer coverage', 'Current position'],
         rows: [
-          ['Approved volunteers', `${vol.totalApproved} supervisors`, 'Approved roster'],
-          ['Volunteers on duty', `${vol.activeOnDuty} active`, 'On site during event'],
-          ['Teams represented', `${Object.keys(vol.volunteersByTeam || {}).length} ministry teams`, 'Active departments'],
-          ['Supervision ratio', `${vol.volunteersPer100Children.toFixed(1)} per 100 children`, 'Ministry benchmark: 15:100']
+          ['Approved volunteers', `${vol.approvedVolunteers ?? vol.totalRosterVolunteers ?? vol.totalApproved} approved in roster`],
+          ['Assigned volunteers', `${vol.assignedVolunteers ?? vol.totalApproved} assigned to event`],
+          ['Currently on duty', vol.currentlyOnDuty > 0 ? `${vol.currentlyOnDuty} active on duty` : 'No volunteers currently on duty'],
+          ['Reported during event', `${vol.reportedDuringEvent ?? vol.activeOnDuty} reported for duty`],
+          ['Checked out', `${vol.checkedOut ?? 0} completed duty session`],
+          ['Duty locations staffed', `${staffedLocations} of ${totalLocations} designated rooms`],
+          ['Ministry teams', `${Object.keys(vol.volunteersByTeam || {}).length} ${Object.keys(vol.volunteersByTeam || {}).length === 1 ? 'ministry team' : 'ministry teams'}`]
         ]
       }
     });

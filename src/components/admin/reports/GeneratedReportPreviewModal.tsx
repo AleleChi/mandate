@@ -82,11 +82,15 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
     if (!model) return [];
     const rawItems: OutlineItem[] = [];
 
-    rawItems.push({ id: 'section-cover', title: 'Publication cover' });
-    rawItems.push({ id: 'section-kpis', title: 'Executive overview' });
+    rawItems.push({ id: 'section-cover', title: 'Cover' });
+    rawItems.push({ id: 'section-kpis', title: 'Event overview' });
 
     if (model.sections && model.sections.length > 0) {
       model.sections.forEach((sec, idx) => {
+        const lower = sec.title.toLowerCase();
+        if (lower.includes('executive summary') || lower.includes('event summary') || lower.includes('what this report shows')) {
+          return; // Already represented by Event overview
+        }
         rawItems.push({
           id: `section-${sec.id || idx}`,
           title: sec.title

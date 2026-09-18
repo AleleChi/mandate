@@ -702,6 +702,20 @@ export async function compileReportSnapshot(
         AND vp.status IN ('approved', 'active')
     `);
 
+    // Canonical event duty presence records
+    const dutyPresence = await query(`
+      SELECT
+        edlp.id,
+        edlp.event_id,
+        edlp.user_id,
+        edlp.event_location_id,
+        edlp.source,
+        edlp.started_at,
+        edlp.ended_at
+      FROM event_duty_location_presence edlp
+      WHERE edlp.event_id = ?
+    `, [targetEventId]);
+
     const incidentRecords = await query('SELECT * FROM incident_records WHERE event_id = ?', [targetEventId]);
     const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ?', [targetEventId]);
 
@@ -814,6 +828,7 @@ export async function compileReportSnapshot(
       deviceReadiness,
       dutyDevices,
       dutyAssignments,
+      dutyPresence,
       rosterVolunteers,
       childEntries,
       safetyAlerts,

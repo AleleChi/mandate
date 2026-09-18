@@ -86,15 +86,15 @@ export const ReportOpeningSpread: React.FC<ReportOpeningSpreadProps> = ({ model 
         {/* Right Column: Executive Narrative */}
         <div className="lg:col-span-8 space-y-4">
           <span className="text-[10px] font-sans font-semibold uppercase tracking-wider text-stone-500 block">
-            Operational Summary
+            Event summary
           </span>
           <div className="text-sm sm:text-base text-stone-700 leading-relaxed font-sans font-normal space-y-3">
             {narrativeSection ? (
               <p className="leading-relaxed">{narrativeSection.content?.text}</p>
             ) : (
               <p className="leading-relaxed">
-                This report provides an authoritative operational record of event registration, participant attendance, 
-                supervisory duty coverage, pass issuance, and child safeguarding care for {event.eventTitle || 'the event'}.
+                This publication provides a factual record of event registration, participant attendance,
+                volunteer duty coverage, pass readiness, and child safety for {event.eventTitle || 'the event'}.
               </p>
             )}
           </div>
@@ -106,10 +106,7 @@ export const ReportOpeningSpread: React.FC<ReportOpeningSpreadProps> = ({ model 
         <div className="pt-8 border-t border-stone-200/90 space-y-6">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-sans font-semibold uppercase tracking-[0.15em] text-stone-500">
-              Key Operational Indicators
-            </span>
-            <span className="text-[11px] font-sans text-stone-400 italic">
-              Authoritative database figures
+              Event at a glance
             </span>
           </div>
 

@@ -102,43 +102,35 @@ export const ReportCover: React.FC<ReportCoverProps> = ({ model }) => {
         )}
       </div>
 
-      {/* Bottom Metadata Band: Dates, Prepared info, Confidentiality */}
+      {/* Bottom Metadata Band: Event dates, Venue, Prepared */}
       <div className="pt-8 border-t border-stone-200/20 grid grid-cols-1 sm:grid-cols-3 gap-6 relative z-10 text-xs font-sans">
         <div className="space-y-1">
           <span className={`text-[10px] uppercase tracking-wider block ${metaLabelClass}`}>
-            Event Schedule
+            Event dates
           </span>
           <span className={`font-medium block ${metaValueClass}`}>
             {dateRangeStr}
           </span>
-          {event.venue && (
-            <span className={`text-[11px] block truncate ${subtitleClass}`}>
-              {event.venue}
-            </span>
-          )}
         </div>
 
         <div className="space-y-1">
           <span className={`text-[10px] uppercase tracking-wider block ${metaLabelClass}`}>
-            Provenance
+            Venue
           </span>
           <span className={`font-medium block ${metaValueClass}`}>
-            Verified event records
-          </span>
-          <span className={`text-[11px] block ${subtitleClass}`}>
-            Compiled {generatedDateStr}
+            {event.venue || 'Event location'}
           </span>
         </div>
 
         <div className="space-y-1 sm:text-right">
           <span className={`text-[10px] uppercase tracking-wider block ${metaLabelClass}`}>
-            Classification
+            Prepared
           </span>
           <span className={`font-medium block ${goldAccentClass}`}>
-            {model.privacyClassification || 'Internal operational'}
+            {generatedDateStr}
           </span>
           <span className={`text-[11px] block ${subtitleClass}`}>
-            {model.intendedAudience || 'Ministry Leadership'}
+            From event records
           </span>
         </div>
       </div>

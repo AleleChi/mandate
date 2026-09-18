@@ -20,21 +20,21 @@ export function buildVolunteerTeamReport(
 
   const kpis: ReportKPI[] = [
     {
-      label: 'Volunteers assigned',
-      value: String(totalAssigned),
-      sublabel: vol.totalRosterVolunteers > 0 ? `${vol.totalRosterVolunteers} in active directory` : 'Assigned to event',
+      label: 'Assigned volunteers',
+      value: String(vol.assignedVolunteers ?? totalAssigned),
+      sublabel: `${vol.approvedVolunteers ?? vol.totalRosterVolunteers ?? totalAssigned} approved in roster`,
       color: 'charcoal'
     },
     {
-      label: 'Volunteers on duty',
-      value: String(activeOnDuty),
-      sublabel: 'Active check-in verification',
+      label: 'Currently on duty',
+      value: String(vol.currentlyOnDuty ?? activeOnDuty),
+      sublabel: (vol.currentlyOnDuty ?? activeOnDuty) > 0 ? 'Active on site' : 'No volunteers on duty',
       color: 'charcoal'
     },
     {
-      label: 'Volunteer turnout',
-      value: totalAssigned > 0 ? `${attendanceRate.toFixed(0)}%` : '0%',
-      sublabel: `${activeOnDuty} of ${totalAssigned} active on duty`,
+      label: 'Reported during event',
+      value: String(vol.reportedDuringEvent ?? activeOnDuty),
+      sublabel: `${vol.checkedOut ?? 0} checked out`,
       color: 'charcoal'
     },
     {
@@ -69,10 +69,10 @@ export function buildVolunteerTeamReport(
     
     sections.push({
       id: 'vol-summary',
-      title: 'Executive Summary',
+      title: 'Event summary',
       type: 'narrative',
       content: {
-        text: `Volunteer staffing and room supervision overview for "${analytics.eventTitle}". A total of ${totalAssigned} volunteers were scheduled, with ${activeOnDuty} currently on active duty (${attendanceRate.toFixed(0)}% turnout). ${ratioSummary} Active volunteers cover ${staffedLocations} of ${totalLocations} designated event rooms.`
+        text: `Volunteer operations overview for "${analytics.eventTitle}". A total of ${totalAssigned} volunteers were assigned, with ${vol.reportedDuringEvent ?? activeOnDuty} having reported for duty during the event (${activeOnDuty} currently on duty). ${ratioSummary} Active volunteers cover ${staffedLocations} of ${totalLocations} designated event rooms.`
       }
     });
   }
@@ -191,6 +191,25 @@ export function buildVolunteerTeamReport(
           accessibleSummary: 'Donut chart showing volunteers on duty versus not on duty.',
           emptyState: 'No volunteer duty status logs available.'
         }
+      ]
+    }
+  });
+
+  // 4b. Volunteer operations summary table
+  sections.push({
+    id: 'vol-operations-summary-table',
+    title: 'Volunteer operations overview',
+    description: 'Workforce deployment metrics including approved roster, event assignments, and live duty participation.',
+    type: 'table',
+    content: {
+      headers: ['Volunteer coverage', 'Current position'],
+      rows: [
+        ['Approved volunteers', `${vol.approvedVolunteers ?? vol.totalRosterVolunteers ?? totalAssigned} approved in roster`],
+        ['Assigned volunteers', `${vol.assignedVolunteers ?? totalAssigned} assigned to event`],
+        ['Reported during event', `${vol.reportedDuringEvent ?? activeOnDuty} reported for duty`],
+        ['Currently on duty', (vol.currentlyOnDuty ?? activeOnDuty) > 0 ? `${vol.currentlyOnDuty ?? activeOnDuty} active on site` : 'No volunteers on duty'],
+        ['Checked out', `${vol.checkedOut ?? 0} completed duty session`],
+        ['Duty locations staffed', `${staffedLocations} of ${totalLocations} designated rooms`]
       ]
     }
   });

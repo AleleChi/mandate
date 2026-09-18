@@ -198,11 +198,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
   const colWidth = contentWidth / 3;
 
-  // Col 1: Dates & Venue
+  // Col 1: Dates
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('EVENT SCHEDULE', marginX, coverBottomY + 5);
+  doc.text('EVENT DATES', marginX, coverBottomY + 5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
@@ -210,45 +210,33 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   const dateStr = formatEditorialDate(event.startsAt);
   doc.text(dateStr, marginX, coverBottomY + 9.5);
 
-  if (event.venue) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-    doc.text(event.venue, marginX, coverBottomY + 13.5);
-  }
-
-  // Col 2: Provenance
+  // Col 2: Venue
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('PROVENANCE', marginX + colWidth, coverBottomY + 5);
+  doc.text('VENUE', marginX + colWidth, coverBottomY + 5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
-  doc.text('Verified event records', marginX + colWidth, coverBottomY + 9.5);
+  doc.text(event.venue || 'Event location', marginX + colWidth, coverBottomY + 9.5);
 
-  const compiledDateStr = formatEditorialDate(model.reportingPeriod?.end || model.informationConfirmedUpTo);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text(`Compiled ${compiledDateStr}`, marginX + colWidth, coverBottomY + 13.5);
-
-  // Col 3: Classification
+  // Col 3: Prepared
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text('CLASSIFICATION', marginX + colWidth * 2, coverBottomY + 5);
+  doc.text('PREPARED', marginX + colWidth * 2, coverBottomY + 5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.text(model.privacyClassification || 'Internal operational', marginX + colWidth * 2, coverBottomY + 9.5);
+  const compiledDateStr = formatEditorialDate(model.reportingPeriod?.end || model.informationConfirmedUpTo);
+  doc.text(compiledDateStr, marginX + colWidth * 2, coverBottomY + 9.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
-  doc.text(model.intendedAudience || 'Ministry Leadership', marginX + colWidth * 2, coverBottomY + 13.5);
+  doc.text('From event records', marginX + colWidth * 2, coverBottomY + 13.5);
 
   // =========================================================================
   // PAGE 2: OPENING SPREAD (Profile, Narrative, Large Data Figures)
@@ -325,11 +313,11 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
-  doc.text('OPERATIONAL SUMMARY', narrativeBoxX, profileBoxY + 5);
+  doc.text('EVENT SUMMARY', narrativeBoxX, profileBoxY + 5);
 
   const narrativeSec = model.sections.find(s => s.type === 'narrative');
   const narrativeText = narrativeSec?.content?.text ||
-    `Authoritative operational record of event registration, participant attendance, supervisory duty coverage, pass issuance, and child safeguarding care for ${event.eventTitle || 'the event'}.`;
+    `Factual operational record of event registration, participant attendance, volunteer duty coverage, pass readiness, and child safety for ${event.eventTitle || 'the event'}.`;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.4);
@@ -349,7 +337,7 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
-    doc.text('KEY OPERATIONAL INDICATORS', marginX, currentY);
+    doc.text('EVENT AT A GLANCE', marginX, currentY);
     currentY += 7;
 
     const kpiCount = Math.min(model.kpis.length, 6);
