@@ -121,22 +121,6 @@ export async function uploadMedia(
           context: options.ownerUserId ? { owner_user_id: options.ownerUserId, purpose: options.purpose } : { purpose: options.purpose }
         };
 
-        if (resourceType === 'video') {
-          uploadParams.eager = [
-            {
-              format: 'mp4',
-              video_codec: 'h264',
-              width: 1920,
-              height: 1080,
-              crop: 'limit',
-              quality: 'auto',
-              audio_codec: 'none',
-              flags: 'fast_forward'
-            }
-          ];
-          uploadParams.eager_async = false;
-        }
-
         const uploadStream = cloudinary.uploader.upload_stream(
           uploadParams,
           (error, result: UploadApiResponse | undefined) => {
@@ -145,13 +129,24 @@ export async function uploadMedia(
               return;
             }
 
-            const optimizedUrl = resourceType === 'video'
-              ? (result.eager?.[0]?.secure_url || buildCloudinaryOptimizedVideoUrl(result.secure_url))
-              : result.secure_url;
+            let optimizedUrl = result.secure_url;
+            let posterUrl: string | undefined = undefined;
 
-            const posterUrl = resourceType === 'video'
-              ? buildCloudinaryVideoPosterUrl(result.secure_url)
-              : undefined;
+            if (resourceType === 'video') {
+              try {
+                optimizedUrl = buildCloudinaryOptimizedVideoUrl(result.secure_url);
+              } catch (optErr) {
+                console.error('[MediaUpload:optimisation] Failed to build optimized video URL, falling back to secure_url:', optErr);
+                optimizedUrl = result.secure_url;
+              }
+
+              try {
+                posterUrl = buildCloudinaryVideoPosterUrl(result.secure_url);
+              } catch (optErr) {
+                console.error('[MediaUpload:optimisation] Failed to build video poster URL:', optErr);
+                posterUrl = '';
+              }
+            }
 
             resolve({
               provider: 'cloudinary',
@@ -172,13 +167,24 @@ export async function uploadMedia(
         Readable.from(fileBuffer).pipe(uploadStream);
       });
       return result;
-    } catch (err) {
-      console.error('Cloudinary upload failed (possibly connection problem):', err);
+    } catch (err: any) {
+      console.error('[MediaUpload:provider] Cloudinary upload failure:', {
+        code: err?.http_code || err?.code,
+        message: err?.message || 'Unknown error'
+      });
       if (resourceType === 'video') {
-        throw new Error("We couldn't prepare this video for the website. Please try again.");
+        const error: any = new Error("We couldn't prepare this video for the website. Please try again.");
+        error.stage = 'provider';
+        error.providerCode = err?.http_code || err?.code;
+        error.providerError = err?.message || 'Cloudinary upload error';
+        throw error;
       }
       if (isProd && !allowLocalFallback && !isLocalPersistent) {
-        throw new Error('Image upload could not be completed. Please check media storage settings and try again.');
+        const error: any = new Error("We couldn't upload this image. Please try again.");
+        error.stage = 'provider';
+        error.providerCode = err?.http_code || err?.code;
+        error.providerError = err?.message || 'Cloudinary upload error';
+        throw error;
       }
     }
   }
@@ -186,12 +192,18 @@ export async function uploadMedia(
   // Safe fallback behavior:
   // If video upload and Cloudinary is not configured or unavailable, fail gracefully rather than silently publishing raw 100MB video without optimization
   if (resourceType === 'video') {
-    throw new Error("We couldn't prepare this video for the website. Please try again.");
+    const error: any = new Error("We couldn't prepare this video for the website. Please try again.");
+    error.stage = 'provider';
+    error.providerError = isConfigured ? 'Cloudinary video upload unavailable' : 'Cloudinary credentials not configured on server';
+    throw error;
   }
 
   // If Cloudinary is not configured and we are in production, refuse ephemeral fallback for images
   if (isProd && !isConfigured && !allowLocalFallback && !isLocalPersistent) {
-    throw new Error('Media storage is not fully configured. Please connect Cloudinary or persistent storage before uploading images.');
+    const error: any = new Error("We couldn't upload this image. Please try again.");
+    error.stage = 'provider';
+    error.providerError = 'Media storage is not fully configured for production';
+    throw error;
   }
 
   // Graceful dev/preview fallback if Cloudinary credentials are not provided or connection failed

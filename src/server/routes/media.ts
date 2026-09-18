@@ -21,10 +21,17 @@ const upload = multer({
 function handleMulterUpload(req: Request, res: Response, next: any) {
   upload.single('file')(req, res, (err: any) => {
     if (err) {
+      const slotKey = req.body?.slotKey || 'unknown';
+      const isVideo = req.body?.purpose === 'event_video' || (req.body?.fileType === 'event_video');
+      console.error(`[MediaUpload:upload] Failed at upload stage | Slot: ${slotKey} | isVideo: ${isVideo} | Error: ${err.message || err.code}`);
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Video must be 100 MB or smaller.' });
+        return res.status(400).json({ error: isVideo ? 'Video must be 100 MB or smaller.' : 'This photo is too large. Maximum image size is 10MB.' });
       }
-      return res.status(400).json({ error: 'We couldn\'t prepare this video. Try another file.' });
+      return res.status(400).json({
+        error: isVideo
+          ? "We couldn't prepare this video for the website. Please try again."
+          : "We couldn't upload this image. Please try again."
+      });
     }
     next();
   });
@@ -266,14 +273,17 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
       const allowedExts = ['.mp4', '.webm', '.mov'];
 
       if (!allowedVideoTypes.includes(mimeType) && !allowedExts.includes(ext)) {
+        console.error(`[MediaUpload:validation] Video format invalid | Slot: ${slotKey || 'unknown'} | MIME: ${mimeType} | Ext: ${ext} | Size: ${buffer.length}`);
         return res.status(400).json({ error: 'Choose an MP4, WebM or supported video file.' });
       }
       if (buffer.length > MAX_VIDEO_BYTES) {
+        console.error(`[MediaUpload:validation] Video exceeds 100 MB limit | Slot: ${slotKey || 'unknown'} | MIME: ${mimeType} | Size: ${buffer.length}`);
         return res.status(400).json({ error: 'Video must be 100 MB or smaller.' });
       }
     } else {
       const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
       if (!allowedImageTypes.includes(mimeType)) {
+        console.error(`[MediaUpload:validation] Image format invalid | Slot: ${slotKey || 'unknown'} | MIME: ${mimeType} | Size: ${buffer.length}`);
         return res.status(400).json({ error: 'Please upload a JPG, PNG, or WebP image.' });
       }
 
@@ -286,6 +296,7 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
       }
 
       if (buffer.length > maxSize) {
+        console.error(`[MediaUpload:validation] Image exceeds 10 MB limit | Slot: ${slotKey || 'unknown'} | MIME: ${mimeType} | Size: ${buffer.length}`);
         if (isParentFacing) {
           return res.status(400).json({ error: 'This photo is too large. Maximum image size is 10MB.' });
         }
@@ -298,24 +309,30 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
         buffer = processed.buffer;
         mimeType = processed.mimeType;
       } catch (err: any) {
-        console.error('Image processing failed:', err);
+        console.error(`[MediaUpload:optimisation] Image processing failed | Slot: ${slotKey || 'unknown'} | MIME: ${mimeType} | Size: ${buffer.length} | Error: ${err.message}`);
         try {
           fs.appendFileSync(logPath, `[${new Date().toISOString()}] processImage failed: ${err.message}\nStack: ${err.stack}\n`);
         } catch (le) {}
         return res.status(422).json({
           success: false,
-          error: "We could not process this image. Please try another JPG, PNG, or WebP file.",
-          message: "We could not process this image. Please try another JPG, PNG, or WebP file."
+          error: "We couldn't upload this image. Please try again.",
+          message: "We couldn't upload this image. Please try again."
         });
       }
     }
 
-    const uploadResult = await uploadMedia(buffer, {
-      purpose,
-      ownerUserId: req.user!.id,
-      mimeType,
-      resourceType: isVideo ? 'video' : 'image'
-    });
+    let uploadResult;
+    try {
+      uploadResult = await uploadMedia(buffer, {
+        purpose,
+        ownerUserId: req.user!.id,
+        mimeType,
+        resourceType: isVideo ? 'video' : 'image'
+      });
+    } catch (providerErr: any) {
+      console.error(`[MediaUpload:provider] Upload provider failed | Slot: ${slotKey || 'unknown'} | MIME: ${mimeType} | Size: ${buffer.length} | Code: ${providerErr.providerCode || providerErr.code || 'NONE'} | Message: ${providerErr.providerError || providerErr.message}`);
+      throw providerErr;
+    }
 
     const fileId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -325,32 +342,37 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
 
     const deliveryUrl = uploadResult.optimizedUrl || uploadResult.secureUrl || `/api/media/files/${fileId}`;
 
-    await execute(`
-      INSERT INTO media_files (
-        id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
-        mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      fileId,
-      req.user!.id,
-      uploadResult.provider,
-      purpose,
-      uploadResult.publicId,
-      deliveryUrl,
-      uploadResult.resourceType || (isVideo ? 'video' : 'image'),
-      mimeType,
-      buffer.length,
-      uploadResult.width || null,
-      uploadResult.height || null,
-      uploadResult.duration || null,
-      folder,
-      deliveryUrl,
-      uploadResult.publicId,
-      now
-    ]);
+    try {
+      await execute(`
+        INSERT INTO media_files (
+          id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
+          mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        fileId,
+        req.user!.id,
+        uploadResult.provider,
+        purpose,
+        uploadResult.publicId,
+        deliveryUrl,
+        uploadResult.resourceType || (isVideo ? 'video' : 'image'),
+        mimeType,
+        buffer.length,
+        uploadResult.width || null,
+        uploadResult.height || null,
+        uploadResult.duration || null,
+        folder,
+        deliveryUrl,
+        uploadResult.publicId,
+        now
+      ]);
+    } catch (persistErr: any) {
+      console.error(`[MediaUpload:persistence] DB persistence failed | Slot: ${slotKey || 'unknown'} | FileId: ${fileId} | MIME: ${mimeType} | Size: ${buffer.length} | Error: ${persistErr.message}`);
+      throw persistErr;
+    }
 
     try {
-      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload SUCCESS. fileId: ${fileId}, publicId: ${uploadResult.publicId}\n`);
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload SUCCESS. fileId: ${fileId}, publicId: ${uploadResult.publicId}, isVideo: ${isVideo}\n`);
     } catch (le) {}
 
     res.status(201).json({
@@ -369,15 +391,27 @@ router.post('/upload', handleMulterUpload, async (req: AuthenticatedRequest, res
       url: deliveryUrl
     });
   } catch (err: any) {
-    console.error('Media upload error:', err);
+    const slotKey = req.body?.slotKey;
+    const isVideo = req.body?.purpose === 'event_video' || (req.body?.fileType === 'event_video');
+    console.error(`[MediaUpload:error] Request failed | Slot: ${slotKey || 'unknown'} | isVideo: ${isVideo} | Stage: ${err?.stage || 'unknown'} | Message: ${err?.message}`);
     try {
-      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload FAILED: ${err.message}\nStack: ${err.stack}\n`);
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Upload FAILED: slot=${slotKey}, isVideo=${isVideo}, stage=${err?.stage}, msg=${err?.message}\nStack: ${err?.stack}\n`);
     } catch (le) {}
-    const friendlyError = (err?.message && err.message.includes('100 MB'))
-      ? 'Video must be 100 MB or smaller.'
-      : (err?.message && err.message.includes('supported video file'))
-      ? 'Choose an MP4, WebM or supported video file.'
-      : "We couldn't prepare this video. Try another file.";
+
+    let friendlyError: string;
+    if (isVideo) {
+      friendlyError = (err?.message && err.message.includes('100 MB'))
+        ? 'Video must be 100 MB or smaller.'
+        : (err?.message && err.message.includes('supported video file'))
+        ? 'Choose an MP4, WebM or supported video file.'
+        : "We couldn't prepare this video for the website. Please try again.";
+    } else {
+      friendlyError = (err?.message && (err.message.includes('10MB') || err.message.includes('large')))
+        ? 'This photo is too large. Maximum image size is 10MB.'
+        : (err?.message && (err.message.includes('JPG') || err.message.includes('format') || err.message.includes('supported')))
+        ? 'Please upload a JPG, PNG, or WebP image.'
+        : "We couldn't upload this image. Please try again.";
+    }
     res.status(400).json({ error: friendlyError });
   }
 });

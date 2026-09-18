@@ -343,6 +343,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           status: 'ready'
         }
       }));
+      setErrorSlot(prev => ({ ...prev, [slotKey]: '' }));
       setSuccessSlot(prev => ({
         ...prev,
         [slotKey]: slotSpec.type === 'video' ? 'Video ready' : 'Media uploaded & live!'
@@ -350,11 +351,20 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       setTimeout(() => setSuccessSlot(prev => ({ ...prev, [slotKey]: '' })), 5000);
     } catch (err: any) {
       console.error('Upload failed for slot:', slotKey, err);
-      const friendlyMsg = (err?.message && err.message.includes('100 MB'))
-        ? 'Video must be 100 MB or smaller.'
-        : (err?.message && err.message.includes('supported video file'))
-        ? 'Choose an MP4, WebM or supported video file.'
-        : "We couldn't prepare this video for the website. Please try again.";
+      let friendlyMsg: string;
+      if (slotSpec.type === 'video') {
+        friendlyMsg = (err?.message && err.message.includes('100 MB'))
+          ? 'Video must be 100 MB or smaller.'
+          : (err?.message && err.message.includes('supported video file'))
+          ? 'Choose an MP4, WebM or supported video file.'
+          : "We couldn't prepare this video for the website. Please try again.";
+      } else {
+        friendlyMsg = (err?.message && (err.message.includes('10MB') || err.message.includes('large')))
+          ? 'File size is too large. Maximum image size is 10MB.'
+          : (err?.message && (err.message.includes('JPG') || err.message.includes('format')))
+          ? 'Please choose a JPG, PNG, or WebP image format.'
+          : "We couldn't upload this image. Please try again.";
+      }
 
       setErrorSlot(prev => ({ ...prev, [slotKey]: friendlyMsg }));
       setSlotFileState(prev => ({
@@ -1536,6 +1546,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) handleFileUpload(slot.key, file, slot.purpose);
+                              e.target.value = '';
                             }}
                           />
                         </label>
