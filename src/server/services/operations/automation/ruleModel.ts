@@ -188,6 +188,54 @@ export const PHASE3B_AUTOMATION_RULES: AutomationRuleDefinition[] = [
     actionTargetLabel: 'View duty →',
     isEnabled: true,
     defaultCooldownMinutes: 60
+  },
+  {
+    id: 'rule_approved_volunteer_unassigned',
+    ruleKey: 'APPROVED_VOLUNTEER_UNASSIGNED',
+    name: 'Approved volunteer assignment',
+    description: 'Alerts when approved volunteers do not have an active duty assignment.',
+    triggerSignal: 'APPROVED_VOLUNTEER_UNASSIGNED',
+    defaultSeverity: 'attention',
+    actionTargetRoute: 'duty',
+    actionTargetLabel: 'View volunteers →',
+    isEnabled: true,
+    defaultCooldownMinutes: 60
+  },
+  {
+    id: 'rule_pickup_information_incomplete',
+    ruleKey: 'PICKUP_INFORMATION_INCOMPLETE',
+    name: 'Pickup information completeness',
+    description: 'Alerts when selected children are missing authorized pickup person information.',
+    triggerSignal: 'PICKUP_INFORMATION_INCOMPLETE',
+    defaultSeverity: 'attention',
+    actionTargetRoute: 'children',
+    actionTargetLabel: 'Review children →',
+    isEnabled: true,
+    defaultCooldownMinutes: 60
+  },
+  {
+    id: 'rule_guardian_information_incomplete',
+    ruleKey: 'GUARDIAN_INFORMATION_INCOMPLETE',
+    name: 'Guardian information completeness',
+    description: 'Alerts when registrations are missing required guardian contact details.',
+    triggerSignal: 'GUARDIAN_INFORMATION_INCOMPLETE',
+    defaultSeverity: 'attention',
+    actionTargetRoute: 'review',
+    actionTargetLabel: 'Review registration →',
+    isEnabled: true,
+    defaultCooldownMinutes: 60
+  },
+  {
+    id: 'rule_selection_capacity_status',
+    ruleKey: 'SELECTION_CAPACITY_STATUS',
+    name: 'Selection capacity status',
+    description: 'Monitors selected children against configured event capacity and outstanding review items.',
+    triggerSignal: 'SELECTION_CAPACITY_STATUS',
+    defaultSeverity: 'attention',
+    actionTargetRoute: 'review',
+    actionTargetLabel: 'Review selections →',
+    isEnabled: true,
+    defaultCooldownMinutes: 120
   }
 ];
 

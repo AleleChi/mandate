@@ -411,6 +411,25 @@ export const listUnderstaffedLocationsTool: OperationalTool = {
   }
 };
 
+export const listTeamsWithoutActiveVolunteersTool: OperationalTool = {
+  name: 'listTeamsWithoutActiveVolunteers',
+  description: 'Lists active duty locations or teams that currently have no active volunteers on duty',
+  category: 'duty',
+  execute: async (context: ToolContext, _filters?: ToolFilter): Promise<ToolResult> => {
+    const allLocationsRes = await listDutyLocationsTool.execute(context);
+    const unstaffedNow = (allLocationsRes.data || []).filter((l: any) => l.onDuty === 0);
+
+    return {
+      success: true,
+      authorized: true,
+      toolName: 'listTeamsWithoutActiveVolunteers',
+      totalCount: unstaffedNow.length,
+      displayedCount: unstaffedNow.length,
+      data: unstaffedNow
+    };
+  }
+};
+
 export const dutyTools: OperationalTool[] = [
   getDutySummaryTool,
   listVolunteersOnDutyTool,
@@ -418,5 +437,6 @@ export const dutyTools: OperationalTool[] = [
   listLateOrNoShowVolunteersTool,
   listDutyLocationsTool,
   getDutyLocationCoverageTool,
-  listUnderstaffedLocationsTool
+  listUnderstaffedLocationsTool,
+  listTeamsWithoutActiveVolunteersTool
 ];

@@ -9,7 +9,7 @@ export const getVolunteerSummaryTool: OperationalTool = {
     const [approvedRes, assignedRes, onDutyRes] = await Promise.all([
       queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status IN ('approved', 'active')"),
       queryOne("SELECT COUNT(DISTINCT user_id) as count FROM event_duty_assignments WHERE event_id = ? AND status != 'cancelled'", [context.eventId]),
-      queryOne("SELECT COUNT(*) as count FROM user_duty_status WHERE on_duty = 1 AND assigned_event_id = ?", [context.eventId])
+      queryOne("SELECT COUNT(DISTINCT user_id) as count FROM event_duty_location_presence WHERE event_id = ? AND ended_at IS NULL", [context.eventId])
     ]);
 
     const approvedVolunteers = approvedRes?.count || 0;
@@ -132,6 +132,124 @@ export const listUnassignedVolunteersTool: OperationalTool = {
   }
 };
 
+export const listApprovedUnassignedVolunteersTool: OperationalTool = {
+  name: 'listApprovedUnassignedVolunteers',
+  description: 'Lists approved volunteers who have not been assigned to any duty post for the current event',
+  category: 'volunteers',
+  execute: async (context: ToolContext, filters?: ToolFilter): Promise<ToolResult> => {
+    return listUnassignedVolunteersTool.execute(context, filters);
+  }
+};
+
+export const listVolunteersReportedOffDutyTool: OperationalTool = {
+  name: 'listVolunteersReportedOffDuty',
+  description: 'Lists volunteers who reported for duty today but are no longer active on duty',
+  category: 'volunteers',
+  execute: async (context: ToolContext, filters?: ToolFilter): Promise<ToolResult> => {
+    const limit = Math.min(filters?.limit || 20, 50);
+
+    let sql = `
+      SELECT DISTINCT
+        vp.id as volunteer_id,
+        vp.user_id,
+        vp.full_name as name,
+        COALESCE(el.name, 'Floating / Mobile') as last_location,
+        p.started_at as reported_at,
+        p.ended_at as off_duty_at
+      FROM event_duty_location_presence p
+      JOIN volunteer_profiles vp ON vp.user_id = p.user_id
+      LEFT JOIN event_locations el ON el.id = p.event_location_id
+      WHERE p.event_id = ?
+        AND p.ended_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM event_duty_location_presence p2
+          WHERE p2.user_id = p.user_id AND p2.event_id = p.event_id AND p2.ended_at IS NULL
+        )
+    `;
+    const params: any[] = [context.eventId];
+
+    if (filters?.search) {
+      sql += ` AND (vp.full_name LIKE ? OR vp.phone LIKE ?)`;
+      params.push(`%${filters.search}%`, `%${filters.search}%`);
+    }
+
+    const countRes = await queryOne(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
+    const totalCount = countRes?.total || 0;
+
+    sql += ` ORDER BY p.ended_at DESC LIMIT ?`;
+    params.push(limit);
+
+    const rows = await query(sql, params);
+
+    return {
+      success: true,
+      authorized: true,
+      toolName: 'listVolunteersReportedOffDuty',
+      totalCount,
+      displayedCount: rows.length,
+      data: rows
+    };
+  }
+};
+
+export const listVolunteersWithDuplicatePresenceTool: OperationalTool = {
+  name: 'listVolunteersWithDuplicatePresence',
+  description: 'Lists volunteers who currently have multiple concurrent active duty presence records',
+  category: 'volunteers',
+  execute: async (context: ToolContext, _filters?: ToolFilter): Promise<ToolResult> => {
+    const rows = await query(`
+      SELECT
+        vp.id as volunteer_id,
+        vp.user_id,
+        vp.full_name as name,
+        COUNT(p.id) as active_sessions_count
+      FROM event_duty_location_presence p
+      JOIN volunteer_profiles vp ON vp.user_id = p.user_id
+      WHERE p.event_id = ? AND p.ended_at IS NULL
+      GROUP BY vp.id, vp.user_id, vp.full_name
+      HAVING COUNT(p.id) > 1
+    `, [context.eventId]);
+
+    return {
+      success: true,
+      authorized: true,
+      toolName: 'listVolunteersWithDuplicatePresence',
+      totalCount: rows.length,
+      displayedCount: rows.length,
+      data: rows
+    };
+  }
+};
+
+export const listVolunteersChangedLocationsTool: OperationalTool = {
+  name: 'listVolunteersChangedLocations',
+  description: 'Lists volunteers who have checked into more than one duty location during the event',
+  category: 'volunteers',
+  execute: async (context: ToolContext, _filters?: ToolFilter): Promise<ToolResult> => {
+    const rows = await query(`
+      SELECT
+        vp.id as volunteer_id,
+        vp.user_id,
+        vp.full_name as name,
+        COUNT(DISTINCT p.event_location_id) as location_count
+      FROM event_duty_location_presence p
+      JOIN volunteer_profiles vp ON vp.user_id = p.user_id
+      WHERE p.event_id = ?
+      GROUP BY vp.id, vp.user_id, vp.full_name
+      HAVING COUNT(DISTINCT p.event_location_id) > 1
+    `, [context.eventId]);
+
+    return {
+      success: true,
+      authorized: true,
+      toolName: 'listVolunteersChangedLocations',
+      totalCount: rows.length,
+      displayedCount: rows.length,
+      data: rows
+    };
+  }
+};
+
 export const listVolunteersByStatusTool: OperationalTool = {
   name: 'listVolunteersByStatus',
   description: 'Lists volunteers filtered by status (pending, approved, active, etc.)',
@@ -175,5 +293,9 @@ export const volunteerTools: OperationalTool[] = [
   getVolunteerSummaryTool,
   listApprovedVolunteersTool,
   listUnassignedVolunteersTool,
+  listApprovedUnassignedVolunteersTool,
+  listVolunteersReportedOffDutyTool,
+  listVolunteersWithDuplicatePresenceTool,
+  listVolunteersChangedLocationsTool,
   listVolunteersByStatusTool
 ];

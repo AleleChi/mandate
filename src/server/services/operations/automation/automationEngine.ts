@@ -14,16 +14,20 @@ import {
   PHASE3B_AUTOMATION_RULES
 } from './ruleModel';
 import {
+  ApprovedVolunteerUnassignedSignal,
   ChildAttendanceStateMismatchSignal,
   ConfigurationGapSignal,
   DutyPresenceMismatchSignal,
   EventSignal,
   EventStartingSoonSignal,
+  GuardianInformationIncompleteSignal,
   LocationUnderstaffedSignal,
   PassNotReadySignal,
+  PickupInformationIncompleteSignal,
   RegistrationClosingSoonSignal,
   ReportExpiredSignal,
   SafetyItemOpenSignal,
+  SelectionCapacityStatusSignal,
   VolunteerNoShowSignal,
   VolunteerRegistrationClosingSoonSignal
 } from './signals';
@@ -485,6 +489,149 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
     lastFailedSignals.push('DUTY_PRESENCE_MISMATCH');
   }
 
+  // 12. APPROVED_VOLUNTEER_UNASSIGNED
+  try {
+    const unassignedVolunteers = await query(
+      `SELECT vp.user_id, vp.full_name
+       FROM volunteer_profiles vp
+       WHERE vp.status IN ('approved', 'active')
+         AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM event_duty_assignments a
+           WHERE a.user_id = vp.user_id AND a.event_id = ? AND a.status != 'cancelled'
+         )
+       ORDER BY vp.full_name ASC`,
+      [eventId]
+    );
+
+    if (unassignedVolunteers && unassignedVolunteers.length > 0) {
+      detectedSignals.push({
+        signal: 'APPROVED_VOLUNTEER_UNASSIGNED',
+        eventId,
+        unassignedCount: unassignedVolunteers.length,
+        volunteerNames: unassignedVolunteers.map((v: any) => v.full_name || 'Volunteer'),
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for APPROVED_VOLUNTEER_UNASSIGNED:', err?.message || 'Error');
+    lastFailedSignals.push('APPROVED_VOLUNTEER_UNASSIGNED');
+  }
+
+  // 13. PICKUP_INFORMATION_INCOMPLETE
+  try {
+    const missingPickupRows = await query(
+      `SELECT c.full_name
+       FROM child_event_entries e
+       JOIN children c ON c.id = e.child_id
+       LEFT JOIN pickup_people pp ON pp.child_event_entry_id = e.id
+       WHERE e.event_id = ?
+         AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out')
+         AND COALESCE(e.is_deleted, 0) = 0 AND COALESCE(c.is_deleted, 0) = 0
+         AND (
+           pp.id IS NULL
+           OR pp.full_name IS NULL
+           OR pp.full_name = ''
+           OR pp.phone_number IS NULL
+           OR pp.phone_number = ''
+         )
+       ORDER BY c.full_name ASC`,
+      [eventId]
+    );
+
+    if (missingPickupRows && missingPickupRows.length > 0) {
+      detectedSignals.push({
+        signal: 'PICKUP_INFORMATION_INCOMPLETE',
+        eventId,
+        incompleteCount: missingPickupRows.length,
+        childNames: missingPickupRows.map((r: any) => r.full_name || 'Child'),
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for PICKUP_INFORMATION_INCOMPLETE:', err?.message || 'Error');
+    lastFailedSignals.push('PICKUP_INFORMATION_INCOMPLETE');
+  }
+
+  // 14. GUARDIAN_INFORMATION_INCOMPLETE
+  try {
+    const incompleteParents = await query(
+      `SELECT DISTINCT p.full_name
+       FROM parent_profiles p
+       JOIN children c ON c.parent_profile_id = p.id
+       JOIN child_event_entries e ON e.child_id = c.id
+       WHERE e.event_id = ?
+         AND COALESCE(e.is_deleted, 0) = 0 AND COALESCE(c.is_deleted, 0) = 0
+         AND (
+           p.profile_completed_at IS NULL
+           OR p.phone_number IS NULL
+           OR p.phone_number = ''
+           OR p.full_name IS NULL
+           OR p.full_name = ''
+         )
+       ORDER BY p.full_name ASC`,
+      [eventId]
+    );
+
+    if (incompleteParents && incompleteParents.length > 0) {
+      detectedSignals.push({
+        signal: 'GUARDIAN_INFORMATION_INCOMPLETE',
+        eventId,
+        incompleteCount: incompleteParents.length,
+        parentNames: incompleteParents.map((p: any) => p.full_name || 'Guardian'),
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for GUARDIAN_INFORMATION_INCOMPLETE:', err?.message || 'Error');
+    lastFailedSignals.push('GUARDIAN_INFORMATION_INCOMPLETE');
+  }
+
+  // 15. SELECTION_CAPACITY_STATUS
+  try {
+    if (event.capacity && event.capacity > 0) {
+      const selectedRes = await queryOne(
+        "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out') AND COALESCE(is_deleted, 0) = 0",
+        [eventId]
+      );
+      const selectedCount = selectedRes?.count || 0;
+      const capacity = event.capacity;
+      const remainingCapacity = Math.max(0, capacity - selectedCount);
+      const percentageSelected = Math.round((selectedCount / capacity) * 100);
+
+      // Check awaiting review count
+      const reviewRes = await queryOne(
+        "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('under_review', 'pending_review', 'submitted', 'draft') AND COALESCE(is_deleted, 0) = 0",
+        [eventId]
+      );
+      const awaitingReviewCount = reviewRes?.count || 0;
+
+      const isOverCapacity = selectedCount > capacity;
+      const hasPendingReviewsAtCapacity = selectedCount >= capacity && awaitingReviewCount > 0;
+
+      if (isOverCapacity || hasPendingReviewsAtCapacity) {
+        const condition = isOverCapacity ? 'over_capacity' : 'capacity_reached_with_pending_reviews';
+        const overCapacityCount = Math.max(0, selectedCount - capacity);
+
+        detectedSignals.push({
+          signal: 'SELECTION_CAPACITY_STATUS',
+          eventId,
+          selectedCount,
+          capacity,
+          remainingCapacity,
+          percentageSelected,
+          awaitingReviewCount,
+          overCapacityCount,
+          condition,
+          detectedAt: nowIso
+        });
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for SELECTION_CAPACITY_STATUS:', err?.message || 'Error');
+    lastFailedSignals.push('SELECTION_CAPACITY_STATUS');
+  }
+
   return detectedSignals;
 }
 
@@ -778,6 +925,100 @@ export function buildAutomationItemFromSignal(
         payload: signal,
         actionTargetRoute: rule.actionTargetRoute,
         actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'APPROVED_VOLUNTEER_UNASSIGNED': {
+      const count = signal.unassignedCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'APPROVED_VOLUNTEER_UNASSIGNED',
+        fingerprint: `${eventId}:APPROVED_VOLUNTEER_UNASSIGNED:summary`,
+        title: count === 1 ? '1 approved volunteer has not been assigned' : `${count} approved volunteers have not been assigned`,
+        summary: signal.volunteerNames.length > 0 ? signal.volunteerNames.slice(0, 3).join(', ') : 'Unassigned volunteers',
+        description: `${count} approved ${count === 1 ? 'volunteer has' : 'volunteers have'} not been assigned to a duty post for this event.`,
+        severity: 'attention',
+        entityType: 'volunteer',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'PICKUP_INFORMATION_INCOMPLETE': {
+      const count = signal.incompleteCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'PICKUP_INFORMATION_INCOMPLETE',
+        fingerprint: `${eventId}:PICKUP_INFORMATION_INCOMPLETE:summary`,
+        title: count === 1 ? '1 child is missing pickup information' : `${count} children are missing pickup information`,
+        summary: signal.childNames.length > 0 ? signal.childNames.slice(0, 3).join(', ') : 'Missing authorized pickup person',
+        description: `${count} selected ${count === 1 ? 'child is' : 'children are'} missing authorized pickup person or contact details.`,
+        severity: 'attention',
+        entityType: 'child',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'GUARDIAN_INFORMATION_INCOMPLETE': {
+      const count = signal.incompleteCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'GUARDIAN_INFORMATION_INCOMPLETE',
+        fingerprint: `${eventId}:GUARDIAN_INFORMATION_INCOMPLETE:summary`,
+        title: count === 1 ? '1 registration is missing required guardian information' : `${count} registrations are missing required guardian information`,
+        summary: signal.parentNames.length > 0 ? signal.parentNames.slice(0, 3).join(', ') : 'Incomplete guardian profile',
+        description: `${count} guardian ${count === 1 ? 'profile has' : 'profiles have'} missing contact or profile details.`,
+        severity: 'attention',
+        entityType: 'parent',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'SELECTION_CAPACITY_STATUS': {
+      let title = '';
+      let summary = '';
+      let description = '';
+
+      if (signal.condition === 'over_capacity') {
+        const excess = signal.overCapacityCount || (signal.selectedCount - signal.capacity);
+        title = `${excess} more child${excess === 1 ? ' has' : 'ren have'} been selected than the configured event capacity.`;
+        summary = `${signal.selectedCount} selected · Capacity: ${signal.capacity} (+${excess} over)`;
+        description = `${excess} more child${excess === 1 ? ' has' : 'ren have'} been selected than the configured event capacity of ${signal.capacity}.`;
+      } else {
+        title = `Capacity has been reached and ${signal.awaitingReviewCount} child${signal.awaitingReviewCount === 1 ? ' is' : 'ren are'} still awaiting a selection decision.`;
+        summary = `Capacity reached (${signal.selectedCount}/${signal.capacity}) · ${signal.awaitingReviewCount} awaiting review`;
+        description = `Capacity has been reached and ${signal.awaitingReviewCount} child${signal.awaitingReviewCount === 1 ? ' is' : 'ren are'} still awaiting a selection decision.`;
+      }
+
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'SELECTION_CAPACITY_STATUS',
+        fingerprint: `${eventId}:SELECTION_CAPACITY_STATUS:summary`,
+        title,
+        summary,
+        description,
+        severity: 'attention',
+        entityType: 'event',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: 'review',
+        actionTargetLabel: 'Review selections',
         cooldownMinutes: rule.defaultCooldownMinutes
       };
     }

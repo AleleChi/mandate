@@ -16,7 +16,11 @@ export type EventSignalType =
   | 'EVENT_STARTING_SOON'
   | 'CONFIGURATION_GAP'
   | 'CHILD_ATTENDANCE_STATE_MISMATCH'
-  | 'DUTY_PRESENCE_MISMATCH';
+  | 'DUTY_PRESENCE_MISMATCH'
+  | 'APPROVED_VOLUNTEER_UNASSIGNED'
+  | 'PICKUP_INFORMATION_INCOMPLETE'
+  | 'GUARDIAN_INFORMATION_INCOMPLETE'
+  | 'SELECTION_CAPACITY_STATUS';
 
 export interface BaseEventSignal {
   signal: EventSignalType;
@@ -112,6 +116,35 @@ export interface DutyPresenceMismatchSignal extends BaseEventSignal {
   userIds: string[];
 }
 
+export interface ApprovedVolunteerUnassignedSignal extends BaseEventSignal {
+  signal: 'APPROVED_VOLUNTEER_UNASSIGNED';
+  unassignedCount: number;
+  volunteerNames: string[];
+}
+
+export interface PickupInformationIncompleteSignal extends BaseEventSignal {
+  signal: 'PICKUP_INFORMATION_INCOMPLETE';
+  incompleteCount: number;
+  childNames: string[];
+}
+
+export interface GuardianInformationIncompleteSignal extends BaseEventSignal {
+  signal: 'GUARDIAN_INFORMATION_INCOMPLETE';
+  incompleteCount: number;
+  parentNames: string[];
+}
+
+export interface SelectionCapacityStatusSignal extends BaseEventSignal {
+  signal: 'SELECTION_CAPACITY_STATUS';
+  selectedCount: number;
+  capacity: number;
+  remainingCapacity: number;
+  percentageSelected: number;
+  awaitingReviewCount: number;
+  overCapacityCount: number;
+  condition: 'over_capacity' | 'capacity_reached_with_pending_reviews';
+}
+
 export type EventSignal =
   | LocationUnderstaffedSignal
   | VolunteerNoShowSignal
@@ -123,4 +156,8 @@ export type EventSignal =
   | EventStartingSoonSignal
   | ConfigurationGapSignal
   | ChildAttendanceStateMismatchSignal
-  | DutyPresenceMismatchSignal;
+  | DutyPresenceMismatchSignal
+  | ApprovedVolunteerUnassignedSignal
+  | PickupInformationIncompleteSignal
+  | GuardianInformationIncompleteSignal
+  | SelectionCapacityStatusSignal;

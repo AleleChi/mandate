@@ -746,6 +746,14 @@ export class OperationsAssistantService {
     }
   }
 
+  async askQuestion(
+    question: string,
+    eventId?: string,
+    actor?: any
+  ): Promise<GroundedQueryResult> {
+    return this.processOperationalQuery(question, eventId, actor);
+  }
+
   /**
    * Confirms and executes an approved operation with revalidation, authorization, and audit logging (Phase 3A).
    */

@@ -17,6 +17,7 @@ export interface ToolFilter {
   volunteerId?: string;
   parentId?: string;
   childId?: string;
+  childName?: string;
   timeframe?: string; // e.g., 'last_hour', 'today', 'last_24h'
   dateFrom?: string;
   dateTo?: string;
