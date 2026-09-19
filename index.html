@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
+      // Synchronous theme bootstrap to prevent flash on reload
+      (function() {
+        try {
+          var stored = localStorage.getItem('koinonia-theme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored === 'dark' || (!stored && prefersDark) || (stored === 'system' && prefersDark) ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+
       // Early capture of PWA beforeinstallprompt to prevent missing prompt fired before React hydration
       window.__koinoniaDeferredPrompt = null;
       window.__koinoniaPromptListeners = [];
