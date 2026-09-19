@@ -796,6 +796,7 @@ export const api = {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
       if (params?.status) queryParams.append('status', params.status);
+      queryParams.append('_t', Date.now().toString());
       const queryString = queryParams.toString();
       return api.request<{
         success: boolean;

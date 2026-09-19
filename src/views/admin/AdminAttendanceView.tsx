@@ -226,7 +226,10 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
     return (
       <AdminReviewChildView
         applicationId={selectedApplicationId}
-        onBack={() => setSelectedApplicationId(null)}
+        onBack={() => {
+          setSelectedApplicationId(null);
+          loadAttendanceData();
+        }}
         backLabel="Back to attendance"
         adminUser={adminUser}
         onSave={() => {

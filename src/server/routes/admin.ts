@@ -1958,6 +1958,8 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
     const eventId = await resolveAdminEventId(req.query.eventId as string);
     const status = typeof req.query.status === 'string' ? req.query.status : 'all';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
@@ -1998,18 +2000,8 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       }
     };
 
-    // 1. Fetch stats
-    const totalRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
-    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
-    const insideRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('checked_in', 'inside')", [eventId]);
-    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status = 'picked_up'", [eventId]);
-    const notArrivedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries e JOIN children c ON c.id = e.child_id WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('selected', 'pass_ready')", [eventId]);
-    const needsAttentionRes = await queryOne(`
-      SELECT COUNT(*) as count 
-      FROM child_event_entries e
-      JOIN children c ON c.id = e.child_id
-      WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
-    `, [eventId]);
+    // 1. Fetch canonical summary stats
+    const summaryStats = await getChildSummaryStats(eventId);
 
     // 2. Query matching records for rows
     let queryStr = `
@@ -2047,11 +2039,11 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     if (status === 'inside') {
-      queryStr += " AND e.status IN ('checked_in', 'inside')";
+      queryStr += " AND e.status IN ('checked_in', 'inside') AND e.checked_in_at IS NOT NULL AND e.picked_up_at IS NULL";
     } else if (status === 'picked_up') {
-      queryStr += " AND e.status = 'picked_up'";
+      queryStr += " AND e.status = 'picked_up' AND e.picked_up_at IS NOT NULL";
     } else if (status === 'not_arrived') {
-      queryStr += " AND e.status IN ('selected', 'pass_ready')";
+      queryStr += " AND (e.status IN ('selected', 'pass_ready') OR e.checked_in_at IS NULL)";
     } else if (status === 'needs_attention') {
       queryStr += " AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)";
     }
@@ -2064,12 +2056,12 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       let rowStatus: 'checked_in' | 'picked_up' | 'not_arrived' | 'needs_attention' = 'not_arrived';
       let rowLocation: 'inside' | 'picked_up' | 'not_arrived' | null = 'not_arrived';
 
-      if (app.status === 'checked_in' || app.status === 'inside') {
-        rowStatus = 'checked_in';
-        rowLocation = 'inside';
-      } else if (app.status === 'picked_up') {
+      if (app.status === 'picked_up' && app.picked_up_at) {
         rowStatus = 'picked_up';
         rowLocation = 'picked_up';
+      } else if ((app.status === 'checked_in' || app.status === 'inside') && app.checked_in_at && !app.picked_up_at) {
+        rowStatus = 'checked_in';
+        rowLocation = 'inside';
       } else {
         const needsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || app.needs_age_review === 1;
         if (needsAttention) {
@@ -2087,7 +2079,8 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         notesSummary = app.support_notes;
       }
 
-      const lastActAt = app.picked_up_at || app.checked_in_at || null;
+      // Only current lifecycle activity should be reported
+      const lastActAt = (rowStatus === 'picked_up' ? app.picked_up_at : (rowStatus === 'checked_in' ? app.checked_in_at : null)) || null;
       const lastActLabel = lastActAt ? formatTime(lastActAt) : 'No activity';
 
       return {
@@ -2110,10 +2103,15 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     const allEntriesForAgeGroups = await query(`
       SELECT 
         e.status,
+        e.checked_in_at,
+        e.picked_up_at,
         c.age_group
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
     `, [eventId]);
 
     const standardGroups = ['Below 1', 'Ages 1-3', 'Ages 4-6', 'Ages 7-9', 'Ages 10-12'];
@@ -2143,19 +2141,19 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       }
       const statsObj = ageGroupsMap.get(group);
       statsObj.expected++;
-      if (entry.status === 'checked_in' || entry.status === 'inside') {
-        statsObj.checkedIn++;
-        statsObj.inside++;
-      } else if (entry.status === 'picked_up') {
+      if (entry.status === 'picked_up' && entry.picked_up_at) {
         statsObj.checkedIn++;
         statsObj.pickedUp++;
+      } else if ((entry.status === 'checked_in' || entry.status === 'inside') && entry.checked_in_at && !entry.picked_up_at) {
+        statsObj.checkedIn++;
+        statsObj.inside++;
       } else {
         statsObj.notArrived++;
       }
     }
     const ageGroups = Array.from(ageGroupsMap.values());
 
-    // 4. Fetch Recent Scans logs (max 10)
+    // 4. Fetch Recent Scans logs (max 10) - strictly limited to current active lifecycle
     const recentScansRows = await query(`
       SELECT 
         e.id as entry_id,
@@ -2168,7 +2166,11 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         c.needs_age_review
       FROM child_event_entries e
       JOIN children c ON e.child_id = c.id
-      WHERE e.event_id = ? AND (e.checked_in_at IS NOT NULL OR e.picked_up_at IS NOT NULL)
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('checked_in', 'inside', 'picked_up')
+        AND (e.checked_in_at IS NOT NULL OR e.picked_up_at IS NOT NULL)
       ORDER BY COALESCE(e.picked_up_at, e.checked_in_at) DESC
       LIMIT 10
     `, [eventId]);
@@ -2187,7 +2189,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    // 5. Fetch Team Activity logs (max 10)
+    // 5. Fetch Team Activity logs (max 10) - strictly limited to current active lifecycle
     const teamActivityRows = await query(`
       SELECT 
         e.id as entry_id,
@@ -2200,7 +2202,11 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       JOIN children c ON c.id = e.child_id
       LEFT JOIN users u ON (e.status = 'picked_up' AND e.picked_up_by = u.id) OR (e.status != 'picked_up' AND e.checked_in_by = u.id)
       LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
-      WHERE e.event_id = ? AND (e.checked_in_by IS NOT NULL OR e.picked_up_by IS NOT NULL)
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('checked_in', 'inside', 'picked_up')
+        AND (e.checked_in_by IS NOT NULL OR e.picked_up_by IS NOT NULL)
       ORDER BY COALESCE(e.picked_up_at, e.checked_in_at) DESC
       LIMIT 10
     `, [eventId]);
@@ -2220,12 +2226,12 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({
       success: true,
       stats: {
-        expected: totalRes?.count || 0,
-        checkedIn: checkedInRes?.count || 0,
-        inside: insideRes?.count || 0,
-        pickedUp: pickedUpRes?.count || 0,
-        notArrived: notArrivedRes?.count || 0,
-        needsAttention: needsAttentionRes?.count || 0
+        expected: summaryStats.selected,
+        checkedIn: summaryStats.checkedIn,
+        inside: summaryStats.inside,
+        pickedUp: summaryStats.pickedUp,
+        notArrived: Math.max(0, summaryStats.selected - summaryStats.checkedIn),
+        needsAttention: summaryStats.needsAttention
       },
       rows,
       ageGroups,
