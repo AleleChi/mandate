@@ -2179,6 +2179,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       const flagged = r.has_medical_notes === 1 || r.needs_extra_support === 1 || r.needs_age_review === 1;
       return {
         id: `${r.entry_id}-${isPickup ? 'pickup' : 'checkin'}`,
+        applicationId: r.entry_id,
         childName: r.child_name,
         type: isPickup ? 'pickup' : 'check_in',
         timeLabel,

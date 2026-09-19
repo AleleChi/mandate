@@ -20,17 +20,33 @@ import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { AdminReviewChildView } from './AdminReviewChildView';
+
+/**
+ * Canonical helper for resolving the admin child detail / review path.
+ * Returns the canonical route for a given application ID (child_event_entry_id).
+ * Returns null if the identifier is missing or invalid.
+ */
+export const getAdminChildDetailPath = (applicationId?: string | null): string | null => {
+  if (!applicationId || typeof applicationId !== 'string' || !applicationId.trim()) {
+    return null;
+  }
+  return `/admin/applications/${encodeURIComponent(applicationId.trim())}`;
+};
 
 interface AdminAttendanceViewProps {
   onBackToOverview: () => void;
   onNavigate?: (route: string) => void;
+  adminUser?: any;
 }
 
 export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({ 
   onBackToOverview,
-  onNavigate 
+  onNavigate,
+  adminUser
 }) => {
   const { showError, showSuccess } = useNotification();
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -105,8 +121,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
       showError('Navigation Info', 'This child record is not linked to a review application.');
       return;
     }
-    // Navigate using hashed-router or onNavigate if available
-    window.location.hash = `#/admin/applications/${applicationId}`;
+    setSelectedApplicationId(applicationId);
   };
 
   // Safe Export handler
@@ -205,6 +220,22 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
   const totalInside = ageGroups.reduce((acc, curr) => acc + (curr.inside || 0), 0);
   const totalPickedUp = ageGroups.reduce((acc, curr) => acc + (curr.pickedUp || 0), 0);
   const totalNotArrived = ageGroups.reduce((acc, curr) => acc + (curr.notArrived || 0), 0);
+
+  // Canonical Child Detail View
+  if (selectedApplicationId) {
+    return (
+      <AdminReviewChildView
+        applicationId={selectedApplicationId}
+        onBack={() => setSelectedApplicationId(null)}
+        backLabel="Back to attendance"
+        adminUser={adminUser}
+        onSave={() => {
+          setSelectedApplicationId(null);
+          loadAttendanceData();
+        }}
+      />
+    );
+  }
 
   return (
     <div 
@@ -417,7 +448,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                             onClick={() => handleRowClick(row.applicationId)}
                             className="hover:bg-[#FAF9F6] transition-colors cursor-pointer text-xs"
                           >
-                            <td className="py-3.5 px-4 font-semibold text-zinc-800">
+                            <td className="py-3.5 px-4 font-semibold text-zinc-800 hover:text-[#C59B27] transition-colors">
                               {row.childName}
                               {row.status === 'needs_attention' && (
                                 <span className="ml-1 text-rose-500 font-bold" title="Care flag active">⚠️</span>
@@ -494,6 +525,10 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                             variant="secondary"
                             size="sm"
                             fullWidth
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRowClick(row.applicationId);
+                            }}
                             className="py-1.5 text-xs font-semibold"
                           >
                             View details
@@ -645,28 +680,35 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
               <p className="text-zinc-400 text-xs text-center py-4">No recent scans yet.</p>
             ) : (
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1 scrollbar-thin">
-                {recentScans.map((scan) => (
-                  <div key={scan.id} className="flex items-start space-x-2.5 text-xs">
-                    <span className="mt-1 flex-shrink-0">
-                      {scan.type === 'pickup' ? (
-                        <span className="w-2 h-2 rounded-full bg-zinc-400 block" />
-                      ) : (
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
+                {recentScans.map((scan) => {
+                  const appId = scan.applicationId || (scan.id ? scan.id.split('-')[0] : undefined);
+                  return (
+                    <div
+                      key={scan.id}
+                      onClick={() => appId ? handleRowClick(appId) : undefined}
+                      className={`flex items-start space-x-2.5 text-xs ${appId ? 'cursor-pointer hover:bg-zinc-50 p-1.5 -mx-1.5 rounded-lg transition-colors' : ''}`}
+                    >
+                      <span className="mt-1 flex-shrink-0">
+                        {scan.type === 'pickup' ? (
+                          <span className="w-2 h-2 rounded-full bg-zinc-400 block" />
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
+                        )}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-semibold text-zinc-800 truncate ${appId ? 'hover:text-[#C59B27] transition-colors' : ''}`}>
+                          {scan.childName}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                          {scan.type === 'pickup' ? 'Picked up' : 'Checked in'} · {scan.timeLabel}
+                        </p>
+                      </div>
+                      {scan.flagged && (
+                        <span className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1 rounded-sm">Care</span>
                       )}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-zinc-800 truncate">
-                        {scan.childName}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">
-                        {scan.type === 'pickup' ? 'Picked up' : 'Checked in'} · {scan.timeLabel}
-                      </p>
                     </div>
-                    {scan.flagged && (
-                      <span className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1 rounded-sm">Care</span>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

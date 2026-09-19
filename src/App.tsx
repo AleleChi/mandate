@@ -1201,13 +1201,13 @@ export default function App() {
               initialTab={
                 cleanRoute === '/admin/settings'
                   ? 'settings'
-                  : cleanRoute === '/admin/applications'
+                  : cleanRoute === '/admin/applications' || cleanRoute.startsWith('/admin/applications/')
                     ? 'applications'
-                    : cleanRoute === '/admin/review'
+                    : cleanRoute === '/admin/review' || cleanRoute.startsWith('/admin/review/')
                       ? 'review'
-                      : cleanRoute === '/admin/children'
+                      : cleanRoute === '/admin/children' || cleanRoute.startsWith('/admin/children/')
                         ? 'children'
-                        : cleanRoute === '/admin/attendance'
+                        : cleanRoute === '/admin/attendance' || cleanRoute.startsWith('/admin/attendance/')
                           ? 'attendance'
                           : cleanRoute === '/admin/reports' || cleanRoute.startsWith('/admin/reports/')
                             ? 'reports'
