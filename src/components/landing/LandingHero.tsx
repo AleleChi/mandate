@@ -24,9 +24,8 @@ export interface HeroPassPreviewProps {
 
 export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
   className = '',
-  avatarUrl,
 }) => {
-  const [phase, setPhase] = useState<'pass' | 'scanning' | 'details'>('pass');
+  const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -37,148 +36,88 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
     return () => mediaQuery.removeEventListener('change', listener);
   }, []);
 
-  useEffect(() => {
-    if (prefersReducedMotion) {
-      setPhase('pass');
-      return;
-    }
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (prefersReducedMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setMouseOffset({ x, y });
+  };
 
-    let timer: NodeJS.Timeout;
-
-    const runLoop = () => {
-      setPhase('pass');
-      timer = setTimeout(() => {
-        setPhase('scanning');
-        timer = setTimeout(() => {
-          setPhase('details');
-          timer = setTimeout(() => {
-            runLoop();
-          }, 3500);
-        }, 1500);
-      }, 3000);
-    };
-
-    runLoop();
-
-    return () => clearTimeout(timer);
-  }, [prefersReducedMotion]);
+  const handleMouseLeave = () => {
+    setMouseOffset({ x: 0, y: 0 });
+  };
 
   return (
-    <motion.div
-      layout={!prefersReducedMotion}
-      transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] as const }}
-      className={`bg-[#FAF8F3] rounded-3xl p-5 sm:p-6 shadow-[0_16px_40px_-12px_rgba(24,24,27,0.14)] border border-[#E5D5AE]/80 overflow-hidden text-left relative ${className}`}
+    <div
+      style={{ perspective: '1200px' }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className={`relative select-none ${className}`}
     >
-      {/* Top Header Row */}
-      <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]/80 mb-4">
-        <span className="text-[10px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans">
-          Koinonia Children and Teens
-        </span>
-        <span className="text-[10px] sm:text-[11px] font-semibold text-[#6B7280] tracking-wide">
-          {phase === 'details' ? 'Child details' : 'Event pass'}
-        </span>
-      </div>
+      {/* 1. Ambient soft shadow plane */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-4 bg-[#C59B27]/12 blur-2xl rounded-3xl -z-20 transform translate-y-6 pointer-events-none"
+      />
 
-      <AnimatePresence mode="wait">
-        {phase === 'details' ? (
-          <motion.div
-            key="details"
-            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -5 }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] as const }}
-            className="space-y-4"
-          >
-            {/* Child Header */}
-            <div className="flex items-center space-x-3.5">
-              <AssetImage
-                src={avatarUrl || REAL_ASSETS.passAvatar}
-                alt="Mary Omikunle"
-                iconType="users"
-                className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border border-[#EAE8E1] shrink-0 shadow-2xs"
+      {/* 2. Offset back card plane (Physical thickness / layered edge) */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-[#ECE5D4] rounded-[22px] -rotate-1.5 translate-x-2.5 translate-y-2.5 border border-[#D9CBAC]/90 -z-10 shadow-sm pointer-events-none transition-transform duration-300"
+        style={{
+          transform: prefersReducedMotion
+            ? 'none'
+            : `translate3d(${mouseOffset.x * 2 + 8}px, ${mouseOffset.y * 2 + 8}px, -10px) rotate(-1.5deg)`,
+        }}
+      />
+
+      {/* 3. Front Physical 3D Pass Card */}
+      <motion.div
+        animate={prefersReducedMotion ? {} : { y: [0, -5, 0] }}
+        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          transform: prefersReducedMotion
+            ? 'none'
+            : `translate3d(${mouseOffset.x * 4}px, ${mouseOffset.y * 4}px, 0) rotateX(${-mouseOffset.y * 5}deg) rotateY(${mouseOffset.x * 7}deg)`,
+        }}
+        className="bg-[#FCFBF7] rounded-[22px] p-6 sm:p-7 border border-[#E2D4B7] shadow-[0_20px_40px_-12px_rgba(24,24,27,0.16),0_6px_16px_-4px_rgba(197,155,39,0.10)] relative overflow-hidden text-left transition-transform duration-200 ring-1 ring-white/90"
+      >
+        {/* Subtle paper inner highlight */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/90 via-transparent to-black/[0.015] pointer-events-none rounded-[22px]" />
+
+        {/* Card Header */}
+        <div className="relative z-10">
+          <span className="text-[9.5px] sm:text-[10px] font-bold tracking-[0.22em] text-[#9A7326] uppercase font-sans block">
+            KOINONIA CHILDREN &amp; TEENS
+          </span>
+
+          <h3 className="font-serif-koinonia text-3xl sm:text-[32px] font-bold text-[#18181B] tracking-tight leading-none mt-2">
+            EVENT PASS
+          </h3>
+          <p className="text-xs font-semibold text-[#52525B] mt-1.5 font-sans tracking-wide">
+            The General Assembly
+          </p>
+
+          <div className="h-[1px] w-12 bg-[#C59B27]/50 mt-3 mb-4" />
+        </div>
+
+        {/* Central QR Graphic Feature */}
+        <div className="relative z-10 my-1 flex flex-col items-center justify-center">
+          <div className="w-36 h-36 sm:w-40 sm:h-40 rounded-xl bg-white border border-[#E8DFC8] flex items-center justify-center p-3.5 text-zinc-900 shadow-[inset_0_1px_3px_rgba(0,0,0,0.03),0_2px_8px_rgba(0,0,0,0.04)] relative overflow-hidden">
+            <QrCode className="w-full h-full stroke-[1.35] text-zinc-850" />
+            {!prefersReducedMotion && (
+              <motion.div
+                initial={{ top: '-10%', opacity: 0 }}
+                animate={{ top: '110%', opacity: [0, 1, 1, 0] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut', repeatDelay: 2 }}
+                className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C59B27] to-transparent shadow-[0_0_8px_rgba(197,155,39,0.5)] pointer-events-none"
               />
-              <div>
-                <h4 className="text-base sm:text-lg font-bold text-[#18181B] font-serif-koinonia leading-tight">
-                  Mary Omikunle
-                </h4>
-                <p className="text-xs text-[#6B7280] font-medium mt-0.5">7 years • Ages 7 to 9</p>
-              </div>
-            </div>
-
-            {/* Verification & Pickup Details */}
-            <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-[#EAE8E1] space-y-2 text-xs sm:text-[13px] shadow-2xs">
-              <div className="flex justify-between items-center">
-                <span className="text-[#6B7280]">Parent</span>
-                <span className="font-bold text-[#18181B]">Sarah Omikunle</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[#6B7280]">Pickup person</span>
-                <span className="font-bold text-[#18181B]">Sarah Omikunle</span>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t border-[#FAF9F6]">
-                <span className="text-[#6B7280]">Entry check</span>
-                <span className="font-bold text-[#9A7326] flex items-center space-x-1.5 bg-[#FAF6EB] px-2.5 py-0.5 rounded-full border border-[#E5D5AE]">
-                  <Check className="w-3.5 h-3.5 text-[#C59B27]" />
-                  <span>Ready</span>
-                </span>
-              </div>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="pass"
-            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: prefersReducedMotion ? 0 : 5 }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] as const }}
-            className="space-y-4"
-          >
-            {/* Child Profile Info */}
-            <div className="flex items-center space-x-3.5">
-              <AssetImage
-                src={avatarUrl || REAL_ASSETS.passAvatar}
-                alt="Mary Omikunle"
-                iconType="users"
-                className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border border-[#EAE8E1] shrink-0 shadow-2xs"
-              />
-              <div className="flex-1">
-                <h4 className="text-base sm:text-lg font-bold text-[#18181B] font-serif-koinonia leading-tight">
-                  Mary Omikunle
-                </h4>
-                <div className="flex items-center space-x-2 mt-1">
-                  <span className="text-xs text-[#6B7280] font-medium">7 years</span>
-                  <span className="text-[10px] text-[#D9D6CE]">•</span>
-                  <span className="text-xs text-[#6B7280] font-medium">Ages 7 to 9</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Status & QR Block */}
-            <div className="bg-white rounded-2xl p-4 border border-[#EAE8E1] shadow-2xs flex items-center justify-between relative overflow-hidden">
-              <div className="space-y-1">
-                <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[11px] font-bold">
-                  Pass ready
-                </span>
-                <p className="text-xs font-bold text-[#18181B] font-serif-koinonia pt-1">Event pass</p>
-                <p className="text-[11px] text-[#6B7280] font-medium">Show at entry</p>
-              </div>
-
-              <div className="w-14 h-14 rounded-xl bg-[#FAF9F6] border border-[#EAE8E1] flex items-center justify-center relative shrink-0">
-                <QrCode className="w-9 h-9 text-[#262626]" />
-                {phase === 'scanning' && !prefersReducedMotion && (
-                  <motion.div
-                    initial={{ top: '-10%', opacity: 0 }}
-                    animate={{ top: '110%', opacity: [0, 1, 1, 0] }}
-                    transition={{ duration: 1.4, ease: 'easeInOut' }}
-                    className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C59B27] to-transparent shadow-[0_0_8px_rgba(197,155,39,0.45)] pointer-events-none"
-                  />
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 };
 
@@ -196,7 +135,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
     <section
       id="about"
       aria-label="Koinonia Children and Teens Introduction"
-      className="relative py-16 sm:py-24 px-6 sm:px-10 lg:px-12 max-w-7xl mx-auto w-full overflow-hidden rounded-[36px] my-6 border border-[#EAE8E1]/70 shadow-xs"
+      className="relative py-10 sm:py-12 lg:py-14 px-6 sm:px-10 lg:px-12 max-w-7xl mx-auto w-full overflow-hidden rounded-[36px] my-4 sm:my-6 border border-[#EAE8E1]/70 shadow-xs"
     >
       {/* Layer 1: Background Video Atmosphere */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none rounded-[36px]">
@@ -226,33 +165,33 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         <div className="absolute inset-0 bg-gradient-to-b from-[#FAF9F6]/60 via-transparent to-[#FAF9F6]/90 pointer-events-none" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center relative z-10">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center relative z-10">
         {/* Left-aligned hero text */}
         <div
-          className={`lg:col-span-6 space-y-6 text-left transition-all duration-1000 ease-out ${
+          className={`lg:col-span-7 text-left max-w-[680px] transition-all duration-1000 ease-out ${
             loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
           }`}
         >
-          <span className="text-xs font-bold tracking-widest text-[#B89047] uppercase block">
+          <span className="text-xs font-bold tracking-widest text-[#B89047] uppercase block mb-3 sm:mb-3.5">
             KOINONIA CHILDREN AND TEENS
           </span>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-[1.12]">
+          <h1 className="text-4xl sm:text-[44px] md:text-5xl lg:text-[54px] xl:text-[60px] font-sans font-extrabold text-[#18181B] tracking-[-0.04em] leading-[1.04] sm:leading-[1.02] lg:leading-[0.98] mb-4 sm:mb-5 max-w-[620px]">
             The Children and Teens section starts here
           </h1>
 
-          <p className="text-base sm:text-lg text-[#6B7280] leading-relaxed max-w-xl">
+          <p className="text-base sm:text-lg text-[#6B7280] leading-relaxed max-w-xl mb-6 sm:mb-7">
             Parents and guardians can create an account, add each child’s details, follow review updates, and keep event passes ready for the day.
           </p>
 
           {/* Buttons or Registration Status */}
           {regStatus && !regStatus.parent?.isOpen ? (
-            <div className="bg-white/95 border border-[#E7E3D8] rounded-2xl p-6 space-y-4 text-left max-w-xl shadow-xs backdrop-blur-xs">
+            <div className="bg-white/95 border border-[#E7E3D8] rounded-2xl p-6 space-y-4 text-left max-w-xl shadow-xs backdrop-blur-xs mb-4">
               <div className="space-y-1.5">
                 <div className="text-[11px] font-semibold text-[#9A7326] uppercase tracking-wider">
                   {regStatus.parent?.state === 'not_open_yet' ? 'Registration opening soon' : 'Registration closed'}
                 </div>
-                  <h3 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                  <h3 className="text-xl sm:text-2xl font-sans font-bold text-[#18181B] leading-snug">
                     {regStatus.parent?.state === 'not_open_yet'
                       ? `Registration for ${regStatus.eventName || currentEvent?.title || 'The General Assembly'} has not started yet.`
                       : `Registration for ${regStatus.eventName || currentEvent?.title || 'The General Assembly'} is now closed.`}
@@ -260,8 +199,8 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 <p className="text-sm text-[#52525B] leading-relaxed">
                   {regStatus.parent?.state === 'not_open_yet'
                     ? regStatus.parent?.opensAtFormatted
-                      ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in anytime to view your child’s information and updates.`
-                      : 'If you already have an account, you can still sign in anytime to view your child’s information and updates.'
+                    ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in anytime to view your child’s information and updates.`
+                    : 'If you already have an account, you can still sign in anytime to view your child’s information and updates.'
                     : 'Existing families can sign in below anytime to view child details and keep event passes ready.'}
                 </p>
               </div>
@@ -283,11 +222,11 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-4 pt-2" data-component-version="landing-hero-cta-v2-clean">
+            <div className="flex flex-wrap items-center gap-3.5 sm:gap-4 mb-4 sm:mb-5" data-component-version="landing-hero-cta-v2-clean">
               <button
                 type="button"
                 onClick={onParentRegisterClick}
-                className="w-full sm:w-64 h-[52px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
+                className="w-full sm:w-60 h-[50px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
               >
                 <span>Register your child</span>
                 <ArrowRight className="w-4 h-4" />
@@ -295,7 +234,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               <button
                 type="button"
                 onClick={onVolunteerRegisterClick}
-                className="w-full sm:w-64 h-[52px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
+                className="w-full sm:w-60 h-[50px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
               >
                 <span>Volunteer sign in</span>
               </button>
@@ -303,8 +242,8 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           )}
 
           {/* Trust note */}
-          <div className="pt-4">
-            <div className="inline-flex items-center space-x-3 bg-white border border-[#EAE8E1] rounded-xl px-4 py-3 shadow-2xs text-xs text-[#6B7280]">
+          <div className="pt-0">
+            <div className="inline-flex items-center space-x-2.5 bg-white/90 border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 shadow-2xs text-xs text-[#6B7280]">
               <ShieldCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
               <span>Photos, pickup details, passes, entry, and pickup are checked with care.</span>
             </div>
@@ -312,10 +251,10 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         </div>
 
         {/* Right-side editorial layered image composition (Stitch Reference) */}
-        <div className="lg:col-span-6 relative pb-20 lg:pb-16 pt-6 pl-4 sm:pl-10 group/hero">
+        <div className="lg:col-span-5 relative pb-16 lg:pb-14 pt-4 pl-2 sm:pl-6 group/hero">
           {/* Back layer (smaller image layer behind or slightly above) */}
           <div
-            className={`absolute -top-4 left-0 sm:left-6 w-60 sm:w-72 h-80 rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] z-0 transition-all duration-700 delay-150 ease-out ${
+            className={`absolute -top-4 left-0 sm:left-4 w-56 sm:w-64 h-72 rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] z-0 transition-all duration-700 delay-150 ease-out ${
               loaded ? 'opacity-90 translate-y-0 -rotate-3' : 'opacity-0 -translate-y-6 -rotate-6'
             } group-hover/hero:-translate-y-2 group-hover/hero:shadow-2xl`}
           >
@@ -323,14 +262,14 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               src={assets.heroUpper}
               alt="Families arriving at event"
               iconType="users"
-              label="Back Layer Visual"
+              hideText
               className="w-full h-full object-cover"
             />
           </div>
 
           {/* Main image (large main image with curved/rounded top shape) */}
           <div
-            className={`relative z-10 rounded-t-[140px] sm:rounded-t-[180px] rounded-b-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] bg-white aspect-[4/5] max-w-md mx-auto lg:ml-auto transition-all duration-700 delay-300 ease-out ${
+            className={`relative z-10 rounded-t-[140px] sm:rounded-t-[180px] rounded-b-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] bg-white aspect-[4/5] max-w-[360px] sm:max-w-[400px] mx-auto lg:ml-auto transition-all duration-700 delay-300 ease-out ${
               loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
             } group-hover/hero:scale-[1.02] group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.22)]`}
           >
@@ -338,7 +277,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               src={assets.heroMain}
               alt="Koinonia General Assembly Welcome Reception"
               iconType="sparkles"
-              label="Main Hero Gathering"
+              hideText
               className="w-full h-full object-cover object-top"
               loading="eager"
               fetchpriority="high"
@@ -347,7 +286,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
           {/* Front/right layer (smaller image layer in front/right side) */}
           <div
-            className={`absolute -right-2 sm:-right-6 bottom-12 sm:bottom-16 z-20 w-44 sm:w-52 aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-white transition-all duration-700 delay-500 ease-out ${
+            className={`absolute -right-2 sm:-right-4 bottom-12 sm:bottom-14 z-20 w-40 sm:w-48 aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-white transition-all duration-700 delay-500 ease-out ${
               loaded ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95'
             } group-hover/hero:translate-x-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.24)]`}
           >
@@ -355,14 +294,14 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               src={assets.heroRight}
               alt="Welcoming care team member check-in"
               iconType="heart"
-              label="Front Right Layer"
+              hideText
               className="w-full h-full object-cover"
             />
           </div>
 
           {/* Floating pass preview card (subtle scan-to-details animation - overlapping lower-left area of main image) */}
           <div
-            className={`absolute left-0 sm:left-2 -bottom-8 sm:-bottom-10 z-30 w-[300px] sm:w-[350px] transition-all duration-700 delay-700 ease-out ${
+            className={`absolute left-0 sm:left-0 -bottom-6 sm:-bottom-8 z-30 w-[290px] sm:w-[330px] transition-all duration-700 delay-700 ease-out ${
               loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
             } group-hover/hero:-translate-y-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.2)]`}
           >

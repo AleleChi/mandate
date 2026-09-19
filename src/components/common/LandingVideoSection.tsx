@@ -220,7 +220,7 @@ export const LandingVideoSection: React.FC<LandingVideoSectionProps> = ({
 
         {/* Text — bottom left (proportional on mobile, generous padding) */}
         <div className="absolute bottom-0 left-0 z-30 p-5 sm:p-8 lg:p-12 max-w-xl">
-          <h3 className="text-lg sm:text-2xl lg:text-[1.75rem] font-serif-koinonia font-bold text-white tracking-tight leading-snug mb-1.5 sm:mb-2 max-w-xs sm:max-w-none">
+          <h3 className="text-lg sm:text-2xl lg:text-[1.75rem] font-sans font-bold text-white tracking-tight leading-snug mb-1.5 sm:mb-2 max-w-xs sm:max-w-none">
             {title}
           </h3>
           <p className="text-xs sm:text-sm text-white/70 leading-relaxed max-w-md line-clamp-2 sm:line-clamp-none">

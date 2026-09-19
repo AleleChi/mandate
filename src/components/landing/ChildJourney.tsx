@@ -66,15 +66,15 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
     <section
       id="journey"
       aria-label="From registration to pickup"
-      className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full border-t border-[#EAE8E1]"
+      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full border-t border-[#EAE8E1]"
     >
       {/* Section Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-12 border-b border-[#EAE8E1] text-left">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 sm:pb-10 border-b border-[#EAE8E1] text-left">
         <div className="max-w-2xl space-y-3">
           <span className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
             HOW IT WORKS
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-tight">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] tracking-tight leading-tight">
             From registration to pickup
           </h2>
           <p className="text-sm sm:text-base text-[#52525B] leading-relaxed font-normal">
@@ -97,7 +97,7 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
       {/* ========================================================================= */}
       {/* DESKTOP: Clean Editorial Journey (Timeline Left, Editorial Visual Right)  */}
       {/* ========================================================================= */}
-      <div className="hidden lg:grid grid-cols-12 gap-12 pt-12 items-start text-left">
+      <div className="hidden lg:grid grid-cols-12 gap-8 lg:gap-10 pt-8 sm:pt-10 items-start text-left">
         {/* Left Column: Interactive Steps List with Clean Connecting Track */}
         <div className="col-span-7 relative pl-4 space-y-4">
           {/* Vertical connecting line */}
@@ -136,7 +136,7 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
                 {/* Step Text */}
                 <div className="space-y-1">
                   <h3
-                    className={`text-lg font-serif-koinonia font-bold transition-colors ${
+                    className={`text-lg font-sans font-bold transition-colors ${
                       isActive ? 'text-[#18181B]' : 'text-[#71717A]'
                     }`}
                   >
@@ -169,7 +169,7 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
 
               {/* Active Step Heading & Natural Copy */}
               <div className="space-y-3 pt-4">
-                <h3 className="text-2xl sm:text-3xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
+                <h3 className="text-2xl sm:text-3xl font-sans font-bold text-[#18181B] leading-tight">
                   {current.title}
                 </h3>
                 <p className="text-sm sm:text-base text-[#52525B] leading-relaxed">
@@ -208,7 +208,7 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
               {step.number}
             </span>
             <div className="space-y-1">
-              <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
+              <h3 className="text-base font-sans font-bold text-[#18181B]">
                 {step.title}
               </h3>
               <p className="text-xs sm:text-sm text-[#52525B] leading-relaxed">

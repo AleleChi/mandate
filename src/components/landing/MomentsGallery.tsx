@@ -289,7 +289,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onWheel={handleWheel}
-      className={`py-16 sm:py-24 bg-[#FAF9F6] border-y border-[#EAE8E1]/80 overflow-hidden outline-none ${className}`}
+      className={`py-14 sm:py-20 bg-[#FAF9F6] border-y border-[#EAE8E1]/80 overflow-hidden outline-none ${className}`}
     >
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
@@ -297,7 +297,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
           <span className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
             GALLERY
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-tight">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] tracking-tight leading-tight">
             Moments from the programme
           </h2>
         </div>

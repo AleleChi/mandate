@@ -29,6 +29,9 @@ export const REAL_ASSETS = {
   // Safety & Check-in Desk Image
   safetySection: '', // Event care check-in station image
 
+  // Children & Teens Experience Pickup Background Image
+  experiencePickup: '', // Background image for the Pickup panel in the experience section
+
   // Past Moments Gallery Images
   gallery: {
     arrival: '',

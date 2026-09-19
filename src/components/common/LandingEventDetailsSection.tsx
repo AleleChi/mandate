@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 
 export interface LandingEventDetailsSectionProps {
   event?: {
@@ -30,11 +31,15 @@ export interface LandingEventDetailsSectionProps {
 }
 
 /**
- * Formats event date range into an elegant editorial string.
- * Example: "18–22 November 2026" or "18 November 2026"
- * If no start date is provided, returns null cleanly (no fake placeholder).
+ * Parses event dates into visual elements for the editorial date composition.
+ * Example: days: "18—22", month: "NOVEMBER", year: "2026"
  */
-function formatEventDateRange(startsAt?: string | null, endsAt?: string | null): string | null {
+function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null): {
+  days: string;
+  month: string;
+  year: string;
+  fullText: string;
+} | null {
   if (!startsAt || startsAt.trim() === '') {
     return null;
   }
@@ -46,7 +51,12 @@ function formatEventDateRange(startsAt?: string | null, endsAt?: string | null):
 
   const sDate = new Date(startsAt);
   if (isNaN(sDate.getTime())) {
-    return startsAt.trim();
+    return {
+      days: startsAt.trim(),
+      month: '',
+      year: '',
+      fullText: startsAt.trim()
+    };
   }
 
   const sDay = sDate.getDate();
@@ -54,12 +64,22 @@ function formatEventDateRange(startsAt?: string | null, endsAt?: string | null):
   const sYear = sDate.getFullYear();
 
   if (!endsAt || endsAt.trim() === '') {
-    return `${sDay} ${sMonth} ${sYear}`;
+    return {
+      days: String(sDay),
+      month: sMonth.toUpperCase(),
+      year: String(sYear),
+      fullText: `${sDay} ${sMonth} ${sYear}`
+    };
   }
 
   const eDate = new Date(endsAt);
   if (isNaN(eDate.getTime())) {
-    return `${sDay} ${sMonth} ${sYear}`;
+    return {
+      days: String(sDay),
+      month: sMonth.toUpperCase(),
+      year: String(sYear),
+      fullText: `${sDay} ${sMonth} ${sYear}`
+    };
   }
 
   const eDay = eDate.getDate();
@@ -67,23 +87,34 @@ function formatEventDateRange(startsAt?: string | null, endsAt?: string | null):
   const eYear = eDate.getFullYear();
 
   if (sYear === eYear && sMonth === eMonth) {
-    if (sDay === eDay) {
-      return `${sDay} ${sMonth} ${sYear}`;
-    }
-    return `${sDay}–${eDay} ${sMonth} ${sYear}`;
+    return {
+      days: sDay === eDay ? String(sDay) : `${sDay}—${eDay}`,
+      month: sMonth.toUpperCase(),
+      year: String(sYear),
+      fullText: sDay === eDay ? `${sDay} ${sMonth} ${sYear}` : `${sDay}–${eDay} ${sMonth} ${sYear}`
+    };
   }
 
   if (sYear === eYear) {
-    return `${sDay} ${sMonth} – ${eDay} ${eMonth} ${sYear}`;
+    return {
+      days: `${sDay} ${sMonth.slice(0, 3)} — ${eDay} ${eMonth.slice(0, 3)}`,
+      month: `${sMonth.toUpperCase()} / ${eMonth.toUpperCase()}`,
+      year: String(sYear),
+      fullText: `${sDay} ${sMonth} – ${eDay} ${eMonth} ${sYear}`
+    };
   }
 
-  return `${sDay} ${sMonth} ${sYear} – ${eDay} ${eMonth} ${eYear}`;
+  return {
+    days: `${sDay} ${sMonth.slice(0, 3)} — ${eDay} ${eMonth.slice(0, 3)}`,
+    month: `${sMonth.toUpperCase()} / ${eMonth.toUpperCase()}`,
+    year: `${sYear} / ${eYear}`,
+    fullText: `${sDay} ${sMonth} ${sYear} – ${eDay} ${eMonth} ${eYear}`
+  };
 }
 
 /**
  * Formats daily operational times cleanly.
- * Example: "9:00 AM – 7:00 PM" or "9:00 AM"
- * If no start time is provided, returns null cleanly.
+ * Example: "9:00 AM – 7:00 PM"
  */
 function formatDailyTime(startTime?: string | null, endTime?: string | null): string | null {
   const hasStart = Boolean(startTime && startTime.trim());
@@ -106,12 +137,28 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
   regStatus,
   className = ''
 }) => {
+  const systemReducedMotion = useReducedMotion();
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      setPrefersReducedMotion(mediaQuery.matches);
+      const listener = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    }
+  }, []);
+
+  const shouldReduceMotion = Boolean(systemReducedMotion || prefersReducedMotion);
+
   const eventTitle = event?.title?.trim() || regStatus?.eventName?.trim() || null;
   const sectionSubtitle = event?.section_name?.trim() || null;
   const locationText = event?.location?.trim() || null;
 
-  const dateText = formatEventDateRange(event?.starts_at, event?.ends_at);
+  const dateDisplay = parseEventDateDisplay(event?.starts_at, event?.ends_at);
   const timeText = formatDailyTime(event?.daily_start_time, event?.daily_end_time);
+  const cleanTimezone = event?.timezone ? event.timezone.replace('_', ' ') : null;
   const themeText = event?.theme?.trim() || null;
   const scriptureText = event?.scripture?.trim() || null;
 
@@ -145,17 +192,17 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
   let passInfo: { label: string; value: string } | null = null;
   if (event) {
     passInfo = {
-      label: 'Entry Pass',
+      label: 'Event Pass',
       value: 'Digital QR pass issued upon application review'
     };
   }
 
   // If no event title and no date or schedule exists, hide section entirely
-  if (!eventTitle && !dateText && !timeText && !themeText) {
+  if (!eventTitle && !dateDisplay && !timeText && !themeText) {
     return null;
   }
 
-  const hasSchedule = Boolean(dateText || timeText);
+  const hasSchedule = Boolean(timeText);
   const hasTheme = Boolean(themeText);
   const hasMetadata = Boolean(accessInfo || passInfo);
 
@@ -163,51 +210,68 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
     <section
       id="event-details"
       aria-label="Event Details"
-      className={`py-8 sm:py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full ${className}`}
+      className={`py-12 sm:py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full ${className}`}
     >
-      <div className="bg-[#FAF8F3] border border-[#E5D5AE]/90 rounded-3xl sm:rounded-[32px] p-6 sm:p-10 lg:p-14 shadow-2xs">
-        {/* Editorial Header */}
-        <div className="space-y-1.5 max-w-3xl">
-          {sectionSubtitle && (
-            <span className="text-[11px] sm:text-xs font-semibold tracking-widest text-[#9A7326] uppercase font-sans block">
-              {sectionSubtitle}
+      {/* Connected Editorial Event Canvas */}
+      <motion.div
+        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 16 }}
+        whileInView={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: '-40px' }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-[#FAF8F3] border-t-2 border-t-[#C59B27] border-x border-b border-[#EAE8E1]/80 rounded-2xl sm:rounded-3xl p-7 sm:p-10 lg:p-14 text-left relative overflow-hidden"
+      >
+        {/* Top Block: Event Identity on Left, Large Date Composition on Right */}
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8 lg:gap-12 pb-8 sm:pb-10 border-b border-[#EAE8E1]/80">
+          {/* Left: Event Identity & Venue */}
+          <div className="space-y-2 max-w-2xl">
+            <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+              {sectionSubtitle || 'CHILDREN & TEENS'}
             </span>
-          )}
-          {eventTitle && (
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-tight">
-              {eventTitle}
-            </h2>
-          )}
-          {locationText && (
-            <p className="text-xs sm:text-sm text-[#71717A] pt-1 leading-relaxed">
-              {locationText}
-            </p>
+            {eventTitle && (
+              <h2 className="text-3xl sm:text-4xl lg:text-[50px] font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-[1.05]">
+                {eventTitle}
+              </h2>
+            )}
+            {locationText && (
+              <p className="text-sm sm:text-base text-[#52525B] pt-1 leading-relaxed font-sans font-normal">
+                {locationText}
+              </p>
+            )}
+          </div>
+
+          {/* Right: Large Date Composition (Plus Jakarta Sans) */}
+          {dateDisplay && (
+            <div className="flex flex-col items-start lg:items-end justify-start shrink-0 lg:pt-1">
+              <div className="text-2xl sm:text-3xl lg:text-[48px] font-sans font-bold text-[#18181B] tracking-tight leading-none">
+                {dateDisplay.days}
+              </div>
+              <div className="text-xs sm:text-[13px] font-sans font-bold text-[#9A7326] tracking-[0.2em] uppercase mt-2">
+                {dateDisplay.month}
+              </div>
+              <div className="text-xs sm:text-[15px] font-sans font-medium text-[#71717A] tracking-normal mt-0.5">
+                {dateDisplay.year}
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Divider if schedule or theme follows */}
+        {/* Middle Block: Daily Schedule and Ministry Theme */}
         {(hasSchedule || hasTheme) && (
-          <div className="my-6 sm:my-8 border-t border-[#EAE8E1]/90" />
-        )}
-
-        {/* Primary Information: Schedule and Theme in a Refined Editorial Hierarchy */}
-        {(hasSchedule || hasTheme) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 items-start py-8 sm:py-10">
             {/* Schedule Block */}
             {hasSchedule && (
-              <div className="space-y-2">
-                <span className="text-[10px] sm:text-[11px] font-semibold tracking-widest text-[#9A7326] uppercase block">
-                  Date & Daily Schedule
+              <div className="space-y-1.5">
+                <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+                  DAILY SCHEDULE
                 </span>
-                {dateText && (
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold text-[#18181B] font-serif-koinonia leading-snug">
-                    {dateText}
+                {timeText && (
+                  <div className="text-xl sm:text-2xl font-bold text-[#18181B] font-sans leading-snug">
+                    {timeText}
                   </div>
                 )}
-                {timeText && (
-                  <div className="text-sm sm:text-base text-[#52525B] font-medium">
-                    {timeText}
-                    {event?.timezone ? ` (${event.timezone.replace('_', ' ')})` : ''}
+                {cleanTimezone && (
+                  <div className="text-xs sm:text-sm font-medium text-[#71717A] font-sans mt-1">
+                    {cleanTimezone}
                   </div>
                 )}
               </div>
@@ -215,15 +279,15 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
 
             {/* Theme Block */}
             {hasTheme && (
-              <div className="space-y-2">
-                <span className="text-[10px] sm:text-[11px] font-semibold tracking-widest text-[#9A7326] uppercase block">
-                  Ministry Theme
+              <div className="space-y-1.5">
+                <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+                  MINISTRY THEME
                 </span>
-                <div className="text-lg sm:text-xl lg:text-2xl font-bold text-[#18181B] font-serif-koinonia leading-snug">
+                <div className="text-2xl sm:text-3xl lg:text-[32px] font-semibold text-[#18181B] font-serif-koinonia leading-snug">
                   &ldquo;{themeText}&rdquo;
                 </div>
                 {scriptureText && (
-                  <div className="text-xs sm:text-sm font-semibold text-[#9A7326] tracking-wide">
+                  <div className="text-xs sm:text-sm font-semibold text-[#9A7326] tracking-wide font-sans mt-1">
                     {scriptureText}
                   </div>
                 )}
@@ -232,32 +296,32 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
           </div>
         )}
 
-        {/* Supporting Metadata: Access & Pass */}
+        {/* Bottom Utility Rail: Parent Access & Event Pass */}
         {hasMetadata && (
-          <div className="mt-8 pt-6 border-t border-[#EAE8E1]/90 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 text-xs sm:text-sm">
+          <div className="pt-6 sm:pt-8 border-t border-[#EAE8E1]/80 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-start text-xs sm:text-sm">
             {accessInfo && (
-              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
-                <span className="font-semibold text-[#18181B] tracking-wide uppercase text-[10px] sm:text-[11px] text-[#9A7326]">
-                  {accessInfo.label}:
+              <div className="space-y-1">
+                <span className="font-bold text-[#9A7326] tracking-widest uppercase text-[10.5px] sm:text-[11px] font-sans block">
+                  PARENT ACCESS
                 </span>
-                <span className="text-[#3F3F46] font-medium">
+                <p className="text-[#52525B] font-normal leading-relaxed font-sans">
                   {accessInfo.value}
-                </span>
+                </p>
               </div>
             )}
             {passInfo && (
-              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
-                <span className="font-semibold text-[#18181B] tracking-wide uppercase text-[10px] sm:text-[11px] text-[#9A7326]">
-                  {passInfo.label}:
+              <div className="space-y-1 md:border-l md:border-[#EAE8E1]/80 md:pl-10">
+                <span className="font-bold text-[#9A7326] tracking-widest uppercase text-[10.5px] sm:text-[11px] font-sans block">
+                  EVENT PASS
                 </span>
-                <span className="text-[#3F3F46] font-medium">
+                <p className="text-[#52525B] font-normal leading-relaxed font-sans">
                   {passInfo.value}
-                </span>
+                </p>
               </div>
             )}
           </div>
         )}
-      </div>
+      </motion.div>
     </section>
   );
 };

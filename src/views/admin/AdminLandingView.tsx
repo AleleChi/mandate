@@ -190,6 +190,17 @@ const MEDIA_SLOTS: MediaSlot[] = [
     category: 'interactive'
   },
   {
+    key: 'experiencePickup',
+    label: 'Children & Teens Experience — Pickup image',
+    description: 'Used as the background image in the Pickup panel on the public landing page.',
+    dimensions: '800 × 1000 px · 4:5 portrait (or landscape)',
+    previewClass: 'w-20 aspect-[4/5]',
+    type: 'image',
+    purpose: 'landing_image',
+    icon: 'camera',
+    category: 'interactive'
+  },
+  {
     key: 'gallerySample',
     label: 'Fellowship Reel Fallback Cover',
     description: 'Fallback cover image for the fellowship gallery reel.',
@@ -733,9 +744,9 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       {/* Editorial Page Header */}
       <div className="border-b border-[#EAE8E1]/80 pb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-serif-koinonia font-normal text-stone-900 tracking-tight">
+          <h1 className="type-h1-app text-[#18181B]">
             Landing Page
-          </h2>
+          </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-1">
             Manage the images shown on your public landing page.
           </p>

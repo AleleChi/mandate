@@ -97,6 +97,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               passAvatar: s.passAvatar || REAL_ASSETS.passAvatar,
               workerAvatar: s.workerAvatar || REAL_ASSETS.workerAvatar,
               safetySection: s.safetySection || REAL_ASSETS.safetySection,
+              experiencePickup: s.experiencePickup || REAL_ASSETS.experiencePickup || '',
               gallery: {
                 arrival: s.galleryArrival || REAL_ASSETS.gallery.arrival,
                 checkIn: s.galleryCheckIn || REAL_ASSETS.gallery.checkIn,
@@ -258,7 +259,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         />
 
         {/* 3. Short Factual Introduction: Plain English, no generic stat cards */}
-        <EditorialStatement />
+        <EditorialStatement backgroundImage={assets.experiencePickup} />
 
         {/* 4. The Journey: From registration to pickup (Real 5-step sequence with motion) */}
         <ChildJourney
@@ -362,7 +363,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </span>
               <h3
                 id="modal-title"
-                className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-tight"
+                className="text-xl sm:text-2xl font-sans font-bold text-[#18181B] leading-tight"
               >
                 {infoModal.title}
               </h3>
@@ -373,7 +374,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {infoModal.note && (
               <div className="bg-[#FAF8F3] border border-[#E5D5AE]/80 rounded-2xl p-4 text-xs space-y-1">
-                <p className="font-bold text-zinc-900 font-serif-koinonia text-sm">
+                <p className="font-bold text-zinc-900 font-sans text-sm">
                   Already registered?
                 </p>
                 <p className="text-zinc-600 leading-relaxed whitespace-pre-line">

@@ -74,21 +74,21 @@ export const ContactView: React.FC<ContactViewProps> = ({ onNavigate }) => {
       {/* Main Content: Official Email Only */}
       <main className="max-w-[760px] mx-auto w-full px-6 sm:px-8 py-16 sm:py-24 flex-grow text-left">
         <div className="space-y-6">
-          <p className="text-xs font-mono font-medium tracking-widest text-[#9A7326] uppercase">
+          <p className="text-xs font-sans font-bold tracking-[0.12em] text-[#9A7326] uppercase">
             Koinonia Children &amp; Teens
           </p>
           <h1 className="text-3xl sm:text-5xl lg:text-[3.5rem] font-serif-koinonia font-normal text-stone-900 tracking-tight leading-[1.1]">
             Contact Us
           </h1>
 
-          <p className="text-base sm:text-lg text-stone-600 leading-[1.75] pt-2">
+          <p className="text-base sm:text-lg text-stone-600 leading-[1.75] pt-2 font-sans">
             Questions about registration or the Children &amp; Teens programme can be sent to:
           </p>
 
           <div className="pt-2">
             <a
               href={`mailto:${OFFICIAL_PUBLIC_CONTACT_EMAIL}`}
-              className="text-xl sm:text-2xl font-serif-koinonia font-normal text-stone-900 hover:text-[#9A7326] underline underline-offset-4 transition-colors"
+              className="text-xl sm:text-2xl font-sans font-medium text-stone-900 hover:text-[#9A7326] underline underline-offset-4 transition-colors"
             >
               {OFFICIAL_PUBLIC_CONTACT_EMAIL}
             </a>

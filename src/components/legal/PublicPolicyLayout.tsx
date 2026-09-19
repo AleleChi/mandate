@@ -145,18 +145,18 @@ export const PublicPolicyLayout: React.FC<PublicPolicyLayoutProps> = ({
       <main className="max-w-[760px] mx-auto w-full px-6 sm:px-8 py-14 sm:py-20 lg:py-24 flex-grow text-left">
         {/* Document Header */}
         <div id="intro" className="mb-10 sm:mb-14">
-          <p className="text-xs font-mono font-medium tracking-widest text-[#9A7326] uppercase mb-3">
+          <p className="text-xs font-sans font-bold tracking-[0.12em] text-[#9A7326] uppercase mb-3">
             {categoryLabel}
           </p>
           <h1 className="text-3xl sm:text-5xl lg:text-[3.5rem] font-serif-koinonia font-normal text-stone-900 tracking-tight leading-[1.1] mb-6">
             {title}
           </h1>
 
-          <p className="text-base sm:text-lg text-stone-600 leading-[1.75] mb-6">
+          <p className="text-base sm:text-lg text-stone-600 leading-[1.75] mb-6 font-sans">
             {subtitle}
           </p>
 
-          <div className="text-xs font-mono text-stone-500 uppercase tracking-wider pb-6 border-b border-[#EAE8E1]">
+          <div className="text-xs font-sans text-stone-500 tracking-wide pb-6 border-b border-[#EAE8E1]">
             Last updated: {lastUpdated}
           </div>
         </div>

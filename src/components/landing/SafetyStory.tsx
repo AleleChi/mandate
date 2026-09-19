@@ -17,7 +17,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
     <section
       id="safety"
       aria-label="Child Safety and Care Information"
-      className="bg-[#18181B] text-white py-16 sm:py-24 my-6 relative overflow-hidden border-y border-white/10"
+      className="bg-[#18181B] text-white py-14 sm:py-20 my-4 sm:my-6 relative overflow-hidden border-y border-white/10"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
@@ -27,7 +27,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
               CHILD SAFETY &amp; CARE
             </span>
 
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif-koinonia font-bold text-white tracking-tight leading-tight">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-white tracking-tight leading-tight">
               Care and security throughout the gathering.
             </h2>
 
@@ -68,7 +68,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
             <span className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider font-sans block">
               01 &bull; Check-in
             </span>
-            <h3 className="text-lg font-serif-koinonia font-bold text-white">
+            <h3 className="text-lg font-sans font-bold text-white">
               Arrival details
             </h3>
             <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
@@ -80,7 +80,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
             <span className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider font-sans block">
               02 &bull; During the programme
             </span>
-            <h3 className="text-lg font-serif-koinonia font-bold text-white">
+            <h3 className="text-lg font-sans font-bold text-white">
               Attendance tracking
             </h3>
             <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
@@ -92,7 +92,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
             <span className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider font-sans block">
               03 &bull; Pickup
             </span>
-            <h3 className="text-lg font-serif-koinonia font-bold text-white">
+            <h3 className="text-lg font-sans font-bold text-white">
               Controlled release
             </h3>
             <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">

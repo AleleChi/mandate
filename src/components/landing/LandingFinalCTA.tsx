@@ -23,7 +23,7 @@ export const LandingFinalCTA: React.FC<LandingFinalCTAProps> = ({
 
   return (
     <section
-      className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full"
+      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full"
       aria-label="Event Registration Call to Action"
     >
       <div className="relative rounded-[32px] sm:rounded-[40px] overflow-hidden bg-[#18181B] text-white p-8 sm:p-14 lg:p-20 text-center shadow-xl border border-white/10">
@@ -34,7 +34,7 @@ export const LandingFinalCTA: React.FC<LandingFinalCTAProps> = ({
           </span>
 
           {/* Heading */}
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif-koinonia font-bold text-white tracking-tight leading-tight">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-white tracking-tight leading-tight">
             {isRegistrationClosed
               ? `Registration has closed for ${eventTitle}.`
               : `Registration is open for the Children & Teens programme.`}

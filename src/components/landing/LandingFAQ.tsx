@@ -72,13 +72,13 @@ export const LandingFAQ: React.FC<LandingFAQProps> = ({
     <section
       id="faq"
       aria-label="Frequently Asked Questions"
-      className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full text-left"
+      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full text-left"
     >
       <div className="max-w-2xl text-left mb-12 space-y-2">
         <span className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
           FREQUENTLY ASKED QUESTIONS
         </span>
-        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-tight">
+        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] tracking-tight leading-tight">
           Questions &amp; answers
         </h2>
       </div>
@@ -105,7 +105,7 @@ export const LandingFAQ: React.FC<LandingFAQProps> = ({
                   onClick={() => toggleItem(faq.id)}
                   className="w-full py-4.5 px-5 sm:px-6 text-left flex items-center justify-between gap-4 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]"
                 >
-                  <span className="text-base sm:text-lg font-semibold text-[#18181B] font-serif-koinonia">
+                  <span className="text-base sm:text-lg font-semibold text-[#18181B] font-sans">
                     {faq.question}
                   </span>
                   <div
