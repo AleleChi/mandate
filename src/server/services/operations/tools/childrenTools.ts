@@ -16,10 +16,11 @@ export const getChildrenSummaryTool: OperationalTool = {
 
     const total = totalRes?.count || 0;
     const selected = selectedRes?.count || 0;
-    const checkedIn = checkedInRes?.count || 0;
+    const checkedInDirect = checkedInRes?.count || 0;
     const inside = insideRes?.count || 0;
     const pickedUp = pickedUpRes?.count || 0;
-    const currentlyOnSite = checkedIn + inside;
+    const totalCheckedIn = checkedInDirect + inside + pickedUp;
+    const currentlyOnSite = checkedInDirect + inside;
 
     return {
       success: true,
@@ -29,10 +30,10 @@ export const getChildrenSummaryTool: OperationalTool = {
         eventId: context.eventId,
         total,
         selected,
-        checkedIn: currentlyOnSite,
-        inside,
+        checkedIn: totalCheckedIn,
+        inside: currentlyOnSite,
         pickedUp,
-        notArrivedYet: Math.max(0, selected - currentlyOnSite - pickedUp)
+        notArrivedYet: Math.max(0, selected - totalCheckedIn)
       }
     };
   }

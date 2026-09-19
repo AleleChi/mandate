@@ -14,7 +14,9 @@ export type EventSignalType =
   | 'SAFETY_ITEM_OPEN'
   | 'REPORT_EXPIRED'
   | 'EVENT_STARTING_SOON'
-  | 'CONFIGURATION_GAP';
+  | 'CONFIGURATION_GAP'
+  | 'CHILD_ATTENDANCE_STATE_MISMATCH'
+  | 'DUTY_PRESENCE_MISMATCH';
 
 export interface BaseEventSignal {
   signal: EventSignalType;
@@ -98,6 +100,18 @@ export interface ConfigurationGapSignal extends BaseEventSignal {
   details: string;
 }
 
+export interface ChildAttendanceStateMismatchSignal extends BaseEventSignal {
+  signal: 'CHILD_ATTENDANCE_STATE_MISMATCH';
+  mismatchedCount: number;
+  childNames: string[];
+}
+
+export interface DutyPresenceMismatchSignal extends BaseEventSignal {
+  signal: 'DUTY_PRESENCE_MISMATCH';
+  conflictingCount: number;
+  userIds: string[];
+}
+
 export type EventSignal =
   | LocationUnderstaffedSignal
   | VolunteerNoShowSignal
@@ -107,4 +121,6 @@ export type EventSignal =
   | SafetyItemOpenSignal
   | ReportExpiredSignal
   | EventStartingSoonSignal
-  | ConfigurationGapSignal;
+  | ConfigurationGapSignal
+  | ChildAttendanceStateMismatchSignal
+  | DutyPresenceMismatchSignal;

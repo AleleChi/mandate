@@ -2951,11 +2951,14 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
       WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
     `);
 
-    // Event-specific live operational counts
-    const underReviewRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
-    const approvedRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
-    const checkedInRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
-    const pickedUpRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up' AND COALESCE(is_deleted, 0) = 0", [eventId]) : { count: 0 };
+    // Event-specific live operational counts from canonical childSummaryService
+    const childStats = await getChildSummaryStats(eventId);
+    const underReviewCount = childStats.underReview;
+    const selectedCount = childStats.selected;
+    const checkedInCount = childStats.checkedIn;
+    const pickedUpCount = childStats.pickedUp;
+    const stillInsideCount = childStats.inside;
+    const notSelectedCount = childStats.notSelected;
 
     // Format admin user info
     let fullName = 'Admin User';
@@ -3095,21 +3098,8 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
 
     const needsAttentionTotal = needsAttentionItems.reduce((acc, item) => acc + item.count, 0);
 
-    // Calculate Review Progress metrics (event-scoped entries)
-    const selCountRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'picked_up')", [eventId]) : { count: 0 };
-    const selectedCount = selCountRes?.count || 0;
-
-    const revCountRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'", [eventId]) : { count: 0 };
-    const underReviewCount = revCountRes?.count || 0;
-
-    const rejCountRes = eventId ? await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('not_selected', 'rejected', 'withdrawn')", [eventId]) : { count: 0 };
-    const notSelectedCount = rejCountRes?.count || 0;
-
-    // Calculate Today's Attendance metrics
+    // Calculate Today's Attendance metrics from canonical childStats
     const expectedAttendance = selectedCount;
-    const checkedInCount = checkedInRes?.count || 0;
-    const pickedUpCount = pickedUpRes?.count || 0;
-    const stillInsideCount = Math.max(0, checkedInCount - pickedUpCount);
     const notArrivedCount = Math.max(0, expectedAttendance - checkedInCount);
 
     // Fetch dynamic Recent Activity (real actions)
@@ -3214,7 +3204,7 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
       stats: {
         totalChildren: totalChildrenRes?.count || 0,
         underReview: underReviewCount,
-        approved: approvedRes?.count || 0,
+        approved: selectedCount,
         totalParents: totalParentsRes?.count || 0,
         totalVolunteers: totalVolunteersRes?.count || 0,
         pendingVolunteers: pendingVolunteersRes?.count || 0,

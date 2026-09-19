@@ -14,7 +14,9 @@ import {
   PHASE3B_AUTOMATION_RULES
 } from './ruleModel';
 import {
+  ChildAttendanceStateMismatchSignal,
   ConfigurationGapSignal,
+  DutyPresenceMismatchSignal,
   EventSignal,
   EventStartingSoonSignal,
   LocationUnderstaffedSignal,
@@ -425,6 +427,64 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
     lastFailedSignals.push('CONFIGURATION_GAP');
   }
 
+  // 10. CHILD_ATTENDANCE_STATE_MISMATCH
+  try {
+    const mismatchedRows = await query(
+      `SELECT e.id, c.full_name, e.status, e.checked_in_at, e.picked_up_at
+       FROM child_event_entries e
+       JOIN children c ON c.id = e.child_id
+       WHERE e.event_id = ? AND COALESCE(e.is_deleted, 0) = 0
+         AND (
+           (e.status IN ('picked_up', 'checked_out') AND e.checked_in_at IS NULL)
+           OR (e.status = 'inside' AND e.checked_in_at IS NULL)
+           OR (e.status IN ('checked_in', 'inside') AND e.picked_up_at IS NOT NULL)
+         )`,
+      [eventId]
+    );
+
+    if (mismatchedRows && mismatchedRows.length > 0) {
+      const childNames = mismatchedRows.map((r: any) => r.full_name || 'Child');
+      const mismatchSignal: ChildAttendanceStateMismatchSignal = {
+        signal: 'CHILD_ATTENDANCE_STATE_MISMATCH',
+        eventId,
+        mismatchedCount: mismatchedRows.length,
+        childNames,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(mismatchSignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for CHILD_ATTENDANCE_STATE_MISMATCH:', err?.message || 'Error');
+    lastFailedSignals.push('CHILD_ATTENDANCE_STATE_MISMATCH');
+  }
+
+  // 11. DUTY_PRESENCE_MISMATCH
+  try {
+    const presenceMismatches = await query(
+      `SELECT p.user_id, COUNT(*) as active_count
+       FROM event_duty_location_presence p
+       WHERE p.event_id = ? AND p.ended_at IS NULL
+       GROUP BY p.user_id
+       HAVING COUNT(*) > 1`,
+      [eventId]
+    );
+
+    if (presenceMismatches && presenceMismatches.length > 0) {
+      const userIds = presenceMismatches.map((r: any) => r.user_id);
+      const dutySignal: DutyPresenceMismatchSignal = {
+        signal: 'DUTY_PRESENCE_MISMATCH',
+        eventId,
+        conflictingCount: presenceMismatches.length,
+        userIds,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(dutySignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for DUTY_PRESENCE_MISMATCH:', err?.message || 'Error');
+    lastFailedSignals.push('DUTY_PRESENCE_MISMATCH');
+  }
+
   return detectedSignals;
 }
 
@@ -675,6 +735,46 @@ export function buildAutomationItemFromSignal(
         severity: 'attention',
         entityType: 'event',
         entityId: signal.gapType,
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'CHILD_ATTENDANCE_STATE_MISMATCH': {
+      const count = signal.mismatchedCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'CHILD_ATTENDANCE_STATE_MISMATCH',
+        fingerprint: `${eventId}:CHILD_ATTENDANCE_STATE_MISMATCH:summary`,
+        title: count === 1 ? "1 child's attendance status needs review" : `${count} children's attendance status needs review`,
+        summary: signal.childNames.length > 0 ? signal.childNames.slice(0, 3).join(', ') : 'Conflicting check-in or pickup states',
+        description: 'Child attendance lifecycle state is inconsistent (e.g. marked picked up without check-in or marked inside with pickup timestamp).',
+        severity: 'attention',
+        entityType: 'child',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'DUTY_PRESENCE_MISMATCH': {
+      const count = signal.conflictingCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'DUTY_PRESENCE_MISMATCH',
+        fingerprint: `${eventId}:DUTY_PRESENCE_MISMATCH:summary`,
+        title: count === 1 ? 'An assigned volunteer has conflicting duty presence' : `${count} volunteers have conflicting duty presence`,
+        summary: 'Multiple active location presence sessions detected without ended timestamp',
+        description: 'Assigned volunteers have more than one concurrent active presence session recorded.',
+        severity: 'attention',
+        entityType: 'volunteer',
+        entityId: 'summary',
         payload: signal,
         actionTargetRoute: rule.actionTargetRoute,
         actionTargetLabel: rule.actionTargetLabel,

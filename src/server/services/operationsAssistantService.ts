@@ -1,5 +1,6 @@
 import { query, queryOne } from '../db';
 import { getCurrentEvent, getCurrentEventId, getEventById, EventRow } from './eventService';
+import { getChildSummaryStats } from './childSummaryService';
 
 export type ReadinessCategory = 'READY' | 'NEEDS ATTENTION' | 'NOT READY';
 export type AttentionSeverity = 'info' | 'attention' | 'urgent';
@@ -223,21 +224,13 @@ export class OperationsAssistantService {
    * 4. Attendance Summary
    */
   async getAttendanceSummary(eventId: string) {
-    const [checkedInRes, pickedUpRes, insideRes] = await Promise.all([
-      queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'checked_in' AND COALESCE(is_deleted, 0) = 0", [eventId]),
-      queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('picked_up', 'checked_out') AND COALESCE(is_deleted, 0) = 0", [eventId]),
-      queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'inside' AND COALESCE(is_deleted, 0) = 0", [eventId])
-    ]);
-
-    const checkedIn = checkedInRes?.count || 0;
-    const pickedUp = pickedUpRes?.count || 0;
-    const inside = insideRes?.count || 0;
+    const stats = await getChildSummaryStats(eventId);
 
     return {
       eventId,
-      checkedIn: checkedIn + inside,
-      pickedUp,
-      inside
+      checkedIn: stats.checkedIn,
+      pickedUp: stats.pickedUp,
+      inside: stats.inside
     };
   }
 
@@ -248,7 +241,7 @@ export class OperationsAssistantService {
     const [approvedRes, assignedRes, onDutyRes] = await Promise.all([
       queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status IN ('approved', 'active')"),
       queryOne("SELECT COUNT(DISTINCT user_id) as count FROM event_duty_assignments WHERE event_id = ? AND status != 'cancelled'", [eventId]),
-      queryOne("SELECT COUNT(*) as count FROM user_duty_status WHERE on_duty = 1 AND assigned_event_id = ?", [eventId])
+      queryOne("SELECT COUNT(DISTINCT user_id) as count FROM event_duty_location_presence WHERE event_id = ? AND ended_at IS NULL", [eventId])
     ]);
 
     const approvedVolunteers = approvedRes?.count || 0;

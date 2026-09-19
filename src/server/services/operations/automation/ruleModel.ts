@@ -164,6 +164,30 @@ export const PHASE3B_AUTOMATION_RULES: AutomationRuleDefinition[] = [
     actionTargetLabel: 'Edit event →',
     isEnabled: true,
     defaultCooldownMinutes: 120
+  },
+  {
+    id: 'rule_child_attendance_state_mismatch',
+    ruleKey: 'CHILD_ATTENDANCE_STATE_MISMATCH',
+    name: 'Child attendance status review',
+    description: 'Surfaces children with conflicting attendance, check-in, or pickup states for Admin review.',
+    triggerSignal: 'CHILD_ATTENDANCE_STATE_MISMATCH',
+    defaultSeverity: 'attention',
+    actionTargetRoute: 'children',
+    actionTargetLabel: 'Review child →',
+    isEnabled: true,
+    defaultCooldownMinutes: 60
+  },
+  {
+    id: 'rule_duty_presence_mismatch',
+    ruleKey: 'DUTY_PRESENCE_MISMATCH',
+    name: 'Duty presence status review',
+    description: 'Surfaces assigned volunteers with conflicting active duty presence for Admin review.',
+    triggerSignal: 'DUTY_PRESENCE_MISMATCH',
+    defaultSeverity: 'attention',
+    actionTargetRoute: 'duty',
+    actionTargetLabel: 'View duty →',
+    isEnabled: true,
+    defaultCooldownMinutes: 60
   }
 ];
 
