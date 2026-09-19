@@ -639,7 +639,34 @@ router.get('/public-landing-page', async (req, res) => {
     if (posterUrl) settings.heroVideoPoster = posterUrl;
 
     const rawEvent = await getCurrentEvent();
+    let currentEventAgeGroups: any[] = [];
+    if (rawEvent) {
+      const dbAgeGroups = await query(
+        'SELECT id, label, min_age, max_age, sort_order FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, min_age ASC',
+        [rawEvent.id]
+      );
+      if (dbAgeGroups && dbAgeGroups.length > 0) {
+        currentEventAgeGroups = dbAgeGroups.map((g: any) => ({
+          id: g.id,
+          label: g.label,
+          minAge: Number(g.min_age),
+          maxAge: Number(g.max_age),
+          sortOrder: Number(g.sort_order)
+        }));
+      } else {
+        // Canonical default cohorts for the current event
+        currentEventAgeGroups = [
+          { id: 'ag-below-1', label: 'Below 1', minAge: 0, maxAge: 0, sortOrder: 1 },
+          { id: 'ag-1-3', label: 'Ages 1 to 3', minAge: 1, maxAge: 3, sortOrder: 2 },
+          { id: 'ag-4-6', label: 'Ages 4 to 6', minAge: 4, maxAge: 6, sortOrder: 3 },
+          { id: 'ag-7-9', label: 'Ages 7 to 9', minAge: 7, maxAge: 9, sortOrder: 4 },
+          { id: 'ag-10-12', label: 'Ages 10 to 12', minAge: 10, maxAge: 12, sortOrder: 5 }
+        ];
+      }
+    }
+
     const currentEvent = rawEvent ? {
+      id: rawEvent.id,
       title: rawEvent.title,
       section_name: rawEvent.section_name || null,
       starts_at: rawEvent.starts_at || null,
@@ -652,7 +679,8 @@ router.get('/public-landing-page', async (req, res) => {
       timezone: rawEvent.timezone || null,
       parents_can_create_account: rawEvent.parents_can_create_account ?? 1,
       parent_access_opens_at: rawEvent.parent_access_opens_at || null,
-      parent_access_closes_at: rawEvent.parent_access_closes_at || null
+      parent_access_closes_at: rawEvent.parent_access_closes_at || null,
+      ageGroups: currentEventAgeGroups
     } : null;
     return res.json({ success: true, settings, landingVideo, currentEvent });
   } catch (err: any) {
@@ -2083,12 +2111,32 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       const lastActAt = (rowStatus === 'picked_up' ? app.picked_up_at : (rowStatus === 'checked_in' ? app.checked_in_at : null)) || null;
       const lastActLabel = lastActAt ? formatTime(lastActAt) : 'No activity';
 
+      const rawAgeGroup = app.age_group || '';
+      const needsAgeReview = app.needs_age_review === 1 || rawAgeGroup.includes('Review Needed');
+      let cleanAgeGroupLabel = rawAgeGroup.replace(/\s*\(Review Needed\)/gi, '').trim();
+      if (cleanAgeGroupLabel === 'Under 4' || !cleanAgeGroupLabel) {
+        const chAge = getChildAge(app);
+        if (chAge < 1) cleanAgeGroupLabel = 'Below 1';
+        else if (chAge <= 3) cleanAgeGroupLabel = 'Ages 1 to 3';
+        else if (chAge <= 6) cleanAgeGroupLabel = 'Ages 4 to 6';
+        else if (chAge <= 9) cleanAgeGroupLabel = 'Ages 7 to 9';
+        else if (chAge <= 12) cleanAgeGroupLabel = 'Ages 10 to 12';
+        else cleanAgeGroupLabel = 'Teens';
+      } else if (cleanAgeGroupLabel === 'Ages 4-6') {
+        cleanAgeGroupLabel = 'Ages 4 to 6';
+      } else if (cleanAgeGroupLabel === 'Ages 7-9') {
+        cleanAgeGroupLabel = 'Ages 7 to 9';
+      } else if (cleanAgeGroupLabel === 'Ages 10-12') {
+        cleanAgeGroupLabel = 'Ages 10 to 12';
+      }
+
       return {
         id: app.entry_id,
         childId: app.child_id,
         applicationId: app.entry_id,
         childName: app.child_name,
-        ageGroup: app.age_group,
+        ageGroup: cleanAgeGroupLabel,
+        needsAgeReview,
         parentName: app.parent_name,
         parentPhone: app.parent_phone,
         status: rowStatus,
@@ -2099,13 +2147,16 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    // 3. Compute Age Group statistical breakdown from database
+    // 3. Compute Age Group statistical breakdown from database using canonical event age groups
     const allEntriesForAgeGroups = await query(`
       SELECT 
         e.status,
         e.checked_in_at,
         e.picked_up_at,
-        c.age_group
+        c.age_group,
+        c.calculated_age,
+        c.date_of_birth,
+        c.needs_age_review
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ?
@@ -2114,11 +2165,31 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
     `, [eventId]);
 
-    const standardGroups = ['Below 1', 'Ages 1-3', 'Ages 4-6', 'Ages 7-9', 'Ages 10-12'];
+    // Query canonical age groups configured for this event
+    const dbConfiguredGroups = await query(
+      'SELECT id, label, min_age, max_age, sort_order FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, min_age ASC',
+      [eventId]
+    );
+
+    const canonicalCohorts = (dbConfiguredGroups && dbConfiguredGroups.length > 0)
+      ? dbConfiguredGroups.map((g: any) => ({
+          key: g.label,
+          label: g.label,
+          min: Number(g.min_age),
+          max: Number(g.max_age)
+        }))
+      : [
+          { key: 'Below 1', label: 'Below 1', min: 0, max: 0 },
+          { key: 'Ages 1 to 3', label: 'Ages 1 to 3', min: 1, max: 3 },
+          { key: 'Ages 4 to 6', label: 'Ages 4 to 6', min: 4, max: 6 },
+          { key: 'Ages 7 to 9', label: 'Ages 7 to 9', min: 7, max: 9 },
+          { key: 'Ages 10 to 12', label: 'Ages 10 to 12', min: 10, max: 12 }
+        ];
+
     const ageGroupsMap = new Map<string, any>();
-    for (const group of standardGroups) {
-      ageGroupsMap.set(group, {
-        ageGroup: group,
+    for (const cohort of canonicalCohorts) {
+      ageGroupsMap.set(cohort.key, {
+        ageGroup: cohort.label,
         expected: 0,
         checkedIn: 0,
         inside: 0,
@@ -2128,27 +2199,29 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     for (const entry of allEntriesForAgeGroups) {
-      const group = entry.age_group || 'Other';
-      if (!ageGroupsMap.has(group)) {
-        ageGroupsMap.set(group, {
-          ageGroup: group,
-          expected: 0,
-          checkedIn: 0,
-          inside: 0,
-          pickedUp: 0,
-          notArrived: 0
+      const age = getChildAge(entry);
+      let matchedCohort = canonicalCohorts.find(c => age >= c.min && age <= c.max);
+      if (!matchedCohort && entry.age_group) {
+        const cleanAg = entry.age_group.replace(/\s*\(Review Needed\)/gi, '').trim();
+        const norm = cleanAg.toLowerCase().replace(/[^a-z0-9]/g, '');
+        matchedCohort = canonicalCohorts.find(c => {
+          const cNorm = c.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return norm === cNorm || norm.includes(cNorm) || cNorm.includes(norm);
         });
       }
-      const statsObj = ageGroupsMap.get(group);
-      statsObj.expected++;
-      if (entry.status === 'picked_up' && entry.picked_up_at) {
-        statsObj.checkedIn++;
-        statsObj.pickedUp++;
-      } else if ((entry.status === 'checked_in' || entry.status === 'inside') && entry.checked_in_at && !entry.picked_up_at) {
-        statsObj.checkedIn++;
-        statsObj.inside++;
-      } else {
-        statsObj.notArrived++;
+      const groupKey = matchedCohort ? matchedCohort.key : canonicalCohorts[0].key;
+      const statsObj = ageGroupsMap.get(groupKey);
+      if (statsObj) {
+        statsObj.expected++;
+        if (entry.status === 'picked_up' && entry.picked_up_at) {
+          statsObj.checkedIn++;
+          statsObj.pickedUp++;
+        } else if ((entry.status === 'checked_in' || entry.status === 'inside') && entry.checked_in_at && !entry.picked_up_at) {
+          statsObj.checkedIn++;
+          statsObj.inside++;
+        } else {
+          statsObj.notArrived++;
+        }
       }
     }
     const ageGroups = Array.from(ageGroupsMap.values());
@@ -6021,16 +6094,23 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
     }
 
     const now = new Date().toISOString();
-    const allowedKeys = [
+    const baseSlots = [
       'site_logo', 'heroMain', 'heroUpper', 'heroRight', 'heroVideo', 'heroVideoPoster',
-      'heroVideoMediaId', 'heroVideoOriginalName', 'heroVideoFileSize',
       'passAvatar', 'workerAvatar', 'safetySection',
+      'interactiveSample', 'experiencePickup', 'gallerySample', 'pastMomentsVideo',
       'galleryArrival', 'galleryCheckIn', 'galleryActivities', 'galleryTeaching',
       'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo',
-      'galleryEventVideoMediaId', 'galleryEventVideoOriginalName', 'galleryEventVideoFileSize',
       'contactEmail', 'contactPhone', 'contactWhatsApp', 'contactAddress',
       'footerYear', 'footerCopyrightName'
     ];
+
+    const isAllowedKey = (key: string): boolean => {
+      if (baseSlots.includes(key)) return true;
+      // Allow metadata extensions: <slot>MediaId, <slot>OriginalName, <slot>FileSize, <slot>Poster
+      const match = key.match(/^(.*?)(MediaId|OriginalName|FileSize|Poster)$/);
+      if (match && baseSlots.includes(match[1])) return true;
+      return false;
+    };
 
     // If clearing heroVideo (e.g. Restore Default), clear all related heroVideo metadata keys
     if (settings.heroVideo === '') {
@@ -6039,10 +6119,17 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
       settings.heroVideoOriginalName = '';
       settings.heroVideoFileSize = '';
     }
+    // If clearing heroMain (e.g. Restore Default), clear all related heroMain metadata keys
+    if (settings.heroMain === '') {
+      settings.heroMainPoster = '';
+      settings.heroMainMediaId = '';
+      settings.heroMainOriginalName = '';
+      settings.heroMainFileSize = '';
+    }
 
     // Validate keys and types before updating
     for (const [key, value] of Object.entries(settings)) {
-      if (!allowedKeys.includes(key)) {
+      if (!isAllowedKey(key)) {
         return res.status(400).json({ success: false, error: `Invalid landing setting key: ${key}` });
       }
 

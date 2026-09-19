@@ -70,11 +70,8 @@ export const AssetImage: React.FC<AssetImageProps> = ({
       </div>
       {!hideText && label !== '' && (
         <div className="relative z-10 max-w-[85%] mt-2">
-          <p className="text-xs font-serif-koinonia font-bold text-[#18181B] tracking-tight truncate">
+          <p className="text-xs font-sans font-semibold text-[#18181B] tracking-tight truncate">
             {label || alt}
-          </p>
-          <p className="text-[10px] font-sans text-[#71717A] mt-0.5">
-            Awaiting Asset Upload
           </p>
         </div>
       )}

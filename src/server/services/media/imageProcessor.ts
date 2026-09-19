@@ -37,9 +37,9 @@ export const LANDING_SLOTS: Record<string, SlotSpecification> = {
     format: 'png',
   },
   heroMain: {
-    width: 800,
-    height: 1000,
-    fit: 'cover', // High quality foreground curved image
+    width: 1400,
+    height: 1600,
+    fit: 'inside', // High quality editorial photo, preserves natural aspect ratio
     format: 'webp',
   },
   heroUpper: {
