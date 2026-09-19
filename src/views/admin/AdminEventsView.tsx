@@ -527,8 +527,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           {/* Header block */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <h1 className="type-h1-app text-[#18181B]">Events</h1>
-              <p className="text-xs text-zinc-500">Create and manage events for children, parents, and volunteers.</p>
+              <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">Events</h1>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570]">Create and manage events for children, parents, and volunteers.</p>
             </div>
             
             <Button
@@ -542,7 +542,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           </div>
 
           {/* Tab Filter bar */}
-          <div className="border-b border-[#EAE8E1] flex space-x-6 overflow-x-auto scrollbar-hide shrink-0">
+          <div className="border-b border-[#EAE8E1] dark:border-[#302F2A] flex space-x-6 overflow-x-auto scrollbar-hide shrink-0">
             {[
               { id: 'current', label: 'Current event' },
               { id: 'upcoming', label: 'Upcoming' },
@@ -554,8 +554,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`pb-3.5 text-xs font-semibold border-b-2 transition-all shrink-0 cursor-pointer ${
                   activeTab === tab.id
-                    ? 'border-[#C59B27] text-[#18181B]'
-                    : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                    ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+                    : 'border-transparent text-zinc-400 dark:text-[#5A5550] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
                 }`}
               >
                 {tab.label}
@@ -565,12 +565,12 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
           {/* Event items representation */}
           {filteredEvents.length === 0 ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 text-center max-w-xl mx-auto space-y-4 shadow-2xs">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-16 text-center max-w-xl mx-auto space-y-4 shadow-2xs">
               <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/10 text-[#C59B27] rounded-2xl flex items-center justify-center mx-auto">
                 <Calendar className="w-6 h-6" />
               </div>
-              <h3 className="font-semibold text-base text-[#18181B]">No events yet</h3>
-              <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
+              <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">No events yet</h3>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed max-w-xs mx-auto">
                 Create your first event to begin setup.
               </p>
               <Button
@@ -587,43 +587,43 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 <div 
                   key={event.id}
                   data-component-version={event.status === 'current' ? "admin-current-event-card-v2" : undefined}
-                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-3xs flex flex-col lg:flex-row justify-between lg:items-center gap-6 hover:border-[#C59B27]/30 transition-all"
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 shadow-3xs flex flex-col lg:flex-row justify-between lg:items-center gap-6 hover:border-[#C59B27]/30 dark:hover:border-[#C59B27]/25 transition-all"
                 >
                   <div className="space-y-3.5 min-w-0 flex-1">
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      <h4 className="font-semibold text-base text-[#18181B] truncate">{event.title}</h4>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-50 text-zinc-600 border border-zinc-100">
+                      <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] truncate">{event.title}</h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-50 dark:bg-[#24231F] text-zinc-600 dark:text-[#7A7570] border border-zinc-100 dark:border-[#302F2A]">
                         {event.sectionName}
                       </span>
                       {renderStatusBadge(event.status)}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs text-zinc-500">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs text-zinc-500 dark:text-[#7A7570]">
                       <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-date-meta-v1" : undefined}>
-                        <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
-                        <span className={event.status === 'current' ? 'text-zinc-700 font-semibold' : ''}>{event.startsAt}</span>
+                        <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
+                        <span className={event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}>{event.startsAt}</span>
                       </div>
                       <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-time-meta-v1" : undefined}>
-                        <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
-                        <span className={event.status === 'current' ? 'text-zinc-700 font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
+                        <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
+                        <span className={event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
                       </div>
                       <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-venue-meta-v1" : undefined}>
-                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400'}`} />
-                        <span className={`truncate ${event.status === 'current' ? 'text-zinc-700 font-semibold' : ''}`}>{event.location}</span>
+                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
+                        <span className={`truncate ${event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}`}>{event.location}</span>
                       </div>
                     </div>
 
                     {/* Meta capacity & access windows info */}
-                    <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 text-xs text-zinc-500 font-normal">
-                      <span>Event capacity: <strong className="text-zinc-700 font-semibold">{event.capacity ? Number(event.capacity).toLocaleString() : (event.eventCapacity ? Number(event.eventCapacity).toLocaleString() : 'Not set')}</strong></span>
-                      <span>Registrations: <strong className="text-zinc-700 font-semibold">{event.applicationsCount ?? event.registeredChildrenCount ?? 0}</strong></span>
-                      <span>Selected: <strong className="text-zinc-700 font-semibold">{event.selectedCount ?? 0}</strong></span>
-                      <span>Places remaining: <strong className="text-emerald-700 font-semibold">{event.capacity ? Math.max(0, Number(event.capacity) - (event.selectedCount ?? 0)).toLocaleString() : '—'}</strong></span>
+                    <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 dark:border-[#302F2A] text-xs text-zinc-500 dark:text-[#7A7570] font-normal">
+                      <span>Event capacity: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.capacity ? Number(event.capacity).toLocaleString() : (event.eventCapacity ? Number(event.eventCapacity).toLocaleString() : 'Not set')}</strong></span>
+                      <span>Registrations: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.applicationsCount ?? event.registeredChildrenCount ?? 0}</strong></span>
+                      <span>Selected: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.selectedCount ?? 0}</strong></span>
+                      <span>Places remaining: <strong className="text-emerald-700 dark:text-emerald-400 font-semibold">{event.capacity ? Math.max(0, Number(event.capacity) - (event.selectedCount ?? 0)).toLocaleString() : '—'}</strong></span>
                       {event.parentAccessOpensAt && (
-                        <span>Parent window: <span className="text-zinc-600">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0] || 'open'}</span></span>
+                        <span>Parent window: <span className="text-zinc-600 dark:text-[#7A7570]">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0] || 'open'}</span></span>
                       )}
                       {event.volunteerRegistrationOpensAt && (
-                        <span>Volunteer window: <span className="text-zinc-600">{event.volunteerRegistrationOpensAt.split('T')[0]} to {event.volunteerRegistrationClosesAt?.split('T')[0] || 'open'}</span></span>
+                        <span>Volunteer window: <span className="text-zinc-600 dark:text-[#7A7570]">{event.volunteerRegistrationOpensAt.split('T')[0]} to {event.volunteerRegistrationClosesAt?.split('T')[0] || 'open'}</span></span>
                       )}
                     </div>
                   </div>
@@ -637,7 +637,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       className={
                         event.status === 'current'
                           ? "p-2.5 text-white bg-[#C59B27] hover:bg-[#A37B1E] rounded-xl border border-[#C59B27] flex items-center justify-center cursor-pointer transition-colors shadow-sm"
-                          : "p-2 text-zinc-600 hover:text-[#C59B27] bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
+                          : "p-2 text-zinc-600 dark:text-[#7A7570] hover:text-[#C59B27] bg-zinc-50 dark:bg-[#24231F] hover:bg-zinc-100 dark:hover:bg-[#2A2926] rounded-xl border border-zinc-200/50 dark:border-[#302F2A] flex items-center justify-center cursor-pointer"
                       }
                       title="Edit Event details"
                     >
@@ -667,8 +667,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                         data-component-version={event.status === 'current' ? "admin-current-event-archive-action-v2" : undefined}
                         className={
                           event.status === 'current'
-                            ? "p-2.5 text-red-700 bg-red-50 hover:bg-red-100 rounded-xl border border-red-200 flex items-center justify-center cursor-pointer transition-colors"
-                            : "p-2 text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 rounded-xl border border-zinc-200/50 flex items-center justify-center cursor-pointer"
+                            ? "p-2.5 text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-xl border border-red-200 dark:border-red-900/50 flex items-center justify-center cursor-pointer transition-colors"
+                            : "p-2 text-zinc-400 dark:text-[#5A5550] hover:text-red-600 dark:hover:text-red-400 bg-zinc-50 dark:bg-[#24231F] hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl border border-zinc-200/50 dark:border-[#302F2A] flex items-center justify-center cursor-pointer"
                         }
                         title="Archive Event"
                       >
@@ -696,7 +696,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setCurrentScreen('home')}
-              className="p-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-500 hover:text-[#18181B] transition-all cursor-pointer flex items-center justify-center"
+              className="p-1.5 rounded-xl border border-[#EAE8E1] dark:border-[#302F2A] bg-white dark:bg-[#24231F] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-500 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-all cursor-pointer flex items-center justify-center"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -737,17 +737,17 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       value={formTitle}
                       onChange={e => setFormTitle(e.target.value)}
                       placeholder="The General Assembly"
-                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-[#5A5550] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event group</label>
+                      <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Event group</label>
                       <select
                         value={formSectionName}
                         onChange={e => setFormSectionName(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all appearance-none cursor-pointer"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all appearance-none cursor-pointer"
                       >
                         <option value="Children and Teens">Children and Teens</option>
                         <option value="Young Adults">Young Adults</option>
@@ -757,57 +757,57 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Venue</label>
+                      <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Venue</label>
                       <input
                         type="text"
                         value={formLocation}
                         onChange={e => setFormLocation(e.target.value)}
                         placeholder="Main Auditorium"
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-[#5A5550] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event date</label>
+                      <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Event date</label>
                       <input
                         type="date"
                         value={formStartsAt}
                         onChange={e => setFormStartsAt(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Start time</label>
+                      <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Start time</label>
                       <input
                         type="time"
                         value={formDailyStartTime}
                         onChange={e => setFormDailyStartTime(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">End time</label>
+                      <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">End time</label>
                       <input
                         type="time"
                         value={formDailyEndTime}
                         onChange={e => setFormDailyEndTime(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event description</label>
+                    <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Event description</label>
                     <textarea
                       value={formDescription}
                       onChange={e => setFormDescription(e.target.value)}
                       placeholder="Provide details about the event's purpose and expectations..."
                       rows={4}
-                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all resize-none"
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-[#5A5550] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all resize-none"
                     />
                   </div>
                 </div>
@@ -815,69 +815,69 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
               {/* Card 2: REGISTRATION */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
                 data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-registration-v1" : "admin-create-event-registration-v1"}
               >
-                <div className="space-y-1 border-b border-[#EAE8E1]/60 pb-4">
-                  <h3 className="text-lg font-semibold text-[#18181B]">Registration</h3>
-                  <p className="text-xs text-zinc-500">Configure parent and volunteer registration deadlines and access rules.</p>
+                <div className="space-y-1 border-b border-[#EAE8E1]/60 dark:border-[#302F2A] pb-4">
+                  <h3 className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">Registration</h3>
+                  <p className="text-xs text-zinc-500 dark:text-[#7A7570]">Configure parent and volunteer registration deadlines and access rules.</p>
                 </div>
 
                 <div className="space-y-6">
                   {/* Parent Registration Window */}
                   <div className="space-y-3">
-                    <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider block">Parent Registration</span>
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider block">Parent Registration</span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Parent registration opens</label>
+                        <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Parent registration opens</label>
                         <input
                           type="datetime-local"
                           value={formParentAccessOpensAt}
                           onChange={e => setFormParentAccessOpensAt(e.target.value)}
-                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Parent registration closes</label>
+                        <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Parent registration closes</label>
                         <input
                           type="datetime-local"
                           value={formParentAccessClosesAt}
                           onChange={e => setFormParentAccessClosesAt(e.target.value)}
-                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* Volunteer Registration Window */}
-                  <div className="space-y-3 pt-4 border-t border-[#EAE8E1]/40">
-                    <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider block">Volunteer Registration</span>
+                  <div className="space-y-3 pt-4 border-t border-[#EAE8E1]/40 dark:border-[#302F2A]">
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider block">Volunteer Registration</span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Volunteer registration opens</label>
+                        <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Volunteer registration opens</label>
                         <input
                           type="datetime-local"
                           value={formVolunteerRegistrationOpensAt}
                           onChange={e => setFormVolunteerRegistrationOpensAt(e.target.value)}
-                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Volunteer registration closes</label>
+                        <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Volunteer registration closes</label>
                         <input
                           type="datetime-local"
                           value={formVolunteerRegistrationClosesAt}
                           onChange={e => setFormVolunteerRegistrationClosesAt(e.target.value)}
-                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
+                          className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all cursor-pointer"
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* Access Toggles */}
-                  <div className="space-y-1 pt-4 border-t border-[#EAE8E1]/40">
+                  <div className="space-y-1 pt-4 border-t border-[#EAE8E1]/40 dark:border-[#302F2A]">
                     <ToggleSwitch
                       checked={formParentsCanCreateAccount}
                       onChange={setFormParentsCanCreateAccount}
@@ -911,13 +911,13 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
               {/* Card 3: CAPACITY */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
                 data-component-version={currentScreen === 'edit' ? "admin-edit-current-event-capacity-v1" : "admin-create-event-capacity-v1"}
               >
-                <div className="flex justify-between items-center border-b border-[#EAE8E1]/60 pb-4">
+                <div className="flex justify-between items-center border-b border-[#EAE8E1]/60 dark:border-[#302F2A] pb-4">
                   <div className="space-y-1">
-                    <h3 className="text-lg font-semibold text-[#18181B]">Capacity</h3>
-                    <p className="text-xs text-zinc-500">Configure total child capacity and age group headcount limits.</p>
+                    <h3 className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">Capacity</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570]">Configure total child capacity and age group headcount limits.</p>
                   </div>
                   <button
                     type="button"
@@ -933,34 +933,34 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-[#18181B] mb-1.5">Event child capacity</label>
+                      <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Event child capacity</label>
                       <input
                         type="number"
                         min="1"
                         value={formCapacity}
                         onChange={e => setFormCapacity(e.target.value)}
                         placeholder="e.g. 500 children"
-                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                        className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-[#5A5550] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                       />
                       <p className="text-[11px] text-zinc-400 mt-1">Maximum number of selected children the event can accommodate.</p>
                     </div>
 
-                    <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3.5 flex flex-col justify-center space-y-1.5 text-xs">
-                      <div className="flex justify-between items-center text-zinc-600">
+                    <div className="bg-[#FAF9F6] dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#3D3B35] rounded-xl p-3.5 flex flex-col justify-center space-y-1.5 text-xs">
+                      <div className="flex justify-between items-center text-zinc-600 dark:text-[#B8B0A5]">
                         <span>Registrations:</span>
-                        <span className="font-semibold text-zinc-900">{formRegisteredChildren.toLocaleString()}</span>
+                        <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{formRegisteredChildren.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between items-center text-zinc-600">
+                      <div className="flex justify-between items-center text-zinc-600 dark:text-[#B8B0A5]">
                         <span>Selected children:</span>
-                        <span className="font-semibold text-zinc-900">{formSelectedChildren.toLocaleString()}</span>
+                        <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{formSelectedChildren.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between items-center text-zinc-600">
+                      <div className="flex justify-between items-center text-zinc-600 dark:text-[#B8B0A5]">
                         <span>Event capacity:</span>
-                        <span className="font-semibold text-zinc-900">{formCapacity ? Number(formCapacity).toLocaleString() : 'Not set'}</span>
+                        <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{formCapacity ? Number(formCapacity).toLocaleString() : 'Not set'}</span>
                       </div>
-                      <div className="flex justify-between items-center text-zinc-600 border-t border-[#EAE8E1]/60 pt-1.5 mt-0.5">
+                      <div className="flex justify-between items-center text-zinc-600 dark:text-[#B8B0A5] border-t border-[#EAE8E1]/60 dark:border-[#302F2A] pt-1.5 mt-0.5">
                         <span>Places remaining:</span>
-                        <span className={`font-semibold ${formCapacity && Number(formCapacity) - formSelectedChildren <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        <span className={`font-semibold ${formCapacity && Number(formCapacity) - formSelectedChildren <= 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                           {formCapacity ? Math.max(0, Number(formCapacity) - formSelectedChildren).toLocaleString() : '—'}
                         </span>
                       </div>
@@ -971,7 +971,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-[#EAE8E1] text-zinc-500 font-medium pb-2">
+                      <tr className="border-b border-[#EAE8E1] dark:border-[#302F2A] text-zinc-500 dark:text-[#7A7570] font-medium pb-2">
                         <th className="py-2 pr-4 font-medium">Age group</th>
                         <th className="py-2 pr-4 font-medium text-center">Registered</th>
                         <th className="py-2 pr-4 font-medium text-center">Selected</th>
@@ -981,13 +981,13 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                         <th className="py-2 font-medium text-center">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100">
+                    <tbody className="divide-y divide-zinc-100 dark:divide-[#302F2A]">
                       {formAgeGroups.map((group, idx) => {
                         const hasCap = group.capacity !== undefined && group.capacity !== null && group.capacity > 0;
                         const remaining = hasCap ? Math.max(0, group.capacity! - (group.selected || 0)) : null;
 
                         return (
-                          <tr key={idx} className="hover:bg-[#FAF9F6]/40">
+                          <tr key={idx} className="hover:bg-[#FAF9F6]/40 dark:hover:bg-[#24231F]/40">
                             <td className="py-2.5 pr-4">
                               <div className="space-y-1">
                                 <input
@@ -995,7 +995,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                                   value={group.label}
                                   onChange={e => handleAgeGroupChange(idx, 'label', e.target.value)}
                                   placeholder="e.g. Ages 4-6"
-                                  className="w-32 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
+                                  className="w-32 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none"
                                 />
                                 <div className="flex items-center gap-1 text-[11px] text-zinc-400">
                                   <span>Ages:</span>
@@ -1003,22 +1003,22 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                                     type="number"
                                     value={group.minAge}
                                     onChange={e => handleAgeGroupChange(idx, 'minAge', parseInt(e.target.value) || 0)}
-                                    className="w-10 px-1 py-0.5 text-xs rounded border border-[#EAE8E1] bg-[#FAF9F6] text-center"
+                                    className="w-10 px-1 py-0.5 text-xs rounded border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] text-center"
                                   />
                                   <span>–</span>
                                   <input
                                     type="number"
                                     value={group.maxAge}
                                     onChange={e => handleAgeGroupChange(idx, 'maxAge', parseInt(e.target.value) || 0)}
-                                    className="w-10 px-1 py-0.5 text-xs rounded border border-[#EAE8E1] bg-[#FAF9F6] text-center"
+                                    className="w-10 px-1 py-0.5 text-xs rounded border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] text-center"
                                   />
                                 </div>
                               </div>
                             </td>
-                            <td className="py-2.5 pr-4 text-center font-medium text-zinc-800">
+                            <td className="py-2.5 pr-4 text-center font-medium text-zinc-800 dark:text-[#F0EBE3]">
                               {(group.registered ?? 0).toLocaleString()}
                             </td>
-                            <td className="py-2.5 pr-4 text-center font-medium text-zinc-800">
+                            <td className="py-2.5 pr-4 text-center font-medium text-zinc-800 dark:text-[#F0EBE3]">
                               {(group.selected ?? 0).toLocaleString()}
                             </td>
                             <td className="py-2.5 pr-4">
@@ -1031,12 +1031,12 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                                   handleAgeGroupChange(idx, 'capacity', val);
                                 }}
                                 placeholder="Not set"
-                                className="w-20 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none"
+                                className="w-20 px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] focus:outline-none"
                               />
                             </td>
                             <td className="py-2.5 pr-4 text-center font-medium">
                               {remaining !== null ? (
-                                <span className={remaining === 0 ? 'text-rose-600' : 'text-emerald-700'}>
+                                <span className={remaining === 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}>
                                   {remaining.toLocaleString()}
                                 </span>
                               ) : (
@@ -1048,7 +1048,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                                 type="checkbox"
                                 checked={group.manualReview}
                                 onChange={e => handleAgeGroupChange(idx, 'manualReview', e.target.checked)}
-                                className="h-3.5 w-3.5 rounded-sm border-zinc-300 text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer"
+                                className="h-3.5 w-3.5 rounded-sm border-zinc-300 dark:border-[#3D3B35] text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer bg-transparent"
                               />
                             </td>
                             <td className="py-2.5 text-center">
@@ -1067,15 +1067,15 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                   </table>
                 </div>
 
-                <div className="pt-4 border-t border-[#EAE8E1]/60 flex items-center space-x-2">
+                <div className="pt-4 border-t border-[#EAE8E1]/60 dark:border-[#302F2A] flex items-center space-x-2">
                   <input
                     type="checkbox"
                     id="allow-overlapping-ages"
                     checked={formAllowOverlappingAges}
                     onChange={e => setFormAllowOverlappingAges(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded-sm border-zinc-300 text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer"
+                    className="h-3.5 w-3.5 rounded-sm border-zinc-300 dark:border-[#3D3B35] text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer bg-transparent"
                   />
-                  <label htmlFor="allow-overlapping-ages" className="text-xs text-zinc-500 font-medium select-none cursor-pointer">
+                  <label htmlFor="allow-overlapping-ages" className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium select-none cursor-pointer">
                     Allow overlapping age ranges (e.g. Below 0-1 and Ages 1-3)
                   </label>
                 </div>
@@ -1088,10 +1088,10 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
               
               {/* Panel A: Setup Progress */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4 shadow-2xs"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 space-y-4 shadow-2xs"
                 data-component-version="admin-create-event-setup-progress-v1"
               >
-                <h4 className="text-sm font-semibold text-[#18181B]">Setup progress</h4>
+                <h4 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3]">Setup progress</h4>
                 
                 <div className="space-y-3.5">
                   {[
@@ -1132,7 +1132,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                   <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
                 </div>
 
-                <div className="bg-white border border-[#EAE8E1] rounded-xl p-4 space-y-3 shadow-3xs">
+                <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-xl p-4 space-y-3 shadow-3xs">
                   <span className="px-2 py-0.5 rounded bg-zinc-100 text-[9px] font-semibold text-zinc-600">
                     {formSectionName || 'Children and Teens'}
                   </span>
@@ -1193,7 +1193,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     type="button"
                     disabled={submitting}
                     onClick={() => handleSaveEvent('draft')}
-                    className="w-full bg-white text-zinc-700 hover:bg-zinc-50 py-2.5 rounded-xl text-xs font-medium border border-[#EAE8E1] transition-all cursor-pointer flex items-center justify-center"
+                    className="w-full bg-white dark:bg-[#24231F] text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#2A2926] py-2.5 rounded-xl text-xs font-medium border border-[#EAE8E1] dark:border-[#302F2A] transition-all cursor-pointer flex items-center justify-center"
                   >
                     <span>Save as draft</span>
                   </Button>
@@ -1222,7 +1222,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           role="dialog"
           aria-modal="true"
         >
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#EAE8E1] space-y-5 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#EAE8E1] dark:border-[#302F2A] space-y-5 animate-in fade-in zoom-in-95 duration-150">
             <div className="space-y-2">
               <h3 className="text-base font-semibold text-[#18181B] leading-snug">
                 Make “{makeCurrentTargetEvent.title}” the current event?

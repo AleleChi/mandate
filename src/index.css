@@ -336,3 +336,290 @@
   }
 }
 
+/* ============================================================================
+   KOINONIA ADMIN DARK — SURFACE TOKENS & SCOPED RULES
+   ALL rules below are scoped under .admin-shell.
+   They CANNOT affect Public, Parent, or Volunteer surfaces.
+
+   4-Level Dark Hierarchy:
+   L0 Canvas      #161615  — outermost page background
+   L1 Shell       #181817  — sidebar, topbar
+   L2 Card        #1D1D1A  — primary cards / panels
+   L3 Elevated    #24231F  — interactive, hover, raised elements
+   Border         #302F2A  — warm charcoal dividers
+   ============================================================================ */
+
+/* Admin-only CSS custom properties set on the shell root in dark mode */
+[data-theme="dark"] .admin-shell {
+  --admin-bg:                  #161615;
+  --admin-sidebar:             #181817;
+  --admin-header:              #181817;
+  --admin-surface:             #1D1D1A;
+  --admin-surface-raised:      #24231F;
+  --admin-surface-interactive: #2A2926;
+  --admin-border:              #302F2A;
+  --admin-border-strong:       #3D3B35;
+  --admin-text:                #F0EBE3;
+  --admin-text-secondary:      #B8B0A5;
+  --admin-text-muted:          #7A7570;
+  --admin-gold:                #C59B27;
+  --admin-gold-text:           #D4AF37;
+  --admin-gold-soft:           rgba(197, 155, 39, 0.12);
+  --admin-gold-border:         rgba(197, 155, 39, 0.30);
+  --admin-danger:              rgba(185, 28, 28, 0.20);
+  --admin-danger-border:       rgba(185, 28, 28, 0.40);
+  --admin-warning:             rgba(180, 83, 9, 0.18);
+  --admin-warning-border:      rgba(180, 83, 9, 0.38);
+  --admin-success:             rgba(6, 78, 59, 0.20);
+  --admin-success-border:      rgba(6, 78, 59, 0.40);
+}
+
+/* Admin light mode — map to existing approved light palette */
+.admin-shell {
+  --admin-bg:                  #FAF9F6;
+  --admin-sidebar:             #F9F8F3;
+  --admin-header:              #FFFFFF;
+  --admin-surface:             #FFFFFF;
+  --admin-surface-raised:      #FAF9F6;
+  --admin-surface-interactive: #F4F2EB;
+  --admin-border:              #EAE8E1;
+  --admin-border-strong:       #E5D5AE;
+  --admin-text:                #18181B;
+  --admin-text-secondary:      #52525B;
+  --admin-text-muted:          #71717A;
+  --admin-gold:                #C59B27;
+  --admin-gold-text:           #9A7326;
+  --admin-gold-soft:           rgba(197, 155, 39, 0.08);
+  --admin-gold-border:         rgba(197, 155, 39, 0.25);
+  --admin-danger:              rgba(254, 242, 242, 1);
+  --admin-danger-border:       rgba(254, 202, 202, 1);
+  --admin-warning:             rgba(255, 251, 235, 1);
+  --admin-warning-border:      rgba(253, 230, 138, 1);
+  --admin-success:             rgba(236, 253, 245, 1);
+  --admin-success-border:      rgba(167, 243, 208, 1);
+}
+
+/* ── Admin canvas & outer shell ───────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell {
+  background-color: var(--admin-bg);
+  color: var(--admin-text);
+}
+
+/* ── Admin ops canvas override (operations dashboard specific) ─────────────── */
+[data-theme="dark"] .admin-shell .admin-ops-canvas {
+  background-color: var(--admin-bg) !important;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell aside {
+  background-color: var(--admin-sidebar) !important;
+  border-color: var(--admin-border) !important;
+}
+
+/* ── Topbar / Header ──────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell header {
+  background-color: var(--admin-header) !important;
+  border-color: var(--admin-border) !important;
+}
+
+/* ── Primary cards ────────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .admin-card {
+  background-color: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+}
+
+/* ── Raised / interactive surfaces ───────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .admin-surface-raised {
+  background-color: var(--admin-surface-raised) !important;
+}
+
+[data-theme="dark"] .admin-shell .admin-surface-interactive {
+  background-color: var(--admin-surface-interactive) !important;
+}
+
+/* ── Admin-scoped bg-white override (cards, modals inside admin shell) ──────── */
+[data-theme="dark"] .admin-shell .bg-white {
+  background-color: var(--admin-surface) !important;
+}
+
+/* ── Admin-scoped ivory canvas overrides ─────────────────────────────────── */
+[data-theme="dark"] .admin-shell .bg-\[\#fdfcf7\],
+[data-theme="dark"] .admin-shell .bg-\[\#FDFCF7\],
+[data-theme="dark"] .admin-shell .bg-\[\#FAF9F6\],
+[data-theme="dark"] .admin-shell .bg-\[\#FAF8F3\],
+[data-theme="dark"] .admin-shell .bg-\[\#FAF6EB\],
+[data-theme="dark"] .admin-shell .bg-\[\#FCFBF9\],
+[data-theme="dark"] .admin-shell .bg-\[\#F9F8F3\] {
+  background-color: var(--admin-surface) !important;
+}
+
+/* ── Admin-scoped zinc/stone secondary fills ─────────────────────────────── */
+[data-theme="dark"] .admin-shell .bg-zinc-50,
+[data-theme="dark"] .admin-shell .bg-stone-50 {
+  background-color: var(--admin-surface-raised) !important;
+}
+
+[data-theme="dark"] .admin-shell .bg-zinc-100,
+[data-theme="dark"] .admin-shell .bg-stone-100 {
+  background-color: var(--admin-surface-interactive) !important;
+}
+
+/* ── Admin-scoped tinted fills (bg-stone-50/60, etc.) ──────────────────────── */
+[data-theme="dark"] .admin-shell .bg-stone-50\/60,
+[data-theme="dark"] .admin-shell .bg-stone-50\/70,
+[data-theme="dark"] .admin-shell .bg-stone-50\/50 {
+  background-color: var(--admin-surface-raised) !important;
+}
+
+/* ── Admin borders ────────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .border-\[\#EAE8E1\],
+[data-theme="dark"] .admin-shell .border-\[\#EAE8E1\]\/80,
+[data-theme="dark"] .admin-shell .border-stone-100,
+[data-theme="dark"] .admin-shell .border-stone-200,
+[data-theme="dark"] .admin-shell .border-zinc-100,
+[data-theme="dark"] .admin-shell .border-zinc-200 {
+  border-color: var(--admin-border) !important;
+}
+
+[data-theme="dark"] .admin-shell .border-\[\#E5D5AE\] {
+  border-color: var(--admin-border-strong) !important;
+}
+
+/* ── Admin divide lines ───────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .divide-\[\#EAE8E1\] > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .admin-shell .divide-stone-100 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .admin-shell .divide-stone-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-border) !important;
+}
+
+/* ── Admin text ───────────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .text-\[\#18181B\],
+[data-theme="dark"] .admin-shell .text-\[\#262626\],
+[data-theme="dark"] .admin-shell .text-zinc-900,
+[data-theme="dark"] .admin-shell .text-zinc-950,
+[data-theme="dark"] .admin-shell .text-stone-900,
+[data-theme="dark"] .admin-shell .text-stone-800 {
+  color: var(--admin-text) !important;
+}
+
+[data-theme="dark"] .admin-shell .text-\[\#52525B\],
+[data-theme="dark"] .admin-shell .text-\[\#3F3F46\],
+[data-theme="dark"] .admin-shell .text-zinc-700,
+[data-theme="dark"] .admin-shell .text-zinc-600,
+[data-theme="dark"] .admin-shell .text-stone-700,
+[data-theme="dark"] .admin-shell .text-stone-600 {
+  color: var(--admin-text-secondary) !important;
+}
+
+[data-theme="dark"] .admin-shell .text-zinc-500,
+[data-theme="dark"] .admin-shell .text-zinc-400,
+[data-theme="dark"] .admin-shell .text-stone-500,
+[data-theme="dark"] .admin-shell .text-stone-400 {
+  color: var(--admin-text-muted) !important;
+}
+
+/* ── Admin form inputs ────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+[data-theme="dark"] .admin-shell textarea,
+[data-theme="dark"] .admin-shell select {
+  background-color: var(--admin-surface-raised) !important;
+  border-color: var(--admin-border-strong) !important;
+  color: var(--admin-text) !important;
+}
+
+[data-theme="dark"] .admin-shell input::placeholder,
+[data-theme="dark"] .admin-shell textarea::placeholder {
+  color: var(--admin-text-muted) !important;
+}
+
+[data-theme="dark"] .admin-shell input:focus,
+[data-theme="dark"] .admin-shell textarea:focus,
+[data-theme="dark"] .admin-shell select:focus {
+  border-color: var(--admin-gold) !important;
+  box-shadow: 0 0 0 2px var(--admin-gold-soft) !important;
+}
+
+/* ── Admin tables ─────────────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell thead th {
+  background-color: var(--admin-surface-raised) !important;
+  color: var(--admin-text-secondary) !important;
+  border-bottom-color: var(--admin-border-strong) !important;
+}
+
+[data-theme="dark"] .admin-shell tbody tr {
+  border-bottom-color: var(--admin-border) !important;
+}
+
+[data-theme="dark"] .admin-shell tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+[data-theme="dark"] .admin-shell .bg-\[\#FAF9F6\]\/60,
+[data-theme="dark"] .admin-shell .bg-\[\#FAF8F3\]\/70 {
+  background-color: rgba(29, 29, 26, 0.8) !important;
+}
+
+/* ── Admin critical states (priority attention, safety cards) ───────────────── */
+[data-theme="dark"] .admin-shell .bg-rose-50\/50 {
+  background-color: var(--admin-danger) !important;
+}
+[data-theme="dark"] .admin-shell .border-rose-200\/70 {
+  border-color: var(--admin-danger-border) !important;
+}
+[data-theme="dark"] .admin-shell .bg-amber-50\/50 {
+  background-color: var(--admin-warning) !important;
+}
+[data-theme="dark"] .admin-shell .border-amber-200\/70 {
+  border-color: var(--admin-warning-border) !important;
+}
+
+/* ── Admin semantic badge overrides ──────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .bg-rose-50 { background-color: var(--admin-danger) !important; }
+[data-theme="dark"] .admin-shell .bg-amber-50 { background-color: var(--admin-warning) !important; }
+[data-theme="dark"] .admin-shell .bg-emerald-50 { background-color: var(--admin-success) !important; }
+[data-theme="dark"] .admin-shell .border-rose-200 { border-color: var(--admin-danger-border) !important; }
+[data-theme="dark"] .admin-shell .border-amber-200 { border-color: var(--admin-warning-border) !important; }
+[data-theme="dark"] .admin-shell .border-emerald-200 { border-color: var(--admin-success-border) !important; }
+[data-theme="dark"] .admin-shell .text-rose-700 { color: #fca5a5 !important; }
+[data-theme="dark"] .admin-shell .text-amber-700 { color: #fcd34d !important; }
+[data-theme="dark"] .admin-shell .text-emerald-700 { color: #6ee7b7 !important; }
+[data-theme="dark"] .admin-shell .text-emerald-800 { color: #34d399 !important; }
+
+/* ── Admin action buttons (inline, non-Button-component) ────────────────── */
+[data-theme="dark"] .admin-shell button.bg-white,
+[data-theme="dark"] .admin-shell a.bg-white {
+  background-color: var(--admin-surface-raised) !important;
+  border-color: var(--admin-border-strong) !important;
+  color: var(--admin-text-secondary) !important;
+}
+[data-theme="dark"] .admin-shell button.bg-white:hover,
+[data-theme="dark"] .admin-shell a.bg-white:hover {
+  background-color: var(--admin-surface-interactive) !important;
+}
+[data-theme="dark"] .admin-shell button.bg-zinc-50,
+[data-theme="dark"] .admin-shell button.bg-stone-50 {
+  background-color: var(--admin-surface-raised) !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text-secondary) !important;
+}
+[data-theme="dark"] .admin-shell button.bg-zinc-100,
+[data-theme="dark"] .admin-shell button.bg-stone-100 {
+  background-color: var(--admin-surface-interactive) !important;
+}
+
+/* ── Admin modal surfaces ─────────────────────────────────────────────────── */
+[data-theme="dark"] .admin-shell [role="dialog"] {
+  background-color: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+
+/* ── Admin sidebar active nav item ───────────────────────────────────────── */
+[data-theme="dark"] .admin-shell .admin-nav-active {
+  background-color: var(--admin-gold-soft) !important;
+  border-left-color: var(--admin-gold) !important;
+  color: var(--admin-text) !important;
+}
+[data-theme="dark"] .admin-shell .admin-nav-active .admin-nav-icon {
+  color: var(--admin-gold) !important;
+}

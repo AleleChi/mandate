@@ -693,8 +693,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       </div>
 
       {/* 2. COMPACT SUMMARY NUMBERS STRIP */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-none">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-0 md:divide-x divide-[#EAE8E1]">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-4 shadow-none">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-0 md:divide-x divide-[#EAE8E1] dark:divide-[#302F2A]">
           <div className="md:px-4 first:md:pl-0">
             <span className="text-xs text-zinc-500 font-medium block">Under review</span>
             <span className="text-xl sm:text-2xl font-semibold text-[#18181B] mt-1 block">{stats.sentReview}</span>
@@ -719,7 +719,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       </div>
 
       {/* 3. TABS AND SEARCH */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] dark:border-[#302F2A] pb-3">
         {/* Tab Filters */}
         <div className="flex items-center gap-5 overflow-x-auto">
           {[
@@ -736,15 +736,15 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
               onClick={() => handleTabChange(tab.id as any)}
               className={`pb-2.5 text-xs whitespace-nowrap transition-colors relative cursor-pointer flex items-center gap-1.5 ${
                 activeTab === tab.id
-                  ? 'text-[#18181B] font-semibold'
-                  : 'text-zinc-500 hover:text-[#18181B] font-medium'
+                  ? 'text-[#18181B] dark:text-[#F0EBE3] font-semibold'
+                  : 'text-zinc-500 dark:text-[#5A5550] hover:text-[#18181B] dark:hover:text-[#B8B0A5] font-medium'
               }`}
             >
               <span>{tab.label}</span>
               {tab.count !== null && (
                 <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${
-                  activeTab === tab.id ? 'bg-zinc-100 text-zinc-900 font-semibold' : 'text-zinc-400'
-                }`}>
+                activeTab === tab.id ? 'bg-zinc-100 dark:bg-[#2A2926] text-zinc-900 dark:text-[#F0EBE3] font-semibold' : 'text-zinc-400 dark:text-[#5A5550]'
+              }`}>
                   {tab.count}
                 </span>
               )}
@@ -763,7 +763,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by child, parent or phone..."
-            className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all placeholder:text-zinc-400"
+            className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-white dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all placeholder:text-zinc-400"
           />
           {searchQuery && (
             <button 
@@ -779,7 +779,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
 
       {/* 4. CONTEXTUAL BULK TOOLBAR (When rows are selected) */}
       {selectedIds.length > 0 && (
-        <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-none animate-slide-down">
+        <div className="bg-[#FAF9F6] dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-none animate-slide-down">
           <div className="flex items-center gap-3">
             <span className="text-xs font-semibold text-[#18181B]">
               {selectedIds.length} {selectedIds.length === 1 ? 'selected' : 'selected'}
@@ -850,7 +850,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                   </button>
 
                   {isMoreMenuOpen && (
-                    <div className="absolute right-0 mt-1.5 w-56 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1.5 z-20 space-y-1 animate-scale-in">
+                    <div className="absolute right-0 mt-1.5 w-56 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-xl shadow-lg p-1.5 z-20 space-y-1 animate-scale-in">
                       {/* Revoke passes */}
                       <button
                         type="button"
@@ -859,7 +859,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                           setModalBulkRevokeOpen(true);
                         }}
                         disabled={eligibleRevokeApps.length === 0}
-                        className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                        className="w-full text-left px-3 py-2 text-xs text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#24231F] rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-transparent cursor-pointer"
                       >
                         <span>Revoke passes</span>
                         <span className="text-[11px] text-zinc-400 font-medium">({eligibleRevokeApps.length})</span>
@@ -874,7 +874,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                             setModalBulkResetOpen(true);
                           }}
                           disabled={eligibleResetApps.length === 0}
-                          className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+                          className="w-full text-left px-3 py-2 text-xs text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#24231F] rounded-lg flex items-center justify-between disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-transparent cursor-pointer"
                         >
                           <span className="font-medium">Reset event progress</span>
                           <span className="text-[11px] text-zinc-500 font-semibold">({eligibleResetApps.length})</span>
@@ -941,7 +941,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                     </button>
 
                     {isMoreMenuOpen && (
-                      <div className="absolute right-0 mt-1.5 w-56 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1.5 z-20 space-y-1 animate-scale-in">
+                      <div className="absolute right-0 mt-1.5 w-56 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-xl shadow-lg p-1.5 z-20 space-y-1 animate-scale-in">
                         <button
                           type="button"
                           onClick={() => {
@@ -965,7 +965,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       )}
 
       {/* 5. DATA TABLE */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-none">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl overflow-hidden shadow-none">
         {loading ? (
           <div className="p-10">
             <KoinoniaInlineLoader
@@ -988,7 +988,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-xs font-semibold text-zinc-500">
+                  <tr className="bg-[#FAF9F6] dark:bg-[#24231F] border-b border-[#EAE8E1] dark:border-[#302F2A] text-xs font-semibold text-zinc-500 dark:text-[#7A7570]">
                     <th className="py-3 px-4 w-10 text-center">
                       <AdminSelectionCheckbox
                         checked={allVisibleSelected}
@@ -1006,14 +1006,14 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                     <th className="py-3 px-4 font-medium text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#EAE8E1] text-xs">
+                  <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#302F2A] text-xs">
                   {applications.map((app) => {
                     const isSelected = selectedIds.includes(app.id);
                     return (
                       <tr 
                         key={app.id} 
                         className={`transition-colors ${
-                          isSelected ? 'bg-[#FAF8F3]/70 hover:bg-[#FAF8F3]' : 'hover:bg-[#FAF9F6]/60'
+                          isSelected ? 'bg-[#FAF8F3]/70 dark:bg-[#24231F]/80 hover:bg-[#FAF8F3] dark:hover:bg-[#24231F]' : 'hover:bg-[#FAF9F6]/60 dark:hover:bg-[#24231F]/40'
                         }`}
                       >
                         {/* Checkbox */}
@@ -1041,7 +1041,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                               </div>
                             )}
                             <div className="space-y-0.5">
-                              <span className="font-semibold text-[#18181B] block">{app.child?.fullName}</span>
+                              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block">{app.child?.fullName}</span>
                               <div className="flex items-center space-x-1.5 text-xs text-zinc-500">
                                 <span>{app.child?.gender ? app.child.gender.charAt(0).toUpperCase() + app.child.gender.slice(1).toLowerCase() : ''}</span>
                                 {app.child?.gender && <span>·</span>}
@@ -1054,7 +1054,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                         {/* Parent / guardian */}
                         <td className="py-3.5 px-4">
                           <div className="space-y-0.5">
-                            <span className="font-medium text-[#18181B] block">{app.parent?.fullName}</span>
+                            <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] block">{app.parent?.fullName}</span>
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs text-zinc-500">{app.parent?.phone}</span>
                               {app.parent?.whatsapp && (
@@ -1071,7 +1071,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                               )}
                             </div>
                             {app.parent?.isWorker && (
-                              <span className="inline-block bg-zinc-100 text-zinc-600 text-[10px] font-medium px-1.5 py-0.5 rounded border border-zinc-200">
+                              <span className="inline-block bg-zinc-100 dark:bg-[#24231F] text-zinc-600 dark:text-[#7A7570] text-[10px] font-medium px-1.5 py-0.5 rounded border border-zinc-200 dark:border-[#302F2A]">
                                 Worker: {app.parent.department || 'General'}
                               </span>
                             )}
@@ -1136,7 +1136,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
 
             {/* PAGINATION CONTROLS */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-[#EAE8E1] px-4 py-3.5 sm:px-6 bg-white rounded-b-2xl">
+              <div className="flex items-center justify-between border-t border-[#EAE8E1] dark:border-[#302F2A] px-4 py-3.5 sm:px-6 bg-white dark:bg-[#1D1D1A] rounded-b-2xl">
                 <div className="flex flex-1 justify-between sm:hidden">
                   <Button
                     onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
@@ -1210,7 +1210,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       {/* BULK SELECT MODAL */}
       {modalBulkSelectOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-[#18181B]">
+          <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-[#18181B] dark:text-[#F0EBE3]">
             <div className="flex items-start gap-3 text-[#C59B27]">
               <Check className="w-6 h-6 shrink-0 text-[#C59B27]" />
               <div className="space-y-1 text-left">
@@ -1224,7 +1224,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             </div>
 
             {selectedApps.length > eligibleSelectApps.length && (
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-700 leading-relaxed">
+              <div className="p-3 bg-stone-50 dark:bg-[#24231F] border border-stone-200 dark:border-[#302F2A] rounded-xl text-xs text-stone-700 dark:text-[#B8B0A5] leading-relaxed">
                 <span className="font-semibold">{selectedApps.length - eligibleSelectApps.length}</span> selected {selectedApps.length - eligibleSelectApps.length === 1 ? 'record is' : 'records are'} already selected or attending and will remain unchanged.
               </div>
             )}
@@ -1234,7 +1234,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkSelectOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1269,7 +1269,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             </div>
 
             {selectedApps.length > eligibleWaitlistApps.length && (
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-700 leading-relaxed">
+              <div className="p-3 bg-stone-50 dark:bg-[#24231F] border border-stone-200 dark:border-[#302F2A] rounded-xl text-xs text-stone-700 dark:text-[#B8B0A5] leading-relaxed">
                 <span className="font-semibold">{selectedApps.length - eligibleWaitlistApps.length}</span> selected {selectedApps.length - eligibleWaitlistApps.length === 1 ? 'record is' : 'records are'} already on the waiting list or attending and will not be changed.
               </div>
             )}
@@ -1279,7 +1279,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkWaitlistOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1314,7 +1314,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             </div>
 
             {selectedApps.length > eligibleNotSelectedApps.length && (
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-700 leading-relaxed">
+              <div className="p-3 bg-stone-50 dark:bg-[#24231F] border border-stone-200 dark:border-[#302F2A] rounded-xl text-xs text-stone-700 dark:text-[#B8B0A5] leading-relaxed">
                 <span className="font-semibold">{selectedApps.length - eligibleNotSelectedApps.length}</span> selected {selectedApps.length - eligibleNotSelectedApps.length === 1 ? 'record is' : 'records are'} already not selected or attending and will not be changed.
               </div>
             )}
@@ -1335,7 +1335,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkNotSelectedOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1391,7 +1391,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkReopenOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1441,7 +1441,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkRevokeOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1540,7 +1540,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkResetOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1608,7 +1608,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                   setModalBulkResetAndRemoveOpen(false);
                   setResetAndRemoveReason('');
                 }}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1658,7 +1658,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkRemoveOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1697,7 +1697,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 type="button"
                 disabled={bulkActionLoading}
                 onClick={() => setModalBulkRestoreOpen(false)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -1757,7 +1757,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                   setModalBulkDeleteOpen(false);
                   setDeleteConfirmationText('');
                 }}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 text-xs font-medium text-zinc-700 transition-all cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#24231F] border border-zinc-200 dark:border-[#302F2A] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] transition-all cursor-pointer"
               >
                 Cancel
               </button>

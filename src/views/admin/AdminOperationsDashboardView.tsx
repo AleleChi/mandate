@@ -349,7 +349,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
   if (overview && !overview.event) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-[#fdfcf7] rounded-2xl border border-[#EAE8E1] max-w-2xl mx-auto shadow-none" data-view-version="live-event-operations-dashboard-v1-premium">
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-[#fdfcf7] dark:bg-[#1E1E1B] rounded-2xl border border-[#EAE8E1] dark:border-[#272522] max-w-2xl mx-auto shadow-none" data-view-version="live-event-operations-dashboard-v1-premium">
         <Calendar className="w-16 h-16 text-stone-400 mb-4" />
         <h3 className="font-semibold text-xl text-stone-900 mb-2">No Active Event Operations</h3>
         <p className="text-stone-600 text-sm max-w-md leading-relaxed mb-6">
@@ -380,7 +380,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
   return (
     <div 
-      className={`min-h-screen bg-[#fdfcf7] text-stone-800 font-sans transition-all duration-300 ${isFullscreen ? 'p-0' : 'py-6 px-4 sm:px-6 lg:px-8'}`} 
+      className={`min-h-screen bg-[#fdfcf7] admin-ops-canvas text-stone-800 dark:text-[#F2EDE4] font-sans transition-all duration-300 ${isFullscreen ? 'p-0' : 'py-6 px-4 sm:px-6 lg:px-8'}`}
       data-view-version={isFullscreen ? "live-event-operations-fullscreen-v1" : "live-event-operations-dashboard-v1-premium"}
       data-component-version="operations-dashboard-accessibility-v1"
     >
@@ -391,7 +391,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
       {/* RESTRAINED EVENT STATUS HEADER */}
       <header 
-        className="bg-white border border-[#EAE8E1] rounded-2xl p-5 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+        className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-5 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
         data-component-version="operations-event-status-header-v1"
       >
         <div>
@@ -412,7 +412,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Operational View Filter */}
-          <div className="flex items-center gap-2 bg-stone-50 border border-[#EAE8E1] rounded-xl px-2.5 py-1.5">
+          <div className="flex items-center gap-2 bg-stone-50 dark:bg-[#252420] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-2.5 py-1.5">
             <label htmlFor="ops-role-view-select" className="text-xs text-stone-500 font-medium">View</label>
             <select 
               id="ops-role-view-select"
@@ -467,10 +467,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
       {/* REBUILT PRIMARY METRICS STATUS STRIP */}
       <section 
-        className="bg-white border border-[#EAE8E1] rounded-2xl p-5 mb-8"
+        className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-5 mb-8"
         data-component-version="operations-primary-summary-cards-v1"
       >
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 lg:gap-0 lg:divide-x divide-[#EAE8E1]">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 lg:gap-0 lg:divide-x divide-[#EAE8E1] dark:divide-[#272522]">
           {/* Checked in */}
           <div className="px-0 lg:px-4 first:pl-0">
             <span className="text-xs font-medium text-stone-500 block">Checked in</span>
@@ -563,10 +563,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
           
           {/* NEEDS ATTENTION PANEL */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-priority-attention-v1"
           >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
+            <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4">
               <h2 className="text-base font-semibold text-stone-900">
                 Needs attention
               </h2>
@@ -588,8 +588,8 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                     key={item.id} 
                     className={`p-4 border rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-colors ${
                       item.urgency === 'high' 
-                        ? 'bg-rose-50/50 border-rose-200/70 text-stone-800' 
-                        : 'bg-amber-50/50 border-amber-200/70 text-stone-800'
+                        ? 'bg-rose-50/50 dark:bg-red-950/20 border-rose-200/70 dark:border-red-900/40 text-stone-800 dark:text-[#F2EDE4]'
+                        : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/70 dark:border-amber-900/40 text-stone-800 dark:text-[#F2EDE4]'
                     }`}
                   >
                     <div>
@@ -612,7 +612,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                       variant="outline" 
                       size="sm"
                       onClick={() => handleQuickAction(item.actionRoute)}
-                      className="whitespace-nowrap bg-white border-stone-200 text-xs font-medium"
+                      className="whitespace-nowrap bg-white dark:bg-[#252420] border-stone-200 dark:border-[#3A3835] text-xs font-medium dark:text-[#C0B9AD]"
                     >
                       {item.action}
                       <ChevronRight className="w-3.5 h-3.5 ml-1 text-stone-400" />
@@ -625,10 +625,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
           {/* SAFETY CONCERNS */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-active-safety-requests-v1"
           >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
+            <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4">
               <h2 className="text-base font-semibold text-stone-900">
                 Safety concerns
               </h2>
@@ -695,10 +695,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
           {/* EVENT ACTIVITY */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-trend-charts-v1"
           >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
+            <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4">
               <h2 className="text-base font-semibold text-stone-900">
                 Event activity
               </h2>
@@ -706,7 +706,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
               {/* SVG Attendance flow graph */}
-              <div className="border border-stone-100 rounded-xl p-4">
+              <div className="border border-stone-100 dark:border-[#272522] dark:bg-[#252420] rounded-xl p-4">
                 <h3 className="text-xs font-medium text-stone-700 mb-2">Check-ins and pickups</h3>
                 <div className="h-44 w-full flex items-end gap-3 px-4 pt-4 border-b border-l border-stone-200 relative">
                   {/* Grid Lines */}
@@ -752,7 +752,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                   Check-in activity was highest between 9:15 AM and 9:45 AM. Pickups are continuing steadily.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-stone-50/70 p-3.5 rounded-xl border border-stone-100">
+                  <div className="bg-stone-50/70 dark:bg-[#252420] p-3.5 rounded-xl border border-stone-100 dark:border-[#3A3835]">
                     <span className="text-xs text-stone-500 font-medium block">Check-in progress</span>
                     <p className="text-xl font-semibold text-stone-900 mt-1">
                       {attSummary.registered > 0 ? Math.round((attSummary.checkedIn / attSummary.registered) * 100) : 0}%
@@ -771,25 +771,25 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
           {/* ATTENDANCE */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-attendance-summary-v1"
           >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-4 mb-4">
+            <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4">
               <h2 className="text-base font-semibold text-stone-900">
                 Attendance
               </h2>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-              <div className="p-4 bg-stone-50/60 rounded-xl border border-stone-100">
+              <div className="p-4 bg-stone-50/60 dark:bg-[#252420] rounded-xl border border-stone-100 dark:border-[#3A3835]">
                 <span className="text-stone-500 text-xs font-medium block">Registered</span>
                 <p className="text-2xl font-semibold text-stone-900 mt-1">{attSummary.registered}</p>
               </div>
-              <div className="p-4 bg-stone-50/60 rounded-xl border border-stone-100">
+              <div className="p-4 bg-stone-50/60 dark:bg-[#252420] rounded-xl border border-stone-100 dark:border-[#3A3835]">
                 <span className="text-stone-500 text-xs font-medium block">Not checked in</span>
                 <p className="text-2xl font-semibold text-stone-700 mt-1">{attSummary.notCheckedIn}</p>
               </div>
-              <div className="p-4 bg-stone-50/60 rounded-xl border border-stone-100">
+              <div className="p-4 bg-stone-50/60 dark:bg-[#252420] rounded-xl border border-stone-100 dark:border-[#3A3835]">
                 <span className="text-stone-500 text-xs font-medium block">Needs confirmation</span>
                 <p className={`text-2xl font-semibold mt-1 ${attSummary.statusNeedingConfirmation > 0 ? 'text-amber-600' : 'text-stone-900'}`}>
                   {attSummary.statusNeedingConfirmation}
@@ -814,50 +814,50 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
           
           {/* QUICK ACTIONS */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-quick-actions-v1"
           >
-            <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F2EDE4] border-b border-stone-100 dark:border-[#272522] pb-3 mb-4">
               Quick actions
             </h3>
             <div className="grid grid-cols-2 gap-2.5">
               <button 
                 onClick={() => handleQuickAction('/admin/check-in')}
-                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl bg-stone-50/60 dark:bg-[#252420] hover:bg-stone-100/70 dark:hover:bg-[#2A2926] transition-colors"
               >
                 <UserCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
-                <span className="text-xs font-medium text-stone-800">Open check-in</span>
+                <span className="text-xs font-medium text-stone-800 dark:text-[#C0B9AD]">Open check-in</span>
               </button>
               <button 
                 onClick={() => handleQuickAction('/admin/pickup')}
-                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl bg-stone-50/60 dark:bg-[#252420] hover:bg-stone-100/70 dark:hover:bg-[#2A2926] transition-colors"
               >
                 <ClipboardCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
-                <span className="text-xs font-medium text-stone-800">Open pickup</span>
+                <span className="text-xs font-medium text-stone-800 dark:text-[#C0B9AD]">Open pickup</span>
               </button>
               <button 
                 onClick={() => handleQuickAction('/admin/alerts')}
-                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl bg-stone-50/60 dark:bg-[#252420] hover:bg-stone-100/70 dark:hover:bg-[#2A2926] transition-colors"
               >
-                <Bell className="w-4 h-4 text-rose-600 shrink-0" />
-                <span className="text-xs font-medium text-stone-800">Team alerts</span>
+                <Bell className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0" />
+                <span className="text-xs font-medium text-stone-800 dark:text-[#C0B9AD]">Team alerts</span>
               </button>
               <button 
                 onClick={() => handleQuickAction('/admin/locations')}
-                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] rounded-xl bg-stone-50/60 hover:bg-stone-100/70 transition-colors"
+                className="flex items-center gap-2.5 p-3 text-left border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl bg-stone-50/60 dark:bg-[#252420] hover:bg-stone-100/70 dark:hover:bg-[#2A2926] transition-colors"
               >
-                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="text-xs font-medium text-stone-800">Locations</span>
+                <MapPin className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                <span className="text-xs font-medium text-stone-800 dark:text-[#C0B9AD]">Locations</span>
               </button>
             </div>
           </section>
 
           {/* VOLUNTEER COVERAGE */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-volunteer-duty-summary-v1"
           >
-            <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F2EDE4] border-b border-stone-100 dark:border-[#272522] pb-3 mb-4">
               Volunteer coverage
             </h3>
             <div className="space-y-3">
@@ -884,10 +884,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
           {/* EVENT DEVICES */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-device-readiness-summary-v1"
           >
-            <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F2EDE4] border-b border-stone-100 dark:border-[#272522] pb-3 mb-4">
               Event devices
             </h3>
             <div className="space-y-3">
@@ -912,10 +912,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
           {/* LOCATION COVERAGE */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-location-coverage-overview-v1"
           >
-            <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F2EDE4] border-b border-stone-100 dark:border-[#272522] pb-3 mb-4">
               Location coverage
             </h3>
             <div className="space-y-3 mb-4">
@@ -935,7 +935,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
               </div>
             </div>
             
-            <div className="space-y-2 max-h-48 overflow-y-auto border-t border-stone-100 pt-3">
+            <div className="space-y-2 max-h-48 overflow-y-auto border-t border-stone-100 dark:border-[#272522] pt-3">
               {locSummary.locations?.map((loc: any) => (
                 <div key={loc.id} className="flex justify-between items-center text-xs">
                   <span className="text-stone-600 font-medium">{loc.shortName}</span>
@@ -958,10 +958,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
           {/* INCIDENTS & ESCALATIONS */}
           <section 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-6"
+            className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6"
             data-component-version="operations-incident-summary-v1"
           >
-            <h3 className="text-sm font-semibold text-stone-900 border-b border-stone-100 pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F2EDE4] border-b border-stone-100 dark:border-[#272522] pb-3 mb-4">
               Incidents & escalations
             </h3>
             <div className="space-y-3">
@@ -990,10 +990,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
       {/* RECENT EVENT ACTIVITY */}
       <section 
-        className="bg-white border border-[#EAE8E1] rounded-2xl p-6 mt-8"
+        className="bg-white dark:bg-[#1E1E1B] border border-[#EAE8E1] dark:border-[#272522] rounded-2xl p-6 mt-8"
         data-component-version="operations-recent-activity-v1"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-100 pb-4 mb-4 gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4 gap-3">
           <h2 className="text-base font-semibold text-stone-900">
             Recent event activity
           </h2>
@@ -1034,10 +1034,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
         ) : (
           <div className="space-y-3">
             {activities.map((act) => (
-              <div key={act.id} className="flex justify-between items-start border-b border-stone-50 pb-3 last:border-0 last:pb-0 text-xs">
+              <div key={act.id} className="flex justify-between items-start border-b border-stone-50 dark:border-[#272522] pb-3 last:border-0 last:pb-0 text-xs">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded font-medium">
+                    <span className="text-[10px] bg-stone-100 dark:bg-[#252420] text-stone-600 dark:text-[#8A8278] px-2 py-0.5 rounded font-medium">
                       {act.category}
                     </span>
                     <h4 className="font-medium text-stone-900">{act.title}</h4>
@@ -1051,7 +1051,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             ))}
 
             {/* Pagination Controls */}
-            <div className="flex items-center justify-between border-t border-stone-100 pt-3.5 mt-3">
+            <div className="flex items-center justify-between border-t border-stone-100 dark:border-[#272522] pt-3.5 mt-3">
               <span className="text-xs text-stone-500">
                 Showing {activities.length} of {activityTotal} logs
               </span>
@@ -1083,7 +1083,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
       {/* Sliding coordination panel overlay */}
       {selectedAlertRef && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end" id="coordination-panel-overlay">
-          <div className="w-full max-w-xl h-full bg-[#FAF9F6] shadow-2xl flex flex-col relative animate-in slide-in-from-right duration-300">
+          <div className="w-full max-w-xl h-full bg-[#FAF9F6] dark:bg-[#1E1E1B] shadow-2xl flex flex-col relative animate-in slide-in-from-right duration-300">
             <ActiveResponseCoordinationPanel
               alertId={selectedAlertRef}
               currentUser={{

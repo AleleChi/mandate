@@ -1386,11 +1386,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 onClick={() => handleTabChange(item.id as AdminTab)}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-[#C59B27]/5 text-[#18181B] border-l-4 border-[#C59B27] pl-2 font-semibold dark:bg-[#C59B27]/10 dark:text-[#F7F4ED]'
+                    ? 'admin-nav-active bg-[#C59B27]/5 text-[#18181B] border-l-4 border-[#C59B27] pl-2 font-semibold dark:bg-[#C59B27]/10 dark:text-[#F7F4ED]'
                     : 'text-zinc-500 hover:bg-zinc-50 hover:text-[#18181B] border-l-4 border-transparent dark:text-[#938C81] dark:hover:bg-[#20201E] dark:hover:text-[#F7F4ED]'
                 }`}
               >
-                <IconComponent className={`w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#938C81]'}`} />
+                <IconComponent className={`admin-nav-icon w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#938C81]'}`} />
                 <span>{item.label}</span>
                 {item.id === 'review' && stats.pendingVolunteers > 0 && (
                   <span className="ml-auto bg-[#C59B27] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
@@ -1873,7 +1873,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
   return (
     <div
-      className="min-h-screen bg-[#FAF9F6] text-[#18181B] flex font-sans antialiased relative overflow-hidden"
+      className="admin-shell min-h-screen bg-[#FAF9F6] text-[#18181B] flex font-sans antialiased relative overflow-hidden"
       data-view-version="admin-layout-v2-approved-design"
       data-layout-mode="admin-responsive-v1"
     >
