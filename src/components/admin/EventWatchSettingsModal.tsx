@@ -139,15 +139,15 @@ export const EventWatchSettingsModal: React.FC<EventWatchSettingsModalProps> = (
     >
       <div
         ref={modalRef}
-        className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-lg bg-white dark:bg-[#181817] rounded-2xl shadow-xl border border-zinc-200 dark:border-[#2A2926] overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-zinc-100 flex items-center justify-between">
+        <div className="px-6 py-5 border-b border-zinc-100 dark:border-[#2A2926] flex items-center justify-between">
           <div>
-            <h3 id="event-watch-settings-title" className="font-serif text-lg font-bold text-zinc-900 leading-snug">
+            <h3 id="event-watch-settings-title" className="font-sans text-lg font-bold text-zinc-900 dark:text-[#F7F4ED] leading-snug">
               Event watch settings
             </h3>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <p className="text-xs text-zinc-500 dark:text-[#938C81] mt-0.5">
               What Event Watch should monitor
             </p>
           </div>
@@ -155,14 +155,14 @@ export const EventWatchSettingsModal: React.FC<EventWatchSettingsModalProps> = (
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Subtle Status Banner */}
-        <div className="px-6 py-3 bg-zinc-50/80 border-b border-zinc-100 flex items-center justify-between text-xs">
+        <div className="px-6 py-3 bg-zinc-50/80 dark:bg-[#20201E] border-b border-zinc-100 dark:border-[#2A2926] flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-zinc-600">
             {formattedTime ? (
               <>

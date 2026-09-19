@@ -415,7 +415,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       {/* 1. PAGE HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
         <div>
-          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-[#18181B] tracking-tight">
+          <h1 className="type-h1-app text-[#18181B]">
             Registration review
           </h1>
           <p className="text-xs text-zinc-500 mt-1 leading-relaxed">

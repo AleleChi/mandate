@@ -72,13 +72,10 @@ export function AdminDutyDevicesView() {
       {/* 1. Page Header with clean human ministry title and primary actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
         <div>
-          <h1
-            className="text-2xl font-bold text-[#18181B] tracking-tight"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <h1 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
             Event Duty
           </h1>
-          <p className="text-xs text-zinc-500 mt-1 font-normal">
+          <p className="text-xs text-zinc-500 dark:text-[#938C81] mt-1 font-normal">
             Manage where teams are serving and see who is currently on duty.
           </p>
         </div>

@@ -17,7 +17,7 @@
 
 export const REAL_ASSETS = {
   // Hero Section Images (Awaiting real uploaded assets)
-  heroMain: '',      // Main curved hero image
+  heroMain: '',      // Main hero photo (falls back to bundled Koinonia photo in LandingPage/LandingHero)
   heroUpper: '',     // Back/upper layer image
   heroRight: '',     // Front/right layer image
   heroVideo: '',     // NOTE: No background video found in project assets. Do not assume /hero-video.mp4 exists unless uploaded.

@@ -136,9 +136,9 @@ const MEDIA_SLOTS: MediaSlot[] = [
   },
   {
     key: 'heroMain',
-    label: 'Main Hero Foreground',
-    description: 'The large foreground curved image in the editorial hero section.',
-    dimensions: '800 × 1000 px · 4:5 portrait',
+    label: 'Hero photograph',
+    description: 'Main photograph shown on the public landing page.',
+    dimensions: 'High-resolution portrait or editorial photo (e.g. 4:5 or 3:4)',
     previewClass: 'w-20 aspect-[4/5]',
     type: 'image',
     purpose: 'landing_image',
@@ -527,12 +527,10 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       setResettingSlot(slotKey);
       setErrorSlot(prev => ({ ...prev, [slotKey]: '' }));
       const updatePayload: Record<string, string> = { [slotKey]: '' };
-      if (slotKey === 'heroVideo') {
-        updatePayload['heroVideoPoster'] = '';
-        updatePayload['heroVideoMediaId'] = '';
-        updatePayload['heroVideoOriginalName'] = '';
-        updatePayload['heroVideoFileSize'] = '';
-      }
+      updatePayload[`${slotKey}Poster`] = '';
+      updatePayload[`${slotKey}MediaId`] = '';
+      updatePayload[`${slotKey}OriginalName`] = '';
+      updatePayload[`${slotKey}FileSize`] = '';
       await api.admin.updateLandingSettings(updatePayload);
       await fetchSettings();
       setSlotFileState(prev => {
@@ -1770,7 +1768,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       {mainTab === 'contact-footer' && (
         <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 max-w-3xl">
           <div className="border-b border-[#EAE8E1] pb-4">
-            <h3 className="text-base sm:text-lg font-serif-koinonia font-semibold text-stone-900">
+            <h3 className="text-base sm:text-lg font-sans font-bold text-stone-900 dark:text-[#F7F4ED]">
               Contact &amp; Footer Settings
             </h3>
             <p className="text-xs text-stone-500 mt-1">

@@ -991,7 +991,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
             <AlertTriangle className="w-6 h-6 stroke-1.5" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-xl font-serif font-bold text-stone-900 tracking-tight">{title}</h2>
+            <h2 className="text-xl font-sans font-bold text-stone-900 tracking-tight">{title}</h2>
             <p className="text-stone-500 text-xs leading-relaxed">{description}</p>
           </div>
           <div className="flex flex-col gap-2.5">
@@ -1037,7 +1037,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
             Back to templates
           </button>
           <div className="flex items-center gap-2.5 mt-2">
-            <h1 className="text-2xl font-serif font-bold text-stone-900 tracking-tight">{template.name}</h1>
+            <h1 className="text-2xl font-sans font-bold text-stone-900 tracking-tight">{template.name}</h1>
             <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 font-mono">
               {template.privacyClassification}
             </span>
@@ -1049,7 +1049,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
         
         <div className="text-right shrink-0 hidden md:block">
           <span className="text-[10px] font-mono text-stone-400 block uppercase tracking-wider">Domain</span>
-          <span className="text-sm font-serif font-bold text-stone-800">{template.reportDomain || 'Operations'}</span>
+          <span className="text-sm font-sans font-bold text-stone-800">{template.reportDomain || 'Operations'}</span>
         </div>
       </div>
 
@@ -1060,7 +1060,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
           
           {/* 1. Context selector */}
           <div className="bg-white p-6 rounded-xl border border-stone-200 space-y-4 shadow-sm">
-            <h2 className="text-sm font-serif font-bold text-stone-900 flex items-center gap-2">
+            <h2 className="text-sm font-sans font-bold text-stone-900 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-[#C59B27]" />
               {isTrainingTemplate ? 'Select Training Session' : 'Select Event'}
             </h2>
@@ -1106,7 +1106,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
           {/* 2. Sections Checklist */}
           <div className="bg-white p-6 rounded-xl border border-stone-200 space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-serif font-bold text-stone-900 flex items-center gap-2">
+              <h2 className="text-sm font-sans font-bold text-stone-900 flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-[#C59B27]" />
                 Report Sections
               </h2>
@@ -1152,7 +1152,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
 
           {/* 3. Filter controls */}
           <div className="bg-white p-6 rounded-xl border border-stone-200 space-y-4 shadow-sm">
-            <h2 className="text-sm font-serif font-bold text-stone-900 flex items-center gap-2">
+            <h2 className="text-sm font-sans font-bold text-stone-900 flex items-center gap-2">
               <Lock className="w-4 h-4 text-[#C59B27]" />
               Filters
             </h2>
@@ -1204,7 +1204,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
           
           {/* Metadata report overview */}
           <div className="bg-stone-50 p-6 rounded-xl border border-stone-200 space-y-4 shadow-sm">
-            <h3 className="text-xs font-serif font-bold uppercase tracking-wider text-[#C59B27] border-b border-stone-200 pb-2">
+            <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-[#C59B27] border-b border-stone-200 pb-2">
               REPORT SUMMARY
             </h3>
 
@@ -1239,7 +1239,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
 
           {/* Actions Panel */}
           <div className="bg-white p-6 rounded-xl border border-stone-200 space-y-4 shadow-sm">
-            <h3 className="text-xs font-serif font-bold uppercase tracking-wider text-stone-900">
+            <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-stone-900">
               REPORT ACTIONS
             </h3>
             
@@ -1299,7 +1299,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
                 id="pipeline-generation-card"
               >
                 <div className="flex items-center justify-between border-b border-stone-800 pb-2">
-                  <span className="text-xs font-serif font-medium uppercase tracking-wider text-[#C59B27] flex items-center gap-1.5">
+                  <span className="text-xs font-sans font-semibold uppercase tracking-wider text-[#C59B27] flex items-center gap-1.5">
                     {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
                     {submitting ? 'Generating report' : 'Report ready'}
                   </span>
@@ -1367,7 +1367,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
                     <Eye className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h2 id="preview-modal-title" className="text-base font-serif font-medium text-stone-900 truncate">
+                    <h2 id="preview-modal-title" className="text-base font-sans font-bold text-stone-900 truncate">
                       {template?.name} — Preview
                     </h2>
                     <p className="text-xs text-stone-500 truncate">
@@ -1421,7 +1421,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
                         <AlertTriangle className="w-6 h-6" />
                       </div>
                       <div>
-                        <h3 className="text-base font-serif font-semibold text-stone-900">Preview Unavailable</h3>
+                        <h3 className="text-base font-sans font-semibold text-stone-900">Preview Unavailable</h3>
                         <p className="text-xs text-stone-500 mt-1 leading-relaxed">{previewError}</p>
                       </div>
                       <div className="flex items-center justify-center gap-2 pt-2">

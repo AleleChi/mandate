@@ -72,27 +72,27 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150 text-left">
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-lg bg-white dark:bg-[#181817] rounded-2xl shadow-xl border border-zinc-200 dark:border-[#2A2926] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-zinc-100 flex items-center justify-between">
+        <div className="px-6 py-5 border-b border-zinc-100 dark:border-[#2A2926] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             {automation.severity === 'urgent' && (
-              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">
                 Urgent
               </span>
             )}
             {automation.severity === 'attention' && (
-              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
                 Attention
               </span>
             )}
             {automation.severity === 'information' && (
-              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200">
+              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#20201E] text-zinc-700 dark:text-[#F7F4ED] border border-zinc-200 dark:border-[#2A2926]">
                 Information
               </span>
             )}
             {isResolved && (
-              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <span className="text-[11px] font-medium tracking-wide uppercase px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50">
                 Resolved
               </span>
             )}
@@ -100,7 +100,7 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+            className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -109,16 +109,16 @@ export const AutomationDetailModal: React.FC<AutomationDetailModalProps> = ({
         {/* Content */}
         <div className="p-6 space-y-6 overflow-y-auto">
           <div>
-            <h3 className="font-serif text-lg font-bold text-zinc-900 leading-snug">
+            <h3 className="font-sans text-lg font-bold text-zinc-900 dark:text-[#F7F4ED] leading-snug">
               {automation.title}
             </h3>
-            <p className="text-sm text-zinc-600 mt-1">
+            <p className="text-sm text-zinc-600 dark:text-[#938C81] mt-1">
               {automation.summary}
             </p>
           </div>
 
           {/* Structured factual breakdown */}
-          <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-200/80 space-y-3">
+          <div className="bg-zinc-50 dark:bg-[#20201E] rounded-xl p-4 border border-zinc-200/80 dark:border-[#2A2926] space-y-3">
             {automation.signal_type === 'LOCATION_UNDERSTAFFED' && (
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>

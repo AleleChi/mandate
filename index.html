@@ -4,12 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Synchronous theme bootstrap to prevent flash on reload
+      // Synchronous theme bootstrap to prevent flash on reload with surface isolation
       (function() {
         try {
-          var stored = localStorage.getItem('koinonia-theme');
-          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var theme = stored === 'dark' || (!stored && prefersDark) || (stored === 'system' && prefersDark) ? 'dark' : 'light';
+          var hash = window.location.hash || '';
+          var pathname = window.location.pathname || '';
+          var isAdmin = hash.indexOf('/admin') !== -1 || pathname.indexOf('/admin') !== -1;
+          var theme = 'light';
+
+          if (isAdmin) {
+            // Admin defaults to light mode unless explicitly set to dark
+            var adminStored = localStorage.getItem('koinonia-admin-theme');
+            theme = adminStored === 'dark' ? 'dark' : 'light';
+          } else {
+            // Public theme: check koinonia-public-theme, fallback to koinonia-theme, then system
+            var publicStored = localStorage.getItem('koinonia-public-theme') || localStorage.getItem('koinonia-theme');
+            var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (publicStored === 'dark') {
+              theme = 'dark';
+            } else if (publicStored === 'light') {
+              theme = 'light';
+            } else if (publicStored === 'system' || !publicStored) {
+              theme = prefersDark ? 'dark' : 'light';
+            }
+          }
+
           document.documentElement.setAttribute('data-theme', theme);
           if (theme === 'dark') {
             document.documentElement.classList.add('dark');

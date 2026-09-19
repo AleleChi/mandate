@@ -458,7 +458,7 @@ export const AdminEscalationsView: React.FC = () => {
       {/* 1. Header Banner & Global Controls (Prompt Section 20, 21, 22) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
         <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 tracking-tight">
+          <h1 className="type-h1-app text-stone-900">
             Safety response rules
           </h1>
           <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">

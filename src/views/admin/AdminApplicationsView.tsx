@@ -657,7 +657,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
       {/* 1. HEADER ROW */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-serif text-[#18181B] tracking-tight">
+          <h1 className="type-h1-app text-[#18181B]">
             Children sent for review
           </h1>
           <p className="text-xs text-zinc-500 mt-1">

@@ -641,10 +641,7 @@ export default function AdminEventLocationsTab({
           <span className="text-[11px] font-sans font-medium text-zinc-500 block">
             Locations
           </span>
-          <span
-            className="text-2xl font-bold text-[#18181B] block"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <span className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] block">
             {summary.locations}
           </span>
         </div>
@@ -653,10 +650,7 @@ export default function AdminEventLocationsTab({
           <span className="text-[11px] font-sans font-medium text-zinc-500 block">
             Volunteers assigned
           </span>
-          <span
-            className="text-2xl font-bold text-[#18181B] block"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <span className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] block">
             {summary.volunteersAssigned}
           </span>
         </div>
@@ -665,10 +659,7 @@ export default function AdminEventLocationsTab({
           <span className="text-[11px] font-sans font-medium text-zinc-500 block">
             Currently on duty
           </span>
-          <span
-            className="text-2xl font-bold text-emerald-700 block"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <span className="text-2xl font-bold font-sans text-emerald-700 dark:text-emerald-400 block">
             {summary.currentlyOnDuty}
           </span>
         </div>
@@ -677,10 +668,7 @@ export default function AdminEventLocationsTab({
           <span className="text-[11px] font-sans font-medium text-zinc-500 block">
             Still expected
           </span>
-          <span
-            className="text-2xl font-bold text-[#A47E1F] block"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <span className="text-2xl font-bold font-sans text-[#A47E1F] dark:text-[#C59B27] block">
             {summary.stillExpected}
           </span>
         </div>
@@ -823,10 +811,7 @@ export default function AdminEventLocationsTab({
               {/* DETAIL HEADER */}
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-[#EAE8E1]">
                 <div className="space-y-1">
-                  <h2
-                    className="text-2xl font-bold text-[#18181B] tracking-tight"
-                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  >
+                  <h2 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
                     {selectedLocation.name}
                   </h2>
                   <div className="text-xs font-sans text-zinc-600">
@@ -1099,10 +1084,7 @@ export default function AdminEventLocationsTab({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-lg shadow-xl space-y-5">
             <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
-              <h3
-                className="text-xl font-bold text-[#18181B] tracking-tight"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
+              <h3 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
                 {isEditing ? 'Edit location' : 'Add location'}
               </h3>
               <button
@@ -1290,10 +1272,7 @@ export default function AdminEventLocationsTab({
               <div className="text-xs font-sans text-zinc-500 font-medium">
                 Children &amp; Teens
               </div>
-              <h3
-                className="text-2xl font-bold text-[#18181B] tracking-tight pt-2"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
+              <h3 className="text-2xl font-bold font-sans text-[#18181B] tracking-tight pt-2">
                 {selectedLocation.name}
               </h3>
               <p className="text-xs text-zinc-600 font-sans pt-1">
@@ -1369,10 +1348,7 @@ export default function AdminEventLocationsTab({
             </div>
 
             <div className="space-y-1.5">
-              <h4
-                className="text-xl font-bold text-[#18181B] tracking-tight"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
+              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
                 Replace QR?
               </h4>
               <p className="text-xs text-zinc-600 font-sans leading-relaxed">
@@ -1410,10 +1386,7 @@ export default function AdminEventLocationsTab({
             </div>
 
             <div className="space-y-1.5">
-              <h4
-                className="text-xl font-bold text-[#18181B] tracking-tight"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
+              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
                 {locToToggleActive.isActive ? 'Close location?' : 'Reopen location?'}
               </h4>
               <p className="text-xs text-zinc-600 font-sans leading-relaxed">
@@ -1448,10 +1421,7 @@ export default function AdminEventLocationsTab({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-md shadow-xl space-y-4 text-center">
             <div className="space-y-1">
-              <h3
-                className="text-2xl font-bold text-[#18181B] tracking-tight"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
+              <h3 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
                 Print duty QR codes
               </h3>
               <p className="text-xs text-zinc-500 font-sans">

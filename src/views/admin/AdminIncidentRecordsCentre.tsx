@@ -510,7 +510,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
       {/* 1. Page Header (Prompt Section 4, 5, 21) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
         <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 tracking-tight">
+          <h1 className="type-h1-app text-stone-900">
             Incidents
           </h1>
           <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">

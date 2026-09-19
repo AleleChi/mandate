@@ -38,6 +38,7 @@ import {
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
+import { ThemeSwitcher } from '../../components/common/ThemeSwitcher';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { subscribeUserToPush, unsubscribeUserFromPush } from '../../utils/pushSubscription';
 import { ActiveResponseCoordinationPanel } from '../../components/common/ActiveResponseCoordinationPanel';
@@ -1315,29 +1316,29 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   const canViewSafety = ['admin', 'super_admin'].includes(adminUser?.role || 'admin');
 
   const renderPlaceholderSection = (tabName: string) => (
-    <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center max-w-2xl mx-auto space-y-4 shadow-xs">
+    <div className="bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl p-12 text-center max-w-2xl mx-auto space-y-4 shadow-xs">
       <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/15 text-[#C59B27] rounded-2xl flex items-center justify-center mx-auto">
         <ClipboardList className="w-6 h-6" />
       </div>
-      <h3 className="font-serif text-lg font-bold text-[#18181B]">{tabName}</h3>
-      <p className="text-xs text-zinc-500 leading-relaxed max-w-md mx-auto">
+      <h3 className="font-sans text-lg font-bold text-[#18181B] dark:text-[#F7F4ED]">{tabName}</h3>
+      <p className="text-xs text-zinc-500 dark:text-[#938C81] leading-relaxed max-w-md mx-auto">
         This view displays event records and information. Select a primary option above or return to the overview page.
       </p>
       <button
         onClick={() => setActiveTab('overview')}
-        className="text-xs font-semibold text-[#C59B27] hover:underline block mx-auto"
+        className="text-xs font-semibold text-[#C59B27] hover:underline block mx-auto cursor-pointer"
       >
         Return to Overview
       </button>
     </div>
   );
 
-  // Sidebar navigation element markup - Approved Light Design
+  // Sidebar navigation element markup - Approved Light Design with Dark mode support
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full justify-between" data-component-version="admin-sidebar-approved-v1">
       <div className="flex flex-col">
         {/* Brand block - Light warm design */}
-        <div className="h-20 px-6 border-b border-[#EAE8E1] flex items-center justify-between">
+        <div className="h-20 px-6 border-b border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between">
           <div className="flex flex-col justify-center items-start">
             <BrandLogo
               context="admin"
@@ -1347,15 +1348,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {/* Mobile close button */}
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden text-zinc-500 hover:text-[#18181B] p-1 rounded-lg focus:outline-none"
+            className="lg:hidden text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED] p-1 rounded-lg focus:outline-none"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Nav Items - Approved Light styling */}
+        {/* Nav Items - Approved Light styling with Dark mode support */}
         <nav className="p-4 space-y-1">
-          <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest px-3 mb-2">
+          <div className="text-[10px] font-semibold text-zinc-400 dark:text-[#938C81] uppercase tracking-widest px-3 mb-2">
             Ministry Admin
           </div>
 
@@ -1383,13 +1384,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               <button
                 key={item.id}
                 onClick={() => handleTabChange(item.id as AdminTab)}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-[#C59B27]/5 text-[#18181B] border-l-4 border-[#C59B27] pl-2 font-semibold'
-                    : 'text-zinc-500 hover:bg-zinc-50 hover:text-[#18181B] border-l-4 border-transparent'
+                    ? 'bg-[#C59B27]/5 text-[#18181B] border-l-4 border-[#C59B27] pl-2 font-semibold dark:bg-[#C59B27]/10 dark:text-[#F7F4ED]'
+                    : 'text-zinc-500 hover:bg-zinc-50 hover:text-[#18181B] border-l-4 border-transparent dark:text-[#938C81] dark:hover:bg-[#20201E] dark:hover:text-[#F7F4ED]'
                 }`}
               >
-                <IconComponent className={`w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400'}`} />
+                <IconComponent className={`w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#938C81]'}`} />
                 <span>{item.label}</span>
                 {item.id === 'review' && stats.pendingVolunteers > 0 && (
                   <span className="ml-auto bg-[#C59B27] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
@@ -1402,21 +1403,23 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         </nav>
       </div>
 
-      {/* User profile & Sign Out inside Sidebar - Approved Light aesthetics */}
-      <div className="p-4 border-t border-[#EAE8E1] bg-[#FAF9F6]">
-        <div className="flex items-center space-x-3 mb-3">
-          <div className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-bold text-xs shrink-0 border border-[#C59B27]/20">
-            {adminFullName.substring(0, 2).toUpperCase()}
-          </div>
-          <div className="flex flex-col min-w-0">
-            <span className="text-xs font-semibold text-[#18181B] truncate">
-              {adminFullName}
-            </span>
+      {/* User profile & Sign Out inside Sidebar - Approved Light aesthetics with Dark mode support */}
+      <div className="p-4 border-t border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#181817]">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-bold text-xs shrink-0 border border-[#C59B27]/20">
+              {adminFullName.substring(0, 2).toUpperCase()}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-semibold text-[#18181B] dark:text-[#F7F4ED] truncate">
+                {adminFullName}
+              </span>
+            </div>
           </div>
         </div>
         <button
           onClick={handleSignOut}
-          className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 hover:text-red-700 transition-all focus:outline-none cursor-pointer"
+          className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 border border-red-100 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/40 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/50 transition-all focus:outline-none cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span>Sign Out</span>
@@ -1472,15 +1475,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           ? "important-alert-card-v1"
           : "normal-alert-card-v1";
 
-    let borderAccent = "border-zinc-200 border-l-4 border-l-zinc-300";
+    let borderAccent = "border-zinc-200 dark:border-[#2A2926] border-l-4 border-l-zinc-300 dark:border-l-zinc-600";
     if (isResolved) {
-      borderAccent = "border-zinc-200 opacity-75 border-l-4 border-l-zinc-300";
+      borderAccent = "border-zinc-200 dark:border-[#2A2926] opacity-75 border-l-4 border-l-zinc-300 dark:border-l-zinc-600";
     } else if (isUrgent && !isAck) {
-      borderAccent = "border-red-200/80 border-l-4 border-l-red-600";
+      borderAccent = "border-red-200/80 dark:border-red-900/50 border-l-4 border-l-red-600";
     } else if (isImportant && !isAck) {
-      borderAccent = "border-amber-200/80 border-l-4 border-l-amber-500";
+      borderAccent = "border-amber-200/80 dark:border-amber-900/50 border-l-4 border-l-amber-500";
     } else if (isAck) {
-      borderAccent = "border-zinc-200 border-l-4 border-l-[#C59B27]";
+      borderAccent = "border-zinc-200 dark:border-[#2A2926] border-l-4 border-l-[#C59B27]";
     }
 
     const raisedTime = alert.created_at ? formatTime(alert.created_at) : '';
@@ -1489,22 +1492,22 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     return (
       <div
         key={alert.id}
-        className={`bg-white border rounded-xl p-5 sm:p-6 relative transition-all shadow-2xs flex flex-col justify-between ${borderAccent}`}
+        className={`bg-white dark:bg-[#181817] border rounded-xl p-5 sm:p-6 relative transition-all shadow-2xs flex flex-col justify-between ${borderAccent}`}
         data-view-version={viewVersion}
         data-component-version={cardVersion}
       >
         <div>
           {/* Header Row: Category & Status */}
-          <div className="flex items-baseline justify-between gap-3 pb-3 border-b border-zinc-100">
+          <div className="flex items-baseline justify-between gap-3 pb-3 border-b border-zinc-100 dark:border-[#2A2926]">
             <div>
               <span
-                className="font-serif font-bold text-lg text-zinc-950 block"
+                className="font-sans font-bold text-lg text-zinc-950 dark:text-[#F7F4ED] block"
                 data-component-version="safety-alert-category-labels-v2"
               >
                 {catLabel}
               </span>
               {raisedRelative && (
-                <span className="text-[11px] text-zinc-400 font-sans">
+                <span className="text-[11px] text-zinc-400 dark:text-[#938C81] font-sans">
                   Raised {raisedTime ? `${raisedTime} · ${raisedRelative}` : raisedRelative}
                 </span>
               )}
@@ -1875,8 +1878,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       data-layout-mode="admin-responsive-v1"
     >
 
-      {/* DESKTOP SIDEBAR - Approved Light Background */}
-      <aside className="w-64 bg-[#F9F8F3] flex flex-col justify-between shrink-0 border-r border-[#EAE8E1] hidden lg:flex">
+      {/* DESKTOP SIDEBAR - Approved Light Background with Dark mode support */}
+      <aside className="w-64 bg-[#F9F8F3] dark:bg-[#181817] flex flex-col justify-between shrink-0 border-r border-[#EAE8E1] dark:border-[#2A2926] hidden lg:flex">
         {renderSidebarContent()}
       </aside>
 
@@ -1889,7 +1892,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             className="fixed inset-0 bg-black/40 transition-opacity backdrop-blur-xs"
           />
           {/* Drawer Panel */}
-          <div className="relative flex w-full max-w-xs flex-1 flex-col bg-[#F9F8F3] h-full animate-slide-in-left shadow-2xl">
+          <div className="relative flex w-full max-w-xs flex-1 flex-col bg-[#F9F8F3] dark:bg-[#181817] h-full animate-slide-in-left shadow-2xl">
             {renderSidebarContent()}
           </div>
         </div>
@@ -1898,40 +1901,40 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {/* RIGHT MAIN WINDOW */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
 
-        {/* Top bar header - Styled with warm ivory theme */}
-        <header className="h-20 bg-white border-b border-[#EAE8E1] px-4 sm:px-8 flex items-center justify-between shrink-0">
+        {/* Top bar header - Styled with warm ivory theme & dark mode support */}
+        <header className="h-20 bg-white dark:bg-[#181817] border-b border-[#EAE8E1] dark:border-[#2A2926] px-4 sm:px-8 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3 sm:space-x-4">
             {/* Hamburger Button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="p-2 -ml-2 rounded-xl text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 lg:hidden focus:outline-none"
+              className="p-2 -ml-2 rounded-xl text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E] lg:hidden focus:outline-none"
               title="Toggle Menu"
             >
               <Menu className="w-5.5 h-5.5" />
             </button>
 
-            <h1 className="text-base sm:text-lg font-serif font-medium text-zinc-800 tracking-normal">
+            <h1 className="text-base sm:text-lg font-sans font-semibold text-zinc-800 dark:text-[#F7F4ED] tracking-normal">
               Children and Teens Admin
             </h1>
 
             {/* Custom Tabs */}
-            <div className="hidden sm:flex items-center bg-zinc-50 p-1 rounded-xl border border-[#EAE8E1] ml-4">
+            <div className="hidden sm:flex items-center bg-zinc-50 dark:bg-[#20201E] p-1 rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] ml-4">
               <button
                 onClick={() => setHeaderTab('current')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                   headerTab === 'current'
-                    ? 'bg-white text-[#18181B] shadow-xs'
-                    : 'text-zinc-500 hover:text-[#18181B]'
+                    ? 'bg-white text-[#18181B] dark:bg-[#2A2926] dark:text-[#F7F4ED] shadow-xs'
+                    : 'text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED]'
                 }`}
               >
                 Current Event
               </button>
               <button
                 onClick={() => setHeaderTab('upcoming')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                   headerTab === 'upcoming'
-                    ? 'bg-white text-[#18181B] shadow-xs'
-                    : 'text-zinc-500 hover:text-[#18181B]'
+                    ? 'bg-white text-[#18181B] dark:bg-[#2A2926] dark:text-[#F7F4ED] shadow-xs'
+                    : 'text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED]'
                 }`}
               >
                 Upcoming
@@ -1942,7 +1945,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           <div className="flex items-center space-x-2 sm:space-x-4">
             {/* Search Input field (Desktop) */}
             <div className="relative max-w-xs hidden md:block">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400 dark:text-[#938C81]">
                 <Search className="w-4 h-4" />
               </span>
               <input
@@ -1950,7 +1953,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search children, parents, applications..."
-                className="w-56 lg:w-72 pl-9 pr-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                className="w-56 lg:w-72 pl-9 pr-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E] text-zinc-800 dark:text-[#F7F4ED] placeholder:text-zinc-400 dark:placeholder:text-[#938C81] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
               />
             </div>
 
@@ -1958,11 +1961,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <button
               onClick={() => activeTab === 'overview' ? fetchDashboardData(true) : fetchAdminsList()}
               disabled={refreshing || (activeTab === 'settings' && loadingAdmins)}
-              className="p-2 text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 rounded-full transition-colors focus:outline-none cursor-pointer"
+              className="p-2 text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E] rounded-full transition-colors focus:outline-none cursor-pointer"
               title="Refresh Analytics"
             >
               <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
             </button>
+
+            {/* Admin Theme Switcher */}
+            <ThemeSwitcher surface="admin" />
 
             {/* Human-centred alert/sound status */}
             <div className="relative" ref={statusPopoverRef}>
@@ -1975,33 +1981,33 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     setShowStatusPopover(!showStatusPopover);
                   }
                 }}
-                className="flex items-center gap-1.5 px-2 py-1.5 text-[13px] font-medium text-zinc-600 hover:text-zinc-900 rounded-lg transition-colors cursor-pointer font-sans select-none"
+                className="flex items-center gap-1.5 px-2 py-1.5 text-[13px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-[#938C81] dark:hover:text-[#F7F4ED] rounded-lg transition-colors cursor-pointer font-sans select-none"
                 title={!audioArmed && soundEnabled ? "Click to enable alert sound" : "Alert settings"}
               >
                 {!soundEnabled ? (
                   <>
-                    <VolumeX className="w-4 h-4 text-zinc-400 shrink-0" />
-                    <span className="text-zinc-500 hidden sm:inline">Sound alerts off</span>
+                    <VolumeX className="w-4 h-4 text-zinc-400 dark:text-[#938C81] shrink-0" />
+                    <span className="text-zinc-500 dark:text-[#938C81] hidden sm:inline">Sound alerts off</span>
                   </>
                 ) : !audioArmed ? (
                   <>
                     <VolumeX className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span className="text-amber-800 font-medium">Sound needs enabling</span>
+                    <span className="text-amber-800 dark:text-amber-400 font-medium">Sound needs enabling</span>
                   </>
                 ) : (
                   <>
-                    <Volume2 className="w-4 h-4 text-zinc-400 shrink-0" />
-                    <span className="text-zinc-700 font-medium hidden sm:inline">Alerts ready</span>
+                    <Volume2 className="w-4 h-4 text-zinc-400 dark:text-[#938C81] shrink-0" />
+                    <span className="text-zinc-700 dark:text-[#F7F4ED] font-medium hidden sm:inline">Alerts ready</span>
                   </>
                 )}
               </button>
 
               {/* Restrained Popover */}
               {showStatusPopover && (
-                <div className="absolute right-0 mt-2 w-72 bg-white border border-[#EAE8E1] rounded-2xl shadow-xl p-4.5 z-50 animate-fade-in font-sans space-y-3.5 text-left">
-                  <div className="border-b border-[#EAE8E1] pb-2.5">
-                    <h4 className="font-semibold text-xs text-[#18181B] tracking-tight">Event alerts</h4>
-                    <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+                <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl shadow-xl p-4.5 z-50 animate-fade-in font-sans space-y-3.5 text-left">
+                  <div className="border-b border-[#EAE8E1] dark:border-[#2A2926] pb-2.5">
+                    <h4 className="font-semibold text-xs text-[#18181B] dark:text-[#F7F4ED] tracking-tight">Event alerts</h4>
+                    <p className="text-[11px] text-zinc-500 dark:text-[#938C81] mt-0.5 leading-relaxed">
                       Keep your device volume turned on so urgent alerts can be heard.
                     </p>
                   </div>
@@ -2114,12 +2120,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
               {showNotifPanel && (
                 <div
-                  className="absolute right-0 mt-2 w-80 sm:w-[420px] bg-[#FCFBF9] border border-[#EAE8E1] rounded-[24px] shadow-2xl overflow-hidden z-50 animate-fade-in"
+                  className="absolute right-0 mt-2 w-80 sm:w-[420px] bg-[#FCFBF9] dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-[24px] shadow-2xl overflow-hidden z-50 animate-fade-in"
                   data-component-version="admin-notification-panel-v3-premium"
                 >
-                  <div className="p-5 border-b border-[#EAE8E1]/80 bg-[#FAF9F6] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v2" data-sound-rule-version="admin-message-alert-sound-rule-v2">
+                  <div className="p-5 border-b border-[#EAE8E1]/80 dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E] flex items-center justify-between" data-component-version="admin-attention-escalation-notification-v2" data-sound-rule-version="admin-message-alert-sound-rule-v2">
                     <div>
-                      <h4 className="font-serif font-bold text-base text-[#18181B] tracking-tight">Updates & Care Alerts</h4>
+                      <h4 className="font-sans font-bold text-base text-[#18181B] dark:text-[#F7F4ED] tracking-tight">Updates & Care Alerts</h4>
                       <p className="text-[11px] text-[#C59B27] font-medium font-sans mt-0.5 uppercase tracking-wider">Active child review actions</p>
                     </div>
 
@@ -2129,8 +2135,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         data-component-version="admin-sound-notification-toggle-v3"
                         className={`p-2 rounded-xl border transition-all cursor-pointer ${
                           soundEnabled
-                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]'
-                            : 'bg-zinc-100 border-zinc-200 text-zinc-400'
+                            ? 'bg-[#FAF6EB] dark:bg-[#2A2312] border-[#E5D5AE] dark:border-[#5A4515] text-[#C59B27]'
+                            : 'bg-zinc-100 dark:bg-[#2A2926] border-zinc-200 dark:border-[#3A3935] text-zinc-400 dark:text-[#938C81]'
                         }`}
                         title={soundEnabled ? 'Mute Alert Chimes' : 'Unmute Alert Chimes'}
                       >
@@ -2150,8 +2156,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         data-component-version="admin-push-notification-toggle-v2"
                         className={`p-2 rounded-xl border transition-all cursor-pointer ${
                           pushEnabled
-                            ? 'bg-[#FAF6EB] border-[#E5D5AE] text-[#C59B27]'
-                            : 'bg-zinc-100 border-zinc-200 text-zinc-400'
+                            ? 'bg-[#FAF6EB] dark:bg-[#2A2312] border-[#E5D5AE] dark:border-[#5A4515] text-[#C59B27]'
+                            : 'bg-zinc-100 dark:bg-[#2A2926] border-zinc-200 dark:border-[#3A3935] text-zinc-400 dark:text-[#938C81]'
                         }`}
                         title={pushEnabled ? 'Disable Push Notifications' : 'Enable Push Notifications'}
                       >
@@ -2163,14 +2169,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   </div>
 
                   {/* Tabs: Unread vs All */}
-                  <div className="flex border-b border-[#EAE8E1]/60 px-5 py-2 bg-[#FAF9F6] space-x-4">
+                  <div className="flex border-b border-[#EAE8E1]/60 dark:border-[#2A2926] px-5 py-2 bg-[#FAF9F6] dark:bg-[#20201E] space-x-4">
                     <button
                       type="button"
                       onClick={() => setNotifTab('unread')}
                       className={`pb-1 text-xs font-semibold tracking-wide border-b-2 transition-all cursor-pointer ${
                         notifTab === 'unread'
-                          ? 'border-[#C59B27] text-[#18181B]'
-                          : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                          ? 'border-[#C59B27] text-[#18181B] dark:text-[#F7F4ED]'
+                          : 'border-transparent text-zinc-400 dark:text-[#938C81] hover:text-zinc-600 dark:hover:text-[#F7F4ED]'
                       }`}
                     >
                       Unread ({unreadNotifCount})
@@ -2180,15 +2186,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       onClick={() => setNotifTab('all')}
                       className={`pb-1 text-xs font-semibold tracking-wide border-b-2 transition-all cursor-pointer ${
                         notifTab === 'all'
-                          ? 'border-[#C59B27] text-[#18181B]'
-                          : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                          ? 'border-[#C59B27] text-[#18181B] dark:text-[#F7F4ED]'
+                          : 'border-transparent text-zinc-400 dark:text-[#938C81] hover:text-zinc-600 dark:hover:text-[#F7F4ED]'
                       }`}
                     >
                       All Updates
                     </button>
                   </div>
 
-                  <div className="max-h-[360px] overflow-y-auto divide-y divide-[#EAE8E1]/40 font-sans">
+                  <div className="max-h-[360px] overflow-y-auto divide-y divide-[#EAE8E1]/40 dark:divide-[#2A2926] font-sans">
                     {(() => {
                       const listToRender = (Array.isArray(notifications) ? notifications : [])
                         .filter(notif => notifTab === 'all' || !notif.isRead)
@@ -2196,8 +2202,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                       if (listToRender.length === 0) {
                         return (
-                          <div className="p-10 text-center text-zinc-400 text-sm flex flex-col items-center justify-center gap-2">
-                            <Bell className="w-8 h-8 text-zinc-300 stroke-[1.5]" />
+                          <div className="p-10 text-center text-zinc-400 dark:text-[#938C81] text-sm flex flex-col items-center justify-center gap-2">
+                            <Bell className="w-8 h-8 text-zinc-300 dark:text-zinc-600 stroke-[1.5]" />
                             <span className="font-medium">
                               {notifTab === 'unread' ? 'No unread updates' : 'No active updates'}
                             </span>
@@ -2210,27 +2216,27 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                         // Select premium icon + colors based on notification metadata
                         let IconComponent = Bell;
-                        let iconBgClass = "bg-zinc-100 text-zinc-500";
+                        let iconBgClass = "bg-zinc-100 dark:bg-[#20201E] text-zinc-500 dark:text-[#938C81]";
 
                         if (notif.type === 'escalation') {
                           IconComponent = ShieldAlert;
-                          iconBgClass = "bg-[#FFF0F0] text-[#E05252] border border-[#FFD1D1]";
+                          iconBgClass = "bg-[#FFF0F0] dark:bg-red-950/40 text-[#E05252] dark:text-red-400 border border-[#FFD1D1] dark:border-red-900/40";
                         } else if (notif.type === 'new_application') {
                           IconComponent = UserCheck;
-                          iconBgClass = "bg-[#ECFDF5] text-[#10B981] border border-[#A7F3D0]";
+                          iconBgClass = "bg-[#ECFDF5] dark:bg-emerald-950/40 text-[#10B981] dark:text-emerald-400 border border-[#A7F3D0] dark:border-emerald-900/40";
                         } else if (notif.type === 'incoming_reply') {
                           IconComponent = MessageSquare;
-                          iconBgClass = "bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A]";
+                          iconBgClass = "bg-[#FFFBEB] dark:bg-amber-950/40 text-[#D97706] dark:text-amber-400 border border-[#FDE68A] dark:border-amber-900/40";
                         } else if (notif.type === 'delivery_failed') {
                           IconComponent = ShieldAlert;
-                          iconBgClass = "bg-[#FEF2F2] text-[#EF4444] border border-[#FEE2E2]";
+                          iconBgClass = "bg-[#FEF2F2] dark:bg-red-950/40 text-[#EF4444] dark:text-red-400 border border-[#FEE2E2] dark:border-red-900/40";
                         }
 
                         return (
                           <div
                             key={notif.id}
-                            className={`p-4 flex items-start gap-4 hover:bg-[#FAF9F6] transition-colors text-left relative ${
-                              isUnread ? 'bg-[#FCFBF9]' : 'bg-white/60'
+                            className={`p-4 flex items-start gap-4 hover:bg-[#FAF9F6] dark:hover:bg-[#20201E] transition-colors text-left relative ${
+                              isUnread ? 'bg-[#FCFBF9] dark:bg-[#181817]' : 'bg-white/60 dark:bg-[#181817]/60'
                             }`}
                           >
                             {isUnread && (
@@ -2243,16 +2249,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                             <div className="flex-1 min-w-0 pr-2">
                               <div className="flex items-baseline justify-between gap-2">
-                                <p className={`text-xs font-serif font-bold ${
-                                  isUnread ? 'text-[#18181B]' : 'text-zinc-600'
+                                <p className={`text-xs font-sans font-semibold ${
+                                  isUnread ? 'text-[#18181B] dark:text-[#F7F4ED]' : 'text-zinc-600 dark:text-[#938C81]'
                                 }`}>
                                   {notif.title}
                                 </p>
-                                <span className="text-[10px] text-zinc-400 shrink-0 font-medium">
+                                <span className="text-[10px] text-zinc-400 dark:text-[#938C81] shrink-0 font-medium">
                                   {formatTimeAgo(notif.createdAt)}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed break-words whitespace-normal font-sans">
+                              <p className="text-[11px] text-zinc-600 dark:text-[#938C81] mt-1 leading-relaxed break-words whitespace-normal font-sans">
                                 {notif.message}
                               </p>
 
@@ -2388,24 +2394,24 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         )}
 
         {/* Dashboard Main container */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6 sm:space-y-8 bg-[#FAF9F6]">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6 sm:space-y-8 bg-[#FAF9F6] dark:bg-[#121212]">
 
           {/* URGENT EMERGENCY ALERT PERSISTENT BANNER */}
           {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length > 0 && (
             <div
-              className="bg-[#FFF8F8] border-l-4 border-red-600 border border-red-200/80 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in font-sans"
+              className="bg-[#FFF8F8] dark:bg-red-950/20 border-l-4 border-red-600 border border-red-200/80 dark:border-red-900/40 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in font-sans"
               data-view-version="urgent-alert-persistent-banner-v2"
             >
               <div className="flex items-start space-x-3.5">
-                <div className="p-2 bg-red-50 rounded-xl text-red-600 border border-red-200 shrink-0 mt-0.5 animate-pulse">
+                <div className="p-2 bg-red-50 dark:bg-red-950/40 rounded-xl text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/40 shrink-0 mt-0.5 animate-pulse">
                   <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-serif font-bold text-sm text-red-900">
+                    <span className="font-sans font-bold text-sm text-red-900 dark:text-red-300">
                       Urgent attention
                     </span>
-                    <span className="bg-red-100 text-red-800 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    <span className="bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                       {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length > 1
                         ? `${safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').length} urgent alerts`
                         : 'Immediate attention needed'}
@@ -2414,23 +2420,23 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   {safetyAlerts.filter((a: any) => a.severity === 'urgent' && a.status !== 'resolved').map((alert: any) => {
                     const isAck = alert.status === 'acknowledged';
                     return (
-                      <div key={alert.id} className="mt-1.5 space-y-1.5 text-xs text-zinc-600">
-                        <p className="font-medium text-zinc-800">
-                          <strong className="text-zinc-900">{alert.raised_by_name || 'A volunteer'}</strong> has requested immediate assistance
-                          {alert.location_label && <span> in <strong className="text-zinc-900">{alert.location_label}</strong></span>}
-                          {alert.child_name && <span> regarding <strong className="text-zinc-900">{alert.child_name}</strong></span>}
-                          <span className="text-zinc-400 font-normal"> · {formatTimeAgo(alert.created_at)}</span>
+                      <div key={alert.id} className="mt-1.5 space-y-1.5 text-xs text-zinc-600 dark:text-[#938C81]">
+                        <p className="font-medium text-zinc-800 dark:text-[#F7F4ED]">
+                          <strong className="text-zinc-900 dark:text-[#F7F4ED]">{alert.raised_by_name || 'A volunteer'}</strong> has requested immediate assistance
+                          {alert.location_label && <span> in <strong className="text-zinc-900 dark:text-[#F7F4ED]">{alert.location_label}</strong></span>}
+                          {alert.child_name && <span> regarding <strong className="text-zinc-900 dark:text-[#F7F4ED]">{alert.child_name}</strong></span>}
+                          <span className="text-zinc-400 dark:text-[#938C81] font-normal"> · {formatTimeAgo(alert.created_at)}</span>
                         </p>
                         {alert.message && (
-                          <p className="italic bg-white/70 border border-red-100 rounded-lg p-2.5 text-[11px] leading-relaxed max-w-2xl text-red-950">
+                          <p className="italic bg-white/70 dark:bg-[#181817]/70 border border-red-100 dark:border-red-900/40 rounded-lg p-2.5 text-[11px] leading-relaxed max-w-2xl text-red-950 dark:text-red-200">
                             "{alert.message}"
                           </p>
                         )}
 
                         {/* Inline Resolution form if resolving is clicked */}
                         {resolvingAlertId === alert.id && (
-                          <div className="mt-3 bg-white border border-red-200 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
-                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                          <div className="mt-3 bg-white dark:bg-[#181817] border border-red-200 dark:border-red-900/40 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
+                            <label className="text-[10px] font-bold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider block">
                               Resolution note (required)
                             </label>
                             <textarea
@@ -2438,7 +2444,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               value={resolutionNote}
                               onChange={(e) => setResolutionNote(e.target.value)}
                               placeholder="Describe the action taken to resolve this alert..."
-                              className="w-full text-xs p-2.5 border border-zinc-200 rounded-xl focus:outline-none focus:border-red-500 bg-zinc-50/50"
+                              className="w-full text-xs p-2.5 border border-zinc-200 dark:border-[#2A2926] rounded-xl focus:outline-none focus:border-red-500 bg-zinc-50/50 dark:bg-[#20201E] text-zinc-800 dark:text-[#F7F4ED]"
                               rows={2}
                             />
                             <div className="flex justify-end gap-2 text-xs font-bold">
@@ -2447,7 +2453,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   setResolvingAlertId(null);
                                   setResolutionNote('');
                                 }}
-                                className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-zinc-100 dark:bg-[#20201E] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F7F4ED] rounded-lg transition-colors cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -2477,13 +2483,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         <button
                           onClick={() => handleAcknowledgeAlert(alert.id)}
                           disabled={isAcknowledgeInProgress === alert.id}
-                          className="font-medium text-red-800 bg-red-50 hover:bg-red-100 px-3.5 py-2 rounded-xl border border-red-200 text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                          className="font-medium text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 px-3.5 py-2 rounded-xl border border-red-200 dark:border-red-900/40 text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
                         >
                           {isAcknowledgeInProgress === alert.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <>
-                              <Check className="w-3.5 h-3.5 text-red-600" />
+                              <Check className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                               <span>Acknowledge</span>
                             </>
                           )}
@@ -2493,7 +2499,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         onClick={() => {
                           setActiveAlertDetail(alert);
                         }}
-                        className="font-medium text-zinc-800 bg-white hover:bg-zinc-50 border border-zinc-200 px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-xs"
+                        className="font-medium text-zinc-800 dark:text-[#F7F4ED] bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#2A2926] px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-xs"
                       >
                         View alert
                       </button>
@@ -2516,41 +2522,41 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {/* IMPORTANT ALERT PERSISTENT BANNER */}
           {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').length > 0 && (
             <div
-              className="bg-[#FFFDF3] border-l-4 border-amber-500 border border-[#F5E6BE]/80 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in"
+              className="bg-[#FFFDF3] dark:bg-amber-950/20 border-l-4 border-amber-500 border border-[#F5E6BE]/80 dark:border-amber-900/40 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in"
               data-view-version="important-alert-banner-v1"
             >
               <div className="flex items-start space-x-3.5">
-                <div className="p-2 bg-amber-50 rounded-xl text-amber-600 border border-amber-100/50 shrink-0 mt-0.5 animate-pulse-subtle">
+                <div className="p-2 bg-amber-50 dark:bg-amber-950/40 rounded-xl text-amber-600 dark:text-amber-400 border border-amber-100/50 dark:border-amber-900/40 shrink-0 mt-0.5 animate-pulse-subtle">
                   <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-serif font-bold text-sm text-amber-900">
+                    <span className="font-sans font-bold text-sm text-amber-900 dark:text-amber-300">
                       Important Care Support Request
                     </span>
-                    <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    <span className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                       Important Priority
                     </span>
                   </div>
                   {safetyAlerts.filter((a: any) => a.severity === 'important' && a.status !== 'resolved').map((alert: any) => {
                     const isAck = alert.status === 'acknowledged';
                     return (
-                      <div key={alert.id} className="mt-1.5 space-y-1.5 text-xs text-zinc-600">
-                        <p className="font-medium text-zinc-800">
-                          Raised {formatTimeAgo(alert.created_at)} by <strong className="text-zinc-900">{alert.raised_by_name}</strong>
-                          {alert.location_label && <span> at <strong className="text-zinc-900">{alert.location_label}</strong></span>}
-                          {alert.child_name && <span> regarding <strong className="text-zinc-900">{alert.child_name}</strong></span>}
+                      <div key={alert.id} className="mt-1.5 space-y-1.5 text-xs text-zinc-600 dark:text-[#938C81]">
+                        <p className="font-medium text-zinc-800 dark:text-[#F7F4ED]">
+                          Raised {formatTimeAgo(alert.created_at)} by <strong className="text-zinc-900 dark:text-[#F7F4ED]">{alert.raised_by_name}</strong>
+                          {alert.location_label && <span> at <strong className="text-zinc-900 dark:text-[#F7F4ED]">{alert.location_label}</strong></span>}
+                          {alert.child_name && <span> regarding <strong className="text-zinc-900 dark:text-[#F7F4ED]">{alert.child_name}</strong></span>}
                         </p>
                         {alert.message && (
-                          <p className="italic bg-white/50 border border-amber-200/40 rounded-lg p-2.5 text-[11px] leading-relaxed max-w-2xl text-zinc-700">
+                          <p className="italic bg-white/50 dark:bg-[#181817]/50 border border-amber-200/40 dark:border-amber-900/40 rounded-lg p-2.5 text-[11px] leading-relaxed max-w-2xl text-zinc-700 dark:text-[#938C81]">
                             "{alert.message}"
                           </p>
                         )}
 
                         {/* Inline Resolution form if resolving is clicked */}
                         {resolvingAlertId === alert.id && (
-                          <div className="mt-3 bg-white border border-amber-200 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
-                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                          <div className="mt-3 bg-white dark:bg-[#181817] border border-amber-200 dark:border-amber-900/40 p-3.5 rounded-xl space-y-3 shadow-xs max-w-lg">
+                            <label className="text-[10px] font-bold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider block">
                               Resolution Action Note (Required to resolve)
                             </label>
                             <textarea
@@ -2558,7 +2564,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               value={resolutionNote}
                               onChange={(e) => setResolutionNote(e.target.value)}
                               placeholder="Describe the care action or resolution taken to secure the child..."
-                              className="w-full text-xs p-2.5 border border-zinc-200 rounded-xl focus:outline-none focus:border-[#C59B27] bg-zinc-50/50"
+                              className="w-full text-xs p-2.5 border border-zinc-200 dark:border-[#2A2926] rounded-xl focus:outline-none focus:border-[#C59B27] bg-zinc-50/50 dark:bg-[#20201E] text-zinc-800 dark:text-[#F7F4ED]"
                               rows={2}
                             />
                             <div className="flex justify-end gap-2 text-xs font-bold">
@@ -2567,7 +2573,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   setResolvingAlertId(null);
                                   setResolutionNote('');
                                 }}
-                                className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-zinc-100 dark:bg-[#20201E] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F7F4ED] rounded-lg transition-colors cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -2597,7 +2603,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         <button
                           onClick={() => handleAcknowledgeAlert(alert.id)}
                           disabled={isAcknowledgeInProgress === alert.id}
-                          className="font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-3.5 py-2 rounded-xl border border-amber-200 text-xs transition-all cursor-pointer flex items-center gap-1.5"
+                          className="font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 px-3.5 py-2 rounded-xl border border-amber-200 dark:border-amber-900/40 text-xs transition-all cursor-pointer flex items-center gap-1.5"
                         >
                           {isAcknowledgeInProgress === alert.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -2624,18 +2630,18 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {activeTab === 'overview' && (
             <div data-view-version="admin-overview-v2-approved-design">
               {dashboardError && !overviewData ? (
-                <div data-view-version="admin-dashboard-error-v1" className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center max-w-xl mx-auto my-12 shadow-xs animate-fade-in space-y-6">
-                  <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                <div data-view-version="admin-dashboard-error-v1" className="bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl p-8 text-center max-w-xl mx-auto my-12 shadow-xs animate-fade-in space-y-6">
+                  <div className="w-16 h-16 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto">
                     <ShieldAlert className="w-8 h-8" />
                   </div>
                   <div className="space-y-2">
-                    <h3 className="font-serif text-xl font-semibold text-zinc-900">
+                    <h3 className="font-sans text-xl font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                       Dashboard Sync Interrupted
                     </h3>
-                    <p className="text-xs text-zinc-600 leading-relaxed max-w-md mx-auto">
+                    <p className="text-xs text-zinc-600 dark:text-[#938C81] leading-relaxed max-w-md mx-auto">
                       {dashboardError.description}
                     </p>
-                    <p className="text-[10px] text-zinc-400 font-mono">
+                    <p className="text-[10px] text-zinc-400 dark:text-[#938C81] font-mono">
                       Error details: {dashboardError.message}
                     </p>
                   </div>
@@ -2651,12 +2657,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   </button>
                 </div>
               ) : headerTab === 'upcoming' ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-8 text-center max-w-xl mx-auto my-12 shadow-xs animate-fade-in space-y-4">
+                <div className="bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl p-8 text-center max-w-xl mx-auto my-12 shadow-xs animate-fade-in space-y-4">
                   <div className="w-12 h-12 bg-[#C59B27]/5 rounded-full flex items-center justify-center text-[#C59B27] mx-auto">
                     <Calendar className="w-6 h-6" />
                   </div>
-                  <h3 className="font-serif text-lg font-bold text-[#18181B]">Upcoming Events</h3>
-                  <p className="text-xs text-zinc-500 leading-relaxed">
+                  <h3 className="font-sans text-lg font-bold text-[#18181B] dark:text-[#F7F4ED]">Upcoming Events</h3>
+                  <p className="text-xs text-zinc-500 dark:text-[#938C81] leading-relaxed">
                     There are no upcoming events scheduled at this time. The current active event is undergoing registration and admissions review.
                   </p>
                   <Button
@@ -2671,17 +2677,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 <>
                   {/* Subtle Background Sync Fail Warning Banner */}
                   {dashboardError && overviewData && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs animate-fade-in"
+                    <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs animate-fade-in"
                          data-component-version="sync-fail-subtle-banner-v1">
                       <div className="flex items-center space-x-3 text-left">
-                        <div className="p-2 bg-amber-100 text-amber-700 rounded-xl">
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-xl">
                           <CloudOff className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="font-bold text-amber-950 text-xs">
+                          <p className="font-bold text-amber-950 dark:text-amber-200 text-xs">
                             Sync Delayed
                           </p>
-                          <p className="text-[10px] text-amber-800/80 font-medium">
+                          <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80 font-medium">
                             We could not synchronize the latest analytics. Displaying last loaded data from {lastUpdated || 'earlier'}.
                           </p>
                         </div>
@@ -2692,7 +2698,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           setDashboardError(null);
                           fetchDashboardData(true);
                         }}
-                        className="text-[10px] bg-white border border-amber-200 hover:bg-amber-100 text-amber-900 font-bold px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                        className="text-[10px] bg-white dark:bg-[#20201E] border border-amber-200 dark:border-amber-900/40 hover:bg-amber-100 dark:hover:bg-[#2A2926] text-amber-900 dark:text-amber-200 font-bold px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
                       >
                         Retry Sync
                       </button>
@@ -2702,22 +2708,22 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   {/* Event Safety Alerts Panel */}
                   {showCommandCenter && (
                     <div
-                      className="bg-[#FCFCFA] border border-zinc-200 rounded-xl p-6 sm:p-7 shadow-2xs mb-8 text-zinc-950 relative text-left"
+                      className="bg-[#FCFCFA] dark:bg-[#181817] border border-zinc-200 dark:border-[#2A2926] rounded-xl p-6 sm:p-7 shadow-2xs mb-8 text-zinc-950 dark:text-[#F7F4ED] relative text-left"
                       data-view-version="emergency-response-desk-v3"
                     >
                       {/* Header block with calm, authoritative styling */}
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between pb-4 border-b border-zinc-200/70 mb-6 gap-4"
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between pb-4 border-b border-zinc-200/70 dark:border-[#2A2926] mb-6 gap-4"
                         data-component-version="active-safety-alert-header-v3"
                       >
                         <div className="space-y-1" data-component-version="emergency-no-blinking-dots-v1">
-                          <h2 className="font-serif text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
+                          <h2 className="font-sans text-xl sm:text-2xl font-bold text-zinc-900 dark:text-[#F7F4ED] tracking-tight">
                             Emergency Response
                           </h2>
-                          <p className="text-xs text-zinc-500 font-sans">
+                          <p className="text-xs text-zinc-500 dark:text-[#938C81] font-sans">
                             Active care requests that need attention.
                           </p>
                           {activeAlerts.length > 0 ? (
-                            <p className="text-xs text-red-600 font-medium pt-0.5">
+                            <p className="text-xs text-red-600 dark:text-red-400 font-medium pt-0.5">
                               {activeAlerts.length === 1 ? '1 active request' : `${activeAlerts.length} active requests`}
                             </p>
                           ) : underwayAlerts.length > 0 ? (
@@ -2730,7 +2736,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto">
                           <button
                             onClick={() => setShowCommandCenter(false)}
-                            className="text-xs text-zinc-500 hover:text-zinc-800 font-medium px-2.5 py-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                            className="text-xs text-zinc-500 dark:text-[#938C81] hover:text-zinc-800 dark:hover:text-[#F7F4ED] font-medium px-2.5 py-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
                             title="Minimize panel"
                           >
                             Minimize
@@ -3147,29 +3153,29 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                     <div className="space-y-8" data-component-version="admin-overview-premium-v3">
                       {/* 1. TOP EVENT MASTHEAD */}
                       <div
-                        className="border-b border-[#EAE8E1]/80 pb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4 text-left"
+                        className="border-b border-[#EAE8E1]/80 dark:border-[#2A2926] pb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4 text-left"
                         data-component-version="admin-event-masthead-v2"
                       >
                         <div className="space-y-1">
-                          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-zinc-900 tracking-tight">
+                          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-zinc-900 dark:text-[#F7F4ED] tracking-tight">
                             {readinessReport?.event?.title || overviewData?.event?.name || 'The General Assembly'}
                           </h1>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 dark:text-[#938C81]">
                             <span>{overviewData?.event?.dateLabel || '21–22 November 2026'}</span>
-                            <span className="text-zinc-300">·</span>
+                            <span className="text-zinc-300 dark:text-zinc-700">·</span>
                             <span>{getRegistrationStatusText()}</span>
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-6 text-xs text-zinc-600 self-start md:self-end">
+                        <div className="flex flex-wrap items-center gap-6 text-xs text-zinc-600 dark:text-[#938C81] self-start md:self-end">
                           <div>
-                            <span className="text-zinc-400 text-[11px] block">Event status</span>
+                            <span className="text-zinc-400 dark:text-[#938C81] text-[11px] block">Event status</span>
                             <span className={`text-sm font-semibold ${
                               readinessStatus === 'READY'
-                                ? 'text-emerald-800'
+                                ? 'text-emerald-800 dark:text-emerald-400'
                                 : readinessStatus === 'NEEDS ATTENTION'
-                                ? 'text-amber-900'
-                                : 'text-zinc-900'
+                                ? 'text-amber-900 dark:text-amber-400'
+                                : 'text-zinc-900 dark:text-[#F7F4ED]'
                             }`}>
                               {readinessStatus === 'READY'
                                 ? 'Ready'
@@ -3181,8 +3187,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                           {lastUpdated && (
                             <div>
-                              <span className="text-zinc-400 text-[11px] block">Updated</span>
-                              <span className="text-xs text-zinc-700 font-medium">{lastUpdated}</span>
+                              <span className="text-zinc-400 dark:text-[#938C81] text-[11px] block">Updated</span>
+                              <span className="text-xs text-zinc-700 dark:text-[#F7F4ED] font-medium">{lastUpdated}</span>
                             </div>
                           )}
 
@@ -3190,69 +3196,69 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             type="button"
                             onClick={() => fetchDashboardData(true)}
                             disabled={loading || refreshing}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 rounded-xl text-xs font-medium transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-[#EAE8E1] dark:border-[#2A2926] bg-white dark:bg-[#181817] hover:bg-zinc-50 dark:hover:bg-[#20201E] text-zinc-700 dark:text-[#F7F4ED] rounded-xl text-xs font-medium transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
                             title="Refresh dashboard metrics"
                           >
-                            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#C59B27]' : 'text-zinc-500'}`} />
+                            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#C59B27]' : 'text-zinc-500 dark:text-[#938C81]'}`} />
                             <span>Refresh</span>
                           </button>
                         </div>
                       </div>
 
                       {/* 2. PRIMARY METRICS BAND */}
-                      <div className="bg-white rounded-2xl p-6 sm:p-7 border border-[#EAE8E1]/70 shadow-2xs" data-component-version="admin-primary-metrics-band-v2">
-                        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE8E1]/70 -my-2 sm:my-0">
+                      <div className="bg-white dark:bg-[#181817] rounded-2xl p-6 sm:p-7 border border-[#EAE8E1]/70 dark:border-[#2A2926] shadow-2xs" data-component-version="admin-primary-metrics-band-v2">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE8E1]/70 dark:divide-[#2A2926] -my-2 sm:my-0">
                           {/* Registrations */}
                           <div className="py-3 sm:py-0 px-2 sm:px-6 first:pl-0 text-left">
-                            <span className="text-xs font-medium text-zinc-500 block">
+                            <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81] block">
                               Registrations
                             </span>
-                            <span className="text-3xl sm:text-4xl font-serif font-bold text-zinc-900 block mt-1 tabular-nums">
+                            <span className="text-3xl sm:text-4xl font-sans font-bold text-zinc-900 dark:text-[#F7F4ED] block mt-1 tabular-nums">
                               {readinessReport?.metrics.registrations ?? stats.totalChildren ?? 0}
                             </span>
-                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            <span className="text-[11px] text-zinc-400 dark:text-[#938C81] block mt-0.5">
                               children registered
                             </span>
                           </div>
 
                           {/* Selected */}
                           <div className="py-3 sm:py-0 px-2 sm:px-6 text-left">
-                            <span className="text-xs font-medium text-zinc-500 block">
+                            <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81] block">
                               Selected
                             </span>
-                            <span className="text-3xl sm:text-4xl font-serif font-bold text-[#C59B27] block mt-1 tabular-nums">
+                            <span className="text-3xl sm:text-4xl font-sans font-bold text-[#C59B27] dark:text-[#E5B842] block mt-1 tabular-nums">
                               {readinessReport?.metrics.selectedChildren ?? stats.approved ?? 0}
                             </span>
-                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            <span className="text-[11px] text-zinc-400 dark:text-[#938C81] block mt-0.5">
                               approved passes
                             </span>
                           </div>
 
                           {/* Checked in */}
                           <div className="py-3 sm:py-0 px-2 sm:px-6 text-left">
-                            <span className="text-xs font-medium text-zinc-500 block">
+                            <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81] block">
                               Checked in
                             </span>
-                            <span className="text-3xl sm:text-4xl font-serif font-bold text-zinc-900 block mt-1 tabular-nums">
+                            <span className="text-3xl sm:text-4xl font-sans font-bold text-zinc-900 dark:text-[#F7F4ED] block mt-1 tabular-nums">
                               {readinessReport?.metrics.checkedIn ?? stats.checkedIn ?? 0}
                             </span>
-                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            <span className="text-[11px] text-zinc-400 dark:text-[#938C81] block mt-0.5">
                               {readinessReport?.metrics.pickedUp ?? stats.pickedUp ? `${readinessReport?.metrics.pickedUp ?? stats.pickedUp} released` : 'on-site today'}
                             </span>
                           </div>
 
                           {/* On duty */}
                           <div className="py-3 sm:py-0 px-2 sm:px-6 last:pr-0 text-left">
-                            <span className="text-xs font-medium text-zinc-500 block">
+                            <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81] block">
                               On duty
                             </span>
-                            <span className="text-3xl sm:text-4xl font-serif font-bold text-zinc-900 block mt-1 tabular-nums">
+                            <span className="text-3xl sm:text-4xl font-sans font-bold text-zinc-900 dark:text-[#F7F4ED] block mt-1 tabular-nums">
                               {volunteersOnDuty}
-                              <span className="text-sm font-sans font-normal text-zinc-400 ml-1.5">
+                              <span className="text-sm font-sans font-normal text-zinc-400 dark:text-[#938C81] ml-1.5">
                                 / {volunteersAssigned || stats.totalVolunteers || 0}
                               </span>
                             </span>
-                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                            <span className="text-[11px] text-zinc-400 dark:text-[#938C81] block mt-0.5">
                               active duty responders
                             </span>
                           </div>
@@ -3264,43 +3270,43 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         {/* LEFT ~65%: NEEDS ATTENTION */}
                         <div className="lg:col-span-8 space-y-4">
                           <div
-                            className="bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left"
+                            className="bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-4 text-left"
                             data-component-version="admin-needs-attention-editorial-v3"
                           >
-                            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]/70">
-                              <h3 className="font-serif text-base font-semibold text-zinc-900">
+                            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]/70 dark:border-[#2A2926]">
+                              <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                                 Needs attention
                               </h3>
-                              <span className="text-xs font-medium text-zinc-400">
+                              <span className="text-xs font-medium text-zinc-400 dark:text-[#938C81]">
                                 {effectiveAttentionItems.length} {effectiveAttentionItems.length === 1 ? 'item' : 'items'}
                               </span>
                             </div>
 
                             {effectiveAttentionItems.length === 0 ? (
-                              <p className="text-xs text-zinc-500 py-3">
+                              <p className="text-xs text-zinc-500 dark:text-[#938C81] py-3">
                                 All operational criteria meet readiness standards. No items require attention.
                               </p>
                             ) : (
-                              <div className="divide-y divide-[#EAE8E1]/60">
+                              <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#2A2926]">
                                 {displayedAttentionItems.map((item, idx) => (
                                   <div key={item.id || idx} className="py-3.5 first:pt-0 last:pb-0 space-y-1">
                                     <div className="flex items-center justify-between gap-3">
-                                      <span className="text-sm font-semibold text-zinc-900">
+                                      <span className="text-sm font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                                         {item.title}
                                       </span>
                                       {item.severity === 'urgent' && (
-                                        <span className="text-xs font-semibold text-rose-700 shrink-0">
+                                        <span className="text-xs font-semibold text-rose-700 dark:text-rose-400 shrink-0">
                                           Critical
                                         </span>
                                       )}
                                     </div>
-                                    <p className="text-xs text-zinc-500 leading-relaxed">
+                                    <p className="text-xs text-zinc-500 dark:text-[#938C81] leading-relaxed">
                                       {item.explanation}
                                     </p>
                                     <button
                                       type="button"
                                       onClick={() => handleAttentionAction(item)}
-                                      className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] hover:underline pt-0.5 inline-block cursor-pointer"
+                                      className="text-xs font-semibold text-[#9A7326] dark:text-[#E5B842] hover:text-[#7A5B1C] dark:hover:text-[#F7F4ED] hover:underline pt-0.5 inline-block cursor-pointer"
                                     >
                                       {item.actionLabel ? `${item.actionLabel} →` : 'View details →'}
                                     </button>
@@ -3310,11 +3316,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             )}
 
                             {effectiveAttentionItems.length > 3 && (
-                              <div className="pt-2 border-t border-[#EAE8E1]/60">
+                              <div className="pt-2 border-t border-[#EAE8E1]/60 dark:border-[#2A2926]">
                                 <button
                                   type="button"
                                   onClick={() => setShowAllAttentionIssues(!showAllAttentionIssues)}
-                                  className="text-xs font-semibold text-[#9A7326] hover:underline cursor-pointer"
+                                  className="text-xs font-semibold text-[#9A7326] dark:text-[#E5B842] hover:underline cursor-pointer"
                                 >
                                   {showAllAttentionIssues
                                     ? 'Show fewer'
@@ -3344,13 +3350,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       {/* 4. EVENT PERFORMANCE / OPERATIONS */}
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                         {/* LEFT 8 COLS: Children & Registration */}
-                        <div className="lg:col-span-8 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-6 text-left">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/70 pb-3">
+                        <div className="lg:col-span-8 bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-6 text-left">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE8E1]/70 dark:border-[#2A2926] pb-3">
                             <div>
-                              <h3 className="font-serif text-base font-semibold text-zinc-900">
+                              <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                                 Children & registration
                               </h3>
-                              <p className="text-xs text-zinc-500 mt-0.5">
+                              <p className="text-xs text-zinc-500 dark:text-[#938C81] mt-0.5">
                                 Capacity utilization, admission distribution, and attendance flow
                               </p>
                             </div>
@@ -3359,14 +3365,14 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setShowDemographicsTable(!showDemographicsTable)}
-                                className="text-xs font-medium text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer"
+                                className="text-xs font-medium text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer"
                               >
                                 {showDemographicsTable ? 'Hide breakdown' : 'Age breakdown'}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleTabChange('attendance')}
-                                className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                                className="text-xs font-semibold text-[#9A7326] dark:text-[#E5B842] hover:text-[#7A5B1C] dark:hover:text-[#F7F4ED] transition-colors cursor-pointer"
                               >
                                 Open Attendance →
                               </button>
@@ -3377,7 +3383,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                             {/* Visual 1: Capacity Donut */}
                             <div className="space-y-2">
-                              <span className="text-xs font-medium text-zinc-400 block">
+                              <span className="text-xs font-medium text-zinc-400 dark:text-[#938C81] block">
                                 Venue capacity
                               </span>
                               {capacityChartData.length > 0 ? (
@@ -3409,25 +3415,25 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       </PieChart>
                                     </ResponsiveContainer>
                                   </div>
-                                  <div className="space-y-0.5 text-xs text-zinc-600">
-                                    <p className="font-semibold text-zinc-900">
+                                  <div className="space-y-0.5 text-xs text-zinc-600 dark:text-[#938C81]">
+                                    <p className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                                       {capacityPct}% filled
                                     </p>
                                     <p>{selectedChildrenCount} selected</p>
-                                    <p className="text-zinc-400">{eventCapacity} limit</p>
+                                    <p className="text-zinc-400 dark:text-[#938C81]">{eventCapacity} limit</p>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="p-3 bg-zinc-50 rounded-xl text-xs text-zinc-500">
-                                  <p className="font-medium text-zinc-700">{selectedChildrenCount} selected</p>
-                                  <p className="text-zinc-400 mt-0.5">Capacity unconfigured</p>
+                                <div className="p-3 bg-zinc-50 dark:bg-[#20201E] rounded-xl text-xs text-zinc-500 dark:text-[#938C81]">
+                                  <p className="font-medium text-zinc-700 dark:text-[#F7F4ED]">{selectedChildrenCount} selected</p>
+                                  <p className="text-zinc-400 dark:text-[#938C81] mt-0.5">Capacity unconfigured</p>
                                 </div>
                               )}
                             </div>
 
                             {/* Visual 2: Application Distribution Donut */}
                             <div className="space-y-2">
-                              <span className="text-xs font-medium text-zinc-400 block">
+                              <span className="text-xs font-medium text-zinc-400 dark:text-[#938C81] block">
                                 Review status
                               </span>
                               {distributionChartData.length > 0 ? (
@@ -3459,7 +3465,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       </PieChart>
                                     </ResponsiveContainer>
                                   </div>
-                                  <div className="space-y-0.5 text-xs text-zinc-600">
+                                  <div className="space-y-0.5 text-xs text-zinc-600 dark:text-[#938C81]">
                                     <p className="flex items-center gap-1.5">
                                       <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
                                       <span>Selected: {reviewProgress.selected || stats.approved}</span>
@@ -3475,31 +3481,31 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-xs text-zinc-400">No applications recorded</p>
+                                <p className="text-xs text-zinc-400 dark:text-[#938C81]">No applications recorded</p>
                               )}
                             </div>
 
                             {/* Visual 3: Real Attendance Flow Block */}
                             <div className="space-y-2 text-left">
-                              <span className="text-xs font-medium text-zinc-400 block">
+                              <span className="text-xs font-medium text-zinc-400 dark:text-[#938C81] block">
                                 Attendance flow
                               </span>
-                              <div className="space-y-1 text-xs text-zinc-600">
+                              <div className="space-y-1 text-xs text-zinc-600 dark:text-[#938C81]">
                                 <div className="flex justify-between">
                                   <span>Checked in</span>
-                                  <span className="font-semibold text-zinc-900">{attendanceData.checkedIn}</span>
+                                  <span className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">{attendanceData.checkedIn}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span>Still inside</span>
-                                  <span className="font-medium text-zinc-700">{attendanceData.stillInside}</span>
+                                  <span className="font-medium text-zinc-700 dark:text-[#F7F4ED]">{attendanceData.stillInside}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span>Safely released</span>
-                                  <span className="font-medium text-zinc-700">{attendanceData.pickedUp}</span>
+                                  <span className="font-medium text-zinc-700 dark:text-[#F7F4ED]">{attendanceData.pickedUp}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span>Expected</span>
-                                  <span className="text-zinc-500">{attendanceData.expected}</span>
+                                  <span className="text-zinc-500 dark:text-[#938C81]">{attendanceData.expected}</span>
                                 </div>
                               </div>
                             </div>
@@ -3507,17 +3513,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                           {/* Collapsible Demographics Table */}
                           {showDemographicsTable && (
-                            <div className="pt-3 border-t border-[#EAE8E1]/70 space-y-2 animate-fade-in">
-                              <div className="flex items-center justify-between text-xs text-zinc-500 pb-1">
-                                <span className="font-semibold text-zinc-700">Demographic breakdown by age & gender</span>
-                                <button onClick={() => setActiveTab('reports')} className="text-[#C59B27] font-medium hover:underline">
+                            <div className="pt-3 border-t border-[#EAE8E1]/70 dark:border-[#2A2926] space-y-2 animate-fade-in">
+                              <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-[#938C81] pb-1">
+                                <span className="font-semibold text-zinc-700 dark:text-[#F7F4ED]">Demographic breakdown by age & gender</span>
+                                <button onClick={() => setActiveTab('reports')} className="text-[#C59B27] dark:text-[#E5B842] font-medium hover:underline cursor-pointer">
                                   Full report
                                 </button>
                               </div>
                               <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
                                   <thead>
-                                    <tr className="border-b border-[#EAE8E1] text-zinc-400 text-[11px]">
+                                    <tr className="border-b border-[#EAE8E1] dark:border-[#2A2926] text-zinc-400 dark:text-[#938C81] text-[11px]">
                                       <th className="py-2 pr-4 font-medium">Age Group</th>
                                       <th className="py-2 px-3 font-medium">Boys</th>
                                       <th className="py-2 px-3 font-medium">Girls</th>
@@ -3527,23 +3533,23 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                                       <th className="py-2 pl-3 font-medium">Checked In</th>
                                     </tr>
                                   </thead>
-                                  <tbody className="divide-y divide-[#EAE8E1]/50 text-zinc-700">
+                                  <tbody className="divide-y divide-[#EAE8E1]/50 dark:divide-[#2A2926] text-zinc-700 dark:text-[#F7F4ED]">
                                     {demographics.length === 0 ? (
                                       <tr>
-                                        <td colSpan={7} className="py-4 text-center text-zinc-400">
+                                        <td colSpan={7} className="py-4 text-center text-zinc-400 dark:text-[#938C81]">
                                           No demographic breakdown available.
                                         </td>
                                       </tr>
                                     ) : (
                                       demographics.map((row: any, i: number) => (
-                                        <tr key={i} className="hover:bg-zinc-50/50">
-                                          <td className="py-2 pr-4 font-medium text-zinc-900">{row.ageGroup}</td>
-                                          <td className="py-2 px-3 text-zinc-600">{row.boys}</td>
-                                          <td className="py-2 px-3 text-zinc-600">{row.girls}</td>
-                                          <td className="py-2 px-3 font-semibold text-zinc-900">{row.total}</td>
-                                          <td className="py-2 px-3 text-zinc-500">{row.underReview}</td>
-                                          <td className="py-2 px-3 text-zinc-500">{row.selected}</td>
-                                          <td className="py-2 pl-3 text-zinc-900 font-medium">{row.checkedIn}</td>
+                                        <tr key={i} className="hover:bg-zinc-50/50 dark:hover:bg-[#20201E]/50">
+                                          <td className="py-2 pr-4 font-medium text-zinc-900 dark:text-[#F7F4ED]">{row.ageGroup}</td>
+                                          <td className="py-2 px-3 text-zinc-600 dark:text-[#938C81]">{row.boys}</td>
+                                          <td className="py-2 px-3 text-zinc-600 dark:text-[#938C81]">{row.girls}</td>
+                                          <td className="py-2 px-3 font-semibold text-zinc-900 dark:text-[#F7F4ED]">{row.total}</td>
+                                          <td className="py-2 px-3 text-zinc-500 dark:text-[#938C81]">{row.underReview}</td>
+                                          <td className="py-2 px-3 text-zinc-500 dark:text-[#938C81]">{row.selected}</td>
+                                          <td className="py-2 pl-3 text-zinc-900 dark:text-[#F7F4ED] font-medium">{row.checkedIn}</td>
                                         </tr>
                                       ))
                                     )}
@@ -3555,15 +3561,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                         </div>
 
                         {/* RIGHT 4 COLS: Duty Coverage */}
-                        <div className="lg:col-span-4 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-5 text-left">
-                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 pb-3">
-                            <h3 className="font-serif text-base font-semibold text-zinc-900">
+                        <div className="lg:col-span-4 bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-5 text-left">
+                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 dark:border-[#2A2926] pb-3">
+                            <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                               Duty coverage
                             </h3>
                             <button
                               type="button"
                               onClick={() => handleTabChange('operations')}
-                              className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                              className="text-xs font-semibold text-[#9A7326] dark:text-[#E5B842] hover:text-[#7A5B1C] dark:hover:text-[#F7F4ED] transition-colors cursor-pointer"
                             >
                               Open Event Duty →
                             </button>
@@ -3573,16 +3579,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             {/* 1. Assigned Coverage */}
                             <div className="space-y-1.5">
                               <div className="flex justify-between text-xs">
-                                <span className="text-zinc-600 font-medium">Assigned coverage</span>
-                                <span className="font-semibold text-zinc-900">{locationsAssigned} / {dutyLocationsCount}</span>
+                                <span className="text-zinc-600 dark:text-[#938C81] font-medium">Assigned coverage</span>
+                                <span className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">{locationsAssigned} / {dutyLocationsCount}</span>
                               </div>
-                              <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
+                              <div className="w-full bg-zinc-100 dark:bg-[#20201E] h-2 rounded-full overflow-hidden">
                                 <div
-                                  className="bg-zinc-800 h-full rounded-full transition-all"
+                                  className="bg-zinc-800 dark:bg-zinc-300 h-full rounded-full transition-all"
                                   style={{ width: `${locationsAssignedPct}%` }}
                                 />
                               </div>
-                              <span className="text-[11px] text-zinc-400 block">
+                              <span className="text-[11px] text-zinc-400 dark:text-[#938C81] block">
                                 {dutyLocationsCount > 0
                                   ? `${locationsAssigned} of ${dutyLocationsCount} locations assigned`
                                   : 'No duty stations configured'}
@@ -3592,16 +3598,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             {/* 2. Active Duty Coverage */}
                             <div className="space-y-1.5">
                               <div className="flex justify-between text-xs">
-                                <span className="text-zinc-600 font-medium">Active duty coverage</span>
-                                <span className="font-semibold text-zinc-900">{locationsActive} / {dutyLocationsCount}</span>
+                                <span className="text-zinc-600 dark:text-[#938C81] font-medium">Active duty coverage</span>
+                                <span className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">{locationsActive} / {dutyLocationsCount}</span>
                               </div>
-                              <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
+                              <div className="w-full bg-zinc-100 dark:bg-[#20201E] h-2 rounded-full overflow-hidden">
                                 <div
                                   className="bg-[#C59B27] h-full rounded-full transition-all"
                                   style={{ width: `${locationsActivePct}%` }}
                                 />
                               </div>
-                              <span className="text-[11px] text-zinc-400 block">
+                              <span className="text-[11px] text-zinc-400 dark:text-[#938C81] block">
                                 {locationsActive === 0
                                   ? `0 of ${dutyLocationsCount} locations currently staffed`
                                   : locationsActive === dutyLocationsCount && dutyLocationsCount > 0
@@ -3613,9 +3619,9 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                             </div>
 
                             {/* Summary stats */}
-                            <div className="pt-3 border-t border-[#EAE8E1]/60 flex justify-between text-xs text-zinc-500">
-                              <span>On duty: <strong className="text-zinc-800">{volunteersOnDuty} / {volunteersAssigned}</strong></span>
-                              <span>Stations: <strong className="text-zinc-800">{dutyLocationsCount}</strong></span>
+                            <div className="pt-3 border-t border-[#EAE8E1]/60 dark:border-[#2A2926] flex justify-between text-xs text-zinc-500 dark:text-[#938C81]">
+                              <span>On duty: <strong className="text-zinc-800 dark:text-[#F7F4ED]">{volunteersOnDuty} / {volunteersAssigned}</strong></span>
+                              <span>Stations: <strong className="text-zinc-800 dark:text-[#F7F4ED]">{dutyLocationsCount}</strong></span>
                             </div>
                           </div>
                         </div>
@@ -3624,16 +3630,16 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       {/* 5. SAFETY + RECENT ACTIVITY */}
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                         {/* LEFT 5 COLS: Safety Overview */}
-                        <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left">
-                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 pb-3">
-                            <h3 className="font-serif text-base font-semibold text-zinc-900">
+                        <div className="lg:col-span-5 bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-4 text-left">
+                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 dark:border-[#2A2926] pb-3">
+                            <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                               Safety
                             </h3>
                             {canViewSafety && (
                               <button
                                 type="button"
                                 onClick={() => handleTabChange('incidents')}
-                                className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                                className="text-xs font-semibold text-[#9A7326] dark:text-[#E5B842] hover:text-[#7A5B1C] dark:hover:text-[#F7F4ED] transition-colors cursor-pointer"
                               >
                                 View Incident Desk →
                               </button>
@@ -3642,45 +3648,45 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
                           {canViewSafety ? (
                             <div className="space-y-4">
-                              <div className="space-y-2 text-xs text-zinc-600">
-                                <div className="flex justify-between py-1 border-b border-zinc-100">
+                              <div className="space-y-2 text-xs text-zinc-600 dark:text-[#938C81]">
+                                <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-[#2A2926]">
                                   <span>Open notices</span>
-                                  <span className="font-semibold text-zinc-900">
+                                  <span className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                                     {readinessReport?.metrics.openSafetyNotices ?? safetyAlerts.length ?? 0}
                                   </span>
                                 </div>
-                                <div className="flex justify-between py-1 border-b border-zinc-100">
+                                <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-[#2A2926]">
                                   <span>Active escalations</span>
-                                  <span className={`font-semibold ${(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 ? 'text-rose-700' : 'text-zinc-900'}`}>
+                                  <span className={`font-semibold ${(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 ? 'text-rose-700 dark:text-rose-400' : 'text-zinc-900 dark:text-[#F7F4ED]'}`}>
                                     {readinessReport?.metrics.unresolvedEscalations ?? 0}
                                   </span>
                                 </div>
                               </div>
 
                               {(readinessReport?.metrics.unresolvedEscalations ?? 0) > 0 && (
-                                <p className="text-xs font-semibold text-rose-700">
+                                <p className="text-xs font-semibold text-rose-700 dark:text-rose-400">
                                   Critical: 1 or more automated guardian escalations require review.
                                 </p>
                               )}
 
                               {/* Alert sound test controls */}
-                              <div className="pt-2 border-t border-[#EAE8E1]/60 flex items-center justify-between text-xs">
-                                <span className="text-zinc-500">
+                              <div className="pt-2 border-t border-[#EAE8E1]/60 dark:border-[#2A2926] flex items-center justify-between text-xs">
+                                <span className="text-zinc-500 dark:text-[#938C81]">
                                   Alert sound: {soundEnabled !== false ? 'ready' : 'muted'}
                                 </span>
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={isPlayingSoundTest ? handleStopSoundTest : handleTriggerSoundTest}
-                                    className="text-xs font-medium text-zinc-700 hover:text-zinc-900 underline cursor-pointer"
+                                    className="text-xs font-medium text-zinc-700 dark:text-[#F7F4ED] hover:text-zinc-900 underline cursor-pointer"
                                   >
                                     {isPlayingSoundTest ? 'Stop' : 'Test sound'}
                                   </button>
-                                  <span className="text-zinc-300">·</span>
+                                  <span className="text-zinc-300 dark:text-zinc-700">·</span>
                                   <button
                                     type="button"
                                     onClick={handleOpenSoundSettings}
-                                    className="text-xs font-medium text-zinc-700 hover:text-zinc-900 underline cursor-pointer"
+                                    className="text-xs font-medium text-zinc-700 dark:text-[#F7F4ED] hover:text-zinc-900 underline cursor-pointer"
                                   >
                                     Settings
                                   </button>
@@ -3688,44 +3694,44 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                               </div>
                             </div>
                           ) : (
-                            <p className="text-xs text-zinc-400 py-2">
+                            <p className="text-xs text-zinc-400 dark:text-[#938C81] py-2">
                               Restricted: Requires safety administrator permissions.
                             </p>
                           )}
                         </div>
 
                         {/* RIGHT 7 COLS: Recent Operational Activity */}
-                        <div className="lg:col-span-7 bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left">
-                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 pb-3">
-                            <h3 className="font-serif text-base font-semibold text-zinc-900">
+                        <div className="lg:col-span-7 bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-4 text-left">
+                          <div className="flex items-center justify-between border-b border-[#EAE8E1]/70 dark:border-[#2A2926] pb-3">
+                            <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                               Recent operational activity
                             </h3>
                             <button
                               type="button"
                               onClick={() => handleTabChange('attendance')}
-                              className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer"
+                              className="text-xs font-semibold text-[#9A7326] dark:text-[#E5B842] hover:text-[#7A5B1C] dark:hover:text-[#F7F4ED] transition-colors cursor-pointer"
                             >
                               View attendance log →
                             </button>
                           </div>
 
                           {recentActivityList.length === 0 ? (
-                            <p className="text-xs text-zinc-400 py-3">
+                            <p className="text-xs text-zinc-400 dark:text-[#938C81] py-3">
                               No recent operational activity recorded.
                             </p>
                           ) : (
-                            <div className="divide-y divide-[#EAE8E1]/60">
+                            <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#2A2926]">
                               {recentActivityList.slice(0, 4).map((act: any) => {
                                 const item = formatRecentActivity(act);
                                 return (
                                   <div key={act.id} className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-4 text-xs">
                                     <div className="space-y-0.5">
-                                      <p className="font-medium text-zinc-900">{item.person}</p>
+                                      <p className="font-medium text-zinc-900 dark:text-[#F7F4ED]">{item.person}</p>
                                       {item.action && (
-                                        <p className="text-zinc-500">{item.action}</p>
+                                        <p className="text-zinc-500 dark:text-[#938C81]">{item.action}</p>
                                       )}
                                     </div>
-                                    <span className="text-[11px] text-zinc-400 shrink-0 font-sans">
+                                    <span className="text-[11px] text-zinc-400 dark:text-[#938C81] shrink-0 font-sans">
                                       {item.time}
                                     </span>
                                   </div>
@@ -3737,42 +3743,42 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                       </div>
 
                       {/* 6. OPERATIONAL SHORTCUTS */}
-                      <div className="bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs text-left space-y-3" data-component-version="admin-operational-shortcuts-v2">
-                        <h4 className="font-serif text-sm font-semibold text-zinc-900">
+                      <div className="bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs text-left space-y-3" data-component-version="admin-operational-shortcuts-v2">
+                        <h4 className="font-sans text-sm font-semibold text-zinc-900 dark:text-[#F7F4ED]">
                           Operational shortcuts
                         </h4>
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                           <button
                             type="button"
                             onClick={() => handleTabChange('applications')}
-                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                            className="p-3.5 bg-zinc-50/50 dark:bg-[#20201E] hover:bg-zinc-100/60 dark:hover:bg-[#2A2926] rounded-xl text-left transition-colors border border-[#EAE8E1]/60 dark:border-[#2A2926] cursor-pointer"
                           >
-                            <span className="text-xs font-semibold text-zinc-900 block">Applications</span>
-                            <span className="text-xs text-zinc-500 block mt-0.5">{stats.underReview} awaiting review</span>
+                            <span className="text-xs font-semibold text-zinc-900 dark:text-[#F7F4ED] block">Applications</span>
+                            <span className="text-xs text-zinc-500 dark:text-[#938C81] block mt-0.5">{stats.underReview} awaiting review</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleTabChange('attendance')}
-                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                            className="p-3.5 bg-zinc-50/50 dark:bg-[#20201E] hover:bg-zinc-100/60 dark:hover:bg-[#2A2926] rounded-xl text-left transition-colors border border-[#EAE8E1]/60 dark:border-[#2A2926] cursor-pointer"
                           >
-                            <span className="text-xs font-semibold text-zinc-900 block">Attendance</span>
-                            <span className="text-xs text-zinc-500 block mt-0.5">{attendanceData.checkedIn} checked in</span>
+                            <span className="text-xs font-semibold text-zinc-900 dark:text-[#F7F4ED] block">Attendance</span>
+                            <span className="text-xs text-zinc-500 dark:text-[#938C81] block mt-0.5">{attendanceData.checkedIn} checked in</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleTabChange('operations')}
-                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                            className="p-3.5 bg-zinc-50/50 dark:bg-[#20201E] hover:bg-zinc-100/60 dark:hover:bg-[#2A2926] rounded-xl text-left transition-colors border border-[#EAE8E1]/60 dark:border-[#2A2926] cursor-pointer"
                           >
-                            <span className="text-xs font-semibold text-zinc-900 block">Event Duty</span>
-                            <span className="text-xs text-zinc-500 block mt-0.5">{dutyLocationsCount} locations</span>
+                            <span className="text-xs font-semibold text-zinc-900 dark:text-[#F7F4ED] block">Event Duty</span>
+                            <span className="text-xs text-zinc-500 dark:text-[#938C81] block mt-0.5">{dutyLocationsCount} locations</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleTabChange('reports')}
-                            className="p-3.5 bg-zinc-50/50 hover:bg-zinc-100/60 rounded-xl text-left transition-colors border border-[#EAE8E1]/60 cursor-pointer"
+                            className="p-3.5 bg-zinc-50/50 dark:bg-[#20201E] hover:bg-zinc-100/60 dark:hover:bg-[#2A2926] rounded-xl text-left transition-colors border border-[#EAE8E1]/60 dark:border-[#2A2926] cursor-pointer"
                           >
-                            <span className="text-xs font-semibold text-zinc-900 block">Reports</span>
-                            <span className="text-xs text-zinc-500 block mt-0.5">View event reports</span>
+                            <span className="text-xs font-semibold text-zinc-900 dark:text-[#F7F4ED] block">Reports</span>
+                            <span className="text-xs text-zinc-500 dark:text-[#938C81] block mt-0.5">View event reports</span>
                           </button>
                         </div>
                       </div>
@@ -3916,17 +3922,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             onClick={() => setActiveAttentionModal(null)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs"
           />
-          <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+          <div className="relative bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#2A2926]">
               <div className="flex items-center space-x-2">
                 <ShieldAlert className="w-4 h-4 text-red-600" />
-                <h4 className="font-serif font-bold text-[#18181B]">
+                <h4 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED]">
                   {activeAttentionModal.label} List
                 </h4>
               </div>
               <button
                 onClick={() => setActiveAttentionModal(null)}
-                className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg"
+                className="text-zinc-400 hover:text-[#18181B] dark:hover:text-[#F7F4ED] p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3934,19 +3940,19 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-1 text-xs">
               {activeFilteredKids.length === 0 ? (
-                <div className="text-center py-12 text-zinc-400">
+                <div className="text-center py-12 text-zinc-400 dark:text-[#938C81]">
                   No active registration entries found matching this alert category in current scope.
                 </div>
               ) : (
                 activeFilteredKids.map((kid: any) => (
-                  <div key={kid.id} className="p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl flex items-center justify-between gap-4">
+                  <div key={kid.id} className="p-3.5 bg-[#FAF9F6] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl flex items-center justify-between gap-4">
                     <div className="space-y-0.5 min-w-0">
-                      <span className="font-semibold text-[#18181B] block truncate">{kid.name}</span>
-                      <span className="text-[10px] text-zinc-400 block">{kid.age_group || `Age ${kid.age}`}</span>
+                      <span className="font-semibold text-[#18181B] dark:text-[#F7F4ED] block truncate">{kid.name}</span>
+                      <span className="text-[10px] text-zinc-400 dark:text-[#938C81] block">{kid.age_group || `Age ${kid.age}`}</span>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-900/40">
                         {kid.status || 'Under Review'}
                       </span>
                       <button
@@ -3954,7 +3960,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                           setActiveAttentionModal(null);
                           setActiveTab('applications');
                         }}
-                        className="text-[#C59B27] font-semibold hover:underline"
+                        className="text-[#C59B27] dark:text-[#E5B842] font-semibold hover:underline cursor-pointer"
                       >
                         Review
                       </button>
@@ -3964,11 +3970,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               )}
             </div>
 
-            <div className="pt-3 border-t border-[#EAE8E1] flex justify-end">
+            <div className="pt-3 border-t border-[#EAE8E1] dark:border-[#2A2926] flex justify-end">
               <Button
                 type="button"
                 onClick={() => setActiveAttentionModal(null)}
-                className="text-xs bg-zinc-100 text-[#18181B] hover:bg-zinc-200 px-4 py-2"
+                className="text-xs bg-zinc-100 dark:bg-[#20201E] text-[#18181B] dark:text-[#F7F4ED] hover:bg-zinc-200 dark:hover:bg-[#2A2926] px-4 py-2 cursor-pointer"
               >
                 Close Window
               </Button>
@@ -4042,7 +4048,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   </span>
                 )}
               </div>
-              <h2 className="text-xl font-serif font-bold text-zinc-950 tracking-tight">
+              <h2 className="text-xl font-sans font-bold text-zinc-950 dark:text-[#F7F4ED] tracking-tight">
                 {activeUrgentAlert.isTest ? 'Alert Sound Test' : 'Emergency care alert'}
               </h2>
               <p className="text-xs text-zinc-600 mt-0.5">
@@ -4386,15 +4392,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
       {activeEmergencySummaryAlertId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-[#FAF9F5] rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#EAE8E1]">
-            <div className="p-5 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-white rounded-t-2xl">
+          <div className="bg-[#FAF9F5] dark:bg-[#181817] rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#EAE8E1] dark:border-[#2A2926]">
+            <div className="p-5 border-b border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between shrink-0 bg-white dark:bg-[#20201E] rounded-t-2xl">
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-amber-600 animate-pulse" />
-                <h3 className="text-base font-serif font-bold text-gray-900">Child Emergency & Safety Summary</h3>
+                <h3 className="text-base font-sans font-bold text-gray-900 dark:text-[#F7F4ED]">Child Emergency & Safety Summary</h3>
               </div>
               <button
                 onClick={() => setActiveEmergencySummaryAlertId(null)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded-full hover:bg-gray-100 dark:hover:bg-[#2A2926] transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>

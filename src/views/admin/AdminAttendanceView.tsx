@@ -248,9 +248,9 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="font-serif text-2xl font-bold text-[#18181B] tracking-tight">
+          <h1 className="type-h1-app text-[#18181B]">
             Attendance
-          </h2>
+          </h1>
           {/* Static Event Selector dropdown matching screenshot */}
           <div className="relative inline-block text-left">
             <select 
@@ -457,7 +457,16 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                                 <span className="ml-1 text-rose-500 font-bold" title="Care flag active">⚠️</span>
                               )}
                             </td>
-                            <td className="py-3.5 px-4 text-zinc-500">{row.ageGroup}</td>
+                            <td className="py-3.5 px-4 text-zinc-500">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span>{row.ageGroup}</span>
+                                {row.needsAgeReview && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                    Age review needed
+                                  </span>
+                                )}
+                              </div>
+                            </td>
                             <td className="py-3.5 px-4 text-zinc-600 font-medium">{row.parentName}</td>
                             <td className="py-3.5 px-4">{getStatusBadge(row.status)}</td>
                             <td className="py-3.5 px-4">{getLocationLabel(row.location)}</td>
@@ -498,7 +507,14 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                                 <span className="ml-1 text-rose-500">⚠️</span>
                               )}
                             </h4>
-                            <span className="text-[10px] text-zinc-400 font-medium block mt-0.5">{row.ageGroup}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                              <span className="text-[10px] text-zinc-400 font-medium block">{row.ageGroup}</span>
+                              {row.needsAgeReview && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                  Age review needed
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div>{getStatusBadge(row.status)}</div>
                         </div>

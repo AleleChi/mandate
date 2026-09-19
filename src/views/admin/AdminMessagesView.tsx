@@ -1658,10 +1658,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       {/* 1. PAGE HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-[#EAE8E1] gap-4">
         <div>
-          <h1 
-            className="text-2xl sm:text-3xl font-bold text-[#18181B] tracking-tight"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <h1 className="type-h1-app text-[#18181B]">
             Messages & updates
           </h1>
           <p className="text-xs text-zinc-500 mt-1 font-normal leading-relaxed">

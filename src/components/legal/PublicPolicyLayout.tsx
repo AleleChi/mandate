@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUp } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
+import { ThemeSwitcher } from '../common/ThemeSwitcher';
 import { PublicFooter } from '../landing/PublicFooter';
 import { api } from '../../services/api';
 import { AppRoute } from '../../types';
@@ -121,7 +122,8 @@ export const PublicPolicyLayout: React.FC<PublicPolicyLayoutProps> = ({
             title="Koinonia Children & Teens"
           />
 
-          <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-4 sm:space-x-6">
+            <ThemeSwitcher />
             <button
               type="button"
               onClick={() => onNavigate('/parent/sign-in')}

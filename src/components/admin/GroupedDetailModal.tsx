@@ -41,28 +41,28 @@ export const GroupedDetailModal: React.FC<GroupedDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150 text-left">
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="relative w-full max-w-xl bg-white dark:bg-[#181817] rounded-2xl shadow-xl border border-zinc-200 dark:border-[#2A2926] overflow-hidden flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-zinc-100 dark:border-[#2A2926] flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
+            <span className="text-[11px] font-semibold text-zinc-400 dark:text-[#938C81] uppercase tracking-wider block">
               {group.category}
             </span>
-            <h3 className="font-serif text-lg font-semibold text-zinc-900 mt-0.5">
+            <h3 className="font-sans text-lg font-semibold text-zinc-900 dark:text-[#F7F4ED] mt-0.5">
               {group.title}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+            className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Editorial Subhead */}
-        <div className="px-6 py-3 bg-zinc-50 border-b border-zinc-100 text-xs text-zinc-600 leading-relaxed">
+        <div className="px-6 py-3 bg-zinc-50 dark:bg-[#20201E] border-b border-zinc-100 dark:border-[#2A2926] text-xs text-zinc-600 dark:text-[#938C81] leading-relaxed">
           {getEditorialExplanation(group.category, group.signalType)}
         </div>
 

@@ -1573,12 +1573,9 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       {/* 1. Header */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
         <div>
-          <h2
-            className="font-serif-koinonia text-2xl font-bold text-[#18181B] tracking-tight"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
-            Volunteer team
-          </h2>
+          <h1 className="type-h1-app text-[#18181B]">
+            Volunteers
+          </h1>
           <p className="text-xs text-zinc-500 mt-1">Manage volunteers, team assignments and approvals.</p>
         </div>
         <Button

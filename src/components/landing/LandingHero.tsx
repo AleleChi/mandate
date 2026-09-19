@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ArrowRight, Check, QrCode } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { ShieldCheck, ArrowRight, QrCode } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { AppRoute } from '../../types';
 import { AssetImage } from '../common/AssetImage';
 import { REAL_ASSETS } from '../../config/assets';
+import parentHeroImg from '../../assets/images/parent_hero_1783622066454.jpg';
 
 export interface LandingHeroProps {
   loaded: boolean;
@@ -15,6 +16,155 @@ export interface LandingHeroProps {
   onVolunteerRegisterClick: () => void;
   onNavigate: (route: AppRoute) => void;
 }
+
+export interface HeroPhotoCardProps {
+  src?: string;
+  alt?: string;
+  prefersReducedMotion?: boolean;
+  loaded?: boolean;
+}
+
+export const HeroPhotoCard: React.FC<HeroPhotoCardProps> = ({
+  src,
+  alt = 'Koinonia Children & Teens Event Experience',
+  prefersReducedMotion = false,
+  loaded = true,
+}) => {
+  const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
+  const systemReducedMotion = useReducedMotion();
+  const shouldReduceMotion = Boolean(systemReducedMotion || prefersReducedMotion);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (shouldReduceMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setMouseOffset({ x, y });
+  };
+
+  const handleMouseLeave = () => {
+    setMouseOffset({ x: 0, y: 0 });
+  };
+
+  const resolvedSrc = src && src.trim() !== '' ? src : parentHeroImg;
+
+  return (
+    <div
+      style={{ perspective: '1200px' }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="relative select-none w-full max-w-[360px] sm:max-w-[400px] lg:max-w-[440px] mx-auto lg:ml-auto group/photo py-4 sm:py-6"
+    >
+      {/* 1. Ambient soft shadow plane & warm atmospheric glow */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-4 sm:inset-6 bg-[#C59B27]/12 dark:bg-black/40 blur-2xl rounded-3xl -z-30 pointer-events-none transform translate-y-6"
+      />
+
+      {/* 2. Offset back paper plane (Physical print backing / exhibition depth) */}
+      <motion.div
+        aria-hidden="true"
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 16, rotate: -4 }}
+        animate={
+          shouldReduceMotion
+            ? { opacity: 1 }
+            : {
+                opacity: 0.9,
+                y: [0, -3, 0],
+                rotate: -2.5,
+              }
+        }
+        transition={
+          shouldReduceMotion
+            ? { duration: 0.3 }
+            : {
+                opacity: { duration: 0.8, delay: 0.15 },
+                rotate: { duration: 0.8, delay: 0.15 },
+                y: { duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 0.3 },
+              }
+        }
+        style={{
+          transform: shouldReduceMotion
+            ? 'rotate(-2.5deg)'
+            : `translate3d(${mouseOffset.x * 2 + 6}px, ${mouseOffset.y * 2 + 6}px, -12px) rotate(-2.5deg)`,
+        }}
+        className="absolute inset-0 bg-[#ECE5D4] dark:bg-[#201F1C] rounded-2xl sm:rounded-3xl border border-[#E0D7C3] dark:border-[#2E2D29] -z-20 shadow-sm pointer-events-none transition-transform duration-300"
+      />
+
+      {/* 3. Mid abstract paper layer for depth */}
+      <motion.div
+        aria-hidden="true"
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 12, rotate: 3 }}
+        animate={
+          shouldReduceMotion
+            ? { opacity: 1 }
+            : {
+                opacity: 0.75,
+                y: [0, -2, 0],
+                rotate: 1.5,
+              }
+        }
+        transition={
+          shouldReduceMotion
+            ? { duration: 0.3 }
+            : {
+                opacity: { duration: 0.8, delay: 0.25 },
+                rotate: { duration: 0.8, delay: 0.25 },
+                y: { duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.6 },
+              }
+        }
+        style={{
+          transform: shouldReduceMotion
+            ? 'rotate(1.5deg)'
+            : `translate3d(${mouseOffset.x * 1.5 - 4}px, ${mouseOffset.y * 1.5 - 4}px, -6px) rotate(1.5deg)`,
+        }}
+        className="absolute inset-0 bg-[#F5F2EA] dark:bg-[#262522] rounded-2xl sm:rounded-3xl border border-[#E8E2D2] dark:border-[#33322D] -z-10 shadow-2xs pointer-events-none transition-transform duration-300"
+      />
+
+      {/* 4. Front Editorial Photo Card */}
+      <motion.div
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 24 }}
+        animate={
+          shouldReduceMotion
+            ? { opacity: 1 }
+            : {
+                opacity: 1,
+                y: [0, -4, 0],
+              }
+        }
+        transition={
+          shouldReduceMotion
+            ? { duration: 0.3 }
+            : {
+                opacity: { duration: 0.8, delay: 0.2 },
+                y: { duration: 6, repeat: Infinity, ease: 'easeInOut' },
+              }
+        }
+        style={{
+          transform: shouldReduceMotion
+            ? 'none'
+            : `translate3d(${mouseOffset.x * 4}px, ${mouseOffset.y * 4}px, 0) rotateX(${-mouseOffset.y * 2}deg) rotateY(${mouseOffset.x * 2.5}deg)`,
+        }}
+        className="relative z-10 rounded-2xl sm:rounded-3xl overflow-hidden bg-[#FAF9F6] dark:bg-[#1E1E1C] border border-[#E8E4D8] dark:border-[#2E2D29] shadow-[0_20px_50px_-12px_rgba(24,24,27,0.16),0_6px_16px_-4px_rgba(197,155,39,0.06)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.6)] aspect-[4/5] max-h-[540px] w-full transition-transform duration-200"
+      >
+        <AssetImage
+          src={resolvedSrc}
+          alt={alt}
+          iconType="sparkles"
+          hideText
+          className="w-full h-full object-cover object-center"
+          loading="eager"
+          fetchpriority="high"
+        />
+
+        {/* Subtle paper inner highlight and warm edge vignette */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-black/10 dark:from-white/5 dark:to-black/30 pointer-events-none" />
+        <div className="absolute inset-0 ring-1 ring-inset ring-black/[0.04] dark:ring-white/[0.06] rounded-2xl sm:rounded-3xl pointer-events-none" />
+      </motion.div>
+    </div>
+  );
+};
 
 export interface HeroPassPreviewProps {
   className?: string;
@@ -55,13 +205,11 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
       onMouseLeave={handleMouseLeave}
       className={`relative select-none ${className}`}
     >
-      {/* 1. Ambient soft shadow plane */}
       <div
         aria-hidden="true"
         className="absolute inset-4 bg-[#C59B27]/12 blur-2xl rounded-3xl -z-20 transform translate-y-6 pointer-events-none"
       />
 
-      {/* 2. Offset back card plane (Physical thickness / layered edge) */}
       <div
         aria-hidden="true"
         className="absolute inset-0 bg-[#ECE5D4] rounded-[22px] -rotate-1.5 translate-x-2.5 translate-y-2.5 border border-[#D9CBAC]/90 -z-10 shadow-sm pointer-events-none transition-transform duration-300 keep-ivory"
@@ -72,7 +220,6 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
         }}
       />
 
-      {/* 3. Front Physical 3D Pass Card */}
       <motion.div
         animate={prefersReducedMotion ? {} : { y: [0, -5, 0] }}
         transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
@@ -83,10 +230,8 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
         }}
         className="bg-[#FCFBF7] rounded-[22px] p-6 sm:p-7 border border-[#E2D4B7] shadow-[0_20px_40px_-12px_rgba(24,24,27,0.16),0_6px_16px_-4px_rgba(197,155,39,0.10)] relative overflow-hidden text-left transition-transform duration-200 ring-1 ring-white/90 keep-ivory"
       >
-        {/* Subtle paper inner highlight */}
         <div className="absolute inset-0 bg-gradient-to-b from-white/90 via-transparent to-black/[0.015] pointer-events-none rounded-[22px]" />
 
-        {/* Card Header */}
         <div className="relative z-10">
           <span className="text-[9.5px] sm:text-[10px] font-bold tracking-[0.22em] text-[#9A7326] uppercase font-sans block">
             KOINONIA CHILDREN &amp; TEENS
@@ -102,7 +247,6 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
           <div className="h-[1px] w-12 bg-[#C59B27]/50 mt-3 mb-4" />
         </div>
 
-        {/* Central QR Graphic Feature */}
         <div className="relative z-10 my-1 flex flex-col items-center justify-center">
           <div className="w-36 h-36 sm:w-40 sm:h-40 rounded-xl bg-white border border-[#E8DFC8] flex items-center justify-center p-3.5 text-zinc-900 shadow-[inset_0_1px_3px_rgba(0,0,0,0.03),0_2px_8px_rgba(0,0,0,0.04)] relative overflow-hidden">
             <QrCode className="w-full h-full stroke-[1.35] text-zinc-850" />
@@ -246,63 +390,14 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           </div>
         </div>
 
-        {/* Right-side editorial layered image composition (Stitch Reference) */}
-        <div className="lg:col-span-5 relative pb-16 lg:pb-14 pt-4 pl-2 sm:pl-6 group/hero">
-          {/* Back layer (smaller image layer behind or slightly above) */}
-          <div
-            className={`absolute -top-4 left-0 sm:left-4 w-56 sm:w-64 h-72 rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] dark:border-[#2E2D29] z-0 transition-all duration-700 delay-150 ease-out ${
-              loaded ? 'opacity-90 translate-y-0 -rotate-3' : 'opacity-0 -translate-y-6 -rotate-6'
-            } group-hover/hero:-translate-y-2 group-hover/hero:shadow-2xl`}
-          >
-            <AssetImage
-              src={assets.heroUpper}
-              alt="Families arriving at event"
-              iconType="users"
-              hideText
-              className="w-full h-full object-cover"
-            />
-          </div>
-
-          {/* Main image (large main image with curved/rounded top shape) */}
-          <div
-            className={`relative z-10 rounded-t-[140px] sm:rounded-t-[180px] rounded-b-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] dark:border-[#2E2D29] bg-white dark:bg-[#201F1C] aspect-[4/5] max-w-[360px] sm:max-w-[400px] mx-auto lg:ml-auto transition-all duration-700 delay-300 ease-out ${
-              loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-            } group-hover/hero:scale-[1.02] group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.22)]`}
-          >
-            <AssetImage
-              src={assets.heroMain}
-              alt="Koinonia General Assembly Welcome Reception"
-              iconType="sparkles"
-              hideText
-              className="w-full h-full object-cover object-top"
-              loading="eager"
-              fetchpriority="high"
-            />
-          </div>
-
-          {/* Front/right layer (smaller image layer in front/right side) */}
-          <div
-            className={`absolute -right-2 sm:-right-4 bottom-12 sm:bottom-14 z-20 w-40 sm:w-48 aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-white dark:border-[#262522] bg-white dark:bg-[#201F1C] transition-all duration-700 delay-500 ease-out ${
-              loaded ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95'
-            } group-hover/hero:translate-x-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.24)]`}
-          >
-            <AssetImage
-              src={assets.heroRight}
-              alt="Welcoming care team member check-in"
-              iconType="heart"
-              hideText
-              className="w-full h-full object-cover"
-            />
-          </div>
-
-          {/* Floating pass preview card (subtle scan-to-details animation - overlapping lower-left area of main image) */}
-          <div
-            className={`absolute left-0 sm:left-0 -bottom-6 sm:-bottom-8 z-30 w-[290px] sm:w-[330px] transition-all duration-700 delay-700 ease-out ${
-              loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
-            } group-hover/hero:-translate-y-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.2)]`}
-          >
-            <HeroPassPreview avatarUrl={assets.passAvatar} />
-          </div>
+        {/* Right-side photographic composition (Real Koinonia Photo Card) */}
+        <div className="lg:col-span-5 relative flex items-center justify-center lg:justify-end py-2 sm:py-4">
+          <HeroPhotoCard
+            src={assets.heroMain}
+            alt="Koinonia Children & Teens Event Experience"
+            prefersReducedMotion={prefersReducedMotion}
+            loaded={loaded}
+          />
         </div>
       </div>
     </section>

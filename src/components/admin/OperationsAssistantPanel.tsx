@@ -280,15 +280,15 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
 
   return (
     <div
-      className={`bg-white border border-[#EAE8E1]/80 rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left ${className}`}
+      className={`bg-white dark:bg-[#181817] border border-[#EAE8E1]/80 dark:border-[#2A2926] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-4 text-left ${className}`}
       data-component-version="admin-operations-assistant-hierarchy-v1"
     >
       {/* Editorial Header */}
       <div className="space-y-0.5 pb-1">
-        <h3 className="font-serif text-base font-semibold text-zinc-900">
+        <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
           Operations Assistant
         </h3>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-zinc-500 dark:text-[#938C81]">
           Ask about the current event
         </p>
       </div>
@@ -306,12 +306,12 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
           value={queryInput}
           onChange={(e) => setQueryInput(e.target.value)}
           placeholder="Ask about volunteers, duty, children, safety..."
-          className="w-full pl-3.5 pr-18 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-[#FAF9F6]/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all font-sans text-zinc-900 placeholder:text-zinc-400"
+          className="w-full pl-3.5 pr-18 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/60 dark:bg-[#121212] focus:bg-white dark:focus:bg-[#121212] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all font-sans text-zinc-900 dark:text-[#F7F4ED] placeholder:text-zinc-400 dark:placeholder:text-[#938C81]"
         />
         <button
           type="submit"
           disabled={queryLoading || !queryInput.trim()}
-          className="absolute right-1.5 px-3 py-1 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-40 text-white rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="absolute right-1.5 px-3 py-1 bg-[#18181B] dark:bg-[#2A2926] hover:bg-zinc-800 dark:hover:bg-[#33322E] disabled:opacity-40 text-white rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           {queryLoading ? (
             <RefreshCw className="w-3 h-3 animate-spin text-[#C59B27]" />
@@ -332,8 +332,8 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
               onClick={() => setSelectedCategory(cat)}
               className={`text-[11px] px-2.5 py-0.5 rounded-md transition-colors cursor-pointer shrink-0 font-medium ${
                 selectedCategory === cat
-                  ? 'bg-[#FAF9F6] text-[#9A7326] border border-[#C59B27]/30'
-                  : 'text-zinc-500 hover:text-zinc-800'
+                  ? 'bg-[#FAF9F6] dark:bg-[#232220] text-[#9A7326] dark:text-[#D4AF37] border border-[#C59B27]/30 dark:border-[#D4AF37]/30'
+                  : 'text-zinc-500 dark:text-[#938C81] hover:text-zinc-800 dark:hover:text-[#F7F4ED]'
               }`}
             >
               {cat}
@@ -342,7 +342,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
         </div>
 
         <div className="space-y-1">
-          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+          <span className="text-[10px] font-semibold text-zinc-400 dark:text-[#938C81] uppercase tracking-wider block">
             {selectedCategory}
           </span>
           <div className="flex flex-col gap-1">
@@ -354,7 +354,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
                   setQueryInput(q);
                   handleRunQuery(q);
                 }}
-                className="text-xs text-left text-zinc-600 hover:text-zinc-900 transition-colors cursor-pointer py-1 flex items-center justify-between group"
+                className="text-xs text-left text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer py-1 flex items-center justify-between group"
               >
                 <span className="group-hover:underline underline-offset-2">{q}</span>
                 <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-[#C59B27] transition-opacity shrink-0" />
@@ -366,7 +366,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
 
       {/* Query Loading State (Compact Inline) */}
       {queryLoading && !isModalOpen && (
-        <div className="py-3 flex items-center gap-2 text-xs text-zinc-500 border-t border-[#EAE8E1]/80 pt-3">
+        <div className="py-3 flex items-center gap-2 text-xs text-zinc-500 dark:text-[#938C81] border-t border-[#EAE8E1]/80 dark:border-[#2A2926] pt-3">
           <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#C59B27]" />
           <span>Getting the latest information…</span>
         </div>
@@ -374,28 +374,28 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
 
       {/* Query Error State (Compact Inline) */}
       {queryError && !isModalOpen && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+        <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-xl text-xs text-red-700 dark:text-red-300 font-medium">
           {queryError}
         </div>
       )}
 
       {/* Compact Last Answer Summary (Inside Panel) */}
       {submittedQuestion && !queryLoading && (queryResult || actionResult) && (
-        <div className="pt-3 border-t border-[#EAE8E1]/80 space-y-2 text-left">
+        <div className="pt-3 border-t border-[#EAE8E1]/80 dark:border-[#2A2926] space-y-2 text-left">
           <div className="space-y-0.5">
-            <span className="text-xs font-medium text-zinc-500 block">
+            <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81] block">
               Question
             </span>
-            <p className="text-xs font-medium text-zinc-800 leading-snug">
+            <p className="text-xs font-medium text-zinc-800 dark:text-[#F7F4ED] leading-snug">
               {submittedQuestion}
             </p>
           </div>
 
           <div className="space-y-0.5">
-            <span className="text-xs font-semibold text-[#9A7326] block">
+            <span className="text-xs font-semibold text-[#9A7326] dark:text-[#D4AF37] block">
               Last answer
             </span>
-            <p className="text-xs text-zinc-700 leading-relaxed line-clamp-2">
+            <p className="text-xs text-zinc-700 dark:text-[#FAF9F6]/90 leading-relaxed line-clamp-2">
               {actionResult ? `${actionResult.title} — ${actionResult.message}` : queryResult?.answer}
             </p>
           </div>
@@ -404,7 +404,7 @@ export const OperationsAssistantPanel: React.FC<OperationsAssistantPanelProps> =
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
-              className="text-xs inline-flex items-center gap-1.5 font-semibold text-[#9A7326] hover:text-[#7A5B1C] transition-colors cursor-pointer group"
+              className="text-xs inline-flex items-center gap-1.5 font-semibold text-[#9A7326] dark:text-[#D4AF37] hover:text-[#7A5B1C] dark:hover:text-[#E2C366] transition-colors cursor-pointer group"
             >
               <span>
                 {queryResult?.breakdown

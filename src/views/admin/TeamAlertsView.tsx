@@ -271,22 +271,22 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
 
   return (
     <div 
-      className="min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans antialiased relative pb-16"
+      className="min-h-screen bg-[#FAF9F6] dark:bg-[#121212] text-[#18181B] dark:text-[#F7F4ED] font-sans antialiased relative pb-16"
       data-view-version="admin-active-alert-responses-v2-premium"
     >
       {/* HEADER SECTION */}
-      <header className="sticky top-0 z-40 bg-[#F9F8F3]/95 backdrop-blur-md border-b border-[#EAE8E1] shadow-xs">
+      <header className="sticky top-0 z-40 bg-[#F9F8F3]/95 dark:bg-[#181817]/95 backdrop-blur-md border-b border-[#EAE8E1] dark:border-[#2A2926] shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5">
             <button
               onClick={() => onNavigate('/admin/overview')}
-              className="p-2.5 rounded-xl border border-[#EAE8E1] hover:bg-white text-zinc-600 hover:text-[#18181B] transition-all cursor-pointer shadow-xs"
+              className="p-2.5 rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] hover:bg-white dark:hover:bg-[#20201E] text-zinc-600 dark:text-[#938C81] hover:text-[#18181B] dark:hover:text-[#F7F4ED] transition-all cursor-pointer shadow-xs"
               title="Return to Overview"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div>
-              <h1 className="font-serif text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
+              <h1 className="type-h1-app text-xl sm:text-2xl flex items-center gap-2 text-[#18181B] dark:text-[#F7F4ED]">
                 Team Safety Alerts
                 {activeAlertsCount > 0 && (
                   <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
@@ -294,8 +294,8 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
                   </span>
                 )}
               </h1>
-              <p className="text-[11px] text-zinc-500 font-medium tracking-wide">
-                Role: <strong className="text-zinc-700">{teamRoleTitle}</strong> &bull; Area: <strong className="text-zinc-700">{teamArea}</strong>
+              <p className="text-[11px] text-zinc-500 dark:text-[#938C81] font-medium tracking-wide">
+                Role: <strong className="text-zinc-700 dark:text-[#F7F4ED]">{teamRoleTitle}</strong> &bull; Area: <strong className="text-zinc-700 dark:text-[#F7F4ED]">{teamArea}</strong>
               </p>
             </div>
           </div>
@@ -304,14 +304,14 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
             <button
               onClick={() => { setRefreshing(true); fetchAlerts(); }}
               disabled={refreshing || loading}
-              className="p-2.5 rounded-xl border border-[#EAE8E1] hover:bg-white text-zinc-600 hover:text-[#18181B] transition-all disabled:opacity-50 cursor-pointer shadow-xs"
+              className="p-2.5 rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] hover:bg-white dark:hover:bg-[#20201E] text-zinc-600 dark:text-[#938C81] hover:text-[#18181B] dark:hover:text-[#F7F4ED] transition-all disabled:opacity-50 cursor-pointer shadow-xs"
               title="Refresh queue"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => { onSignOut(); onNavigate('/'); }}
-              className="hidden sm:flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition-all cursor-pointer shadow-xs"
+              className="hidden sm:flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/50 hover:bg-red-100 dark:hover:bg-red-900/70 transition-all cursor-pointer shadow-xs"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Sign Out</span>
@@ -325,7 +325,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
         {/* LEFT COLUMN: ACTIVE SAFETY ALERTS QUEUE */}
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="font-serif text-lg font-bold text-[#18181B]">
+            <h2 className="font-sans text-lg font-bold text-[#18181B] dark:text-[#F7F4ED]">
               Active Care Concerns
             </h2>
             {urgentAlertsCount > 0 && (
@@ -339,14 +339,14 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
           {loading ? (
             <ModuleLoadingState title="Loading team alerts..." />
           ) : alerts.length === 0 ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-16 text-center shadow-xs space-y-4 max-w-2xl mx-auto">
+            <div className="bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl p-16 text-center shadow-xs space-y-4 max-w-2xl mx-auto">
               <div className="w-12 h-12 bg-[#C59B27]/5 border border-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center mx-auto shadow-xs">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <h3 className="font-serif text-base font-bold text-[#18181B]">
+              <h3 className="font-sans text-base font-bold text-[#18181B] dark:text-[#F7F4ED]">
                 All Quiet on Site
               </h3>
-              <p className="text-xs text-zinc-500 leading-relaxed max-w-sm mx-auto">
+              <p className="text-xs text-zinc-500 dark:text-[#938C81] leading-relaxed max-w-sm mx-auto">
                 No safety alerts or care requests have been reported. All rooms and entry points are currently operating securely.
               </p>
             </div>
@@ -417,7 +417,7 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
 
                           {/* Context Details */}
                           <div className="space-y-1">
-                            <h3 className="font-serif font-bold text-sm text-[#18181B]">
+                            <h3 className="font-sans font-bold text-sm text-[#18181B] dark:text-[#F7F4ED]">
                               {alert.category ? getCategoryLabel(alert.category) : 'Care Request'}
                             </h3>
                             <p className="text-xs text-zinc-600 font-medium">
@@ -540,9 +540,9 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
         {/* RIGHT COLUMN: DEVICE DELIVERY PREFERENCES */}
         <div className="space-y-6">
           <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-6">
-            <div className="flex items-center gap-2 pb-2 border-b border-[#EAE8E1]">
+            <div className="flex items-center gap-2 pb-2 border-b border-[#EAE8E1] dark:border-[#2A2926]">
               <Sparkles className="w-4 h-4 text-[#C59B27]" />
-              <h3 className="font-serif font-bold text-sm text-[#18181B]">
+              <h3 className="font-sans font-bold text-sm text-[#18181B] dark:text-[#F7F4ED]">
                 Notification Delivery Settings
               </h3>
             </div>
@@ -637,8 +637,8 @@ export const TeamAlertsView: React.FC<TeamAlertsViewProps> = ({
             exit={{ opacity: 0, scale: 0.95 }}
             className="relative bg-white border border-[#EAE8E1] rounded-[24px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
-              <h4 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
+            <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1] dark:border-[#2A2926]">
+              <h4 className="font-sans font-bold text-base text-[#18181B] dark:text-[#F7F4ED] flex items-center gap-2">
                 <Check className="w-5 h-5 text-emerald-600" />
                 Resolve Care Request
               </h4>

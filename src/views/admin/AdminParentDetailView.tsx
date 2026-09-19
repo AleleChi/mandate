@@ -621,10 +621,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                   </div>
                 )}
 
-                <h3
-                  className="font-serif-koinonia text-xl font-bold text-[#18181B] tracking-tight leading-snug"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
+                <h3 className="font-sans text-xl font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-snug">
                   {displayName}
                 </h3>
                 <p className="text-xs text-zinc-400 mt-0.5">{parent.email || 'Not provided'}</p>

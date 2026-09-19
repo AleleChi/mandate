@@ -527,7 +527,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           {/* Header block */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <h2 className="font-serif text-2xl font-bold text-[#18181B] tracking-normal">Events</h2>
+              <h1 className="type-h1-app text-[#18181B]">Events</h1>
               <p className="text-xs text-zinc-500">Create and manage events for children, parents, and volunteers.</p>
             </div>
             
@@ -708,7 +708,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           </div>
 
           <div className="space-y-1">
-            <h2 className="font-serif text-2xl font-bold text-[#18181B] tracking-normal">
+            <h2 className="font-sans text-2xl font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-normal">
               {currentScreen === 'create' ? 'Create event' : 'Edit event'}
             </h2>
           </div>

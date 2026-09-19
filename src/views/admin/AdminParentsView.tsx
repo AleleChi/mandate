@@ -605,12 +605,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
         <div>
-          <h2
-            className="font-serif-koinonia text-2xl font-bold text-[#18181B] tracking-tight"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
+          <h1 className="type-h1-app text-[#18181B]">
             Parents
-          </h2>
+          </h1>
           <p className="text-xs text-zinc-500 mt-1">
             View parent details, contact information and the children connected to each account.
           </p>

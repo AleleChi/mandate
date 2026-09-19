@@ -67,21 +67,21 @@ export const FullEventWatchModal: React.FC<FullEventWatchModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150 text-left">
-      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-3xl bg-white dark:bg-[#181817] rounded-2xl shadow-2xl border border-zinc-200 dark:border-[#2A2926] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Top Header */}
-        <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-zinc-100 dark:border-[#2A2926] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="font-serif text-xl font-semibold text-zinc-900">
+            <h2 className="font-sans text-xl font-semibold text-zinc-900 dark:text-[#F7F4ED]">
               Event watch
             </h2>
-            <span className="text-xs text-zinc-400 font-mono">
+            <span className="text-xs text-zinc-400 dark:text-[#938C81] font-mono">
               {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
             </span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

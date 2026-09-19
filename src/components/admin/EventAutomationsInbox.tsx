@@ -93,24 +93,24 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
 
   return (
     <div
-      className="bg-white rounded-2xl p-6 border border-[#EAE8E1]/80 shadow-2xs space-y-4 text-left"
+      className="bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-4 text-left"
       data-component-version="admin-event-watch-v2"
     >
       {/* 1. Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#EAE8E1]/70 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#EAE8E1]/70 dark:border-[#2A2926] gap-3">
         <div>
           <div className="flex items-center gap-3">
-            <h3 className="font-serif text-base font-semibold text-zinc-900">
+            <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
               Event watch
             </h3>
             {totalActiveCount > 0 ? (
-              <span className="text-xs font-medium text-zinc-500">
+              <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81]">
                 {categorySummaries.length > 1
                   ? `${categorySummaries.length} areas need attention`
                   : `${totalActiveCount} ${totalActiveCount === 1 ? 'item needs attention' : 'items need attention'}`}
               </span>
             ) : (
-              <span className="text-xs font-medium text-emerald-700">
+              <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
                 All clear
               </span>
             )}
@@ -118,12 +118,12 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
 
           {/* Clean Category Summary Line (Section 12) */}
           {totalActiveCount > 0 && viewMode === 'active' && categorySummaries.length > 0 && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500 mt-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-[#938C81] mt-1">
               {categorySummaries.map((cat, idx) => (
                 <span key={cat.name} className="inline-flex items-center gap-1.5">
-                  <span className="text-zinc-700 font-medium">{cat.name}</span>
-                  <span className="text-zinc-400 font-mono text-[11px]">{cat.count}</span>
-                  {idx < categorySummaries.length - 1 && <span className="text-zinc-300">·</span>}
+                  <span className="text-zinc-700 dark:text-[#F7F4ED] font-medium">{cat.name}</span>
+                  <span className="text-zinc-400 dark:text-[#938C81] font-mono text-[11px]">{cat.count}</span>
+                  {idx < categorySummaries.length - 1 && <span className="text-zinc-300 dark:text-[#33322E]">·</span>}
                 </span>
               ))}
             </div>
@@ -133,14 +133,14 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
         {/* Action Controls & Human Tabs */}
         <div className="flex items-center gap-2 self-start sm:self-center">
           {/* Needs attention / Cleared toggle */}
-          <div className="flex items-center bg-zinc-100 p-0.5 rounded-lg text-[11px] font-medium text-zinc-600">
+          <div className="flex items-center bg-zinc-100 dark:bg-[#232220] p-0.5 rounded-lg text-[11px] font-medium text-zinc-600 dark:text-[#938C81]">
             <button
               type="button"
               onClick={() => setViewMode('active')}
               className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                 viewMode === 'active'
-                  ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
-                  : 'hover:text-zinc-900'
+                  ? 'bg-white dark:bg-[#181817] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                  : 'hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
               }`}
             >
               Needs attention {totalActiveCount > 0 && `(${totalActiveCount})`}
@@ -150,8 +150,8 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
               onClick={() => setViewMode('resolved')}
               className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                 viewMode === 'resolved'
-                  ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
-                  : 'hover:text-zinc-900'
+                  ? 'bg-white dark:bg-[#181817] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                  : 'hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
               }`}
             >
               Cleared ({resolvedItems.length})
@@ -163,7 +163,7 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
             title="Refresh event watch"
             onClick={() => fetchAutomations(true)}
             disabled={refreshing}
-            className="p-1 text-zinc-400 hover:text-zinc-600 rounded-md hover:bg-zinc-100 transition-colors cursor-pointer"
+            className="p-1 text-zinc-400 dark:text-[#938C81] hover:text-zinc-600 dark:hover:text-[#F7F4ED] rounded-md hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -174,7 +174,7 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
             aria-label="Event watch settings"
             onClick={() => setShowSettingsModal(true)}
             className={`p-1 rounded-md transition-colors cursor-pointer ${
-              showSettingsModal ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100'
+              showSettingsModal ? 'bg-zinc-100 dark:bg-[#2A2926] text-zinc-900 dark:text-[#F7F4ED]' : 'text-zinc-400 dark:text-[#938C81] hover:text-zinc-600 dark:hover:text-[#F7F4ED] hover:bg-zinc-100 dark:hover:bg-[#2A2926]'
             }`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -184,16 +184,16 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
 
       {/* 3. List Content (Bounded Overview Rows) */}
       {loading ? (
-        <div className="py-6 text-center text-xs text-zinc-400">
+        <div className="py-6 text-center text-xs text-zinc-400 dark:text-[#938C81]">
           Updating event watch...
         </div>
       ) : viewMode === 'active' ? (
         overviewItems.length === 0 ? (
-          <p className="text-xs text-zinc-500 py-3">
+          <p className="text-xs text-zinc-500 dark:text-[#938C81] py-3">
             Everything currently being monitored looks clear.
           </p>
         ) : (
-          <div className="divide-y divide-[#EAE8E1]/60">
+          <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#2A2926]">
             {overviewItems.map((group) => (
               <div
                 key={group.id}
@@ -209,19 +209,19 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
                         setSelectedItem(group.items[0]);
                       }
                     }}
-                    className="font-medium text-sm text-zinc-900 hover:text-[#9A7326] transition-colors text-left flex-1 cursor-pointer"
+                    className="font-medium text-sm text-zinc-900 dark:text-[#F7F4ED] hover:text-[#9A7326] dark:hover:text-[#D4AF37] transition-colors text-left flex-1 cursor-pointer"
                   >
                     {group.title}
                   </button>
 
                   {group.severity === 'urgent' && (
-                    <span className="text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full shrink-0">
+                    <span className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 px-2 py-0.5 rounded-full shrink-0">
                       Urgent
                     </span>
                   )}
                 </div>
 
-                <p className="text-xs text-zinc-500 leading-relaxed">
+                <p className="text-xs text-zinc-500 dark:text-[#938C81] leading-relaxed">
                   {group.summary}
                 </p>
 
@@ -236,7 +236,7 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
                         handleRouteClick(group.actionTargetRoute);
                       }
                     }}
-                    className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] hover:underline cursor-pointer"
+                    className="text-xs font-semibold text-[#9A7326] dark:text-[#D4AF37] hover:text-[#7A5B1C] dark:hover:text-[#E2C366] hover:underline cursor-pointer"
                   >
                     {group.actionTargetLabel}
                   </button>
@@ -245,7 +245,7 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
                     <button
                       type="button"
                       onClick={() => onPrepareConfirmedAction(group.proposedActionKey!, group.items[0])}
-                      className="text-xs font-semibold text-zinc-700 hover:text-zinc-900 hover:underline cursor-pointer"
+                      className="text-xs font-semibold text-zinc-700 dark:text-[#FAF9F6]/90 hover:text-zinc-900 dark:hover:text-[#F7F4ED] hover:underline cursor-pointer"
                     >
                       {group.proposedActionKey === 'SEND_DUTY_REMINDERS' && 'Review reminder →'}
                       {group.proposedActionKey === 'REGENERATE_REPORT' && 'Regenerate report →'}
@@ -260,11 +260,11 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
       ) : (
         /* Resolved / Cleared Tab */
         displayedResolved.length === 0 ? (
-          <p className="text-xs text-zinc-500 py-3">
+          <p className="text-xs text-zinc-500 dark:text-[#938C81] py-3">
             No cleared items recorded for this event.
           </p>
         ) : (
-          <div className="divide-y divide-[#EAE8E1]/60">
+          <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#2A2926]">
             {displayedResolved.map((item) => {
               const detectedStr = formatHumanDate(item.first_detected_at, true);
               const clearedStr = item.resolved_at ? formatHumanDate(item.resolved_at, true) : null;
@@ -275,16 +275,16 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
                     <button
                       type="button"
                       onClick={() => setSelectedItem(item)}
-                      className="font-medium text-sm text-zinc-900 hover:text-[#9A7326] transition-colors text-left flex-1 cursor-pointer"
+                      className="font-medium text-sm text-zinc-900 dark:text-[#F7F4ED] hover:text-[#9A7326] dark:hover:text-[#D4AF37] transition-colors text-left flex-1 cursor-pointer"
                     >
                       {item.title}
                     </button>
-                    <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full shrink-0">
                       Cleared
                     </span>
                   </div>
-                  <p className="text-xs text-zinc-500">{item.summary}</p>
-                  <p className="text-[11px] text-zinc-400">
+                  <p className="text-xs text-zinc-500 dark:text-[#938C81]">{item.summary}</p>
+                  <p className="text-[11px] text-zinc-400 dark:text-[#938C81]">
                     Detected {detectedStr} {clearedStr && `· Cleared ${clearedStr}`}
                   </p>
                 </div>
@@ -296,11 +296,11 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
 
       {/* 4. Overview Footer Bounding: View all button */}
       {(hasMore || totalActiveCount > 5 || (viewMode === 'resolved' && resolvedItems.length > 4)) && (
-        <div className="pt-2 border-t border-[#EAE8E1]/60">
+        <div className="pt-2 border-t border-[#EAE8E1]/60 dark:border-[#2A2926]">
           <button
             type="button"
             onClick={() => setShowFullModal(true)}
-            className="text-xs font-semibold text-[#9A7326] hover:text-[#7A5B1C] hover:underline cursor-pointer flex items-center gap-1"
+            className="text-xs font-semibold text-[#9A7326] dark:text-[#D4AF37] hover:text-[#7A5B1C] dark:hover:text-[#E2C366] hover:underline cursor-pointer flex items-center gap-1"
           >
             <span>
               {viewMode === 'active'

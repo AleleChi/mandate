@@ -4,6 +4,7 @@ import { AppRoute } from '../types';
 import { api } from '../services/api';
 import { Seo } from '../components/common/Seo';
 import { REAL_ASSETS } from '../config/assets';
+import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
 
 // Event-Led Landing Components
 import { PublicHeader } from '../components/landing/PublicHeader';
@@ -36,6 +37,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [assets, setAssets] = useState<any>({
     ...REAL_ASSETS,
+    heroMain: REAL_ASSETS.heroMain || parentHeroImg,
     site_logo: (typeof window !== 'undefined' && (window as any)._site_logo) || '',
   });
   const [landingSettings, setLandingSettings] = useState<Record<string, string>>({});
@@ -89,7 +91,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             const s = res.settings;
             setAssets({
               site_logo: s.site_logo || (window as any)._site_logo || '',
-              heroMain: s.heroMain || REAL_ASSETS.heroMain,
+              heroMain: s.heroMain || REAL_ASSETS.heroMain || parentHeroImg,
               heroUpper: s.heroUpper || REAL_ASSETS.heroUpper,
               heroRight: s.heroRight || REAL_ASSETS.heroRight,
               heroVideo: (res as any).landingVideo?.url || s.heroVideo || REAL_ASSETS.heroVideo,

@@ -804,7 +804,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       {/* ----------------- 1. MAIN PAGE HEADER (Prompt Section 4) ----------------- */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/80 pb-6">
         <div>
-          <h1 className="text-3xl font-serif font-medium text-stone-900 tracking-tight">
+          <h1 className="type-h1-app text-stone-900">
             Reports
           </h1>
           <p className="text-stone-500 text-sm mt-1.5 leading-relaxed">
@@ -1264,8 +1264,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 1 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-serif font-medium text-stone-900">Choose report type</h2>
-                <p className="text-xs text-stone-500">Select the report template designed for your audience.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Choose report type</h2>
+                <p className="text-xs text-stone-500 dark:text-[#938C81]">Select the report template designed for your audience.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1310,8 +1310,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 2 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-serif font-medium text-stone-900">Choose event</h2>
-                <p className="text-xs text-stone-500">Select the event to report on. Data will be compiled from current event records.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Choose event</h2>
+                <p className="text-xs text-stone-500 dark:text-[#938C81]">Select the event to report on. Data will be compiled from current event records.</p>
               </div>
 
               <div className="space-y-3">
@@ -1351,8 +1351,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 3 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-serif font-medium text-stone-900">Report title</h2>
-                <p className="text-xs text-stone-500">Edit the presentation title and subtitle for the final management document.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Report title</h2>
+                <p className="text-xs text-stone-500 dark:text-[#938C81]">Edit the presentation title and subtitle for the final management document.</p>
               </div>
 
               <div className="space-y-4">
@@ -1401,8 +1401,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 4 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-serif font-medium text-stone-900">Included sections</h2>
-                <p className="text-xs text-stone-500">Select which analysis sections to compile into this report.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Included sections</h2>
+                <p className="text-xs text-stone-500 dark:text-[#938C81]">Select which analysis sections to compile into this report.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1459,16 +1459,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 5 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-serif font-medium text-stone-900">Preview report</h2>
-                <p className="text-xs text-stone-500">Review your report configuration before creating the official PDF snapshot.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Preview report</h2>
+                <p className="text-xs text-stone-500 dark:text-[#938C81]">Review your report configuration before creating the official PDF snapshot.</p>
               </div>
 
               {/* Summary Card */}
-              <div className="bg-stone-50 border border-stone-200 rounded-xl p-6 space-y-4">
-                <div className="border-b border-stone-200 pb-3 space-y-1">
+              <div className="bg-stone-50 dark:bg-[#20201E] border border-stone-200 dark:border-[#2A2926] rounded-xl p-6 space-y-4">
+                <div className="border-b border-stone-200 dark:border-[#2A2926] pb-3 space-y-1">
                   <span className="text-[10px] uppercase font-semibold tracking-wider text-[#C59B27] block">Document title</span>
-                  <h3 className="text-base font-serif font-medium text-stone-900">{customReportTitle}</h3>
-                  <p className="text-xs text-stone-500">{customSubtitle}</p>
+                  <h3 className="text-base font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">{customReportTitle}</h3>
+                  <p className="text-xs text-stone-500 dark:text-[#938C81]">{customSubtitle}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-xs">
@@ -1860,7 +1860,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             >
               <div className="bg-[#FAF9F6] border-b border-stone-200 px-6 py-4 flex items-center justify-between">
                 <div>
-                  <h3 id="audit-modal-title" className="text-base font-serif font-medium text-stone-900">Report history</h3>
+                  <h3 id="audit-modal-title" className="text-base font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Report history</h3>
                 </div>
                 <button 
                   onClick={() => setAuditReportId(null)}
@@ -1931,8 +1931,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   <h3 id="single-delete-title" className="text-base font-semibold text-stone-900">
                     Delete report?
                   </h3>
-                  <p className="text-xs text-stone-500 leading-relaxed">
-                    Are you sure you want to delete <span className="font-medium text-stone-800 font-serif">"{deleteTarget.title}"</span>? This will permanently remove the generated PDF document and snapshot data.
+                  <p className="text-xs text-stone-500 dark:text-[#938C81] leading-relaxed">
+                    Are you sure you want to delete <span className="font-medium text-stone-800 dark:text-[#F7F4ED] font-sans">"{deleteTarget.title}"</span>? This will permanently remove the generated PDF document and snapshot data.
                   </p>
                 </div>
               </div>

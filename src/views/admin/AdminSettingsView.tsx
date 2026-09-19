@@ -837,9 +837,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       {/* HEADER SECTION */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#EAE8E1] pb-5 gap-4">
         <div>
-          <h2 className="font-serif text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight">
+          <h1 className="type-h1-app text-[#18181B]">
             Settings
-          </h2>
+          </h1>
           <p className="text-xs text-zinc-500 mt-1.5 max-w-xl leading-relaxed">
             Configure parent access parameters, registration requirements, event team roles, and notification channels.
           </p>
@@ -883,7 +883,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
             <span className="text-[10px] font-medium text-zinc-400 block">
               {item.label}
             </span>
-            <span className="text-2xl sm:text-3xl font-medium font-serif text-[#18181B] mt-1.5 block">
+            <span className="text-2xl sm:text-3xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] mt-1.5 block">
               {item.val}
             </span>
             <span className="text-[10px] text-zinc-400 block mt-1">
@@ -953,7 +953,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                   data-component-version="admin-settings-parent-access-v2-refined"
                 >
                   <div className="border-b border-[#EAE8E1] pb-3">
-                    <h3 className="font-serif font-medium text-[#18181B] text-lg">Parent access</h3>
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Parent access</h3>
                     <p className="text-xs text-zinc-500 mt-1">Choose how parents can register, sign in, and update child details.</p>
                   </div>
 
@@ -1012,7 +1012,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                   data-component-version="admin-settings-required-details-v2-refined"
                 >
                   <div className="border-b border-[#EAE8E1] pb-3">
-                    <h3 className="font-serif font-medium text-[#18181B] text-lg">Required details</h3>
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Required details</h3>
                     <p className="text-xs text-zinc-500 mt-1">Choose the details parents must provide before an application can be reviewed.</p>
                   </div>
 
@@ -1194,7 +1194,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                   <div className="lg:col-span-8 bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[#EAE8E1] gap-2">
                       <div>
-                        <h3 className="font-serif font-medium text-[#18181B] text-lg">Team members</h3>
+                        <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Team members</h3>
                         <p className="text-xs text-zinc-500 mt-1">Manage authorized event staff and coordinators.</p>
                       </div>
                       <button 
@@ -1289,7 +1289,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             <UserPlus className="w-4 h-4" />
                           </div>
                           <div>
-                            <h3 className="font-serif font-medium text-[#18181B] text-base">Add team member</h3>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Add team member</h3>
                             <p className="text-xs text-zinc-500 mt-1">Invite a new staff or team member.</p>
                           </div>
                         </div>
@@ -1357,7 +1357,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <ShieldCheck className="w-4 h-4" />
                             </div>
                             <div>
-                              <h3 className="font-serif font-medium text-[#18181B] text-base">Staff details</h3>
+                              <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Staff details</h3>
                               <p className="text-xs text-zinc-500 mt-1">Configure role permissions for this member.</p>
                             </div>
                           </div>
@@ -1646,7 +1646,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 {/* Message Sender Defaults Settings */}
                 <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5">
                   <div className="border-b border-[#EAE8E1] pb-3">
-                    <h3 className="font-serif font-medium text-[#18181B] text-lg">Message channels</h3>
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Message channels</h3>
                     <p className="text-xs text-zinc-500 mt-1">Set default sender names and reply-to email signatures.</p>
                   </div>
 
@@ -1715,7 +1715,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       <Image className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-serif font-medium text-[#18181B] text-base">App media</h3>
+                      <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">App media</h3>
                       <p className="text-xs text-zinc-500 mt-1">Manage coverages and high-resolution images across parent and volunteer views.</p>
                     </div>
                   </div>
@@ -2066,7 +2066,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             <ShieldAlert className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-serif font-medium text-[#18181B] text-base">Global alert routing rules</h3>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Global alert routing rules</h3>
                             <p className="text-xs text-zinc-500 mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
                           </div>
                         </div>
@@ -2354,7 +2354,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             <TrendingUp className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-serif font-medium text-[#18181B] text-base">Unresolved Escalation Fallback</h3>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Unresolved Escalation Fallback</h3>
                             <p className="text-xs text-zinc-500 mt-0.5">Automatically escalate unresolved critical alerts if left unacknowledged.</p>
                           </div>
                         </div>
@@ -2408,7 +2408,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             <Bell className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-serif font-medium text-[#18181B] text-base">This device alert preferences</h3>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">This device alert preferences</h3>
                             <p className="text-xs text-zinc-500 mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
                           </div>
                         </div>
@@ -2714,7 +2714,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             <Activity className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-serif font-medium text-[#18181B] text-base">Device alert status</h3>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Device alert status</h3>
                             <p className="text-xs text-zinc-500 mt-0.5">Check that alert notifications can reach this device.</p>
                           </div>
                         </div>
@@ -2959,7 +2959,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
             {activeSubTab === 'footer-settings' && (
               <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6">
                 <div className="border-b border-[#EAE8E1] pb-4">
-                  <h3 className="font-serif font-medium text-[#18181B] text-lg">Footer & copyright settings</h3>
+                  <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Footer & copyright settings</h3>
                   <p className="text-xs text-zinc-500 mt-1">Configure the global copyright year and branding text displayed across all platform footers.</p>
                 </div>
 
@@ -3027,7 +3027,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                     <Lock className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-serif font-medium text-[#18181B] text-base">Profile security</h3>
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Profile security</h3>
                     <p className="text-xs text-zinc-500 mt-1">Change your admin password.</p>
                   </div>
                 </div>

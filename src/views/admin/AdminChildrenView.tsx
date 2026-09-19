@@ -629,7 +629,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
               <ArrowLeft className="w-4 h-4" />
             </button>
           </div>
-          <h1 className="font-serif text-2xl font-semibold text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B]">
             Children
           </h1>
           <p className="text-xs text-zinc-500 font-medium">
