@@ -51,6 +51,9 @@ const TeamAlertsView = React.lazy(() => import('./views/admin/TeamAlertsView').t
 import { Seo } from './components/common/Seo';
 import { LegalPagesView } from './views/LegalPagesView';
 import { PrivacyPolicyView } from './views/PrivacyPolicyView';
+import { TermsOfServiceView } from './views/TermsOfServiceView';
+import { ChildSafetyView } from './views/ChildSafetyView';
+import { ContactView } from './views/ContactView';
 
 // Training & Simulation Mode Views
 const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
@@ -83,6 +86,36 @@ const getSeoPropsForRoute = (route: string) => {
       robots: 'index, follow',
       ogTitle: 'Privacy Notice | Koinonia Children and Teens',
       ogDescription: "How we access, collect, store, and process personal information for Children's Session.",
+    };
+  }
+  if (cleanRoute === '/terms') {
+    return {
+      title: 'Terms of Service | Koinonia Children and Teens',
+      description: "Terms of Service governing registration, attendance, and child safety for The Koinonia General Assembly.",
+      canonical: 'https://koinonia12.netlify.app/#/terms',
+      robots: 'index, follow',
+      ogTitle: 'Terms of Service | Koinonia Children and Teens',
+      ogDescription: "Operational protocols for child registration, exclusive pickup release, and care safety.",
+    };
+  }
+  if (cleanRoute === '/child-safety') {
+    return {
+      title: 'Child Safety | Koinonia Children and Teens',
+      description: "How check-in, care information, supervision ratios, and pickup verification are handled during Koinonia events.",
+      canonical: 'https://koinonia12.netlify.app/#/child-safety',
+      robots: 'index, follow',
+      ogTitle: 'Child Safety | Koinonia Children and Teens',
+      ogDescription: "Clear operational guidance on how children are registered, protected, supervised, and safely released.",
+    };
+  }
+  if (cleanRoute === '/contact') {
+    return {
+      title: 'Contact Us | Koinonia Children and Teens',
+      description: "Contact information and support for The Koinonia General Assembly Children & Teens event portal.",
+      canonical: 'https://koinonia12.netlify.app/#/contact',
+      robots: 'index, follow',
+      ogTitle: 'Contact Us | Koinonia Children and Teens',
+      ogDescription: "Reach out directly via email, telephone, WhatsApp, or the on-site Protocol Desk.",
     };
   }
 
@@ -1017,13 +1050,13 @@ export default function App() {
       return <PrivacyPolicyView onNavigate={navigate} />;
     }
     if (cleanRoute === '/terms') {
-      return <LegalPagesView page="terms" onNavigate={navigate} />;
+      return <TermsOfServiceView onNavigate={navigate} />;
     }
     if (cleanRoute === '/child-safety') {
-      return <LegalPagesView page="child-safety" onNavigate={navigate} />;
+      return <ChildSafetyView onNavigate={navigate} />;
     }
     if (cleanRoute === '/contact') {
-      return <LegalPagesView page="contact" onNavigate={navigate} />;
+      return <ContactView onNavigate={navigate} />;
     }
 
     const pRoute = user ? (isProfileComplete(parentProfile) ? '/parent/home' : '/parent/profile-setup') : '/parent/create-account';
@@ -1244,6 +1277,19 @@ export default function App() {
           onNavigate={navigate}
         />
       );
+    }
+
+    if (cleanRoute === '/privacy') {
+      return <PrivacyPolicyView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/terms') {
+      return <TermsOfServiceView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/child-safety') {
+      return <ChildSafetyView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/contact') {
+      return <ContactView onNavigate={navigate} />;
     }
 
     switch (cleanRoute) {
