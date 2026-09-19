@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { AutomationDetailModal, AutomationRecordItem } from './AutomationDetailModal';
 import { GroupedDetailModal } from './GroupedDetailModal';
 import { FullEventWatchModal } from './FullEventWatchModal';
+import { EventWatchSettingsModal } from './EventWatchSettingsModal';
 import {
   groupAutomationsForOverview,
   GroupedEventWatchItem,
@@ -31,11 +32,7 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
   const [selectedItem, setSelectedItem] = useState<AutomationRecordItem | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupedEventWatchItem | null>(null);
   const [showFullModal, setShowFullModal] = useState(false);
-
-  // Settings states
-  const [showSettings, setShowSettings] = useState(false);
-  const [ruleSettings, setRuleSettings] = useState<any[]>([]);
-  const [updatingRuleId, setUpdatingRuleId] = useState<string | null>(null);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   const fetchAutomations = async (evaluate = false) => {
     try {
@@ -53,37 +50,9 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
     }
   };
 
-  const fetchSettings = async () => {
-    try {
-      const res = await api.admin.getEventAutomationSettings();
-      if (res.success) {
-        setRuleSettings(res.rules || []);
-      }
-    } catch (err) {
-      console.error('Failed to load automation settings:', err);
-    }
-  };
-
   useEffect(() => {
     fetchAutomations();
   }, []);
-
-  const handleToggleRule = async (ruleId: string, currentEnabled: boolean) => {
-    setUpdatingRuleId(ruleId);
-    try {
-      const res = await api.admin.updateEventAutomationSetting(ruleId, !currentEnabled);
-      if (res.success) {
-        setRuleSettings(prev =>
-          prev.map(r => (r.id === ruleId ? { ...r, isEnabled: !currentEnabled } : r))
-        );
-        fetchAutomations(true);
-      }
-    } catch (err) {
-      console.error('Failed to toggle automation rule:', err);
-    } finally {
-      setUpdatingRuleId(null);
-    }
-  };
 
   const handleAcknowledge = async (id: string) => {
     try {
@@ -201,70 +170,17 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
 
           <button
             type="button"
-            title="Monitoring settings"
-            onClick={() => {
-              if (!showSettings) fetchSettings();
-              setShowSettings(!showSettings);
-            }}
+            title="Event watch settings"
+            aria-label="Event watch settings"
+            onClick={() => setShowSettingsModal(true)}
             className={`p-1 rounded-md transition-colors cursor-pointer ${
-              showSettings ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100'
+              showSettingsModal ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100'
             }`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
-
-      {/* 2. Settings View (Controlled) */}
-      {showSettings && (
-        <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-200/70 space-y-3 mb-2 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between pb-2 border-b border-zinc-200/50">
-            <span className="text-xs font-semibold text-zinc-800">Rule detection controls</span>
-            <span className="text-[11px] text-zinc-500">Operational Monitoring</span>
-          </div>
-
-          <div className="space-y-2">
-            {ruleSettings.map((rule) => (
-              <div key={rule.id} className="flex items-center justify-between text-xs py-1">
-                <div className="pr-4">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-zinc-800">{rule.name}</span>
-                    {rule.isMandatory && (
-                      <span title="Mandatory safety control" className="text-zinc-400">
-                        <Lock className="w-3 h-3 inline" />
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-zinc-500 block">{rule.description}</span>
-                </div>
-
-                <div>
-                  {rule.isMandatory ? (
-                    <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-200/70 px-2 py-0.5 rounded">
-                      Locked On
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={updatingRuleId === rule.id}
-                      onClick={() => handleToggleRule(rule.id, rule.isEnabled)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                        rule.isEnabled ? 'bg-[#9A7326]' : 'bg-zinc-300'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                          rule.isEnabled ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* 3. List Content (Bounded Overview Rows) */}
       {loading ? (
@@ -426,6 +342,12 @@ export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
           }
         }}
         onAcknowledge={handleAcknowledge}
+      />
+
+      <EventWatchSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onSettingsChanged={() => fetchAutomations(true)}
       />
     </div>
   );

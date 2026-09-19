@@ -34,6 +34,7 @@ export interface AutomationEngineHealth {
   newItemsCount: number;
   resolvedItemsCount: number;
   lastError: string | null;
+  failedRules: string[];
 }
 
 const engineHealth: AutomationEngineHealth = {
@@ -43,11 +44,18 @@ const engineHealth: AutomationEngineHealth = {
   signalsDetectedCount: 0,
   newItemsCount: 0,
   resolvedItemsCount: 0,
-  lastError: null
+  lastError: null,
+  failedRules: []
 };
 
+let lastFailedSignals: string[] = [];
+
+export function getLastFailedSignals(): string[] {
+  return [...lastFailedSignals];
+}
+
 export function getAutomationEngineHealth(): AutomationEngineHealth {
-  return { ...engineHealth };
+  return { ...engineHealth, failedRules: [...engineHealth.failedRules] };
 }
 
 /**
@@ -65,132 +73,166 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
   const nowIso = new Date().toISOString();
   const oneDayMs = 24 * 60 * 60 * 1000;
 
+  lastFailedSignals = [];
+
   // 1. REGISTRATION_CLOSING_SOON
-  if (event.parent_access_closes_at) {
-    const parentClosesAtTime = new Date(event.parent_access_closes_at).getTime();
-    const diffMs = parentClosesAtTime - now;
-    // Check if open (not closed in the past) and closing within 24 hours
-    if (diffMs > 0 && diffMs <= oneDayMs) {
-      const regCountRes = await queryOne(
-        'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND COALESCE(is_deleted, 0) = 0',
-        [eventId]
-      );
-      const regSignal: RegistrationClosingSoonSignal = {
-        signal: 'REGISTRATION_CLOSING_SOON',
-        eventId,
-        closesAt: event.parent_access_closes_at,
-        hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
-        currentRegistrations: regCountRes?.count || 0,
-        detectedAt: nowIso
-      };
-      detectedSignals.push(regSignal);
+  try {
+    if (event.parent_access_closes_at) {
+      const parentClosesAtTime = new Date(event.parent_access_closes_at).getTime();
+      const diffMs = parentClosesAtTime - now;
+      // Check if open (not closed in the past) and closing within 24 hours
+      if (diffMs > 0 && diffMs <= oneDayMs) {
+        const regCountRes = await queryOne(
+          'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND COALESCE(is_deleted, 0) = 0',
+          [eventId]
+        );
+        const regSignal: RegistrationClosingSoonSignal = {
+          signal: 'REGISTRATION_CLOSING_SOON',
+          eventId,
+          closesAt: event.parent_access_closes_at,
+          hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
+          currentRegistrations: regCountRes?.count || 0,
+          detectedAt: nowIso
+        };
+        detectedSignals.push(regSignal);
+      }
     }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for REGISTRATION_CLOSING_SOON:', err?.message || 'Error');
+    lastFailedSignals.push('REGISTRATION_CLOSING_SOON');
   }
 
   // 2. VOLUNTEER_REGISTRATION_CLOSING_SOON
-  if (event.volunteer_registration_closes_at) {
-    const volClosesAtTime = new Date(event.volunteer_registration_closes_at).getTime();
-    const diffMs = volClosesAtTime - now;
-    if (diffMs > 0 && diffMs <= oneDayMs) {
-      const approvedVolRes = await queryOne(
-        "SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'approved'",
-        []
-      );
-      const volSignal: VolunteerRegistrationClosingSoonSignal = {
-        signal: 'VOLUNTEER_REGISTRATION_CLOSING_SOON',
-        eventId,
-        closesAt: event.volunteer_registration_closes_at,
-        hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
-        currentApproved: approvedVolRes?.count || 0,
-        detectedAt: nowIso
-      };
-      detectedSignals.push(volSignal);
+  try {
+    if (event.volunteer_registration_closes_at) {
+      const volClosesAtTime = new Date(event.volunteer_registration_closes_at).getTime();
+      const diffMs = volClosesAtTime - now;
+      if (diffMs > 0 && diffMs <= oneDayMs) {
+        const approvedVolRes = await queryOne(
+          "SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'approved'",
+          []
+        );
+        const volSignal: VolunteerRegistrationClosingSoonSignal = {
+          signal: 'VOLUNTEER_REGISTRATION_CLOSING_SOON',
+          eventId,
+          closesAt: event.volunteer_registration_closes_at,
+          hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
+          currentApproved: approvedVolRes?.count || 0,
+          detectedAt: nowIso
+        };
+        detectedSignals.push(volSignal);
+      }
     }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for VOLUNTEER_REGISTRATION_CLOSING_SOON:', err?.message || 'Error');
+    lastFailedSignals.push('VOLUNTEER_REGISTRATION_CLOSING_SOON');
   }
 
   // 3. LOCATION_UNDERSTAFFED
-  const locations = await query(
-    'SELECT id, name, short_name, volunteer_capacity FROM event_locations WHERE event_id = ? AND is_active = 1',
-    [eventId]
-  );
-  const assignments = await query(
-    "SELECT assigned_location_id, responsibility_key, user_id FROM event_duty_assignments WHERE event_id = ? AND status NOT IN ('cancelled', 'ended')",
-    [eventId]
-  );
+  try {
+    const locations = await query(
+      'SELECT id, name, short_name, volunteer_capacity FROM event_locations WHERE event_id = ? AND is_active = 1',
+      [eventId]
+    );
+    const assignments = await query(
+      "SELECT assigned_location_id, responsibility_key, user_id FROM event_duty_assignments WHERE event_id = ? AND status NOT IN ('cancelled', 'ended')",
+      [eventId]
+    );
 
-  for (const loc of locations) {
-    const target = loc.volunteer_capacity || 0;
-    if (target > 0) {
-      const locAssignments = assignments.filter(
-        (a: any) => a.assigned_location_id === loc.id || a.responsibility_key === loc.id
-      );
-      const assignedCount = locAssignments.length;
-      if (assignedCount < target) {
-        const gap = target - assignedCount;
-        const understaffedSignal: LocationUnderstaffedSignal = {
-          signal: 'LOCATION_UNDERSTAFFED',
-          eventId,
-          locationId: loc.id,
-          locationName: loc.name,
-          assigned: assignedCount,
-          assignedCount,
-          required: target,
-          requiredCount: target,
-          gap,
-          detectedAt: nowIso
-        };
-        detectedSignals.push(understaffedSignal);
+    for (const loc of locations) {
+      const target = loc.volunteer_capacity || 0;
+      if (target > 0) {
+        const locAssignments = assignments.filter(
+          (a: any) => a.assigned_location_id === loc.id || a.responsibility_key === loc.id
+        );
+        const assignedCount = locAssignments.length;
+        if (assignedCount < target) {
+          const gap = target - assignedCount;
+          const understaffedSignal: LocationUnderstaffedSignal = {
+            signal: 'LOCATION_UNDERSTAFFED',
+            eventId,
+            locationId: loc.id,
+            locationName: loc.name,
+            assigned: assignedCount,
+            assignedCount,
+            required: target,
+            requiredCount: target,
+            gap,
+            detectedAt: nowIso
+          };
+          detectedSignals.push(understaffedSignal);
+        }
       }
     }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for LOCATION_UNDERSTAFFED:', err?.message || 'Error');
+    lastFailedSignals.push('LOCATION_UNDERSTAFFED');
   }
 
   // 4. VOLUNTEER_NO_SHOW (Canonical no-show resolver, respecting reporting time)
-  const notReportedResult = await getVolunteersNotReportedForDuty(eventId);
-  if (notReportedResult.volunteers.length > 0) {
-    // Fetch duty schedule start times for not-reported volunteers in a single query
-    const userIds = notReportedResult.volunteers.map(v => v.user_id);
-    const placeholders = userIds.map(() => '?').join(',');
-    const assignmentTimes = await query(
-      `SELECT user_id, starts_at FROM event_duty_assignments 
-       WHERE event_id = ? AND user_id IN (${placeholders}) AND status NOT IN ('cancelled', 'ended')`,
-      [eventId, ...userIds]
-    );
-    const startMap = new Map<string, string>();
-    for (const at of assignmentTimes) {
-      if (at.starts_at) {
-        startMap.set(at.user_id, at.starts_at);
+  try {
+    const notReportedResult = await getVolunteersNotReportedForDuty(eventId);
+    if (notReportedResult.volunteers.length > 0) {
+      // Fetch duty schedule start times for not-reported volunteers in a single query
+      const userIds = notReportedResult.volunteers.map(v => v.user_id);
+      const placeholders = userIds.map(() => '?').join(',');
+      const assignmentTimes = await query(
+        `SELECT user_id, starts_at FROM event_duty_assignments
+         WHERE event_id = ? AND user_id IN (${placeholders}) AND status NOT IN ('cancelled', 'ended')`,
+        [eventId, ...userIds]
+      );
+      const startMap = new Map<string, string>();
+      for (const at of assignmentTimes) {
+        if (at.starts_at) {
+          startMap.set(at.user_id, at.starts_at);
+        }
       }
-    }
 
-    for (const vol of notReportedResult.volunteers) {
-      const scheduledStart = startMap.get(vol.user_id) || null;
-      let hasReliableReportingTime = false;
-      let minutesLate = 0;
+      for (const vol of notReportedResult.volunteers) {
+        const scheduledStart = startMap.get(vol.user_id) || null;
+        let hasReliableReportingTime = false;
+        let minutesLate = 0;
 
-      if (scheduledStart) {
-        const startTime = new Date(scheduledStart).getTime();
-        if (!isNaN(startTime)) {
-          hasReliableReportingTime = true;
-          // STRICT RULE: Only flag as no-show if scheduled start has passed!
-          if (now > startTime) {
-            minutesLate = Math.max(1, Math.round((now - startTime) / 60000));
-            const noShowSignal: VolunteerNoShowSignal = {
+        if (scheduledStart) {
+          const startTime = new Date(scheduledStart).getTime();
+          if (!isNaN(startTime)) {
+            hasReliableReportingTime = true;
+            // STRICT RULE: Only flag as no-show if scheduled start has passed!
+            if (now > startTime) {
+              minutesLate = Math.max(1, Math.round((now - startTime) / 60000));
+              const noShowSignal: VolunteerNoShowSignal = {
+                signal: 'VOLUNTEER_NO_SHOW',
+                eventId,
+                userId: vol.user_id,
+                volunteerName: vol.full_name || vol.name,
+                assignedLocationId: vol.assigned_location_id || '',
+                locationName: vol.location_name || vol.duty_location || 'Duty post',
+                scheduledStart,
+                hasReliableReportingTime: true,
+                minutesLate,
+                detectedAt: nowIso
+              };
+              detectedSignals.push(noShowSignal);
+            }
+            // If now <= startTime: volunteer is NOT late yet; do NOT flag premature lateness
+          } else {
+            // Scheduled start is not a valid date string (e.g. 'TBD'): do not fabricate lateness
+            const notOnDutySignal: VolunteerNoShowSignal = {
               signal: 'VOLUNTEER_NO_SHOW',
               eventId,
               userId: vol.user_id,
               volunteerName: vol.full_name || vol.name,
               assignedLocationId: vol.assigned_location_id || '',
               locationName: vol.location_name || vol.duty_location || 'Duty post',
-              scheduledStart,
-              hasReliableReportingTime: true,
-              minutesLate,
+              scheduledStart: null,
+              hasReliableReportingTime: false,
+              minutesLate: 0,
               detectedAt: nowIso
             };
-            detectedSignals.push(noShowSignal);
+            detectedSignals.push(notOnDutySignal);
           }
-          // If now <= startTime: volunteer is NOT late yet; do NOT flag premature lateness
         } else {
-          // Scheduled start is not a valid date string (e.g. 'TBD'): do not fabricate lateness
+          // No reliable expected reporting time: report "Assigned but not currently on duty"
           const notOnDutySignal: VolunteerNoShowSignal = {
             signal: 'VOLUNTEER_NO_SHOW',
             eventId,
@@ -205,170 +247,182 @@ export async function detectEventSignals(eventId: string): Promise<EventSignal[]
           };
           detectedSignals.push(notOnDutySignal);
         }
-      } else {
-        // No reliable expected reporting time: report "Assigned but not currently on duty"
-        const notOnDutySignal: VolunteerNoShowSignal = {
-          signal: 'VOLUNTEER_NO_SHOW',
-          eventId,
-          userId: vol.user_id,
-          volunteerName: vol.full_name || vol.name,
-          assignedLocationId: vol.assigned_location_id || '',
-          locationName: vol.location_name || vol.duty_location || 'Duty post',
-          scheduledStart: null,
-          hasReliableReportingTime: false,
-          minutesLate: 0,
-          detectedAt: nowIso
-        };
-        detectedSignals.push(notOnDutySignal);
       }
     }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for VOLUNTEER_NO_SHOW:', err?.message || 'Error');
+    lastFailedSignals.push('VOLUNTEER_NO_SHOW');
   }
 
   // 5. PASS_NOT_READY
-  const [selectedRes, withoutPassRes] = await Promise.all([
-    queryOne(
-      "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0",
-      [eventId]
-    ),
-    queryOne(
-      `SELECT COUNT(*) as count FROM child_event_entries e
-       WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready') AND COALESCE(e.is_deleted, 0) = 0
-         AND NOT EXISTS (
-           SELECT 1 FROM event_passes p 
-           WHERE p.child_event_entry_id = e.id AND p.status = 'active'
-         )`,
-      [eventId]
-    )
-  ]);
-  const selectedCount = selectedRes?.count || 0;
-  const withoutPassCount = withoutPassRes?.count || 0;
-  if (withoutPassCount > 0) {
-    const passSignal: PassNotReadySignal = {
-      signal: 'PASS_NOT_READY',
-      eventId,
-      selectedCount,
-      missingPassCount: withoutPassCount,
-      withoutPassCount,
-      detectedAt: nowIso
-    };
-    detectedSignals.push(passSignal);
+  try {
+    const [selectedRes, withoutPassRes] = await Promise.all([
+      queryOne(
+        "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0",
+        [eventId]
+      ),
+      queryOne(
+        `SELECT COUNT(*) as count FROM child_event_entries e
+         WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready') AND COALESCE(e.is_deleted, 0) = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM event_passes p
+             WHERE p.child_event_entry_id = e.id AND p.status = 'active'
+           )`,
+        [eventId]
+      )
+    ]);
+    const selectedCount = selectedRes?.count || 0;
+    const withoutPassCount = withoutPassRes?.count || 0;
+    if (withoutPassCount > 0) {
+      const passSignal: PassNotReadySignal = {
+        signal: 'PASS_NOT_READY',
+        eventId,
+        selectedCount,
+        missingPassCount: withoutPassCount,
+        withoutPassCount,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(passSignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for PASS_NOT_READY:', err?.message || 'Error');
+    lastFailedSignals.push('PASS_NOT_READY');
   }
 
   // 6. REPORT_EXPIRED
-  const expiredReports = await query(
-    `SELECT gr.id, COALESCE(rj.template_key, rj.report_name, 'operational') as report_type, gr.expires_at 
-     FROM generated_reports gr
-     JOIN report_jobs rj ON gr.report_job_id = rj.id
-     WHERE rj.event_id = ? AND gr.expires_at IS NOT NULL AND gr.expires_at < ?`,
-    [eventId, nowIso]
-  );
-  for (const rep of expiredReports) {
-    const repSignal: ReportExpiredSignal = {
-      signal: 'REPORT_EXPIRED',
-      eventId,
-      reportId: rep.id,
-      reportType: rep.report_type || 'operational',
-      expiredAt: rep.expires_at,
-      detectedAt: nowIso
-    };
-    detectedSignals.push(repSignal);
+  try {
+    const expiredReports = await query(
+      `SELECT gr.id, COALESCE(rj.template_key, rj.report_name, 'operational') as report_type, gr.expires_at
+       FROM generated_reports gr
+       JOIN report_jobs rj ON gr.report_job_id = rj.id
+       WHERE rj.event_id = ? AND gr.expires_at IS NOT NULL AND gr.expires_at < ?`,
+      [eventId, nowIso]
+    );
+    for (const rep of expiredReports) {
+      const repSignal: ReportExpiredSignal = {
+        signal: 'REPORT_EXPIRED',
+        eventId,
+        reportId: rep.id,
+        reportType: rep.report_type || 'operational',
+        expiredAt: rep.expires_at,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(repSignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for REPORT_EXPIRED:', err?.message || 'Error');
+    lastFailedSignals.push('REPORT_EXPIRED');
   }
 
   // 7. EVENT_STARTING_SOON
-  const eventStart = (event as any).event_start_at || event.starts_at;
-  if (eventStart) {
-    const startTime = new Date(eventStart).getTime();
-    const diffMs = startTime - now;
-    if (diffMs > 0 && diffMs <= oneDayMs) {
-      const eventStartingSignal: EventStartingSoonSignal = {
-        signal: 'EVENT_STARTING_SOON',
-        eventId,
-        startsAt: eventStart,
-        hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
-        detectedAt: nowIso
-      };
-      detectedSignals.push(eventStartingSignal);
+  try {
+    const eventStart = (event as any).event_start_at || event.starts_at;
+    if (eventStart) {
+      const startTime = new Date(eventStart).getTime();
+      const diffMs = startTime - now;
+      if (diffMs > 0 && diffMs <= oneDayMs) {
+        const eventStartingSignal: EventStartingSoonSignal = {
+          signal: 'EVENT_STARTING_SOON',
+          eventId,
+          startsAt: eventStart,
+          hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
+          detectedAt: nowIso
+        };
+        detectedSignals.push(eventStartingSignal);
+      }
     }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for EVENT_STARTING_SOON:', err?.message || 'Error');
+    lastFailedSignals.push('EVENT_STARTING_SOON');
   }
 
-
   // 8. SAFETY_ITEM_OPEN
-  const [openAlertsRes, urgentAlertsRes, openIncidentsRes, activeCyclesRes] = await Promise.all([
-    queryOne("SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ? AND status != 'resolved'", [eventId]),
-    queryOne("SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ? AND status != 'resolved' AND severity = 'urgent'", [eventId]),
-    queryOne("SELECT COUNT(*) as count FROM incident_records WHERE event_id = ? AND status != 'closed'", [eventId]),
-    queryOne("SELECT COUNT(*) as count FROM escalation_cycles WHERE event_id = ? AND status IN ('scheduled', 'processing', 'open')", [eventId])
-  ]);
-  const openAlerts = parseInt(String(openAlertsRes?.count || '0'), 10) || 0;
-  const urgentAlerts = parseInt(String(urgentAlertsRes?.count || '0'), 10) || 0;
-  const openIncidents = parseInt(String(openIncidentsRes?.count || '0'), 10) || 0;
-  const activeEscalations = parseInt(String(activeCyclesRes?.count || '0'), 10) || 0;
-  const totalOpenNotices = openAlerts + openIncidents + activeEscalations;
+  try {
+    const [openAlertsRes, urgentAlertsRes, openIncidentsRes, activeCyclesRes] = await Promise.all([
+      queryOne("SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ? AND status != 'resolved'", [eventId]),
+      queryOne("SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ? AND status != 'resolved' AND severity = 'urgent'", [eventId]),
+      queryOne("SELECT COUNT(*) as count FROM incident_records WHERE event_id = ? AND status != 'closed'", [eventId]),
+      queryOne("SELECT COUNT(*) as count FROM escalation_cycles WHERE event_id = ? AND status IN ('scheduled', 'processing', 'open')", [eventId])
+    ]);
+    const openAlerts = parseInt(String(openAlertsRes?.count || '0'), 10) || 0;
+    const urgentAlerts = parseInt(String(urgentAlertsRes?.count || '0'), 10) || 0;
+    const openIncidents = parseInt(String(openIncidentsRes?.count || '0'), 10) || 0;
+    const activeEscalations = parseInt(String(activeCyclesRes?.count || '0'), 10) || 0;
+    const totalOpenNotices = openAlerts + openIncidents + activeEscalations;
 
-  if (totalOpenNotices > 0) {
-    const safetySignal: SafetyItemOpenSignal = {
-      signal: 'SAFETY_ITEM_OPEN',
-      eventId,
-      openAlertsCount: openAlerts,
-      openIncidentsCount: openIncidents,
-      activeEscalationsCount: activeEscalations,
-      totalOpenNotices,
-      severity: urgentAlerts > 0 || activeEscalations > 0 ? 'urgent' : 'attention',
-      detectedAt: nowIso
-    };
-    detectedSignals.push(safetySignal);
+    if (totalOpenNotices > 0) {
+      const safetySignal: SafetyItemOpenSignal = {
+        signal: 'SAFETY_ITEM_OPEN',
+        eventId,
+        openAlertsCount: openAlerts,
+        openIncidentsCount: openIncidents,
+        activeEscalationsCount: activeEscalations,
+        totalOpenNotices,
+        severity: urgentAlerts > 0 || activeEscalations > 0 ? 'urgent' : 'attention',
+        detectedAt: nowIso
+      };
+      detectedSignals.push(safetySignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for SAFETY_ITEM_OPEN:', err?.message || 'Error');
+    lastFailedSignals.push('SAFETY_ITEM_OPEN');
   }
 
   // 9. CONFIGURATION_GAP
-  const [ageGroupsCountRes, activeLocationsCountRes] = await Promise.all([
-    queryOne('SELECT COUNT(*) as count FROM event_age_groups WHERE event_id = ?', [eventId]),
-    queryOne('SELECT COUNT(*) as count FROM event_locations WHERE event_id = ? AND is_active = 1', [eventId])
-  ]);
-  const ageGroupsCount = parseInt(String(ageGroupsCountRes?.count || '0'), 10) || 0;
-  const activeLocationsCount = parseInt(String(activeLocationsCountRes?.count || '0'), 10) || 0;
+  try {
+    const [ageGroupsCountRes, activeLocationsCountRes] = await Promise.all([
+      queryOne('SELECT COUNT(*) as count FROM event_age_groups WHERE event_id = ?', [eventId]),
+      queryOne('SELECT COUNT(*) as count FROM event_locations WHERE event_id = ? AND is_active = 1', [eventId])
+    ]);
+    const ageGroupsCount = parseInt(String(ageGroupsCountRes?.count || '0'), 10) || 0;
+    const activeLocationsCount = parseInt(String(activeLocationsCountRes?.count || '0'), 10) || 0;
 
-  if (activeLocationsCount === 0) {
-    detectedSignals.push({
-      signal: 'CONFIGURATION_GAP',
-      eventId,
-      gapType: 'no_locations',
-      title: 'No active duty locations configured',
-      details: 'Configure duty posts for team assignments.',
-      detectedAt: nowIso
-    });
-  }
+    if (activeLocationsCount === 0) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'no_locations',
+        title: 'No active duty locations configured',
+        details: 'Configure duty posts for team assignments.',
+        detectedAt: nowIso
+      });
+    }
 
-  if (ageGroupsCount === 0) {
-    detectedSignals.push({
-      signal: 'CONFIGURATION_GAP',
-      eventId,
-      gapType: 'no_age_groups',
-      title: 'No age groups configured',
-      details: 'Configure child age groups and capacities.',
-      detectedAt: nowIso
-    });
-  }
+    if (ageGroupsCount === 0) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'no_age_groups',
+        title: 'No age groups configured',
+        details: 'Configure child age groups and capacities.',
+        detectedAt: nowIso
+      });
+    }
 
-  if (!event.capacity || event.capacity <= 0) {
-    detectedSignals.push({
-      signal: 'CONFIGURATION_GAP',
-      eventId,
-      gapType: 'missing_capacity',
-      title: 'Event child capacity is not set',
-      details: 'Set the maximum capacity for attendance control.',
-      detectedAt: nowIso
-    });
-  }
+    if (!event.capacity || event.capacity <= 0) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'missing_capacity',
+        title: 'Event child capacity is not set',
+        details: 'Set the maximum capacity for attendance control.',
+        detectedAt: nowIso
+      });
+    }
 
-  if (!event.volunteer_registration_closes_at) {
-    detectedSignals.push({
-      signal: 'CONFIGURATION_GAP',
-      eventId,
-      gapType: 'missing_volunteer_registration_deadline',
-      title: 'Volunteer registration needs a closing date',
-      details: 'Set when volunteer registration should close.',
-      detectedAt: nowIso
-    });
+    if (!event.volunteer_registration_closes_at) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'missing_volunteer_registration_deadline',
+        title: 'Volunteer registration needs a closing date',
+        details: 'Set when volunteer registration should close.',
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for CONFIGURATION_GAP:', err?.message || 'Error');
+    lastFailedSignals.push('CONFIGURATION_GAP');
   }
 
   return detectedSignals;
@@ -685,11 +739,12 @@ export async function evaluateCurrentEventAutomations(
     }
 
     const eventId = event.id;
+    console.log(`[AutomationEngine] Evaluation started for event: ${eventId}`);
 
     // 2. Fetch event rule settings
     const settingsMap = await getAutomationSettingsForEvent(eventId);
 
-    // 3. Detect factual signals bounded to eventId
+    // 3. Detect factual signals bounded to eventId (failure isolated per rule)
     const signals = await detectEventSignals(eventId);
 
     const activeFingerprints: string[] = [];
@@ -728,6 +783,16 @@ export async function evaluateCurrentEventAutomations(
     engineHealth.newItemsCount = newItemsCount;
     engineHealth.resolvedItemsCount = resolvedItemsCount;
     engineHealth.lastError = null;
+    engineHealth.failedRules = [...lastFailedSignals];
+
+    console.log(
+      `[AutomationEngine] Evaluation completed for event ${eventId}: ` +
+      `${PHASE3B_AUTOMATION_RULES.length} rules checked, ${signals.length} signals, ` +
+      `${newItemsCount} new/updated, ${resolvedItemsCount} resolved in ${durationMs}ms.`
+    );
+    if (lastFailedSignals.length > 0) {
+      console.warn(`[AutomationEngine] Diagnostic warning: failed signal detectors: ${lastFailedSignals.join(', ')}`);
+    }
 
     return {
       success: true,
@@ -739,7 +804,7 @@ export async function evaluateCurrentEventAutomations(
     };
   } catch (err: any) {
     const durationMs = Date.now() - startTime;
-    console.error('[AutomationEngine] Error during automation evaluation:', err);
+    console.error('[AutomationEngine] Error during automation evaluation:', err?.message || 'Evaluation error');
     engineHealth.lastEvaluationAt = new Date().toISOString();
     engineHealth.lastEvaluationDurationMs = durationMs;
     engineHealth.lastError = err?.message || 'Evaluation error';

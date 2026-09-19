@@ -37,7 +37,7 @@ import { validatePublicAppUrlOnStartup } from './src/server/utils/urlHelper';
 import { processQueuedWhatsAppJobs, isWhatsAppInProcessWorkerEnabled } from './src/server/services/whatsapp';
 import automationsRouter from './src/server/routes/admin/automations';
 import { initAutomationSchema } from './src/server/services/operations/automation/automationPersistence';
-import { evaluateCurrentEventAutomations } from './src/server/services/operations/automation/automationEngine';
+import { startAutomationScheduler } from './src/server/services/operations/automation/automationScheduler';
 
 async function startServer() {
   const app = express();
@@ -354,18 +354,25 @@ async function startServer() {
     });
 
     // Initialize Event Automations (local SQLite bootstrap only; production expects migration 007)
-    initAutomationSchema().then((isReady) => {
-      if (isReady) {
-        console.log('[Automations] Schema verified successfully.');
-        evaluateCurrentEventAutomations().catch(err => {
-          console.error('[Automations] Initial evaluation error:', err);
-        });
-      } else {
-        console.warn('[Automations] Production schema missing. Skipping evaluation until migration 007 is applied.');
-      }
-    }).catch(err => {
-      console.error('[Automations] Schema check failed:', err);
-    });
+    initAutomationSchema()
+      .then((isReady) => {
+        if (isReady) {
+          console.log('[Automations] Schema verified successfully.');
+        } else {
+          console.warn(
+            '[Automations] Event Watch monitoring is not ready yet. It will retry automatically.'
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(
+          '[Automations] Initial readiness check failed. Event Watch will retry automatically:',
+          err
+        );
+      })
+      .finally(() => {
+        startAutomationScheduler();
+      });
 
     // Run report worker poller every 5 seconds (Lower operational priority)
     setInterval(async () => {
@@ -413,15 +420,6 @@ async function startServer() {
         console.error('[Background Scheduler] Error processing notifications:', err);
       }
     }, 60000); // run every 60 seconds
-
-    // Periodically evaluate deterministic event automations for canonical current event (every 5 minutes)
-    setInterval(async () => {
-      try {
-        await evaluateCurrentEventAutomations();
-      } catch (err) {
-        console.error('[Background Scheduler] Error evaluating event automations:', err);
-      }
-    }, 300000); // run every 5 minutes
   });
 }
 

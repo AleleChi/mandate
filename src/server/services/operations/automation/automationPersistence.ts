@@ -325,7 +325,7 @@ export async function upsertAutomation(
   const materialHash = computeMaterialHash(input.payload);
   const payloadJson = JSON.stringify(input.payload);
 
-  const existing = await queryOne<EventAutomationRecord>(
+  let existing = await queryOne<EventAutomationRecord>(
     'SELECT * FROM event_automations WHERE event_id = ? AND fingerprint = ?',
     [input.eventId, input.fingerprint]
   );
@@ -333,45 +333,59 @@ export async function upsertAutomation(
   if (!existing) {
     // New automation detected
     const id = `auto_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-    await execute(
-      `INSERT INTO event_automations (
-        id, event_id, rule_id, signal_type, fingerprint, title, summary, description,
-        severity, status, entity_type, entity_id, payload_json, proposed_action_key,
-        proposed_action_payload, action_target_route, action_target_label,
-        first_detected_at, last_detected_at, resolved_at, acknowledged_at,
-        cooldown_until, material_hash, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)`,
-      [
-        id,
-        input.eventId,
-        input.ruleId,
-        input.signalType,
-        input.fingerprint,
-        input.title,
-        input.summary,
-        input.description || null,
-        input.severity,
-        'active',
-        input.entityType || null,
-        input.entityId || null,
-        payloadJson,
-        input.proposedActionKey || null,
-        input.proposedActionPayload || null,
-        input.actionTargetRoute || null,
-        input.actionTargetLabel || null,
-        nowIso, // first_detected_at
-        nowIso, // last_detected_at
-        materialHash,
-        nowIso,
-        nowIso
-      ]
-    );
+    try {
+      await execute(
+        `INSERT INTO event_automations (
+          id, event_id, rule_id, signal_type, fingerprint, title, summary, description,
+          severity, status, entity_type, entity_id, payload_json, proposed_action_key,
+          proposed_action_payload, action_target_route, action_target_label,
+          first_detected_at, last_detected_at, resolved_at, acknowledged_at,
+          cooldown_until, material_hash, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)`,
+        [
+          id,
+          input.eventId,
+          input.ruleId,
+          input.signalType,
+          input.fingerprint,
+          input.title,
+          input.summary,
+          input.description || null,
+          input.severity,
+          'active',
+          input.entityType || null,
+          input.entityId || null,
+          payloadJson,
+          input.proposedActionKey || null,
+          input.proposedActionPayload || null,
+          input.actionTargetRoute || null,
+          input.actionTargetLabel || null,
+          nowIso, // first_detected_at
+          nowIso, // last_detected_at
+          materialHash,
+          nowIso,
+          nowIso
+        ]
+      );
 
-    const created = await queryOne<EventAutomationRecord>(
-      'SELECT * FROM event_automations WHERE id = ?',
-      [id]
-    );
-    return { record: created!, isNew: true, reopened: false };
+      const created = await queryOne<EventAutomationRecord>(
+        'SELECT * FROM event_automations WHERE id = ?',
+        [id]
+      );
+      return { record: created!, isNew: true, reopened: false };
+    } catch (insertErr: any) {
+      // If concurrent insert race occurred (unique constraint on event_id, fingerprint),
+      // recover by querying existing record and proceeding with update.
+      const reFetched = await queryOne<EventAutomationRecord>(
+        'SELECT * FROM event_automations WHERE event_id = ? AND fingerprint = ?',
+        [input.eventId, input.fingerprint]
+      );
+      if (reFetched) {
+        existing = reFetched;
+      } else {
+        throw insertErr;
+      }
+    }
   }
 
   // Record already exists: evaluate state transitions

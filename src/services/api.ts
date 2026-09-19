@@ -1581,11 +1581,17 @@ export const api = {
       });
     },
     async getEventAutomationSettings() {
-      return api.request<{ success: boolean; rules: any[] }>('/api/admin/automations/settings');
+      return api.request<{
+        success: boolean;
+        eventId?: string | null;
+        rules: any[];
+        health?: any;
+        lastCheckedAt?: string | null;
+      }>('/api/admin/automations/settings');
     },
     async updateEventAutomationSetting(ruleId: string, isEnabled: boolean) {
       return api.request<{ success: boolean; message?: string; error?: string }>('/api/admin/automations/settings', {
-        method: 'POST',
+        method: 'PATCH',
         body: JSON.stringify({ ruleId, isEnabled })
       });
     },

@@ -162,14 +162,22 @@ automationsRouter.post('/:id/dismiss', authMiddleware, requireAdmin, async (req:
  */
 automationsRouter.get('/settings', authMiddleware, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const health = getAutomationEngineHealth();
     const event = await getCurrentEvent();
     if (!event) {
-      return res.json({ success: true, settings: [] });
+      return res.json({
+        success: true,
+        eventId: null,
+        rules: [],
+        health,
+        lastCheckedAt: health.lastEvaluationAt
+      });
     }
 
     const settingsMap = await getAutomationSettingsForEvent(event.id);
     const rules = PHASE3B_AUTOMATION_RULES.map(r => ({
       id: r.id,
+      ruleKey: r.ruleKey,
       name: r.name,
       description: r.description,
       triggerSignal: r.triggerSignal,
@@ -178,18 +186,20 @@ automationsRouter.get('/settings', authMiddleware, requireAdmin, async (req: Aut
       defaultCooldownMinutes: r.defaultCooldownMinutes
     }));
 
-    res.json({ success: true, rules });
+    res.json({
+      success: true,
+      eventId: event.id,
+      rules,
+      health,
+      lastCheckedAt: health.lastEvaluationAt
+    });
   } catch (err: any) {
     console.error('Error retrieving automation settings:', err);
     res.status(500).json({ success: false, error: 'Failed to retrieve automation settings.' });
   }
 });
 
-/**
- * POST /api/admin/automations/settings
- * Updates rule enablement for the current event.
- */
-automationsRouter.post('/settings', authMiddleware, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+async function handleUpdateSettings(req: AuthenticatedRequest, res: Response) {
   try {
     if (!isAuthorizedForSafety(req.user?.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: Administrator permissions required to update automation settings.' });
@@ -215,7 +225,19 @@ automationsRouter.post('/settings', authMiddleware, requireAdmin, async (req: Au
     console.error('Error updating automation settings:', err);
     res.status(500).json({ success: false, error: 'Failed to update automation settings.' });
   }
-});
+}
+
+/**
+ * POST /api/admin/automations/settings
+ * Updates rule enablement for the current event.
+ */
+automationsRouter.post('/settings', authMiddleware, requireAdmin, handleUpdateSettings);
+
+/**
+ * PATCH /api/admin/automations/settings
+ * REST-compliant update of rule enablement for the current event.
+ */
+automationsRouter.patch('/settings', authMiddleware, requireAdmin, handleUpdateSettings);
 
 /**
  * POST /api/admin/automations/prepare-action
