@@ -218,22 +218,22 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
         whileInView={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
         viewport={{ once: true, margin: '-40px' }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="bg-[#FAF8F3] border-t-2 border-t-[#C59B27] border-x border-b border-[#EAE8E1]/80 rounded-2xl sm:rounded-3xl p-7 sm:p-10 lg:p-14 text-left relative overflow-hidden"
+        className="bg-[#FAF8F3] dark:bg-[#1C1B18] border-t-2 border-t-[#C59B27] border-x border-b border-[#EAE8E1]/80 dark:border-[#2E2D29] rounded-2xl sm:rounded-3xl p-7 sm:p-10 lg:p-14 text-left relative overflow-hidden"
       >
         {/* Top Block: Event Identity on Left, Large Date Composition on Right */}
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8 lg:gap-12 pb-8 sm:pb-10 border-b border-[#EAE8E1]/80">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8 lg:gap-12 pb-8 sm:pb-10 border-b border-[#EAE8E1]/80 dark:border-[#2E2D29]">
           {/* Left: Event Identity & Venue */}
           <div className="space-y-2 max-w-2xl">
-            <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+            <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
               {sectionSubtitle || 'CHILDREN & TEENS'}
             </span>
             {eventTitle && (
-              <h2 className="text-3xl sm:text-4xl lg:text-[50px] font-serif-koinonia font-bold text-[#18181B] tracking-tight leading-[1.05]">
+              <h2 className="text-3xl sm:text-4xl lg:text-[50px] font-serif-koinonia font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-[1.05]">
                 {eventTitle}
               </h2>
             )}
             {locationText && (
-              <p className="text-sm sm:text-base text-[#52525B] pt-1 leading-relaxed font-sans font-normal">
+              <p className="text-sm sm:text-base text-[#52525B] dark:text-[#C8C2B6] pt-1 leading-relaxed font-sans font-normal">
                 {locationText}
               </p>
             )}
@@ -242,13 +242,13 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
           {/* Right: Large Date Composition (Plus Jakarta Sans) */}
           {dateDisplay && (
             <div className="flex flex-col items-start lg:items-end justify-start shrink-0 lg:pt-1">
-              <div className="text-2xl sm:text-3xl lg:text-[48px] font-sans font-bold text-[#18181B] tracking-tight leading-none">
+              <div className="text-2xl sm:text-3xl lg:text-[48px] font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-none">
                 {dateDisplay.days}
               </div>
-              <div className="text-xs sm:text-[13px] font-sans font-bold text-[#9A7326] tracking-[0.2em] uppercase mt-2">
+              <div className="text-xs sm:text-[13px] font-sans font-bold text-[#9A7326] dark:text-[#D4AF37] tracking-[0.2em] uppercase mt-2">
                 {dateDisplay.month}
               </div>
-              <div className="text-xs sm:text-[15px] font-sans font-medium text-[#71717A] tracking-normal mt-0.5">
+              <div className="text-xs sm:text-[15px] font-sans font-medium text-[#71717A] dark:text-[#A19D95] tracking-normal mt-0.5">
                 {dateDisplay.year}
               </div>
             </div>
@@ -261,16 +261,16 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
             {/* Schedule Block */}
             {hasSchedule && (
               <div className="space-y-1.5">
-                <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+                <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
                   DAILY SCHEDULE
                 </span>
                 {timeText && (
-                  <div className="text-xl sm:text-2xl font-bold text-[#18181B] font-sans leading-snug">
+                  <div className="text-xl sm:text-2xl font-bold text-[#18181B] dark:text-[#F7F4ED] font-sans leading-snug">
                     {timeText}
                   </div>
                 )}
                 {cleanTimezone && (
-                  <div className="text-xs sm:text-sm font-medium text-[#71717A] font-sans mt-1">
+                  <div className="text-xs sm:text-sm font-medium text-[#71717A] dark:text-[#A19D95] font-sans mt-1">
                     {cleanTimezone}
                   </div>
                 )}
@@ -280,14 +280,14 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
             {/* Theme Block */}
             {hasTheme && (
               <div className="space-y-1.5">
-                <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+                <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
                   MINISTRY THEME
                 </span>
-                <div className="text-2xl sm:text-3xl lg:text-[32px] font-semibold text-[#18181B] font-serif-koinonia leading-snug">
+                <div className="text-2xl sm:text-3xl lg:text-[32px] font-semibold text-[#18181B] dark:text-[#F7F4ED] font-serif-koinonia leading-snug">
                   &ldquo;{themeText}&rdquo;
                 </div>
                 {scriptureText && (
-                  <div className="text-xs sm:text-sm font-semibold text-[#9A7326] tracking-wide font-sans mt-1">
+                  <div className="text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#D4AF37] tracking-wide font-sans mt-1">
                     {scriptureText}
                   </div>
                 )}
@@ -298,23 +298,23 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
 
         {/* Bottom Utility Rail: Parent Access & Event Pass */}
         {hasMetadata && (
-          <div className="pt-6 sm:pt-8 border-t border-[#EAE8E1]/80 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-start text-xs sm:text-sm">
+          <div className="pt-6 sm:pt-8 border-t border-[#EAE8E1]/80 dark:border-[#2E2D29] grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-start text-xs sm:text-sm">
             {accessInfo && (
               <div className="space-y-1">
-                <span className="font-bold text-[#9A7326] tracking-widest uppercase text-[10.5px] sm:text-[11px] font-sans block">
+                <span className="font-bold text-[#9A7326] dark:text-[#D4AF37] tracking-widest uppercase text-[10.5px] sm:text-[11px] font-sans block">
                   PARENT ACCESS
                 </span>
-                <p className="text-[#52525B] font-normal leading-relaxed font-sans">
+                <p className="text-[#52525B] dark:text-[#C8C2B6] font-normal leading-relaxed font-sans">
                   {accessInfo.value}
                 </p>
               </div>
             )}
             {passInfo && (
-              <div className="space-y-1 md:border-l md:border-[#EAE8E1]/80 md:pl-10">
-                <span className="font-bold text-[#9A7326] tracking-widest uppercase text-[10.5px] sm:text-[11px] font-sans block">
+              <div className="space-y-1 md:border-l md:border-[#EAE8E1]/80 dark:md:border-[#2E2D29] md:pl-10">
+                <span className="font-bold text-[#9A7326] dark:text-[#D4AF37] tracking-widest uppercase text-[10.5px] sm:text-[11px] font-sans block">
                   EVENT PASS
                 </span>
-                <p className="text-[#52525B] font-normal leading-relaxed font-sans">
+                <p className="text-[#52525B] dark:text-[#C8C2B6] font-normal leading-relaxed font-sans">
                   {passInfo.value}
                 </p>
               </div>

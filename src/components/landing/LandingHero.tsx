@@ -64,7 +64,7 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
       {/* 2. Offset back card plane (Physical thickness / layered edge) */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-[#ECE5D4] rounded-[22px] -rotate-1.5 translate-x-2.5 translate-y-2.5 border border-[#D9CBAC]/90 -z-10 shadow-sm pointer-events-none transition-transform duration-300"
+        className="absolute inset-0 bg-[#ECE5D4] rounded-[22px] -rotate-1.5 translate-x-2.5 translate-y-2.5 border border-[#D9CBAC]/90 -z-10 shadow-sm pointer-events-none transition-transform duration-300 keep-ivory"
         style={{
           transform: prefersReducedMotion
             ? 'none'
@@ -81,7 +81,7 @@ export const HeroPassPreview: React.FC<HeroPassPreviewProps> = ({
             ? 'none'
             : `translate3d(${mouseOffset.x * 4}px, ${mouseOffset.y * 4}px, 0) rotateX(${-mouseOffset.y * 5}deg) rotateY(${mouseOffset.x * 7}deg)`,
         }}
-        className="bg-[#FCFBF7] rounded-[22px] p-6 sm:p-7 border border-[#E2D4B7] shadow-[0_20px_40px_-12px_rgba(24,24,27,0.16),0_6px_16px_-4px_rgba(197,155,39,0.10)] relative overflow-hidden text-left transition-transform duration-200 ring-1 ring-white/90"
+        className="bg-[#FCFBF7] rounded-[22px] p-6 sm:p-7 border border-[#E2D4B7] shadow-[0_20px_40px_-12px_rgba(24,24,27,0.16),0_6px_16px_-4px_rgba(197,155,39,0.10)] relative overflow-hidden text-left transition-transform duration-200 ring-1 ring-white/90 keep-ivory"
       >
         {/* Subtle paper inner highlight */}
         <div className="absolute inset-0 bg-gradient-to-b from-white/90 via-transparent to-black/[0.015] pointer-events-none rounded-[22px]" />
@@ -135,7 +135,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
     <section
       id="about"
       aria-label="Koinonia Children and Teens Introduction"
-      className="relative py-10 sm:py-12 lg:py-14 px-6 sm:px-10 lg:px-12 max-w-7xl mx-auto w-full overflow-hidden rounded-[36px] my-4 sm:my-6 border border-[#EAE8E1]/70 shadow-xs"
+      className="relative py-10 sm:py-12 lg:py-14 px-6 sm:px-10 lg:px-12 max-w-7xl mx-auto w-full overflow-hidden rounded-[36px] my-4 sm:my-6 border border-[#EAE8E1]/70 dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#181817] shadow-xs scroll-mt-24"
     >
       {/* Layer 1: Background Video Atmosphere */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none rounded-[36px]">
@@ -157,12 +157,12 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             <source src={assets.heroVideo} type="video/mp4" />
           </video>
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[#EAE8E1]/40 via-[#FAF9F6] to-[#EAE8E1]/20" />
+          <div className="w-full h-full bg-gradient-to-br from-[#EAE8E1]/40 via-[#FAF9F6] to-[#EAE8E1]/20 dark:from-[#201F1C] dark:via-[#181817] dark:to-[#201F1C]" />
         )}
 
         {/* Layer 2: Warm Off-White Gradient Overlay protecting text readability on left & subtle contrast on right */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#FAF9F6]/98 via-[#FAF9F6]/88 to-[#FAF9F6]/30 pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#FAF9F6]/60 via-transparent to-[#FAF9F6]/90 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#FAF9F6]/98 via-[#FAF9F6]/88 to-[#FAF9F6]/30 dark:from-[#181817]/98 dark:via-[#181817]/88 dark:to-[#181817]/30 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#FAF9F6]/60 via-transparent to-[#FAF9F6]/90 dark:from-[#181817]/60 dark:via-transparent dark:to-[#181817]/90 pointer-events-none" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center relative z-10">
@@ -172,31 +172,27 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
           }`}
         >
-          <span className="text-xs font-bold tracking-widest text-[#B89047] uppercase block mb-3 sm:mb-3.5">
-            KOINONIA CHILDREN AND TEENS
-          </span>
-
-          <h1 className="text-4xl sm:text-[44px] md:text-5xl lg:text-[54px] xl:text-[60px] font-sans font-extrabold text-[#18181B] tracking-[-0.04em] leading-[1.04] sm:leading-[1.02] lg:leading-[0.98] mb-4 sm:mb-5 max-w-[620px]">
+          <h1 className="text-4xl sm:text-[44px] md:text-5xl lg:text-[54px] xl:text-[60px] font-sans font-extrabold text-[#18181B] dark:text-[#F7F4ED] tracking-[-0.04em] leading-[1.04] sm:leading-[1.02] lg:leading-[0.98] mb-4 sm:mb-5 max-w-[620px]">
             The Children and Teens section starts here
           </h1>
 
-          <p className="text-base sm:text-lg text-[#6B7280] leading-relaxed max-w-xl mb-6 sm:mb-7">
+          <p className="text-base sm:text-lg text-[#6B7280] dark:text-[#C8C2B6] leading-relaxed max-w-xl mb-6 sm:mb-7">
             Parents and guardians can create an account, add each child’s details, follow review updates, and keep event passes ready for the day.
           </p>
 
           {/* Buttons or Registration Status */}
           {regStatus && !regStatus.parent?.isOpen ? (
-            <div className="bg-white/95 border border-[#E7E3D8] rounded-2xl p-6 space-y-4 text-left max-w-xl shadow-xs backdrop-blur-xs mb-4">
+            <div className="bg-white/95 dark:bg-[#201F1C]/95 border border-[#E7E3D8] dark:border-[#2E2D29] rounded-2xl p-6 space-y-4 text-left max-w-xl shadow-xs backdrop-blur-xs mb-4">
               <div className="space-y-1.5">
-                <div className="text-[11px] font-semibold text-[#9A7326] uppercase tracking-wider">
+                <div className="text-[11px] font-semibold text-[#9A7326] dark:text-[#D4AF37] uppercase tracking-wider">
                   {regStatus.parent?.state === 'not_open_yet' ? 'Registration opening soon' : 'Registration closed'}
                 </div>
-                  <h3 className="text-xl sm:text-2xl font-sans font-bold text-[#18181B] leading-snug">
+                  <h3 className="text-xl sm:text-2xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] leading-snug">
                     {regStatus.parent?.state === 'not_open_yet'
                       ? `Registration for ${regStatus.eventName || currentEvent?.title || 'The General Assembly'} has not started yet.`
                       : `Registration for ${regStatus.eventName || currentEvent?.title || 'The General Assembly'} is now closed.`}
                   </h3>
-                <p className="text-sm text-[#52525B] leading-relaxed">
+                <p className="text-sm text-[#52525B] dark:text-[#C8C2B6] leading-relaxed">
                   {regStatus.parent?.state === 'not_open_yet'
                     ? regStatus.parent?.opensAtFormatted
                     ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in anytime to view your child’s information and updates.`
@@ -208,14 +204,14 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('/parent/sign-in')}
-                  className="w-full sm:w-56 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-all flex items-center justify-center cursor-pointer"
+                  className="w-full sm:w-56 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-colors flex items-center justify-center cursor-pointer"
                 >
                   <span>Sign in</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => onNavigate('/volunteer/sign-in')}
-                  className="w-full sm:w-56 h-[48px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center cursor-pointer"
+                  className="w-full sm:w-56 h-[48px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer"
                 >
                   <span>Volunteer sign in</span>
                 </button>
@@ -226,7 +222,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               <button
                 type="button"
                 onClick={onParentRegisterClick}
-                className="w-full sm:w-60 h-[50px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-all inline-flex items-center justify-center space-x-2 cursor-pointer"
+                className="w-full sm:w-60 h-[50px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-sm shadow-sm transition-colors inline-flex items-center justify-center space-x-2 cursor-pointer"
               >
                 <span>Register your child</span>
                 <ArrowRight className="w-4 h-4" />
@@ -234,7 +230,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               <button
                 type="button"
                 onClick={onVolunteerRegisterClick}
-                className="w-full sm:w-60 h-[50px] bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold rounded-xl text-sm transition-all inline-flex items-center justify-center cursor-pointer"
+                className="w-full sm:w-60 h-[50px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-sm transition-colors inline-flex items-center justify-center cursor-pointer"
               >
                 <span>Volunteer sign in</span>
               </button>
@@ -243,7 +239,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
           {/* Trust note */}
           <div className="pt-0">
-            <div className="inline-flex items-center space-x-2.5 bg-white/90 border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 shadow-2xs text-xs text-[#6B7280]">
+            <div className="inline-flex items-center space-x-2.5 bg-white/90 dark:bg-[#201F1C]/90 border border-[#EAE8E1] dark:border-[#2E2D29] rounded-xl px-3.5 py-2.5 shadow-2xs text-xs text-[#6B7280] dark:text-[#C8C2B6]">
               <ShieldCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
               <span>Photos, pickup details, passes, entry, and pickup are checked with care.</span>
             </div>
@@ -254,7 +250,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         <div className="lg:col-span-5 relative pb-16 lg:pb-14 pt-4 pl-2 sm:pl-6 group/hero">
           {/* Back layer (smaller image layer behind or slightly above) */}
           <div
-            className={`absolute -top-4 left-0 sm:left-4 w-56 sm:w-64 h-72 rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] z-0 transition-all duration-700 delay-150 ease-out ${
+            className={`absolute -top-4 left-0 sm:left-4 w-56 sm:w-64 h-72 rounded-3xl overflow-hidden shadow-lg border border-[#EAE8E1] dark:border-[#2E2D29] z-0 transition-all duration-700 delay-150 ease-out ${
               loaded ? 'opacity-90 translate-y-0 -rotate-3' : 'opacity-0 -translate-y-6 -rotate-6'
             } group-hover/hero:-translate-y-2 group-hover/hero:shadow-2xl`}
           >
@@ -269,7 +265,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
           {/* Main image (large main image with curved/rounded top shape) */}
           <div
-            className={`relative z-10 rounded-t-[140px] sm:rounded-t-[180px] rounded-b-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] bg-white aspect-[4/5] max-w-[360px] sm:max-w-[400px] mx-auto lg:ml-auto transition-all duration-700 delay-300 ease-out ${
+            className={`relative z-10 rounded-t-[140px] sm:rounded-t-[180px] rounded-b-3xl overflow-hidden shadow-2xl border border-[#EAE8E1] dark:border-[#2E2D29] bg-white dark:bg-[#201F1C] aspect-[4/5] max-w-[360px] sm:max-w-[400px] mx-auto lg:ml-auto transition-all duration-700 delay-300 ease-out ${
               loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
             } group-hover/hero:scale-[1.02] group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.22)]`}
           >
@@ -286,7 +282,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
           {/* Front/right layer (smaller image layer in front/right side) */}
           <div
-            className={`absolute -right-2 sm:-right-4 bottom-12 sm:bottom-14 z-20 w-40 sm:w-48 aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-white transition-all duration-700 delay-500 ease-out ${
+            className={`absolute -right-2 sm:-right-4 bottom-12 sm:bottom-14 z-20 w-40 sm:w-48 aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-white dark:border-[#262522] bg-white dark:bg-[#201F1C] transition-all duration-700 delay-500 ease-out ${
               loaded ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95'
             } group-hover/hero:translate-x-2 group-hover/hero:shadow-[0_28px_60px_-12px_rgba(24,24,27,0.24)]`}
           >

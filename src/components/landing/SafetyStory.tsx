@@ -17,7 +17,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
     <section
       id="safety"
       aria-label="Child Safety and Care Information"
-      className="bg-[#18181B] text-white py-14 sm:py-20 my-4 sm:my-6 relative overflow-hidden border-y border-white/10"
+      className="bg-[#18181B] text-white py-14 sm:py-20 my-4 sm:my-6 relative overflow-hidden border-y border-white/10 scroll-mt-24"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">

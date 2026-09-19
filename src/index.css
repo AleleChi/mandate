@@ -1,12 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 @theme {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Cormorant Garamond', Georgia, serif;
 }
 
-:root {
+:root,
+[data-theme="light"] {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Cormorant Garamond', Georgia, serif;
 
@@ -20,18 +23,76 @@
   --type-body: 1rem; /* 16px */
   --type-small: 0.875rem; /* 14px */
   --type-label: 0.75rem; /* 12px */
+
+  /* Semantic Theme Tokens: Light (Approved warm ivory/charcoal) */
+  --bg-page: #FAF9F6;
+  --bg-surface: #FFFFFF;
+  --bg-surface-secondary: #FAF8F3;
+  --bg-surface-muted: #F4F2EB;
+  --bg-surface-elevated: #FFFFFF;
+
+  --text-primary: #262626;
+  --text-secondary: #52525B;
+  --text-muted: #71717A;
+
+  --border-subtle: #EAE8E1;
+  --border-strong: #E5D5AE;
+
+  --brand-gold: #C59B27;
+  --brand-gold-text: #9A7326;
+  --brand-gold-hover: #B89047;
+  --brand-gold-soft: rgba(197, 155, 39, 0.08);
+  --brand-gold-border: rgba(197, 155, 39, 0.25);
+
+  --focus-ring: rgba(197, 155, 39, 0.45);
+}
+
+[data-theme="dark"] {
+  /* Semantic Theme Tokens: Dark (Warm charcoal brand palette) */
+  --bg-page: #121212;
+  --bg-surface: #181817;
+  --bg-surface-secondary: #20201E;
+  --bg-surface-muted: #262522;
+  --bg-surface-elevated: #262522;
+
+  --text-primary: #F7F4ED;
+  --text-secondary: #C8C2B6;
+  --text-muted: #938C81;
+
+  --border-subtle: #2A2926;
+  --border-strong: #3D3B36;
+
+  --brand-gold: #C59B27;
+  --brand-gold-text: #D4AF37;
+  --brand-gold-hover: #E5B834;
+  --brand-gold-soft: rgba(197, 155, 39, 0.12);
+  --brand-gold-border: rgba(197, 155, 39, 0.35);
+
+  --focus-ring: rgba(212, 175, 55, 0.5);
 }
 
 @layer base {
   body {
     font-family: var(--font-sans);
-    background-color: #FAF9F6;
-    color: #262626;
+    background-color: var(--bg-page);
+    color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   button, input, optgroup, select, textarea {
     font-family: var(--font-sans);
+  }
+
+  /* Anchor scroll offset for sticky header */
+  #about,
+  #journey,
+  #safety,
+  #age-groups,
+  #moments,
+  #event-details,
+  #faq {
+    scroll-margin-top: 5.5rem;
   }
 }
 
@@ -134,5 +195,144 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* ========================================================================= */
+/* KOINONIA DARK THEME SYSTEM — SURFACE & TYPOGRAPHY MAPPINGS                */
+/* ========================================================================= */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Background surfaces */
+[data-theme="dark"] .bg-\[\#FAF9F6\],
+[data-theme="dark"] .bg-\[\#FAF9F6\]\/98,
+[data-theme="dark"] .bg-\[\#FAF9F6\]\/95,
+[data-theme="dark"] .bg-\[\#FAF9F6\]\/90,
+[data-theme="dark"] .bg-\[\#FAF9F6\]\/80,
+[data-theme="dark"] .bg-\[\#FAF9F6\]\/60,
+[data-theme="dark"] .bg-\[\#FAF8F3\],
+[data-theme="dark"] .bg-\[\#FAF8F3\]\/95,
+[data-theme="dark"] .bg-\[\#FAF8F3\]\/90,
+[data-theme="dark"] .bg-\[\#FAF6EB\] {
+  background-color: var(--bg-surface-secondary);
+}
+
+[data-theme="dark"] .bg-white:not(.keep-ivory):not(.keep-ivory *):not(.keep-light):not(.keep-light *) {
+  background-color: var(--bg-surface);
+}
+
+/* Text hierarchy */
+[data-theme="dark"] .text-\[\#18181B\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-\[\#262626\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-zinc-900:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-stone-900:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-stone-800:not(.keep-ivory):not(.keep-ivory *) {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .text-\[\#52525B\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-\[\#6B7280\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-\[\#3F3F46\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-zinc-600:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-zinc-500:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-stone-700:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-stone-600:not(.keep-ivory):not(.keep-ivory *) {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .text-\[\#71717A\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-zinc-400:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-stone-500:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-stone-400:not(.keep-ivory):not(.keep-ivory *) {
+  color: var(--text-muted);
+}
+
+[data-theme="dark"] .text-\[\#9A7326\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .text-\[\#B89047\]:not(.keep-ivory):not(.keep-ivory *) {
+  color: var(--brand-gold-text);
+}
+
+/* Borders */
+[data-theme="dark"] .border-\[\#EAE8E1\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#EAE8E1\]\/80:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#EAE8E1\]\/70:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#E5E2D9\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#E7E3D8\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#D9D6CE\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#D1D5DB\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-zinc-200:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-gray-200:not(.keep-ivory):not(.keep-ivory *) {
+  border-color: var(--border-subtle);
+}
+
+[data-theme="dark"] .border-\[\#E5D5AE\]:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#E5D5AE\]\/90:not(.keep-ivory):not(.keep-ivory *),
+[data-theme="dark"] .border-\[\#E5D5AE\]\/70:not(.keep-ivory):not(.keep-ivory *) {
+  border-color: var(--border-strong);
+}
+
+/* Form Inputs, Textareas, and Selects */
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not(.keep-light):not(.keep-ivory),
+[data-theme="dark"] textarea:not(.keep-light):not(.keep-ivory),
+[data-theme="dark"] select:not(.keep-light):not(.keep-ivory) {
+  background-color: var(--bg-surface-secondary);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: var(--text-muted);
+}
+
+[data-theme="dark"] input:focus,
+[data-theme="dark"] textarea:focus,
+[data-theme="dark"] select:focus {
+  border-color: var(--brand-gold);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Tables */
+[data-theme="dark"] table {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] thead th {
+  background-color: var(--bg-surface-muted);
+  color: var(--text-secondary);
+  border-bottom-color: var(--border-strong);
+}
+
+[data-theme="dark"] tbody tr {
+  border-bottom-color: var(--border-subtle);
+}
+
+[data-theme="dark"] tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Hero Section atmospheric gradient overlay in dark mode */
+[data-theme="dark"] #about .bg-gradient-to-r.from-\[\#FAF9F6\]\/98 {
+  background-image: linear-gradient(to right, rgba(20, 20, 18, 0.98), rgba(20, 20, 18, 0.88), rgba(20, 20, 18, 0.35));
+}
+[data-theme="dark"] #about .bg-gradient-to-b.from-\[\#FAF9F6\]\/60 {
+  background-image: linear-gradient(to bottom, rgba(20, 20, 18, 0.60), transparent, rgba(20, 20, 18, 0.90));
+}
+
+/* Keep physical Event Pass warm ivory in dark mode with enhanced ambient shadow/glow */
+[data-theme="dark"] .keep-ivory {
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.6), 0 0 20px rgba(197, 155, 39, 0.15) !important;
+}
+
+/* Print Immunity: Report documents and printable views strictly enforce light styles */
+@media print {
+  html, body, [data-theme="dark"] {
+    background-color: #FFFFFF !important;
+    color: #000000 !important;
+    color-scheme: light !important;
+  }
 }
 

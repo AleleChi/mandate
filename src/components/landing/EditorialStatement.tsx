@@ -61,15 +61,15 @@ export const EditorialStatement: React.FC<EditorialStatementProps> = ({
         viewport={{ once: true, margin: '-40px' }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       >
-        <span className="text-xs sm:text-[13px] font-bold tracking-[0.14em] text-[#9A7326] uppercase font-sans block mb-2 sm:mb-3">
+        <span className="text-xs sm:text-[13px] font-bold tracking-[0.14em] text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block mb-2 sm:mb-3">
           CHILDREN &amp; TEENS EXPERIENCE
         </span>
 
-        <h2 className="text-[38px] sm:text-5xl lg:text-[62px] xl:text-[70px] font-sans font-extrabold text-[#18181B] tracking-[-0.04em] leading-[1.04] sm:leading-[1.01] lg:leading-[0.98]">
+        <h2 className="text-[38px] sm:text-5xl lg:text-[62px] xl:text-[70px] font-sans font-extrabold text-[#18181B] dark:text-[#F7F4ED] tracking-[-0.04em] leading-[1.04] sm:leading-[1.01] lg:leading-[0.98]">
           A safe, well-organised experience for every child.
         </h2>
 
-        <p className="mt-3.5 sm:mt-4 text-base sm:text-lg lg:text-[19px] text-[#52525B] leading-[1.62] font-normal max-w-[720px] mx-auto">
+        <p className="mt-3.5 sm:mt-4 text-base sm:text-lg lg:text-[19px] text-[#52525B] dark:text-[#C8C2B6] leading-[1.62] font-normal max-w-[720px] mx-auto">
           From registration to pickup, the Children &amp; Teens team keeps the information needed for each child in one place, so check-in, care, and pickup can be handled clearly on event day.
         </p>
       </motion.div>
@@ -80,7 +80,7 @@ export const EditorialStatement: React.FC<EditorialStatementProps> = ({
       <div
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        className="mt-10 sm:mt-12 rounded-3xl overflow-hidden border border-[#E5D5AE]/70 bg-[#121214] shadow-xl"
+        className="mt-10 sm:mt-12 rounded-3xl overflow-hidden border border-[#E5D5AE]/70 dark:border-[#383733] bg-[#121214] shadow-xl"
       >
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 min-h-[540px] lg:min-h-[600px] items-stretch">
           {/* ======================================================================= */}
@@ -95,7 +95,7 @@ export const EditorialStatement: React.FC<EditorialStatementProps> = ({
             whileInView={shouldReduceMotion ? undefined : { opacity: 1, x: 0 }}
             viewport={{ once: true, margin: '-40px' }}
             transition={{ duration: 0.55, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-            className="relative md:col-span-1 lg:col-span-3 bg-[#141417] text-white p-7 sm:p-9 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/10 overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27] cursor-default"
+            className="relative md:col-span-1 lg:col-span-3 bg-[#141417] dark:bg-[#1E1D1A] text-white p-7 sm:p-9 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/10 dark:border-r-[#33312C] overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27] cursor-default"
           >
             {/* Oversized background step numeral with subtle inverse parallax */}
             <span
@@ -146,7 +146,7 @@ export const EditorialStatement: React.FC<EditorialStatementProps> = ({
             whileInView={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
             viewport={{ once: true, margin: '-40px' }}
             transition={{ duration: 0.6, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="relative md:col-span-1 lg:col-span-5 bg-[#FAF8F5] text-zinc-900 p-7 sm:p-9 flex flex-col justify-between border-b md:border-b-0 lg:border-r border-[#E5D5AE]/70 overflow-visible focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27] cursor-default z-10"
+            className="relative md:col-span-1 lg:col-span-5 bg-[#FAF8F5] text-zinc-900 p-7 sm:p-9 flex flex-col justify-between border-b md:border-b-0 lg:border-r border-[#E5D5AE]/70 dark:border-[#383733] overflow-visible focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27] cursor-default z-10 keep-ivory"
           >
             {/* Oversized background step numeral */}
             <span
@@ -179,7 +179,7 @@ export const EditorialStatement: React.FC<EditorialStatementProps> = ({
                   : `translate3d(${mouseOffset.x * 8}px, ${mouseOffset.y * 8 + (activeIndex === 1 ? -4 : 0)}px, 0) rotateY(${mouseOffset.x * 2}deg) rotateX(${-mouseOffset.y * 2}deg)`,
               }}
             >
-              <div className="w-full max-w-[340px] bg-[#FDFCF9] rounded-2xl p-6 sm:p-7 border border-[#E5D5AE] shadow-[0_24px_50px_rgba(0,0,0,0.07),0_2px_6px_rgba(0,0,0,0.04)] text-center relative overflow-hidden ring-1 ring-black/[0.03]">
+              <div className="w-full max-w-[340px] bg-[#FDFCF9] rounded-2xl p-6 sm:p-7 border border-[#E5D5AE] shadow-[0_24px_50px_rgba(0,0,0,0.07),0_2px_6px_rgba(0,0,0,0.04)] text-center relative overflow-hidden ring-1 ring-black/[0.03] keep-ivory">
                 {/* Subtle paper inner highlight */}
                 <div className="absolute inset-0 bg-gradient-to-b from-white/80 via-transparent to-black/[0.02] pointer-events-none" />
 

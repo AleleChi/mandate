@@ -62,10 +62,10 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
     <footer
       id="footer"
       aria-label="Event Portal Footer"
-      className="bg-[#FAF9F6] border-t border-[#EAE8E1] pt-14 pb-12 px-4 sm:px-6 lg:px-8 mt-auto text-left"
+      className="bg-[#FAF9F6] dark:bg-[#181817] border-t border-[#EAE8E1] dark:border-[#2A2926] pt-14 pb-12 px-4 sm:px-6 lg:px-8 mt-auto text-left"
     >
       <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-8 pb-12 border-b border-[#EAE8E1]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-8 pb-12 border-b border-[#EAE8E1] dark:border-[#2A2926]">
           {/* Column 1: Ministry / Event Identifier */}
           <div className="space-y-3">
             <BrandLogo
@@ -77,31 +77,31 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
             />
             {/* Understated Event Reference */}
             <div className="pt-1.5 space-y-0.5">
-              <p className="text-sm font-semibold text-stone-900 font-serif-koinonia tracking-tight">
+              <p className="text-sm font-semibold text-stone-900 dark:text-[#F7F4ED] font-serif-koinonia tracking-tight">
                 {eventTitle}
               </p>
               {eventDates && (
-                <p className="text-xs text-stone-500 font-medium">
+                <p className="text-xs text-stone-500 dark:text-[#A19D95] font-medium">
                   {eventDates}
                 </p>
               )}
             </div>
-            <p className="text-xs text-stone-600 leading-relaxed max-w-xs font-normal pt-0.5">
+            <p className="text-xs text-stone-600 dark:text-[#C8C2B6] leading-relaxed max-w-xs font-normal pt-0.5">
               Children &amp; Teens registration and event access.
             </p>
           </div>
 
           {/* Column 2: Current event / participation */}
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+            <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F7F4ED] uppercase tracking-wider font-sans">
               Participation
             </h4>
-            <ul className="space-y-2.5 text-xs text-stone-600">
+            <ul className="space-y-2.5 text-xs text-stone-600 dark:text-[#C8C2B6]">
               <li>
                 <button
                   type="button"
                   onClick={onParentRegisterClick}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left font-medium text-[#9A7326]"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left font-medium text-[#9A7326] dark:text-[#D4AF37]"
                 >
                   Register your child
                 </button>
@@ -110,7 +110,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('/parent/sign-in')}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left"
                 >
                   Parent sign in
                 </button>
@@ -119,7 +119,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('/volunteer/sign-in')}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left"
                 >
                   Volunteer sign in
                 </button>
@@ -129,15 +129,15 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
 
           {/* Column 3: Useful information */}
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+            <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F7F4ED] uppercase tracking-wider font-sans">
               Information
             </h4>
-            <ul className="space-y-2.5 text-xs text-stone-600">
+            <ul className="space-y-2.5 text-xs text-stone-600 dark:text-[#C8C2B6]">
               <li>
                 <button
                   type="button"
                   onClick={() => onNavigate('/child-safety')}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left"
                 >
                   Child Safety
                 </button>
@@ -146,7 +146,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('/privacy')}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left"
                 >
                   Privacy Notice
                 </button>
@@ -155,7 +155,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('/terms')}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left"
                 >
                   Terms of Service
                 </button>
@@ -171,7 +171,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
                       scrollToSection('faq');
                     }
                   }}
-                  className="hover:text-stone-950 transition-colors cursor-pointer text-left"
+                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left"
                 >
                   Questions &amp; Answers
                 </button>
@@ -181,14 +181,14 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
 
           {/* Column 4: Contact (Official Email Only) */}
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+            <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F7F4ED] uppercase tracking-wider font-sans">
               Contact
             </h4>
-            <div className="space-y-0.5 text-xs text-stone-600">
-              <span className="text-stone-400 block text-[11px] font-medium uppercase tracking-wide">Email</span>
+            <div className="space-y-0.5 text-xs text-stone-600 dark:text-[#C8C2B6]">
+              <span className="text-stone-400 dark:text-[#A19D95] block text-[11px] font-medium uppercase tracking-wide">Email</span>
               <a
                 href={`mailto:${OFFICIAL_PUBLIC_CONTACT_EMAIL}`}
-                className="text-stone-700 hover:text-[#9A7326] underline underline-offset-2 transition-colors block break-all"
+                className="text-stone-700 dark:text-[#C8C2B6] hover:text-[#9A7326] dark:hover:text-[#D4AF37] underline underline-offset-2 transition-colors block break-all"
               >
                 {OFFICIAL_PUBLIC_CONTACT_EMAIL}
               </a>
@@ -197,7 +197,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
         </div>
 
         {/* Bottom line: © [YEAR] [canonical organisation name] · Legal Links */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500 dark:text-[#A19D95]">
           <p>
             &copy; {footerYear} {footerCopyrightName}. All rights reserved.
           </p>
@@ -205,28 +205,28 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
             <button
               type="button"
               onClick={() => onNavigate('/privacy')}
-              className="hover:text-stone-950 cursor-pointer transition-colors"
+              className="hover:text-stone-950 dark:hover:text-[#F7F4ED] cursor-pointer transition-colors"
             >
               Privacy Notice
             </button>
             <button
               type="button"
               onClick={() => onNavigate('/child-safety')}
-              className="hover:text-stone-950 cursor-pointer transition-colors"
+              className="hover:text-stone-950 dark:hover:text-[#F7F4ED] cursor-pointer transition-colors"
             >
               Child Safety
             </button>
             <button
               type="button"
               onClick={() => onNavigate('/terms')}
-              className="hover:text-stone-950 cursor-pointer transition-colors"
+              className="hover:text-stone-950 dark:hover:text-[#F7F4ED] cursor-pointer transition-colors"
             >
               Terms of Service
             </button>
             <button
               type="button"
               onClick={() => onNavigate('/contact')}
-              className="hover:text-stone-950 cursor-pointer transition-colors"
+              className="hover:text-stone-950 dark:hover:text-[#F7F4ED] cursor-pointer transition-colors"
             >
               Contact Us
             </button>

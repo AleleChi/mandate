@@ -114,10 +114,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
         </div>
         {context !== 'compact' && (
           <div className="flex flex-col text-left">
-            <span className="font-serif font-black text-[#18181B] tracking-widest text-sm leading-none uppercase">
+            <span className="font-serif font-black text-[#18181B] dark:text-[#F7F4ED] tracking-widest text-sm leading-none uppercase">
               KOINONIA
             </span>
-            <span className="text-[9px] text-[#C59B27] tracking-wider uppercase font-bold mt-1">
+            <span className="text-[9px] text-[#C59B27] dark:text-[#D4AF37] tracking-wider uppercase font-bold mt-1">
               Children & Teens
             </span>
           </div>

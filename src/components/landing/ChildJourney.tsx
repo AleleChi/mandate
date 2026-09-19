@@ -66,18 +66,18 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
     <section
       id="journey"
       aria-label="From registration to pickup"
-      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full border-t border-[#EAE8E1]"
+      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full border-t border-[#EAE8E1] dark:border-[#2A2926] scroll-mt-24"
     >
       {/* Section Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 sm:pb-10 border-b border-[#EAE8E1] text-left">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 sm:pb-10 border-b border-[#EAE8E1] dark:border-[#2A2926] text-left">
         <div className="max-w-2xl space-y-3">
-          <span className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+          <span className="text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
             HOW IT WORKS
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] tracking-tight leading-tight">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-tight">
             From registration to pickup
           </h2>
-          <p className="text-sm sm:text-base text-[#52525B] leading-relaxed font-normal">
+          <p className="text-sm sm:text-base text-[#52525B] dark:text-[#C8C2B6] leading-relaxed font-normal">
             A clear sequence designed so parents know exactly what to expect before, during, and after the event.
           </p>
         </div>
@@ -101,7 +101,7 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
         {/* Left Column: Interactive Steps List with Clean Connecting Track */}
         <div className="col-span-7 relative pl-4 space-y-4">
           {/* Vertical connecting line */}
-          <div className="absolute left-[31px] top-6 bottom-6 w-[2px] bg-[#EAE8E1]" />
+          <div className="absolute left-[31px] top-6 bottom-6 w-[2px] bg-[#EAE8E1] dark:bg-[#33312C]" />
           {/* Active progress indicator along connecting line */}
           <motion.div
             className="absolute left-[31px] top-6 w-[2px] bg-[#C59B27]"
@@ -118,8 +118,8 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
                 onClick={() => setActiveStep(idx)}
                 className={`relative flex items-start space-x-6 p-4 rounded-2xl cursor-pointer transition-all duration-300 ${
                   isActive
-                    ? 'bg-white shadow-xs border border-[#E5D5AE]'
-                    : 'hover:bg-white/50 opacity-70 hover:opacity-100'
+                    ? 'bg-white dark:bg-[#201F1C] shadow-xs border border-[#E5D5AE] dark:border-[#C59B27]/40'
+                    : 'hover:bg-white/50 dark:hover:bg-white/5 opacity-70 hover:opacity-100'
                 }`}
               >
                 {/* Number Circle Node */}
@@ -127,7 +127,7 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all duration-300 z-10 ${
                     isActive
                       ? 'bg-[#C59B27] text-white shadow-xs scale-110'
-                      : 'bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE]'
+                      : 'bg-[#FAF6EB] dark:bg-[#262522] text-[#9A7326] dark:text-[#D4AF37] border border-[#E5D5AE] dark:border-[#3D3B36]'
                   }`}
                 >
                   {step.number}
@@ -137,12 +137,12 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
                 <div className="space-y-1">
                   <h3
                     className={`text-lg font-sans font-bold transition-colors ${
-                      isActive ? 'text-[#18181B]' : 'text-[#71717A]'
+                      isActive ? 'text-[#18181B] dark:text-[#F7F4ED]' : 'text-[#71717A] dark:text-[#8E8A82]'
                     }`}
                   >
                     {step.title}
                   </h3>
-                  <p className="text-xs sm:text-sm text-[#52525B] leading-relaxed">
+                  <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A19D95] leading-relaxed">
                     {step.description}
                   </p>
                 </div>
@@ -160,26 +160,26 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -14 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] as const }}
-              className="bg-[#FAF8F3] rounded-3xl p-8 sm:p-10 border border-[#EAE8E1] text-left relative overflow-hidden"
+              className="bg-[#FAF8F3] dark:bg-[#1C1B18] rounded-3xl p-8 sm:p-10 border border-[#EAE8E1] dark:border-[#2E2D29] text-left relative overflow-hidden"
             >
               {/* Large Subtle Editorial Watermark Number */}
-              <div className="text-7xl sm:text-8xl font-serif-koinonia font-bold text-[#E5D5AE]/50 leading-none select-none tracking-tight">
+              <div className="text-7xl sm:text-8xl font-serif-koinonia font-bold text-[#E5D5AE]/50 dark:text-[#C59B27]/20 leading-none select-none tracking-tight">
                 {current.number}
               </div>
 
               {/* Active Step Heading & Natural Copy */}
               <div className="space-y-3 pt-4">
-                <h3 className="text-2xl sm:text-3xl font-sans font-bold text-[#18181B] leading-tight">
+                <h3 className="text-2xl sm:text-3xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] leading-tight">
                   {current.title}
                 </h3>
-                <p className="text-sm sm:text-base text-[#52525B] leading-relaxed">
+                <p className="text-sm sm:text-base text-[#52525B] dark:text-[#C8C2B6] leading-relaxed">
                   {current.description}
                 </p>
               </div>
 
               {/* Factual Workflow Visual Indicator */}
-              <div className="mt-8 pt-6 border-t border-[#EAE8E1] flex items-start space-x-3 text-xs text-[#71717A]">
-                <div className="w-8 h-8 rounded-xl bg-white border border-[#EAE8E1] flex items-center justify-center shrink-0 text-[#C59B27] shadow-2xs">
+              <div className="mt-8 pt-6 border-t border-[#EAE8E1] dark:border-[#2E2D29] flex items-start space-x-3 text-xs text-[#71717A] dark:text-[#A19D95]">
+                <div className="w-8 h-8 rounded-xl bg-white dark:bg-[#262522] border border-[#EAE8E1] dark:border-[#3D3B36] flex items-center justify-center shrink-0 text-[#C59B27] shadow-2xs">
                   {current.icon === 'register' && <ClipboardCheck className="w-4 h-4" />}
                   {current.icon === 'review' && <ShieldCheck className="w-4 h-4" />}
                   {current.icon === 'pass' && <QrCode className="w-4 h-4" />}
@@ -202,16 +202,16 @@ export const ChildJourney: React.FC<ChildJourneyProps> = ({
         {STEPS.map((step) => (
           <div
             key={step.number}
-            className="flex items-start space-x-4 pb-6 border-b border-[#EAE8E1]/80 last:border-b-0"
+            className="flex items-start space-x-4 pb-6 border-b border-[#EAE8E1]/80 dark:border-[#2A2926] last:border-b-0"
           >
             <span className="font-serif-koinonia text-2xl font-bold text-[#C59B27] shrink-0 pt-0.5">
               {step.number}
             </span>
             <div className="space-y-1">
-              <h3 className="text-base font-sans font-bold text-[#18181B]">
+              <h3 className="text-base font-sans font-bold text-[#18181B] dark:text-[#F7F4ED]">
                 {step.title}
               </h3>
-              <p className="text-xs sm:text-sm text-[#52525B] leading-relaxed">
+              <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A19D95] leading-relaxed">
                 {step.description}
               </p>
             </div>

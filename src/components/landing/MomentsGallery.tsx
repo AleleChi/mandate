@@ -289,15 +289,15 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onWheel={handleWheel}
-      className={`py-14 sm:py-20 bg-[#FAF9F6] border-y border-[#EAE8E1]/80 overflow-hidden outline-none ${className}`}
+      className={`py-14 sm:py-20 bg-[#FAF9F6] dark:bg-[#181817] border-y border-[#EAE8E1]/80 dark:border-[#2A2926] overflow-hidden outline-none scroll-mt-24 ${className}`}
     >
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="max-w-2xl text-left mb-10 sm:mb-14 space-y-2">
-          <span className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+          <span className="text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
             GALLERY
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] tracking-tight leading-tight">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-tight">
             Moments from the programme
           </h2>
         </div>
@@ -531,14 +531,14 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
                     type="button"
                     onClick={handlePrev}
                     aria-label="Previous photograph"
-                    className="w-11 h-11 rounded-full bg-white border border-[#D9D6CE] hover:border-[#C59B27] hover:bg-[#FAF6EB] flex items-center justify-center text-[#262626] transition-all cursor-pointer shadow-xs"
+                    className="w-11 h-11 rounded-full bg-white dark:bg-[#201F1C] border border-[#D9D6CE] dark:border-[#383733] hover:border-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] flex items-center justify-center text-[#262626] dark:text-[#F7F4ED] transition-all cursor-pointer shadow-xs"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
 
                   {/* Understated progress counter for N > 5, dot indicators for N <= 5 */}
                   {total > 5 ? (
-                    <span className="text-xs font-semibold text-[#52525B] font-mono tracking-wider">
+                    <span className="text-xs font-semibold text-[#52525B] dark:text-[#A19D95] font-mono tracking-wider">
                       {activeIndex + 1} / {total}
                     </span>
                   ) : (
@@ -552,7 +552,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
                           className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
                             idx === activeIndex
                               ? 'w-8 bg-[#C59B27]'
-                              : 'w-2 bg-[#E5D5AE] hover:bg-[#C59B27]/50'
+                              : 'w-2 bg-[#E5D5AE] dark:bg-[#3D3B36] hover:bg-[#C59B27]/50'
                           }`}
                         />
                       ))}
@@ -563,7 +563,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
                     type="button"
                     onClick={handleNext}
                     aria-label="Next photograph"
-                    className="w-11 h-11 rounded-full bg-white border border-[#D9D6CE] hover:border-[#C59B27] hover:bg-[#FAF6EB] flex items-center justify-center text-[#262626] transition-all cursor-pointer shadow-xs"
+                    className="w-11 h-11 rounded-full bg-white dark:bg-[#201F1C] border border-[#D9D6CE] dark:border-[#383733] hover:border-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] flex items-center justify-center text-[#262626] dark:text-[#F7F4ED] transition-all cursor-pointer shadow-xs"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
@@ -592,7 +592,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
                         className={`aspect-[4/5] rounded-3xl overflow-hidden bg-stone-900 border transition-all duration-300 ${
                           isActive
                             ? 'border-[#C59B27] shadow-[0_24px_50px_-12px_rgba(24,24,27,0.3)] scale-100'
-                            : 'border-[#EAE8E1] opacity-70 scale-95'
+                            : 'border-[#EAE8E1] dark:border-[#2E2D29] opacity-70 scale-95'
                         }`}
                       >
                         <img
@@ -611,7 +611,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
               {total > 1 && (
                 <div className="flex items-center justify-center space-x-2.5 mt-4">
                   {total > 5 ? (
-                    <span className="text-xs font-semibold text-[#52525B] font-mono tracking-wider">
+                    <span className="text-xs font-semibold text-[#52525B] dark:text-[#A19D95] font-mono tracking-wider">
                       {activeIndex + 1} / {total}
                     </span>
                   ) : (
@@ -622,7 +622,7 @@ export const MomentsGallery: React.FC<MomentsGalleryProps> = ({
                         onClick={() => setActiveIndex(idx)}
                         aria-label={`Go to image ${idx + 1}`}
                         className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                          idx === activeIndex ? 'w-6 bg-[#C59B27]' : 'w-1.5 bg-[#E5D5AE]'
+                          idx === activeIndex ? 'w-6 bg-[#C59B27]' : 'w-1.5 bg-[#E5D5AE] dark:bg-[#3D3B36]'
                         }`}
                       />
                     ))

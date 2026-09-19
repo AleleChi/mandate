@@ -34,7 +34,7 @@ export const EventPassPreviewCard: React.FC<EventPassPreviewCardProps> = ({
     : `${ageGroup} Section`;
 
   return (
-    <div className="w-full bg-[#FAF8F5] text-zinc-900 rounded-xl p-4 border border-[#E5D5AE] shadow-none relative select-none">
+    <div className="w-full bg-[#FAF8F5] text-zinc-900 rounded-xl p-4 border border-[#E5D5AE] shadow-none relative select-none keep-ivory">
       {/* Top pass identification bar */}
       <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-2.5 mb-3">
         <div className="flex items-center space-x-1.5 min-w-0 pr-2">

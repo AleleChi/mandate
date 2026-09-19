@@ -72,13 +72,13 @@ export const LandingFAQ: React.FC<LandingFAQProps> = ({
     <section
       id="faq"
       aria-label="Frequently Asked Questions"
-      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full text-left"
+      className="py-14 sm:py-20 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full text-left scroll-mt-24"
     >
       <div className="max-w-2xl text-left mb-12 space-y-2">
-        <span className="text-[11px] font-bold tracking-widest text-[#9A7326] uppercase font-sans block">
+        <span className="text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
           FREQUENTLY ASKED QUESTIONS
         </span>
-        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] tracking-tight leading-tight">
+        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-tight">
           Questions &amp; answers
         </h2>
       </div>
@@ -90,10 +90,10 @@ export const LandingFAQ: React.FC<LandingFAQProps> = ({
           return (
             <div
               key={faq.id}
-              className={`rounded-2xl border transition-all duration-200 bg-white overflow-hidden ${
+              className={`rounded-2xl border transition-all duration-200 bg-white dark:bg-[#1E1D1A] overflow-hidden ${
                 isOpen
                   ? 'border-[#C59B27]/70 shadow-xs'
-                  : 'border-[#EAE8E1] hover:border-[#D9D6CE]'
+                  : 'border-[#EAE8E1] dark:border-[#2E2D29] hover:border-[#D9D6CE] dark:hover:border-[#3D3B36]'
               }`}
             >
               <h3>
@@ -105,14 +105,14 @@ export const LandingFAQ: React.FC<LandingFAQProps> = ({
                   onClick={() => toggleItem(faq.id)}
                   className="w-full py-4.5 px-5 sm:px-6 text-left flex items-center justify-between gap-4 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]"
                 >
-                  <span className="text-base sm:text-lg font-semibold text-[#18181B] font-sans">
+                  <span className="text-base sm:text-lg font-semibold text-[#18181B] dark:text-[#F7F4ED] font-sans">
                     {faq.question}
                   </span>
                   <div
                     className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-transform duration-300 ${
                       isOpen
-                        ? 'bg-[#FAF6EB] text-[#C59B27] rotate-180'
-                        : 'bg-stone-100 text-stone-500'
+                        ? 'bg-[#FAF6EB] dark:bg-[#2A2926] text-[#C59B27] rotate-180'
+                        : 'bg-stone-100 dark:bg-[#2A2926] text-stone-500 dark:text-[#A19D95]'
                     }`}
                   >
                     <ChevronDown className="w-4 h-4" />
@@ -135,7 +135,7 @@ export const LandingFAQ: React.FC<LandingFAQProps> = ({
                     }}
                     className="overflow-hidden"
                   >
-                    <div className="px-5 sm:px-6 pb-5 pt-1 text-xs sm:text-sm text-[#52525B] leading-relaxed border-t border-[#FAF9F6]">
+                    <div className="px-5 sm:px-6 pb-5 pt-1 text-xs sm:text-sm text-[#52525B] dark:text-[#C8C2B6] leading-relaxed border-t border-[#FAF9F6] dark:border-[#2A2926]">
                       {faq.answer}
                     </div>
                   </motion.div>
